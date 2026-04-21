@@ -1,0 +1,168 @@
+export interface NamedConnection {
+  name: string;
+  label: string;
+  databaseType: 'postgresql' | 'mysql' | 'sqlite';
+  connectionString: string;
+  sslConfig?: {
+    enabled: boolean;
+    /** PEM certificate string for the CA. */
+    ca?: string;
+    /** Client certificate PEM. */
+    cert?: string;
+    /** Client private key PEM. */
+    key?: string;
+    /** Whether to reject unauthorized certificates (default: true). */
+    rejectUnauthorized?: boolean;
+  };
+  sshConfig?: {
+    enabled: boolean;
+    host: string;
+    port: number;
+    username: string;
+    privateKey?: string;
+    password?: string;
+    dbHost: string;
+    dbPort: number;
+  };
+}
+
+export interface ServeConfiguration {
+  name: string;
+  label: string;
+  connections: string[];
+  selectedTables: Record<string, string[]>;
+  tableOptions?: Record<string, import('../introspect/types.js').TableToolOptions>;
+  columnMasking?: Record<string, Record<string, import('../pii/types.js').ColumnMasking>>;
+}
+
+// ---------------------------------------------------------------------------
+// Data Scoping — row-level isolation per user
+// ---------------------------------------------------------------------------
+
+/** A single row-scoping rule. Links a table column to a user identity field. */
+export interface DataScopeRule {
+  /** The database table this rule applies to. */
+  tableName: string;
+  /** The column in the table to filter on (e.g. "client_email", "numero_client"). */
+  column: string;
+  /** Which user identity field to match against. */
+  identityField: 'email' | 'externalId' | 'custom';
+  /** When identityField is 'custom', the key in the user's customAttributes map. */
+  customKey?: string;
+}
+
+/** User identity resolved at request time from the authenticated user. */
+export interface UserIdentity {
+  email: string;
+  userId: string;
+  externalId?: string;
+  customAttributes?: Record<string, string>;
+}
+
+/** Concrete filter ready to inject into WHERE clauses. Produced by resolveUserScope(). */
+export interface ResolvedScopeFilter {
+  tableName: string;
+  column: string;
+  value: string;
+}
+
+// ---------------------------------------------------------------------------
+// Profile & configuration
+// ---------------------------------------------------------------------------
+
+export interface ServeProfile {
+  name: string;
+  label: string;
+  /**
+   * Controls how MCP tool responses are formatted.
+   * - 'friendly' (default): column names are replaced with human-readable labels,
+   *   SQL types are translated to simple terms, technical details are hidden.
+   * - 'raw': original technical names and types are exposed as-is.
+   */
+  responseMode?: 'friendly' | 'raw';
+  configurations?: string[]; // References to ServeConfiguration names
+  /** @deprecated Use configurations instead */
+  connections?: string[]; // Named connection references
+  /** @deprecated Use configurations instead */
+  selectedTables: Record<string, string[]>; // tableName -> selected columns
+  /** @deprecated Use configurations instead */
+  tableOptions?: Record<string, import('../introspect/types.js').TableToolOptions>;
+  /** @deprecated Use configurations instead */
+  columnMasking?: Record<string, Record<string, import('../pii/types.js').ColumnMasking>>;
+  token?: string; // auth token for this profile
+  /** Authentication mode for this MCP server endpoint */
+  authMode?: 'open' | 'token' | 'calame' | 'sso' | 'oauth' | 'external';
+  /** OAuth config — only used when authMode is 'oauth' */
+  oauthConfig?: {
+    provider: 'github' | 'google' | 'gitlab' | 'custom';
+    clientId: string;
+    clientSecret: string;
+    /** For custom/gitlab self-hosted: override authorization endpoint */
+    authorizationUrl?: string;
+    /** For custom/gitlab self-hosted: override token endpoint */
+    tokenUrl?: string;
+    /** For custom/gitlab self-hosted: override userinfo endpoint */
+    userinfoUrl?: string;
+  };
+  /** Row-level data scoping rules. Tables listed here are filtered by user identity.
+   *  When at least one rule exists, the profile enters strict mode:
+   *  - Tables with a rule → scoped (filtered by user identity)
+   *  - Tables in sharedTables → shared (all rows visible)
+   *  - Tables in neither → blocked (0 results, fail-closed)
+   */
+  dataScopeRules?: DataScopeRule[];
+  /** Tables explicitly shared (no scoping). Only relevant when dataScopeRules is non-empty. */
+  sharedTables?: string[];
+  /** External token validation config — only used when authMode is 'external' */
+  externalAuthConfig?: {
+    /** URL to call to validate the token. Calame sends the token as Bearer header. */
+    validationUrl: string;
+    /** Optional: custom header name instead of Authorization (e.g., "X-API-Key") */
+    headerName?: string;
+    /** Optional: header value template. Use {token} as placeholder. Default: "Bearer {token}" */
+    headerTemplate?: string;
+    /** JSON path to extract email from validation response (default: "email") */
+    emailField?: string;
+    /** JSON path to extract display name from validation response (default: "name") */
+    nameField?: string;
+    /** Whether to auto-create Calame users on first external login (default: true) */
+    autoCreateUsers?: boolean;
+  };
+}
+
+export interface ServeConfig {
+  port: number;
+  connections: Record<string, NamedConnection>;
+  // Keep old fields for backward compat:
+  databaseType: 'postgresql' | 'mysql' | 'sqlite';
+  connectionString: string;
+  profiles: Record<string, ServeProfile>;
+  enableAuditLog?: boolean;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  timestamp: string;
+  profileName: string;
+  toolName: string;
+  toolArgs: Record<string, unknown>;
+  result: 'success' | 'error';
+  resultSummary?: string; // e.g. "42 rows returned"
+  durationMs: number;
+}
+
+export interface PendingWriteQuery {
+  id: string;
+  timestamp: string;
+  profileName: string;
+  sql: string;
+  params: unknown[];
+  tableName: string;
+  operation: 'insert' | 'update' | 'delete';
+  description: string;
+  status: 'pending' | 'approved' | 'rejected';
+  approvedBy?: string;
+  approvedAt?: string;
+  executionResult?: string;
+  executionError?: string;
+}

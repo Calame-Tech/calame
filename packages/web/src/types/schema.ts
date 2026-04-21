@@ -1,0 +1,262 @@
+export type DatabaseType = 'postgresql' | 'mysql' | 'sqlite';
+
+// SSL Config
+export interface SslConfig {
+  enabled: boolean;
+  ca?: string;
+  cert?: string;
+  key?: string;
+  rejectUnauthorized?: boolean;
+}
+
+// SSH Tunnel Config
+export interface SshTunnelConfig {
+  enabled: boolean;
+  host: string;
+  port: number;
+  username: string;
+  privateKey?: string;
+  password?: string;
+  dbHost: string;
+  dbPort: number;
+}
+
+export interface DatabaseSchema {
+  tables: TableInfo[];
+  relations: Relation[];
+}
+
+export interface TableInfo {
+  name: string;
+  schema: string;
+  columns: ColumnInfo[];
+  primaryKeys: string[];
+}
+
+export interface ColumnInfo {
+  name: string;
+  type: string;
+  nullable: boolean;
+  defaultValue: string | null;
+}
+
+export interface Relation {
+  fromTable: string;
+  fromColumn: string;
+  toTable: string;
+  toColumn: string;
+}
+
+export interface TableToolOptions {
+  enabledTools: ('describe' | 'aggregate' | 'query' | 'write')[];
+  maxLimit: number;
+  filterableColumns: string[];
+  groupableColumns: string[];
+  columnMasking?: Record<string, ColumnMasking>;
+}
+
+// PII & Masking types
+export type PiiCategory = 'email' | 'phone' | 'name' | 'address' | 'credit_card' | 'password' | 'ip_address' | 'ssn' | 'encrypted';
+export type MaskingMode = 'none' | 'exclude' | 'hash' | 'truncate' | 'replace' | 'aggregate_only';
+
+export interface PiiDetection {
+  category: PiiCategory;
+  confidence: 'high' | 'medium' | 'low' | 'manual';
+  matchedBy: 'column_name' | 'data_sample' | 'both' | 'manual';
+}
+
+export interface ColumnMasking {
+  piiDetected?: PiiDetection;
+  maskingMode: MaskingMode;
+  truncateOptions?: { showFirst?: number; showLast?: number };
+  replaceValue?: string;
+}
+
+export interface GlobalMaskingRule {
+  piiCategory: PiiCategory;
+  defaultMode: MaskingMode;
+  truncateOptions?: { showFirst?: number; showLast?: number };
+  replaceValue?: string;
+}
+
+export interface Config {
+  serverName: string;
+  transport: 'stdio' | 'streamable-http';
+  clientTarget: 'claude-desktop' | 'cursor' | 'vscode';
+  outputDir: string;
+  tableOptions?: Record<string, TableToolOptions>;
+}
+
+export interface NamedConnection {
+  name: string;
+  label: string;
+  databaseType: DatabaseType;
+  connectionString: string;
+  sslConfig?: SslConfig;
+  sshConfig?: SshTunnelConfig;
+}
+
+export interface Configuration {
+  name: string;
+  label: string;
+  connections: string[];
+  selectedTables: Record<string, string[]>;
+  tableOptions?: Record<string, TableToolOptions>;
+  columnMasking?: Record<string, Record<string, ColumnMasking>>;
+}
+
+export interface ConfigurationsFile {
+  configurations: Record<string, Omit<Configuration, 'name'>>;
+}
+
+export type AuthMode = 'open' | 'token' | 'calame' | 'sso' | 'oauth' | 'external';
+
+export interface ExternalAuthConfig {
+  validationUrl: string;
+  headerName?: string;
+  headerTemplate?: string;
+  emailField?: string;
+  nameField?: string;
+  autoCreateUsers?: boolean; // default true
+}
+
+export interface OAuthConfig {
+  provider: 'github' | 'google' | 'gitlab' | 'custom';
+  clientId: string;
+  clientSecret: string;
+  authorizationUrl?: string;
+  tokenUrl?: string;
+  userinfoUrl?: string;
+}
+
+/** A single row-scoping rule for data isolation. */
+export interface DataScopeRule {
+  tableName: string;
+  column: string;
+  identityField: 'email' | 'externalId' | 'custom';
+  customKey?: string;
+}
+
+export interface Profile {
+  name: string;
+  label: string;
+  configurations?: string[]; // References to Configuration names
+  authMode?: AuthMode;
+  oauthConfig?: OAuthConfig;
+  externalAuthConfig?: ExternalAuthConfig;
+  responseMode?: 'friendly' | 'raw';
+  /** Row-level data scoping rules. */
+  dataScopeRules?: DataScopeRule[];
+  /** Tables explicitly shared (no scoping) when dataScopeRules is non-empty. */
+  sharedTables?: string[];
+  /** @deprecated Use configurations instead */
+  connections?: string[];
+  /** @deprecated Use configurations instead */
+  selectedTables: Record<string, string[]>;
+  /** @deprecated Use configurations instead */
+  tableOptions?: Record<string, TableToolOptions>;
+  /** @deprecated Use configurations instead */
+  columnMasking?: Record<string, Record<string, ColumnMasking>>;
+}
+
+export interface ProfilesFile {
+  connection: {
+    type: 'postgresql';
+    envVar: string;
+  };
+  connections?: Record<string, Omit<NamedConnection, 'name'>>;
+  profiles: Record<string, Omit<Profile, 'name'>>;
+}
+
+// Token management
+export interface TokenEntry {
+  id: string;
+  tokenHash: string; // masked for display
+  profileName: string;
+  label: string;
+  createdAt: string;
+  lastUsedAt?: string;
+}
+
+// User management
+export type UserRole = 'admin' | 'user';
+export type UserStatus = 'active' | 'disabled' | 'invited';
+export type AccessMode = 'mcp' | 'chat' | 'both';
+
+export interface UserProfileAccess {
+  profileName: string;
+  allowedTables: string[] | null;
+  allowedTools: string[] | null;
+  accessMode: AccessMode;
+}
+
+export interface UserEntry {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  status: UserStatus;
+  profiles: UserProfileAccess[];
+  createdAt: string;
+  lastActiveAt: string | null;
+  disabledAt: string | null;
+  disabledReason: string | null;
+  onboardingCode: string | null;
+  onboardingExpiresAt: string | null;
+  rateLimitRpm?: number;
+  /** Arbitrary key-value attributes for data scoping (e.g. {"client_id": "CLT-00042"}). */
+  customAttributes?: Record<string, string> | null;
+}
+
+// Audit log
+export interface AuditLogEntry {
+  id: string;
+  timestamp: string;
+  profileName: string;
+  toolName: string;
+  toolArgs: Record<string, unknown>;
+  result: 'success' | 'error';
+  resultSummary?: string;
+  durationMs: number;
+}
+
+// Pending write queries
+export interface PendingWriteQuery {
+  id: string;
+  timestamp: string;
+  profileName: string;
+  sql: string;
+  params: unknown[];
+  tableName: string;
+  operation: 'insert' | 'update' | 'delete';
+  description: string;
+  status: 'pending' | 'approved' | 'rejected';
+  approvedBy?: string;
+  approvedAt?: string;
+  executionResult?: string;
+  executionError?: string;
+}
+
+// Metrics types
+export interface MetricsSummary {
+  requestsByHour: Array<{ hour: string; profile: string; count: number }>;
+  topTools: Array<{ toolName: string; count: number }>;
+  topTokens: Array<{ tokenLabel: string; count: number }>;
+  errorRate: Array<{ result: string; count: number }>;
+  avgResponseTime: Array<{ profileName: string; avgMs: number; count: number }>;
+}
+
+export interface PoolStats {
+  connectionName: string;
+  stats: { active: number; idle: number; waiting: number; total: number };
+}
+
+// Serve status
+export interface ServeStatus {
+  active: boolean;
+  port: number;
+  profiles: string[];
+  profileStatuses?: Record<string, { active: boolean; endpoint: string }>;
+  startedAt?: string;
+  totalRequests: number;
+}

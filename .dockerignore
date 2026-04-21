@@ -1,0 +1,16 @@
+node_modules
+.git
+.gitignore
+*.md
+!packages/templates/**/*.md
+.env
+.env.*
+.calame-secret
+calame-*.json
+generated-server
+dist
+coverage
+.turbo
+.vscode
+.idea
+*.log

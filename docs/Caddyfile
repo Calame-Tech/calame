@@ -1,0 +1,3 @@
+calame.example.com {
+    reverse_proxy localhost:4567
+}

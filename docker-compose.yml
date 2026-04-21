@@ -1,0 +1,27 @@
+services:
+  calame:
+    build: .
+    ports:
+      - "${CALAME_PORT:-4567}:4567"
+    volumes:
+      - calame-data:/data
+    environment:
+      - CALAME_SECRET_KEY
+      - CALAME_DATA_DIR=/data
+      - CALAME_LOG_LEVEL=${CALAME_LOG_LEVEL:-info}
+      - CALAME_LOG_FORMAT=${CALAME_LOG_FORMAT:-text}
+      - CALAME_CORS_ORIGINS=${CALAME_CORS_ORIGINS:-*}
+      - CALAME_DB_POOL_SIZE=${CALAME_DB_POOL_SIZE:-10}
+      - CALAME_QUERY_TIMEOUT_MS=${CALAME_QUERY_TIMEOUT_MS:-10000}
+      - CALAME_AUDIT_RETENTION_DAYS=${CALAME_AUDIT_RETENTION_DAYS:-90}
+      - CALAME_CHAT_RETENTION_DAYS=${CALAME_CHAT_RETENTION_DAYS:-30}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:4567/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  calame-data:

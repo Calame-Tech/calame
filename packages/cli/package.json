@@ -1,0 +1,48 @@
+{
+  "name": "calame",
+  "version": "0.1.0",
+  "description": "Generate MCP servers for your PostgreSQL database — visually",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "calame": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "node ../../node_modules/typescript/bin/tsc",
+    "dev": "npx tsx src/index.ts",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "@calame/connectors": "workspace:*",
+    "@calame/core": "workspace:*",
+    "better-sqlite3": "^12.8.0",
+    "cors": "^2.8.5",
+    "express": "^4.22.1",
+    "jose": "^6.2.2",
+    "js-yaml": "^4.1.1",
+    "mysql2": "^3.11.0",
+    "nodemailer": "^8.0.5",
+    "open": "^10.1.0",
+    "openai": "^6.27.0",
+    "pg": "^8.13.0",
+    "ssh2": "^1.17.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/js-yaml": "^4.0.9",
+    "@types/nodemailer": "^7.0.11",
+    "@types/pg": "^8.11.0",
+    "@types/ssh2": "^1.15.5",
+    "@types/supertest": "^7.2.0",
+    "supertest": "^7.2.2",
+    "typescript": "~5.7.0",
+    "vitest": "^2.1.0"
+  },
+  "license": "Apache-2.0"
+}

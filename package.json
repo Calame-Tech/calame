@@ -1,0 +1,37 @@
+{
+  "name": "calame",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "repository": "https://github.com/mgasnier95/calame",
+  "author": "Calame Contributors",
+  "packageManager": "pnpm@9.15.4",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "pnpm -r run build",
+    "lint": "eslint packages/*/src/**/*.ts packages/*/src/**/*.tsx",
+    "format": "prettier --write packages/*/src/**/*.ts packages/*/src/**/*.tsx",
+    "format:check": "prettier --check packages/*/src/**/*.ts packages/*/src/**/*.tsx",
+    "test": "pnpm -r run test",
+    "dev": "pnpm --filter calame run dev",
+    "start": "pnpm build && pnpm dev"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "eslint": "^8.57.0",
+    "prettier": "^3.4.0",
+    "typescript": "~5.7.0",
+    "vitest": "^2.1.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "path-to-regexp@0.x": "^0.1.13",
+      "path-to-regexp@8.x": "^8.4.0",
+      "hono": "^4.12.14",
+      "@hono/node-server": "^1.19.13"
+    }
+  }
+}

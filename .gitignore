@@ -1,0 +1,17 @@
+node_modules
+dist
+.env
+*.tsbuildinfo
+.turbo
+coverage
+.DS_Store
+generated-server
+calame-*.json
+calame-*.json.bak
+*.db
+*.db-wal
+*.db-shm
+*.db.bak
+.calame-secret
+.claude/
+CLAUDE.md

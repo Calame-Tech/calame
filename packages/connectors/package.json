@@ -1,0 +1,31 @@
+{
+  "name": "@calame/connectors",
+  "version": "0.1.0",
+  "description": "Database connector plugins for Calame — PostgreSQL, MySQL, SQLite",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "node ../../node_modules/typescript/bin/tsc",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@calame/core": "workspace:*",
+    "better-sqlite3": "^12.8.0",
+    "mysql2": "^3.11.0",
+    "pg": "^8.13.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/pg": "^8.11.0",
+    "typescript": "~5.7.0",
+    "vitest": "^2.1.0"
+  },
+  "license": "Apache-2.0"
+}

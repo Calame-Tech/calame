@@ -1,0 +1,51 @@
+services:
+  traefik:
+    image: traefik:v3
+    command:
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entryPoints.web.address=:80"
+      - "--entryPoints.websecure.address=:443"
+      - "--entryPoints.web.http.redirections.entryPoint.to=websecure"
+      - "--certificatesresolvers.le.acme.tlschallenge=true"
+      - "--certificatesresolvers.le.acme.email=${ACME_EMAIL}"
+      - "--certificatesresolvers.le.acme.storage=/letsencrypt/acme.json"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - letsencrypt:/letsencrypt
+    restart: unless-stopped
+
+  calame:
+    build: .
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.calame.rule=Host(`${CALAME_DOMAIN}`)"
+      - "traefik.http.routers.calame.entrypoints=websecure"
+      - "traefik.http.routers.calame.tls.certresolver=le"
+      - "traefik.http.services.calame.loadbalancer.server.port=4567"
+    volumes:
+      - calame-data:/data
+    environment:
+      - CALAME_SECRET_KEY
+      - CALAME_DATA_DIR=/data
+      - CALAME_TRUST_PROXY=true
+      - CALAME_CORS_ORIGINS=https://${CALAME_DOMAIN}
+      - CALAME_LOG_FORMAT=${CALAME_LOG_FORMAT:-json}
+      - CALAME_LOG_LEVEL=${CALAME_LOG_LEVEL:-info}
+      - CALAME_LLM_API_KEY
+      - CALAME_LLM_PROVIDER=${CALAME_LLM_PROVIDER:-anthropic}
+      - CALAME_LLM_MODEL
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:4567/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  calame-data:
+  letsencrypt:

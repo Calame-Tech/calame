@@ -1,0 +1,136 @@
+import type { GlobalMaskingRule, PiiCategory, MaskingMode } from '../types/schema.js';
+import HelpTip from './HelpTip.js';
+
+const PII_CATEGORIES: PiiCategory[] = ['email', 'phone', 'name', 'address', 'credit_card', 'password', 'ip_address', 'ssn', 'encrypted'];
+const MASKING_MODES: { value: MaskingMode; label: string }[] = [
+  { value: 'exclude', label: 'Exclude' },
+  { value: 'hash', label: 'Hash' },
+  { value: 'truncate', label: 'Truncate' },
+  { value: 'replace', label: 'Replace' },
+  { value: 'aggregate_only', label: 'Aggregate only' },
+];
+
+interface GlobalMaskingRulesProps {
+  rules: GlobalMaskingRule[];
+  onRulesChange: (rules: GlobalMaskingRule[]) => void;
+}
+
+export default function GlobalMaskingRules({ rules, onRulesChange }: GlobalMaskingRulesProps) {
+  const addRule = () => {
+    // Pick first category not already used
+    const used = new Set(rules.map((r) => r.piiCategory));
+    const available = PII_CATEGORIES.find((c) => !used.has(c)) ?? 'email';
+    onRulesChange([...rules, { piiCategory: available, defaultMode: 'truncate' }]);
+  };
+
+  const updateRule = (index: number, patch: Partial<GlobalMaskingRule>) => {
+    const updated = [...rules];
+    updated[index] = { ...updated[index], ...patch };
+    onRulesChange(updated);
+  };
+
+  const removeRule = (index: number) => {
+    onRulesChange(rules.filter((_, i) => i !== index));
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <span className="flex items-center gap-1 text-xs font-medium text-gray-400">
+          Global Masking Rules
+          <HelpTip
+            content="Règles appliquées automatiquement à toutes les colonnes PII d'une catégorie donnée, sur l'ensemble des tables."
+            maxWidth={300}
+            size="xs"
+          />
+        </span>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={addRule}
+            className="text-xs px-2 py-1 rounded border border-gray-700 text-gray-300 hover:bg-gray-800 hover:border-gray-600 transition-colors"
+          >
+            + Add Rule
+          </button>
+          <HelpTip content="Ajouter une nouvelle règle de masquage globale pour une catégorie PII" position="left" size="xs" />
+        </div>
+      </div>
+      <p className="text-xs text-gray-500">
+        Apply a default masking mode to all detected PII columns of a given category.
+      </p>
+      {rules.length === 0 && (
+        <p className="text-xs text-gray-600 italic">No global rules defined.</p>
+      )}
+      {rules.map((rule, i) => (
+        <div key={i} className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1">
+            <select
+              value={rule.piiCategory}
+              onChange={(e) => updateRule(i, { piiCategory: e.target.value as PiiCategory })}
+              className="px-2 py-1 rounded bg-gray-800/80 border border-gray-700 text-gray-200 text-xs focus:outline-none focus:border-os-500"
+            >
+              {PII_CATEGORIES.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+            <HelpTip content="Catégorie PII à laquelle cette règle s'applique (email, téléphone, nom, etc.)" position="bottom" size="xs" />
+          </div>
+          <span className="text-xs text-gray-500">&rarr;</span>
+          <div className="flex items-center gap-1">
+            <select
+              value={rule.defaultMode}
+              onChange={(e) => updateRule(i, { defaultMode: e.target.value as MaskingMode })}
+              className="px-2 py-1 rounded bg-gray-800/80 border border-gray-700 text-gray-200 text-xs focus:outline-none focus:border-os-500"
+            >
+              {MASKING_MODES.map((m) => (
+                <option key={m.value} value={m.value}>{m.label}</option>
+              ))}
+            </select>
+            <HelpTip
+              content="Mode de masquage : Exclure (retire la colonne), Hash (hachage SHA-256), Tronquer (conserve N premiers/derniers caractères), Remplacer (valeur fixe), Agrégation uniquement (interdit les requêtes brutes)."
+              maxWidth={320}
+              position="bottom"
+              size="xs"
+            />
+          </div>
+          {rule.defaultMode === 'truncate' && (
+            <div className="flex items-center gap-1 text-xs text-gray-400">
+              <input
+                type="number" min={0} max={10}
+                value={rule.truncateOptions?.showFirst ?? 1}
+                onChange={(e) => updateRule(i, { truncateOptions: { ...rule.truncateOptions, showFirst: Number(e.target.value) || 0 } })}
+                className="w-10 px-1 py-0.5 rounded bg-gray-800 border border-gray-700 text-gray-200 text-xs"
+              />
+              <span>/</span>
+              <input
+                type="number" min={0} max={10}
+                value={rule.truncateOptions?.showLast ?? 0}
+                onChange={(e) => updateRule(i, { truncateOptions: { ...rule.truncateOptions, showLast: Number(e.target.value) || 0 } })}
+                className="w-10 px-1 py-0.5 rounded bg-gray-800 border border-gray-700 text-gray-200 text-xs"
+              />
+              <HelpTip content="Nombre de caractères conservés en début / en fin de la valeur" position="bottom" size="xs" />
+            </div>
+          )}
+          {rule.defaultMode === 'replace' && (
+            <div className="flex items-center gap-1">
+              <input
+                type="text"
+                value={rule.replaceValue ?? '[MASKED]'}
+                onChange={(e) => updateRule(i, { replaceValue: e.target.value })}
+                className="w-28 px-2 py-0.5 rounded bg-gray-800 border border-gray-700 text-gray-200 text-xs"
+              />
+              <HelpTip content="Valeur de remplacement affichée à la place des données sensibles" position="bottom" size="xs" />
+            </div>
+          )}
+          <button
+            onClick={() => removeRule(i)}
+            title="Supprimer cette règle"
+            className="text-gray-500 hover:text-red-400 text-xs transition-colors"
+            aria-label="Supprimer cette règle de masquage"
+          >
+            &times;
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}

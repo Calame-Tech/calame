@@ -22,7 +22,7 @@ SQLite database, lets you configure **access profiles** — per-table
 permissions, PII masking, row-level scoping — and serves them as MCP (Model
 Context Protocol) servers with fine-grained auth.
 
-Plug your profile into any MCP client (Claude Desktop, Cursor, VS Code,
+Plug your profile into any MCP client (LLM, Claude Desktop, Cursor, VS Code,
 ChatGPT Desktop…) or use the **built-in chat** to query your data in natural
 language. No code generation, no lock-in — Calame is the control plane.
 

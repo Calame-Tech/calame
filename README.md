@@ -44,6 +44,8 @@ Or with Docker:
 docker compose up
 ```
 
+→ **[Detailed Quick Start](./docs/QUICKSTART.md)** — full walkthrough from install to your first MCP client query (~15 min).
+
 ## Features
 
 ### Database connectors

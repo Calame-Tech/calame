@@ -82,9 +82,9 @@ docker compose up
 
 ```
 ┌────────────┐   ┌─────────────┐   ┌───────────────────────────────┐
-│  Your DB   │──▶│   Calame    │──▶│  MCP client (Claude Desktop,  │
+│  Your DB   │──▶│   Calame    │──▶│  MCP client (Claude Desktop, │
 │ (Pg/My/Lt) │   │ (profiles,  │   │  Cursor, VS Code, ChatGPT,    │
-│            │   │  auth, PII) │   │  built-in chat…)              │
+│            │   │  auth, PII) │   │  built-in chat, LLM…)         │
 └────────────┘   └─────────────┘   └───────────────────────────────┘
 ```
 

@@ -432,21 +432,26 @@ export function registerServeRoute(app: Express, state: AppState): void {
         group.selectedTables[tableName] = columns;
       }
 
-      // Register tools per connection
-      for (const [connState, group] of tablesByConnection) {
-        const connector = getConnector(connState.connection.databaseType);
-        const connectionString = connState.connection.connectionString;
-        const sslConfig = connState.connection.sslConfig;
+      // Register tools per connection.
+      // If no table matched any connection (empty profile, stale schema, or all tables restricted),
+      // we still need to call registerDynamicTools at least once so that the MCP server registers
+      // the tools/list handler. Without it, the server responds with -32601 (MethodNotFound) to
+      // any tools/list request from the client, which breaks the chat flow and external MCP clients.
+      if (tablesByConnection.size === 0) {
+        // Pick any available connection just to satisfy the MCP protocol requirement.
+        const fallbackConn = profileConnections[0];
+        const connector = getConnector(fallbackConn.connection.databaseType);
+        const connectionString = fallbackConn.connection.connectionString;
+        const sslConfig = fallbackConn.connection.sslConfig;
 
         registerDynamicTools({
           server: mcpServer,
-          tables: group.tables,
-          relations: profileConnections.flatMap(cs => cs.schema.relations ?? []),
-          selectedTables: group.selectedTables,
+          tables: [],
+          relations: [],
+          selectedTables: {},
           tableOptions: effectiveTableOptions,
           columnMasking: effectiveColumnMasking,
           executeQuery: async (sql: string, params: unknown[]) => {
-            // Route query through the correct connector with timeout
             const result = await connector.query(connectionString, sql, { timeoutMs: getQueryTimeoutMs(), ssl: sslConfig, params });
             return { rows: result.rows as Record<string, unknown>[], fields: Object.keys(result.rows[0] ?? {}).map(name => ({ name })) };
           },
@@ -457,12 +462,44 @@ export function registerServeRoute(app: Express, state: AppState): void {
             }
           },
           profileName,
-          databaseType: connState.connection.databaseType,
+          databaseType: fallbackConn.connection.databaseType,
           responseMode,
           wrapResponse,
           maxOffset: 10000,
           scopeGuard,
         });
+      } else {
+        for (const [connState, group] of tablesByConnection) {
+          const connector = getConnector(connState.connection.databaseType);
+          const connectionString = connState.connection.connectionString;
+          const sslConfig = connState.connection.sslConfig;
+
+          registerDynamicTools({
+            server: mcpServer,
+            tables: group.tables,
+            relations: profileConnections.flatMap(cs => cs.schema.relations ?? []),
+            selectedTables: group.selectedTables,
+            tableOptions: effectiveTableOptions,
+            columnMasking: effectiveColumnMasking,
+            executeQuery: async (sql: string, params: unknown[]) => {
+              // Route query through the correct connector with timeout
+              const result = await connector.query(connectionString, sql, { timeoutMs: getQueryTimeoutMs(), ssl: sslConfig, params });
+              return { rows: result.rows as Record<string, unknown>[], fields: Object.keys(result.rows[0] ?? {}).map(name => ({ name })) };
+            },
+            onAuditLog: (entry) => {
+              if (state.auditLog) {
+                state.auditLog.addEntry(entry);
+                state.auditLog.save().catch(() => {});
+              }
+            },
+            profileName,
+            databaseType: connState.connection.databaseType,
+            responseMode,
+            wrapResponse,
+            maxOffset: 10000,
+            scopeGuard,
+          });
+        }
       }
 
       // Create a stateless transport (no session management)

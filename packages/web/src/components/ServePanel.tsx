@@ -25,12 +25,12 @@ const AUTH_MODE_LABELS: Record<AuthMode, string> = {
 };
 
 const AUTH_MODE_DESCRIPTIONS: Record<AuthMode, string> = {
-  open: 'Accès libre sans authentification — à utiliser uniquement en développement.',
-  token: 'Authentification par clé API (Bearer token).',
-  calame: 'Authentification via Calame (compte Calame requis).',
-  sso: 'Authentification SSO via votre fournisseur d\'identité d\'entreprise.',
-  oauth: 'Authentification OAuth 2.0 avec flux d\'autorisation standard.',
-  external: 'Authentification gérée par un proxy ou service externe.',
+  open: 'Open access without authentication — use in development only.',
+  token: 'Authentication via API key (Bearer token).',
+  calame: 'Authentication via Calame (requires a Calame account).',
+  sso: 'SSO authentication via your enterprise identity provider.',
+  oauth: 'OAuth 2.0 authentication with the standard authorization flow.',
+  external: 'Authentication handled by an external proxy or service.',
 };
 
 interface ServePanelProps {
@@ -732,7 +732,14 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
 
       {/* Tab content */}
       <div>
-        {activeTab === 'chat' && <ChatPanel selectedTables={selectedTables} />}
+        {activeTab === 'chat' && (
+          <ChatPanel
+            selectedTables={selectedTables}
+            activeProfiles={Object.entries(serveStatus.profileStatuses ?? {})
+              .filter(([, s]) => s.active)
+              .map(([name]) => name)}
+          />
+        )}
         {activeTab === 'pending' && <PendingQueries onPendingCountChange={setPendingCount} />}
       </div>
     </div>

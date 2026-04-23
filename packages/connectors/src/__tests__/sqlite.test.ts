@@ -67,12 +67,10 @@ describe('SQLiteConnector', () => {
   // -------------------------------------------------------------------------
 
   describe('testConnection', () => {
-    it('returns true when SELECT 1 succeeds', async () => {
+    it('resolves when SELECT 1 succeeds', async () => {
       mockStatement(1);
 
-      const result = await connector.testConnection('sqlite:///valid.db');
-
-      expect(result).toBe(true);
+      await expect(connector.testConnection('sqlite:///valid.db')).resolves.toBeUndefined();
       expect(MockDatabase).toHaveBeenCalledWith('/valid.db', {
         readonly: true,
         fileMustExist: true,
@@ -80,39 +78,39 @@ describe('SQLiteConnector', () => {
       expect(mockClose).toHaveBeenCalledOnce();
     });
 
-    it('returns true with a bare file path (no scheme)', async () => {
+    it('resolves with a bare file path (no scheme)', async () => {
       mockStatement(1);
 
-      const result = await connector.testConnection('/absolute/path/db.sqlite');
-
-      expect(result).toBe(true);
+      await expect(
+        connector.testConnection('/absolute/path/db.sqlite'),
+      ).resolves.toBeUndefined();
       expect(MockDatabase).toHaveBeenCalledWith('/absolute/path/db.sqlite', {
         readonly: true,
         fileMustExist: true,
       });
     });
 
-    it('returns false when the database constructor throws (file not found)', async () => {
+    it('throws when the database constructor throws (file not found)', async () => {
       MockDatabase.mockImplementationOnce(() => {
         throw new Error('ENOENT: no such file or directory');
       });
 
-      const result = await connector.testConnection('sqlite:///missing.db');
-
-      expect(result).toBe(false);
+      await expect(connector.testConnection('sqlite:///missing.db')).rejects.toThrow(
+        'ENOENT',
+      );
       // close should NOT be called because the db handle was never created
       expect(mockClose).not.toHaveBeenCalled();
     });
 
-    it('returns false when SELECT 1 throws (corrupt database)', async () => {
+    it('throws when SELECT 1 throws (corrupt database)', async () => {
       const mockGetFn = vi.fn().mockImplementation(() => {
         throw new Error('SQLITE_CORRUPT: database disk image is malformed');
       });
       mockPrepare.mockReturnValueOnce({ get: mockGetFn });
 
-      const result = await connector.testConnection('sqlite:///corrupt.db');
-
-      expect(result).toBe(false);
+      await expect(connector.testConnection('sqlite:///corrupt.db')).rejects.toThrow(
+        'SQLITE_CORRUPT',
+      );
       // close is still called in the finally block
       expect(mockClose).toHaveBeenCalledOnce();
     });

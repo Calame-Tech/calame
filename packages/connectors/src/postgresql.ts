@@ -47,7 +47,7 @@ export class PostgreSQLConnector implements DatabaseConnector {
     return pool;
   }
 
-  async testConnection(dsn: string, options?: ConnectionOptions): Promise<boolean> {
+  async testConnection(dsn: string, options?: ConnectionOptions): Promise<void> {
     const clientConfig: import('pg').ClientConfig = { connectionString: dsn };
     if (options?.ssl?.enabled) {
       clientConfig.ssl = {
@@ -61,11 +61,8 @@ export class PostgreSQLConnector implements DatabaseConnector {
     try {
       await client.connect();
       await client.query('SELECT 1');
-      return true;
-    } catch {
-      return false;
     } finally {
-      await client.end();
+      try { await client.end(); } catch { /* swallow cleanup failures */ }
     }
   }
 

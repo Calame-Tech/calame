@@ -44,8 +44,8 @@ export interface DatabaseConnector {
   displayName: string;
   /** Example connection string shown as placeholder in forms */
   placeholderDsn: string;
-  /** Verify the DSN resolves to a reachable database. Returns true on success. */
-  testConnection(dsn: string, options?: ConnectionOptions): Promise<boolean>;
+  /** Verify the DSN resolves to a reachable database. Resolves on success, throws the underlying driver error on failure. */
+  testConnection(dsn: string, options?: ConnectionOptions): Promise<void>;
   /** Introspect the schema for all user tables in the database. */
   introspect(dsn: string, options?: ConnectionOptions): Promise<DatabaseSchema>;
   /** Sample distinct non-null values from a column, cast to strings. Used for PII detection. */

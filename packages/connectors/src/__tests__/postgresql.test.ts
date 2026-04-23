@@ -29,22 +29,20 @@ describe('PostgreSQLConnector', () => {
   });
 
   describe('testConnection', () => {
-    it('returns true when SELECT 1 succeeds', async () => {
+    it('resolves when SELECT 1 succeeds', async () => {
       mockConnect.mockResolvedValueOnce(undefined);
       mockQuery.mockResolvedValueOnce({ rows: [{ '?column?': 1 }] });
 
-      const result = await connector.testConnection('postgresql://localhost/test');
-
-      expect(result).toBe(true);
+      await expect(connector.testConnection('postgresql://localhost/test')).resolves.toBeUndefined();
       expect(mockEnd).toHaveBeenCalledOnce();
     });
 
-    it('returns false when the connection fails', async () => {
+    it('throws when the connection fails', async () => {
       mockConnect.mockRejectedValueOnce(new Error('ECONNREFUSED'));
 
-      const result = await connector.testConnection('postgresql://localhost/bad');
-
-      expect(result).toBe(false);
+      await expect(connector.testConnection('postgresql://localhost/bad')).rejects.toThrow(
+        'ECONNREFUSED',
+      );
       expect(mockEnd).toHaveBeenCalledOnce();
     });
   });

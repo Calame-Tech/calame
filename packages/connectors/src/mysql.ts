@@ -103,11 +103,11 @@ export class MySQLConnector implements DatabaseConnector {
    *
    * DSN parsing errors (wrong protocol, missing database) are thrown immediately
    * since they indicate a configuration mistake, not a transient network failure.
-   * Only actual connection / query failures are caught and converted to `false`.
+   * Connection / query failures are rethrown so callers can surface the reason.
    */
-  async testConnection(dsn: string, connOptions?: ConnectionOptions): Promise<boolean> {
-    // Validate and parse the DSN outside the try/catch so misconfiguration
-    // surfaces as a thrown error rather than silently returning false.
+  async testConnection(dsn: string, connOptions?: ConnectionOptions): Promise<void> {
+    // Validate and parse the DSN before opening any connection so misconfiguration
+    // surfaces as a thrown error early.
     const options = parseDsn(dsn);
 
     if (connOptions?.ssl?.enabled) {
@@ -123,11 +123,10 @@ export class MySQLConnector implements DatabaseConnector {
     try {
       connection = await mysql.createConnection(options);
       await connection.query('SELECT 1');
-      return true;
-    } catch {
-      return false;
     } finally {
-      await connection?.end();
+      if (connection) {
+        try { await connection.end(); } catch { /* swallow cleanup failures */ }
+      }
     }
   }
 

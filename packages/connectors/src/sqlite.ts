@@ -90,16 +90,13 @@ export class SQLiteConnector implements DatabaseConnector {
   // -------------------------------------------------------------------------
 
   // ConnectionOptions is accepted for interface compliance — SSL does not apply to SQLite.
-  async testConnection(dsn: string, _options?: ConnectionOptions): Promise<boolean> {
+  async testConnection(dsn: string, _options?: ConnectionOptions): Promise<void> {
     const filePath = parseDsn(dsn);
     let db: Database.Database | null = null;
     try {
       // readonly: true prevents creating the file when it doesn't exist.
       db = new Database(filePath, { readonly: true, fileMustExist: true });
       db.prepare('SELECT 1').get();
-      return true;
-    } catch {
-      return false;
     } finally {
       db?.close();
     }

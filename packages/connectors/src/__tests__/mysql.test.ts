@@ -101,33 +101,29 @@ describe('MySQLConnector', () => {
   // ── testConnection ────────────────────────────────────────────────────────
 
   describe('testConnection', () => {
-    it('returns true when SELECT 1 succeeds', async () => {
+    it('resolves when SELECT 1 succeeds', async () => {
       mockQuery.mockResolvedValueOnce([[{ '1': 1 }]]);
 
-      const result = await connector.testConnection(VALID_DSN);
-
-      expect(result).toBe(true);
+      await expect(connector.testConnection(VALID_DSN)).resolves.toBeUndefined();
       expect(mysql.createConnection).toHaveBeenCalledOnce();
       expect(mockQuery).toHaveBeenCalledWith('SELECT 1');
       expect(mockEnd).toHaveBeenCalledOnce();
     });
 
-    it('returns false when createConnection rejects', async () => {
+    it('throws when createConnection rejects', async () => {
       mockCreateConnection.mockRejectedValueOnce(new Error('ECONNREFUSED'));
 
-      const result = await connector.testConnection(VALID_DSN);
-
-      expect(result).toBe(false);
+      await expect(connector.testConnection(VALID_DSN)).rejects.toThrow('ECONNREFUSED');
       // No connection object was obtained so end() must not be called.
       expect(mockEnd).not.toHaveBeenCalled();
     });
 
-    it('returns false when SELECT 1 query rejects', async () => {
+    it('throws when SELECT 1 query rejects', async () => {
       mockQuery.mockRejectedValueOnce(new Error('ER_ACCESS_DENIED_ERROR'));
 
-      const result = await connector.testConnection(VALID_DSN);
-
-      expect(result).toBe(false);
+      await expect(connector.testConnection(VALID_DSN)).rejects.toThrow(
+        'ER_ACCESS_DENIED_ERROR',
+      );
       expect(mockEnd).toHaveBeenCalledOnce();
     });
 

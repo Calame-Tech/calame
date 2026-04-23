@@ -2,6 +2,7 @@ import type { Express } from 'express';
 import { getConnector } from '@calame/connectors';
 import type { DatabaseType } from '@calame/connectors';
 import type { AppState } from '../state.js';
+import { redactSecrets } from '../sanitize.js';
 
 /** Database types accepted by the connect endpoint. */
 const VALID_DB_TYPES: ReadonlySet<string> = new Set<DatabaseType>([
@@ -59,7 +60,8 @@ export function registerConnectRoute(app: Express, state: AppState): void {
 
       res.json({ success: true, tableCount: schema.tables.length, databaseType: dbType });
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
+      const rawMessage = error instanceof Error ? error.message : 'Unknown error';
+      const message = redactSecrets(rawMessage);
       res.json({ success: false, message });
     }
   });

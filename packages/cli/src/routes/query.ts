@@ -1,6 +1,7 @@
 import type { Express } from 'express';
 import { getConnector } from '@calame/connectors';
 import type { AppState } from '../state.js';
+import { redactSecrets } from '../sanitize.js';
 
 /** Read the global query timeout from config or environment (default 10000ms). */
 function getQueryTimeoutMs(): number {
@@ -100,7 +101,8 @@ export function registerQueryRoute(app: Express, state: AppState): void {
         columns: Object.keys(result.rows[0] ?? {}),
       });
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
+      const rawMessage = error instanceof Error ? error.message : 'Unknown error';
+      const message = redactSecrets(rawMessage);
       state.logger?.error('Error', { component: 'query', error: message });
       res.json({ success: false, message });
     }

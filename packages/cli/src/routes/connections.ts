@@ -9,6 +9,7 @@ import { validateSession } from '../session.js';
 import { createSshTunnel } from '../ssh-tunnel.js';
 import type { SshTunnelConfig } from '../ssh-tunnel.js';
 import { resolveSecret } from '../secrets.js';
+import { redactSecrets } from '../sanitize.js';
 
 /** SSH config shape as stored in the DB / sent over the API. */
 export interface SshConfig {
@@ -223,7 +224,8 @@ export function registerConnectionsRoute(app: Express, state: AppState): void {
           component: 'connections',
         });
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : 'Unknown error';
+        const rawMsg = err instanceof Error ? err.message : 'Unknown error';
+        const msg = redactSecrets(rawMsg);
         state.logger?.warn(`Failed to connect "${name}" from SQLite: ${msg}`, {
           component: 'connections',
         });
@@ -289,7 +291,7 @@ export function registerConnectionsRoute(app: Express, state: AppState): void {
 
       res.json({ success: true, connections: result });
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
+      const message = redactSecrets(error instanceof Error ? error.message : 'Unknown error');
       state.logger?.error('GET error', { component: 'connections', error: message });
       res.status(500).json({ success: false, message });
     }
@@ -409,7 +411,7 @@ export function registerConnectionsRoute(app: Express, state: AppState): void {
 
       res.json({ success: true, name, tableCount: schema.tables.length });
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
+      const message = redactSecrets(error instanceof Error ? error.message : 'Unknown error');
       state.logger?.error('POST error', { component: 'connections', error: message });
       res.status(500).json({ success: false, message });
     }
@@ -442,7 +444,7 @@ export function registerConnectionsRoute(app: Express, state: AppState): void {
 
       res.json({ success: true });
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
+      const message = redactSecrets(error instanceof Error ? error.message : 'Unknown error');
       state.logger?.error('DELETE error', { component: 'connections', error: message });
       res.status(500).json({ success: false, message });
     }
@@ -494,7 +496,7 @@ export function registerConnectionsRoute(app: Express, state: AppState): void {
 
       res.json({ success: true });
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
+      const message = redactSecrets(error instanceof Error ? error.message : 'Unknown error');
       res.status(500).json({ success: false, message });
     }
   });
@@ -556,7 +558,7 @@ export function registerConnectionsRoute(app: Express, state: AppState): void {
 
       res.json({ success: true, connectionString: conn.connectionString });
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
+      const message = redactSecrets(error instanceof Error ? error.message : 'Unknown error');
       state.logger?.error('Reveal error', { component: 'connections', error: message });
       res.status(500).json({ success: false, message });
     }

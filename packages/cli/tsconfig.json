@@ -5,7 +5,8 @@
     "rootDir": "./src"
   },
   "references": [
-    { "path": "../core" }
+    { "path": "../core" },
+    { "path": "../connectors" }
   ],
   "include": ["src"]
 }

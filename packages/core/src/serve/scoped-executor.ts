@@ -2,7 +2,7 @@ import type { ResolvedScopeFilter } from './types.js';
 import { getTableScopeStatus } from './scope-resolver.js';
 
 // ---------------------------------------------------------------------------
-// Types re-used from dynamic-tools (kept in sync)
+// Shared types (canonical definitions — imported by dynamic-tools.ts)
 // ---------------------------------------------------------------------------
 
 type FilterOperator = 'eq' | 'neq' | 'gt' | 'gte' | 'lt' | 'lte' | 'between' | 'in';
@@ -13,10 +13,15 @@ export interface FilterValue {
 }
 
 export interface Dialect {
+  /** True for PostgreSQL (affects IN clause: uses ANY($n) vs IN (?, ?...)) */
   isPostgres: boolean;
+  /** Quote an identifier (table or column name) */
   quoteIdent: (name: string) => string;
+  /** Quote a schema-qualified table name */
   quoteTable: (schema: string, table: string) => string;
+  /** Return the next parameter placeholder and advance the counter */
   param: (index: number) => string;
+  /** RANDOM() function name */
   random: string;
 }
 

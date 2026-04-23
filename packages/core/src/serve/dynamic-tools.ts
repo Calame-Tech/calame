@@ -5,7 +5,7 @@ import { TableInfo, Relation, TableToolOptions } from '../introspect/types.js';
 import { ColumnMasking } from '../pii/types.js';
 import type { AuditLogEntry, PendingWriteQuery } from './types.js';
 import { snakeCaseToLabel, friendlyType, buildLabelMap, buildReverseLabelMap, formatResponseRows } from './response-formatter.js';
-import type { ScopeGuard } from './scoped-executor.js';
+import type { ScopeGuard, Dialect } from './scoped-executor.js';
 import { ScopeBlockedError, createScopeGuard } from './scoped-executor.js';
 
 // We use `as any` in server.tool() calls because the dynamic Zod schemas
@@ -56,19 +56,6 @@ interface ToolContext {
 // ---------------------------------------------------------------------------
 // Database dialect helpers
 // ---------------------------------------------------------------------------
-
-interface Dialect {
-  /** True for PostgreSQL (affects IN clause: uses ANY($n) vs IN (?, ?...)) */
-  isPostgres: boolean;
-  /** Quote an identifier (table or column name) */
-  quoteIdent: (name: string) => string;
-  /** Quote a schema-qualified table name */
-  quoteTable: (schema: string, table: string) => string;
-  /** Return the next parameter placeholder and advance the counter */
-  param: (index: number) => string;
-  /** RANDOM() function name */
-  random: string;
-}
 
 // NOTE: Read-only enforcement lives at the connector layer
 // (see packages/connectors/src/{postgresql,mysql,sqlite}.ts query() methods).

@@ -9,9 +9,6 @@ const pgDialect: Dialect = {
   quoteIdent: (n) => `"${n}"`,
   quoteTable: (s, t) => `"${s}"."${t}"`,
   param: (i) => `$${i}`,
-  beginReadOnly: [],
-  commit: '',
-  rollback: '',
   random: 'RANDOM()',
 };
 
@@ -21,9 +18,6 @@ const sqliteDialect: Dialect = {
   quoteIdent: (n) => `"${n}"`,
   quoteTable: (_s, t) => `"${t}"`,
   param: () => '?',
-  beginReadOnly: [],
-  commit: '',
-  rollback: '',
   random: 'RANDOM()',
 };
 

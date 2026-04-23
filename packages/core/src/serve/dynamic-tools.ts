@@ -66,16 +66,14 @@ interface Dialect {
   quoteTable: (schema: string, table: string) => string;
   /** Return the next parameter placeholder and advance the counter */
   param: (index: number) => string;
-  /** SQL to begin a read-only transaction (array of statements) */
-  beginReadOnly: string[];
-  /** SQL to commit */
-  commit: string;
-  /** SQL to rollback */
-  rollback: string;
   /** RANDOM() function name */
   random: string;
 }
 
+// NOTE: Read-only enforcement lives at the connector layer
+// (see packages/connectors/src/{postgresql,mysql,sqlite}.ts query() methods).
+// Each connector wraps queries in BEGIN/SET TRANSACTION READ ONLY/COMMIT or
+// opens SQLite databases with { readonly: true }.
 function makeDialect(dbType: 'postgresql' | 'mysql' | 'sqlite'): Dialect {
   switch (dbType) {
     case 'postgresql':
@@ -84,9 +82,6 @@ function makeDialect(dbType: 'postgresql' | 'mysql' | 'sqlite'): Dialect {
         quoteIdent: (n) => `"${n}"`,
         quoteTable: (s, t) => `"${s}"."${t}"`,
         param: (i) => `$${i}`,
-        beginReadOnly: [],
-        commit: '',
-        rollback: '',
         random: 'RANDOM()',
       };
     case 'mysql':
@@ -95,9 +90,6 @@ function makeDialect(dbType: 'postgresql' | 'mysql' | 'sqlite'): Dialect {
         quoteIdent: (n) => `\`${n}\``,
         quoteTable: (_s, t) => `\`${t}\``,
         param: () => '?',
-        beginReadOnly: [],
-        commit: '',
-        rollback: '',
         random: 'RAND()',
       };
     case 'sqlite':
@@ -106,9 +98,6 @@ function makeDialect(dbType: 'postgresql' | 'mysql' | 'sqlite'): Dialect {
         quoteIdent: (n) => `"${n}"`,
         quoteTable: (_s, t) => `"${t}"`,
         param: () => '?',
-        beginReadOnly: [],
-        commit: '',
-        rollback: '',
         random: 'RANDOM()',
       };
   }
@@ -282,34 +271,17 @@ async function executeWithAudit(
     toolName: string;
     toolArgs: Record<string, unknown>;
   },
-  fn: (exec: (sql: string, params?: unknown[]) => Promise<{ rows: Record<string, unknown>[]; fields: { name: string }[] }>) => Promise<{
+  fn: (exec: (sql: string, params: unknown[]) => Promise<{ rows: Record<string, unknown>[]; fields: { name: string }[] }>) => Promise<{
     content: { type: 'text'; text: string }[];
     isError?: boolean;
     resultSummary?: string;
   }>,
 ): Promise<{ content: { type: 'text'; text: string }[]; isError?: boolean }> {
   const start = Date.now();
-  const { executeQuery, dialect, onAuditLog, profileName, toolName, toolArgs } = opts;
-
-  // Wrap executeQuery to run inside a read-only transaction for PG/MySQL
-  let transactionStarted = false;
-
-  const exec = async (sql: string, params: unknown[] = []): Promise<{ rows: Record<string, unknown>[]; fields: { name: string }[] }> => {
-    if (!transactionStarted && dialect.beginReadOnly.length > 0) {
-      for (const stmt of dialect.beginReadOnly) {
-        await executeQuery(stmt, []);
-      }
-      transactionStarted = true;
-    }
-    return executeQuery(sql, params);
-  };
+  const { executeQuery, onAuditLog, profileName, toolName, toolArgs } = opts;
 
   try {
-    const result = await fn(exec);
-
-    if (transactionStarted && dialect.commit) {
-      await executeQuery(dialect.commit, []).catch(() => {});
-    }
+    const result = await fn(executeQuery);
 
     if (onAuditLog) {
       onAuditLog({
@@ -324,10 +296,6 @@ async function executeWithAudit(
 
     return { content: result.content, isError: result.isError };
   } catch (err) {
-    if (transactionStarted && dialect.rollback) {
-      await executeQuery(dialect.rollback, []).catch(() => {});
-    }
-
     if (onAuditLog) {
       onAuditLog({
         profileName,

@@ -17,9 +17,6 @@ export interface Dialect {
   quoteIdent: (name: string) => string;
   quoteTable: (schema: string, table: string) => string;
   param: (index: number) => string;
-  beginReadOnly: string[];
-  commit: string;
-  rollback: string;
   random: string;
 }
 

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./logo.png" alt="Calame" width="120" />
+  <img src="./docs/assets/logo.png" alt="Calame" width="120" />
 </p>
 
 <h1 align="center">Calame</h1>
@@ -43,6 +43,13 @@ Or with Docker:
 ```bash
 docker compose up
 ```
+
+On the first run Calame auto-generates a `CALAME_SECRET_KEY` used to encrypt
+tokens and connection strings, and persists it next to your database
+(`.calame-secret`). If you deploy with Docker, mount a persistent volume on
+`/data` so that file survives restarts — otherwise every restart invalidates
+your saved tokens. You can also set `CALAME_SECRET_KEY` yourself via the
+environment to reuse an existing secret.
 
 → **[Detailed Quick Start](./docs/QUICKSTART.md)** — full walkthrough from install to your first MCP client query (~15 min).
 

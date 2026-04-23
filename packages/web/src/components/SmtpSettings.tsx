@@ -154,7 +154,7 @@ export default function SmtpSettings() {
           <div className="flex items-center gap-2">
             <h2 className="text-lg font-semibold text-gray-100">Email / SMTP Settings</h2>
             <HelpTip
-              content="SMTP (Simple Mail Transfer Protocol) est utilisé pour envoyer des e-mails d'invitation aux nouveaux utilisateurs. Sans configuration SMTP, les invitations ne peuvent pas être envoyées automatiquement."
+              content="SMTP (Simple Mail Transfer Protocol) is used to send invitation emails to new users. Without SMTP configuration, invitations cannot be sent automatically."
               position="right"
               maxWidth={300}
             />
@@ -182,7 +182,7 @@ export default function SmtpSettings() {
             SMTP Host <span className="text-red-400">*</span>
           </label>
           <HelpTip
-            content="Nom d'hôte du serveur SMTP sortant. Exemples courants : smtp.gmail.com (Gmail), smtp.office365.com (Microsoft 365), email-smtp.eu-west-1.amazonaws.com (Amazon SES). Demandez cette valeur à votre fournisseur de messagerie."
+            content="Hostname of the outgoing SMTP server. Common examples: smtp.gmail.com (Gmail), smtp.office365.com (Microsoft 365), email-smtp.eu-west-1.amazonaws.com (Amazon SES). Ask your email provider for this value."
             position="right"
             maxWidth={340}
           />
@@ -204,7 +204,7 @@ export default function SmtpSettings() {
             SMTP Port <span className="text-red-400">*</span>
           </label>
           <HelpTip
-            content="Port TCP du serveur SMTP. Ports standards : 25 (SMTP sans chiffrement, souvent bloqué), 465 (SMTPS — SSL/TLS dès la connexion), 587 (SMTP + STARTTLS — recommandé pour la plupart des serveurs modernes). En cas de doute, utilisez 587."
+            content="TCP port of the SMTP server. Standard ports: 25 (SMTP without encryption, often blocked), 465 (SMTPS — SSL/TLS from connection), 587 (SMTP + STARTTLS — recommended for most modern servers). When in doubt, use 587."
             position="right"
             maxWidth={340}
           />
@@ -228,7 +228,7 @@ export default function SmtpSettings() {
         <div className="flex items-center gap-1.5 mb-1">
           <label htmlFor="smtp-username" className="text-sm text-gray-400">Username</label>
           <HelpTip
-            content="Identifiant de connexion au serveur SMTP. Pour Gmail ou Microsoft 365, il s'agit généralement de votre adresse e-mail complète. Certains serveurs SMTP d'entreprise utilisent un identifiant distinct."
+            content="Login identifier for the SMTP server. For Gmail or Microsoft 365, this is typically your full email address. Some corporate SMTP servers use a separate identifier."
             position="right"
             maxWidth={320}
           />
@@ -248,7 +248,7 @@ export default function SmtpSettings() {
         <div className="flex items-center gap-1.5 mb-1">
           <label htmlFor="smtp-password" className="text-sm text-gray-400">Password</label>
           <HelpTip
-            content="Mot de passe SMTP, stocké chiffré sur le serveur. Pour Gmail, utilisez un « mot de passe d'application » (App Password) plutôt que votre mot de passe principal. Pour Amazon SES, utilisez la clé secrète SMTP générée dans la console AWS."
+            content="SMTP password, stored encrypted on the server. For Gmail, use an App Password rather than your main account password. For Amazon SES, use the SMTP secret key generated in the AWS console."
             position="right"
             maxWidth={340}
           />
@@ -327,7 +327,7 @@ export default function SmtpSettings() {
         <div className="flex items-center gap-1.5 mb-1">
           <label htmlFor="smtp-from" className="text-sm text-gray-400">From Address</label>
           <HelpTip
-            content="Adresse e-mail affichée comme expéditeur dans les e-mails d'invitation. Peut inclure un nom d'affichage : « Calame <noreply@example.com> ». Cette adresse doit être autorisée par votre fournisseur SMTP (domaine vérifié sur Amazon SES, alias dans Gmail, etc.)."
+            content="Email address displayed as the sender in invitation emails. Can include a display name, e.g. Calame &lt;noreply@example.com&gt;. This address must be authorized by your SMTP provider (verified domain on Amazon SES, alias in Gmail, etc.)."
             position="right"
             maxWidth={340}
           />

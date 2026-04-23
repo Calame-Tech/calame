@@ -278,7 +278,7 @@ export default function MetricsDashboard() {
             <div className="rounded-xl border border-gray-700 bg-gray-800/40 p-6">
               <h3 className="flex items-center gap-1 text-sm font-semibold text-gray-300 uppercase tracking-wider mb-4">
                 Success vs Errors
-                <HelpTip content="Répartition entre les appels d'outils réussis et ceux ayant échoué sur la période sélectionnée." position="top" maxWidth={280} size="xs" />
+                <HelpTip content="Breakdown of successful vs. failed tool calls over the selected period." position="top" maxWidth={280} size="xs" />
               </h3>
               {totalRequests === 0 ? (
                 <p className="text-gray-500 text-sm text-center py-4">No requests recorded.</p>
@@ -326,7 +326,7 @@ export default function MetricsDashboard() {
             <div className="rounded-xl border border-gray-700 bg-gray-800/40 p-6">
               <h3 className="flex items-center gap-1 text-sm font-semibold text-gray-300 uppercase tracking-wider mb-4">
                 Top Tools
-                <HelpTip content="Les outils MCP les plus appelés sur la période sélectionnée, classés par nombre d'appels." position="top" maxWidth={280} size="xs" />
+                <HelpTip content="Most frequently called MCP tools over the selected period, ranked by call count." position="top" maxWidth={280} size="xs" />
               </h3>
               {!metrics || metrics.topTools.length === 0 ? (
                 <p className="text-gray-500 text-sm text-center py-4">No tool usage recorded.</p>
@@ -349,7 +349,7 @@ export default function MetricsDashboard() {
             <div className="rounded-xl border border-gray-700 bg-gray-800/40 p-6">
               <h3 className="flex items-center gap-1 text-sm font-semibold text-gray-300 uppercase tracking-wider mb-4">
                 Top Tokens
-                <HelpTip content="Les tokens d'authentification les plus actifs, classés par nombre de requêtes effectuées." position="top" maxWidth={280} size="xs" />
+                <HelpTip content="Most active authentication tokens, ranked by number of requests made." position="top" maxWidth={280} size="xs" />
               </h3>
               {!metrics || metrics.topTokens.length === 0 ? (
                 <p className="text-gray-500 text-sm text-center py-4">No token activity recorded.</p>
@@ -375,7 +375,7 @@ export default function MetricsDashboard() {
           <div className="rounded-xl border border-gray-700 bg-gray-800/40 p-6">
             <h3 className="flex items-center gap-1 text-sm font-semibold text-gray-300 uppercase tracking-wider mb-4">
               Average Response Time by Profile
-              <HelpTip content="Temps de réponse moyen par serveur MCP. Vert < 100 ms, jaune 100-500 ms, rouge > 500 ms." position="top" maxWidth={300} size="xs" />
+              <HelpTip content="Average response time per MCP server. Green < 100 ms, yellow 100-500 ms, red > 500 ms." position="top" maxWidth={300} size="xs" />
             </h3>
             {!metrics || metrics.avgResponseTime.length === 0 ? (
               <p className="text-gray-500 text-sm text-center py-4">No response time data available.</p>
@@ -423,7 +423,7 @@ export default function MetricsDashboard() {
             <div className="rounded-xl border border-gray-700 bg-gray-800/40 p-6">
               <h3 className="flex items-center gap-1 text-sm font-semibold text-gray-300 uppercase tracking-wider mb-4">
                 Connection Pool Stats
-                <HelpTip content="État en temps réel des pools de connexions à la base de données : connexions actives, inactives et en attente." position="top" maxWidth={320} size="xs" />
+                <HelpTip content="Real-time state of database connection pools: active, idle, and waiting connections." position="top" maxWidth={320} size="xs" />
               </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                 {poolStats.map((pool) => (

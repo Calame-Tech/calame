@@ -197,7 +197,7 @@ export default function OidcSettings({ availableProfiles = [] }: OidcSettingsPro
           <div className="flex items-center gap-2">
             <h2 className="text-lg font-semibold text-gray-100">OIDC / SSO Settings</h2>
             <HelpTip
-              content="OpenID Connect (OIDC) permet à vos utilisateurs de se connecter via un fournisseur d'identité externe (Keycloak, Azure AD, Google Workspace…) sans créer de compte local."
+              content="OpenID Connect (OIDC) lets your users sign in through an external identity provider (Keycloak, Azure AD, Google Workspace, etc.) without creating a local account."
               position="right"
               maxWidth={300}
             />
@@ -224,7 +224,7 @@ export default function OidcSettings({ availableProfiles = [] }: OidcSettingsPro
           <div className="flex items-center gap-2">
             <p className="text-sm font-medium text-gray-200">Enable OIDC</p>
             <HelpTip
-              content="Active l'authentification SSO. Les utilisateurs verront un bouton de connexion via votre fournisseur d'identité. L'authentification locale reste disponible si désactivée."
+              content="Enables SSO authentication. Users will see a sign-in button via your identity provider. Local authentication remains available when SSO is disabled."
               position="right"
               maxWidth={300}
             />
@@ -257,7 +257,7 @@ export default function OidcSettings({ availableProfiles = [] }: OidcSettingsPro
             Issuer URL <span className="text-red-400">*</span>
           </label>
           <HelpTip
-            content="URL de découverte OIDC de votre fournisseur d'identité. Le serveur téléchargera automatiquement la configuration depuis {issuer}/.well-known/openid-configuration. Exemples : https://login.microsoftonline.com/{tenant}/v2.0, https://accounts.google.com, https://keycloak.example.com/realms/myrealm."
+            content="OIDC discovery URL of your identity provider. The server will automatically download the configuration from {issuer}/.well-known/openid-configuration. Examples: https://login.microsoftonline.com/{tenant}/v2.0, https://accounts.google.com, https://keycloak.example.com/realms/myrealm."
             position="right"
             maxWidth={340}
           />
@@ -287,7 +287,7 @@ export default function OidcSettings({ availableProfiles = [] }: OidcSettingsPro
             Client ID <span className="text-red-400">*</span>
           </label>
           <HelpTip
-            content="Identifiant public de l'application OAuth enregistrée auprès de votre fournisseur d'identité. À récupérer dans la console de votre IdP (Azure AD, Google Cloud Console, Keycloak Admin…)."
+            content="Public identifier of the OAuth application registered with your identity provider. Retrieve it from your IdP console (Azure AD, Google Cloud Console, Keycloak Admin, etc.)."
             position="right"
             maxWidth={320}
           />
@@ -317,7 +317,7 @@ export default function OidcSettings({ availableProfiles = [] }: OidcSettingsPro
             Client Secret
           </label>
           <HelpTip
-            content="Secret OAuth partagé entre l'application et le fournisseur d'identité. Stocké chiffré sur le serveur — il n'est jamais transmis en clair. Cliquez sur « Show » pour le révéler avec votre mot de passe administrateur."
+            content="OAuth secret shared between the application and the identity provider. Stored encrypted on the server — never transmitted in plain text. Click Show to reveal it using your administrator password."
             position="right"
             maxWidth={320}
           />
@@ -413,7 +413,7 @@ export default function OidcSettings({ availableProfiles = [] }: OidcSettingsPro
             Redirect URI
           </label>
           <HelpTip
-            content="URL de rappel vers laquelle le fournisseur d'identité redirige après l'authentification. Vous devez enregistrer exactement cette URL dans la liste des redirections autorisées de votre application OAuth."
+            content="Callback URL to which the identity provider redirects after authentication. You must register this exact URL in the allowed redirect list of your OAuth application."
             position="right"
             maxWidth={320}
           />
@@ -438,7 +438,7 @@ export default function OidcSettings({ availableProfiles = [] }: OidcSettingsPro
             Scopes
           </label>
           <HelpTip
-            content="Permissions OIDC demandées lors de la connexion, séparées par des espaces. « openid » est obligatoire, « profile » et « email » permettent de récupérer le nom et l'adresse de l'utilisateur. Ajoutez « groups » ou un scope personnalisé si votre IdP l'exige pour exposer les groupes."
+            content="OIDC permissions requested at sign-in, space-separated. openid is required; profile and email retrieve the user's name and address. Add groups or a custom scope if your IdP requires it to expose group membership."
             position="right"
             maxWidth={340}
           />
@@ -460,7 +460,7 @@ export default function OidcSettings({ availableProfiles = [] }: OidcSettingsPro
             Group Claim
           </label>
           <HelpTip
-            content="Nom du champ (claim) dans le JWT ou l'userinfo qui contient la liste des groupes de l'utilisateur. Valeurs courantes : « groups » (Azure AD, Keycloak), « roles » (Keycloak), « teams » (GitHub). Vérifiez la documentation de votre IdP ou inspectez un token décodé sur jwt.io."
+            content="Name of the claim in the JWT or userinfo response that contains the user's group list. Common values: groups (Azure AD, Keycloak), roles (Keycloak), teams (GitHub). Check your IdP documentation or inspect a decoded token at jwt.io."
             position="right"
             maxWidth={340}
           />
@@ -484,7 +484,7 @@ export default function OidcSettings({ availableProfiles = [] }: OidcSettingsPro
           <div className="flex items-center gap-2">
             <p className="text-sm font-medium text-gray-200">Auto-create Users</p>
             <HelpTip
-              content="Si activé, un compte local est créé automatiquement à la première connexion SSO d'un utilisateur inconnu. Si désactivé, seuls les comptes pré-créés par un administrateur peuvent se connecter via SSO."
+              content="When enabled, a local account is automatically created on the first SSO sign-in of an unknown user. When disabled, only accounts pre-created by an administrator can sign in via SSO."
               position="right"
               maxWidth={320}
             />
@@ -515,7 +515,7 @@ export default function OidcSettings({ availableProfiles = [] }: OidcSettingsPro
           <p className="text-sm text-gray-400 flex items-center gap-1.5">
             Group to Profile Mapping
             <HelpTip
-              content="Associez les groupes SSO aux profils de connexion Calame. Quand un utilisateur se connecte, ses groupes sont lus depuis le claim configuré ci-dessus, puis chaque groupe est traduit en profil de base de données. Un utilisateur dans plusieurs groupes hérite de tous les profils correspondants."
+              content="Map SSO groups to Calame connection profiles. When a user signs in, their groups are read from the claim configured above, and each group is translated into a database profile. A user in multiple groups inherits all corresponding profiles."
               position="right"
               maxWidth={340}
             />

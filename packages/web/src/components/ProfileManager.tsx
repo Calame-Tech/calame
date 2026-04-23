@@ -181,7 +181,7 @@ export default function ProfileManager({
             </svg>
             Save
           </button>
-          <HelpTip content="Enregistrer tous les profils dans calame-profiles.json" position="bottom" size="xs" />
+          <HelpTip content="Save all profiles to calame-profiles.json." position="bottom" size="xs" />
         </div>
         <div className="flex items-center gap-1.5">
           <button
@@ -193,7 +193,7 @@ export default function ProfileManager({
             </svg>
             Load
           </button>
-          <HelpTip content="Charger les profils depuis calame-profiles.json (remplace la configuration actuelle)" position="bottom" size="xs" />
+          <HelpTip content="Load profiles from calame-profiles.json (replaces the current configuration)." position="bottom" size="xs" />
         </div>
       </div>
     </div>

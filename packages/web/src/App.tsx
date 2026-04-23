@@ -110,6 +110,9 @@ export default function App() {
   // User auth state (for /account and /login pages)
   const [userAuthenticated, setUserAuthenticated] = useState(false);
 
+  // Logged-in admin user info (email + role) for the Sidebar footer
+  const [currentUser, setCurrentUser] = useState<{ email: string; role: string } | null>(null);
+
   // Check auth status on mount
   useEffect(() => {
     if (welcomeMatch || chatMatch) {
@@ -133,6 +136,14 @@ export default function App() {
         }
         if (userData.success) {
           setUserAuthenticated(userData.authenticated);
+          // Populate the Sidebar user info when the admin is authenticated
+          if (userData.authenticated && userData.user) {
+            const u = userData.user as { email?: string; role?: string };
+            setCurrentUser({
+              email: u.email ?? '',
+              role: u.role ?? 'admin',
+            });
+          }
         }
       } catch {
         // Network error — keep defaults (not authenticated)
@@ -262,31 +273,33 @@ export default function App() {
     })();
   }, [authenticated]);
 
-  // Poll serve status for dashboard counts
+  // Fetch serve status — shared between the 5s poller and the ServePanel action callback
+  const fetchServeStatus = useCallback(async () => {
+    try {
+      const res = await fetch('/api/serve/status', { credentials: 'include' });
+      const data = await res.json();
+      if (data.success !== false) {
+        setServeStatus({
+          active: data.serving ?? data.active ?? false,
+          port: data.port ?? 0,
+          profiles: data.profiles ?? [],
+          profileStatuses: data.profileStatuses,
+          startedAt: data.startedAt,
+          totalRequests: data.totalRequests ?? 0,
+        });
+      }
+    } catch {
+      // Status endpoint may not exist yet
+    }
+  }, []);
+
+  // Poll serve status for dashboard counts (5s interval, single poller for the whole app)
   useEffect(() => {
     if (!authenticated || isUserPage) return;
-    const fetchServeStatus = async () => {
-      try {
-        const res = await fetch('/api/serve/status', { credentials: 'include' });
-        const data = await res.json();
-        if (data.success !== false) {
-          setServeStatus({
-            active: data.serving ?? data.active ?? false,
-            port: data.port ?? 0,
-            profiles: data.profiles ?? [],
-            profileStatuses: data.profileStatuses,
-            startedAt: data.startedAt,
-            totalRequests: data.totalRequests ?? 0,
-          });
-        }
-      } catch {
-        // Status endpoint may not exist yet
-      }
-    };
     fetchServeStatus();
     const interval = setInterval(fetchServeStatus, 5000);
     return () => clearInterval(interval);
-  }, [authenticated]);
+  }, [authenticated, fetchServeStatus]);
 
   // Recent activity for dashboard
   const [recentActivity, setRecentActivity] = useState<AuditLogEntry[]>([]);
@@ -623,7 +636,7 @@ export default function App() {
       <Sidebar
         currentPage={view.page}
         onNavigate={(page) => setView({ page } as View)}
-        user={{ role: 'Administrator' }}
+        user={currentUser ?? undefined}
         onLogout={handleLogout}
       />
 
@@ -664,7 +677,7 @@ export default function App() {
                           <h2 className="text-base font-semibold text-gray-100 flex items-center gap-1.5">
                             MCP Servers{' '}
                             <HelpTip
-                              content="Démarrer, arrêter et gérer vos serveurs MCP exposés aux clients IA"
+                              content="Start, stop and manage your MCP servers exposed to AI clients"
                               position="bottom"
                             />
                           </h2>
@@ -731,7 +744,7 @@ export default function App() {
                           <h2 className="text-base font-semibold text-gray-100 flex items-center gap-1.5">
                             Data Profiles{' '}
                             <HelpTip
-                              content="Définir quelles tables et colonnes de vos bases de données sont exposées aux clients IA"
+                              content="Configure which tables and columns from your databases are exposed to AI clients"
                               position="bottom"
                             />
                           </h2>
@@ -790,7 +803,7 @@ export default function App() {
                           <h2 className="text-base font-semibold text-gray-100 flex items-center gap-1.5">
                             Databases{' '}
                             <HelpTip
-                              content="Gérer les connexions aux bases de données PostgreSQL, MySQL ou SQLite"
+                              content="Manage connections to PostgreSQL, MySQL or SQLite databases"
                               position="bottom"
                             />
                           </h2>
@@ -871,7 +884,7 @@ export default function App() {
                           <h2 className="text-base font-semibold text-gray-100 flex items-center gap-1.5">
                             Users{' '}
                             <HelpTip
-                              content="Gérer les comptes utilisateurs, leurs permissions et leur accès aux serveurs MCP"
+                              content="Manage user accounts, their permissions and access to MCP servers"
                               position="bottom"
                             />
                           </h2>
@@ -931,7 +944,7 @@ export default function App() {
                           <h2 className="text-base font-semibold text-gray-100 flex items-center gap-1.5">
                             Metrics{' '}
                             <HelpTip
-                              content="Consulter les statistiques d'utilisation et les performances des requêtes MCP"
+                              content="View usage statistics and MCP query performance metrics"
                               position="bottom"
                             />
                           </h2>
@@ -1143,6 +1156,8 @@ export default function App() {
                     config={configWithProfileOptions}
                     selectedTables={selectedTables}
                     profiles={profiles}
+                    serveStatus={serveStatus}
+                    onServeAction={fetchServeStatus}
                     onSelectProfile={handleSelectProfile}
                     onBack={() => setView({ page: 'dashboard' })}
                     onCreateProfile={(name, label) => {
@@ -1895,7 +1910,7 @@ function McpDetailView({
             <p className="text-xs text-gray-500 mb-1 flex items-center gap-1">
               Endpoint
               <HelpTip
-                content="URL de l'endpoint MCP à configurer dans Claude Desktop, Cursor ou VS Code"
+                content="MCP endpoint URL to configure in Claude Desktop, Cursor or VS Code"
                 position="bottom"
                 size="xs"
               />
@@ -2354,7 +2369,7 @@ function McpDetailView({
                   New
                 </button>
                 <HelpTip
-                  content="Créer un nouveau profil de données et l'assigner à ce serveur"
+                  content="Create a new data profile and assign it to this server"
                   position="left"
                   size="xs"
                 />
@@ -2567,7 +2582,7 @@ function ConfigurationListView({
             + New Data Profile
           </button>
           <HelpTip
-            content="Créer un nouveau profil de données pour définir les tables et colonnes à exposer"
+            content="Create a new data profile to define which tables and columns to expose"
             position="bottom"
           />
         </div>
@@ -2948,7 +2963,7 @@ function ConfigurationDetailView({
                   </span>
                 )}
                 <HelpTip
-                  content="Cliquer pour renommer ce profil de données"
+                  content="Click to rename this data profile"
                   position="right"
                   size="xs"
                 />

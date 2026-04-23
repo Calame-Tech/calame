@@ -864,7 +864,7 @@ export default function ConnectionManager({
                   )}
                 </button>
                 <HelpTip
-                  content="Chiffrez la connexion avec des certificats TLS — recommandé pour toute base de données en production"
+                  content="Encrypt the connection with TLS certificates — recommended for any production database"
                   position="right"
                   maxWidth={300}
                 />
@@ -925,7 +925,7 @@ export default function ConnectionManager({
                         <span className="flex items-center gap-1.5 text-sm text-gray-300">
                           Verify server certificate
                           <HelpTip
-                            content="Si désactivé, le certificat du serveur ne sera pas vérifié — laisse la connexion vulnérable aux attaques MITM"
+                            content="If disabled, the server certificate will not be verified — leaves the connection vulnerable to MITM attacks"
                             position="right"
                             maxWidth={300}
                           />
@@ -969,7 +969,7 @@ export default function ConnectionManager({
                 )}
               </button>
               <HelpTip
-                content="Connectez-vous via un serveur SSH bastion pour atteindre des bases de données sur des réseaux privés"
+                content="Connect through an SSH bastion to reach databases on private networks"
                 position="right"
                 maxWidth={320}
               />
@@ -1111,7 +1111,7 @@ export default function ConnectionManager({
               )}
               {formStatus === 'testing' ? 'Testing...' : 'Test'}
             </button>
-            <HelpTip content="Tester la connexion sans l'enregistrer — vérifie que les paramètres sont corrects" position="top" />
+            <HelpTip content="Test the connection without saving — verifies that the parameters are correct." position="top" />
 
             <button
               onClick={handleConnect}
@@ -1128,7 +1128,7 @@ export default function ConnectionManager({
               )}
               {formStatus === 'connecting' ? 'Connecting...' : 'Connect'}
             </button>
-            <HelpTip content="Enregistrer et établir la connexion — le schéma sera importé automatiquement" position="top" />
+            <HelpTip content="Save and establish the connection — the schema will be imported automatically." position="top" />
 
             <button
               onClick={resetForm}

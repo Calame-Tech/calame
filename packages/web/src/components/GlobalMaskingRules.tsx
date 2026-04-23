@@ -39,7 +39,7 @@ export default function GlobalMaskingRules({ rules, onRulesChange }: GlobalMaski
         <span className="flex items-center gap-1 text-xs font-medium text-gray-400">
           Global Masking Rules
           <HelpTip
-            content="Règles appliquées automatiquement à toutes les colonnes PII d'une catégorie donnée, sur l'ensemble des tables."
+            content="Rules automatically applied to all PII columns of a given category, across all tables."
             maxWidth={300}
             size="xs"
           />
@@ -51,7 +51,7 @@ export default function GlobalMaskingRules({ rules, onRulesChange }: GlobalMaski
           >
             + Add Rule
           </button>
-          <HelpTip content="Ajouter une nouvelle règle de masquage globale pour une catégorie PII" position="left" size="xs" />
+          <HelpTip content="Add a new global masking rule for a PII category." position="left" size="xs" />
         </div>
       </div>
       <p className="text-xs text-gray-500">
@@ -72,7 +72,7 @@ export default function GlobalMaskingRules({ rules, onRulesChange }: GlobalMaski
                 <option key={c} value={c}>{c}</option>
               ))}
             </select>
-            <HelpTip content="Catégorie PII à laquelle cette règle s'applique (email, téléphone, nom, etc.)" position="bottom" size="xs" />
+            <HelpTip content="PII category this rule applies to (email, phone, name, etc.)." position="bottom" size="xs" />
           </div>
           <span className="text-xs text-gray-500">&rarr;</span>
           <div className="flex items-center gap-1">
@@ -86,7 +86,7 @@ export default function GlobalMaskingRules({ rules, onRulesChange }: GlobalMaski
               ))}
             </select>
             <HelpTip
-              content="Mode de masquage : Exclure (retire la colonne), Hash (hachage SHA-256), Tronquer (conserve N premiers/derniers caractères), Remplacer (valeur fixe), Agrégation uniquement (interdit les requêtes brutes)."
+              content="Masking mode: Exclude (removes the column), Hash (SHA-256 hash), Truncate (keeps N leading/trailing characters), Replace (fixed value), Aggregate only (blocks raw queries)."
               maxWidth={320}
               position="bottom"
               size="xs"
@@ -107,7 +107,7 @@ export default function GlobalMaskingRules({ rules, onRulesChange }: GlobalMaski
                 onChange={(e) => updateRule(i, { truncateOptions: { ...rule.truncateOptions, showLast: Number(e.target.value) || 0 } })}
                 className="w-10 px-1 py-0.5 rounded bg-gray-800 border border-gray-700 text-gray-200 text-xs"
               />
-              <HelpTip content="Nombre de caractères conservés en début / en fin de la valeur" position="bottom" size="xs" />
+              <HelpTip content="Number of characters preserved at the start / end of the value." position="bottom" size="xs" />
             </div>
           )}
           {rule.defaultMode === 'replace' && (
@@ -118,7 +118,7 @@ export default function GlobalMaskingRules({ rules, onRulesChange }: GlobalMaski
                 onChange={(e) => updateRule(i, { replaceValue: e.target.value })}
                 className="w-28 px-2 py-0.5 rounded bg-gray-800 border border-gray-700 text-gray-200 text-xs"
               />
-              <HelpTip content="Valeur de remplacement affichée à la place des données sensibles" position="bottom" size="xs" />
+              <HelpTip content="Replacement value displayed in place of the sensitive data." position="bottom" size="xs" />
             </div>
           )}
           <button

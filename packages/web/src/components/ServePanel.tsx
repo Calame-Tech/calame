@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import type { AuthMode, Config, Profile, ServeStatus } from '../types/schema.js';
 import ChatPanel from './ChatPanel.js';
 import TokenManager from './TokenManager.js';
@@ -37,6 +37,10 @@ interface ServePanelProps {
   config: Config;
   selectedTables: Record<string, Set<string>>;
   profiles: Profile[];
+  /** Serve status managed by App-level poller — avoids a second independent poll */
+  serveStatus: ServeStatus;
+  /** Called after start/stop actions so App-level poller can refresh immediately */
+  onServeAction?: () => void;
   onSelectProfile?: (name: string) => void;
   onBack?: () => void;
   onCreateProfile?: (name: string, label: string) => void;
@@ -46,51 +50,19 @@ interface ServePanelProps {
 
 type DashboardTab = 'chat' | 'pending';
 
-export default function ServePanel({ config, selectedTables, profiles, onSelectProfile, onCreateProfile, onDeleteProfile, onPreviewProfile }: ServePanelProps) {
+export default function ServePanel({ config, selectedTables, profiles, serveStatus, onServeAction, onSelectProfile, onCreateProfile, onDeleteProfile, onPreviewProfile }: ServePanelProps) {
   const [selectedProfile, setSelectedProfile] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<DashboardTab>('chat');
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newLabel, setNewLabel] = useState('');
   const [newName, setNewName] = useState('');
   const [confirmDeleteProfile, setConfirmDeleteProfile] = useState<string | null>(null);
-  const [serveStatus, setServeStatus] = useState<ServeStatus>({
-    active: false,
-    port: 0,
-    profiles: [],
-    totalRequests: 0,
-  });
   const [pendingCount, setPendingCount] = useState(0);
   const [togglingProfile, setTogglingProfile] = useState<string | null>(null);
   const [stoppingAll, setStoppingAll] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copiedEndpoint, setCopiedEndpoint] = useState(false);
   const [copiedChatLink, setCopiedChatLink] = useState<string | null>(null);
-
-  // Poll server status every 5 seconds
-  const fetchStatus = useCallback(async () => {
-    try {
-      const res = await fetch('/api/serve/status');
-      const data = await res.json();
-      if (data.success !== false) {
-        setServeStatus({
-          active: data.serving ?? data.active ?? false,
-          port: data.port ?? 0,
-          profiles: data.profiles ?? [],
-          profileStatuses: data.profileStatuses,
-          startedAt: data.startedAt,
-          totalRequests: data.totalRequests ?? 0,
-        });
-      }
-    } catch {
-      // Status endpoint may not exist yet
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchStatus();
-    const interval = setInterval(fetchStatus, 5000);
-    return () => clearInterval(interval);
-  }, [fetchStatus]);
 
   // Use profiles from props as source of truth (backend status only adds metadata, not new profiles)
   const allProfiles = useMemo(() => {
@@ -124,7 +96,8 @@ export default function ServePanel({ config, selectedTables, profiles, onSelectP
         if (data.success === false) {
           setError(data.message || `Failed to start profile "${profileName}".`);
         } else {
-          await fetchStatus();
+          // Trigger an immediate status refresh in App.tsx instead of polling locally
+          onServeAction?.();
         }
       } catch {
         setError(`Network error starting profile "${profileName}".`);
@@ -132,7 +105,7 @@ export default function ServePanel({ config, selectedTables, profiles, onSelectP
         setTogglingProfile(null);
       }
     },
-    [fetchStatus, config.serverName],
+    [onServeAction, config.serverName],
   );
 
   // Stop a single profile
@@ -150,7 +123,7 @@ export default function ServePanel({ config, selectedTables, profiles, onSelectP
         if (data.success === false) {
           setError(data.message || `Failed to stop profile "${profileName}".`);
         } else {
-          await fetchStatus();
+          onServeAction?.();
         }
       } catch {
         setError(`Network error stopping profile "${profileName}".`);
@@ -158,7 +131,7 @@ export default function ServePanel({ config, selectedTables, profiles, onSelectP
         setTogglingProfile(null);
       }
     },
-    [fetchStatus],
+    [onServeAction],
   );
 
   // Stop all profiles
@@ -171,14 +144,14 @@ export default function ServePanel({ config, selectedTables, profiles, onSelectP
       if (data.success === false) {
         setError(data.message || 'Failed to stop all servers.');
       } else {
-        await fetchStatus();
+        onServeAction?.();
       }
     } catch {
       setError('Network error stopping servers.');
     } finally {
       setStoppingAll(false);
     }
-  }, [fetchStatus]);
+  }, [onServeAction]);
 
   // Copy endpoint to clipboard
   const handleCopyEndpoint = useCallback((endpoint: string) => {
@@ -305,7 +278,7 @@ export default function ServePanel({ config, selectedTables, profiles, onSelectP
                 </span>
               </button>
               <HelpTip
-                content="Cliquer pour copier l'URL SSE du serveur MCP à utiliser dans vos clients (Claude Desktop, Cursor, etc.)"
+                content="Click to copy the MCP server SSE URL to use in your clients (Claude Desktop, Cursor, etc.)"
                 position="bottom"
                 maxWidth={300}
                 size="xs"
@@ -489,7 +462,7 @@ export default function ServePanel({ config, selectedTables, profiles, onSelectP
               >
                 {stoppingAll ? 'Stopping...' : 'Stop All'}
               </button>
-              <HelpTip content="Arrêter tous les serveurs MCP actifs simultanément" position="left" size="sm" />
+              <HelpTip content="Stop all currently active MCP servers at once." position="left" size="sm" />
             </div>
           )}
         </div>

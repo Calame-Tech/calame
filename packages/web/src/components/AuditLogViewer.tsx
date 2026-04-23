@@ -116,7 +116,7 @@ export default function AuditLogViewer({ profiles }: AuditLogViewerProps) {
         <div>
           <label className="flex items-center gap-1 text-xs text-gray-400 mb-1">
             Profile
-            <HelpTip content="Filtrer les entrées par serveur MCP." position="top" size="xs" />
+            <HelpTip content="Filter entries by MCP server." position="top" size="xs" />
           </label>
           <select
             value={filterProfile}
@@ -139,7 +139,7 @@ export default function AuditLogViewer({ profiles }: AuditLogViewerProps) {
         <div>
           <label className="flex items-center gap-1 text-xs text-gray-400 mb-1">
             From
-            <HelpTip content="Afficher uniquement les entrées à partir de cette date." position="top" size="xs" />
+            <HelpTip content="Show only entries from this date onward." position="top" size="xs" />
           </label>
           <input
             type="date"
@@ -153,7 +153,7 @@ export default function AuditLogViewer({ profiles }: AuditLogViewerProps) {
         <div>
           <label className="flex items-center gap-1 text-xs text-gray-400 mb-1">
             To
-            <HelpTip content="Afficher uniquement les entrées jusqu'à cette date incluse." position="top" size="xs" />
+            <HelpTip content="Show only entries up to and including this date." position="top" size="xs" />
           </label>
           <input
             type="date"
@@ -182,7 +182,7 @@ export default function AuditLogViewer({ profiles }: AuditLogViewerProps) {
           </div>
           <span className="flex items-center gap-1 text-xs text-gray-400">
             Auto-refresh
-            <HelpTip content="Actualise automatiquement le journal toutes les 5 secondes." position="top" size="xs" />
+            <HelpTip content="Automatically refreshes the log every 5 seconds." position="top" size="xs" />
           </span>
         </label>
 
@@ -215,22 +215,22 @@ export default function AuditLogViewer({ profiles }: AuditLogViewerProps) {
           <thead>
             <tr className="text-left text-gray-400 border-b border-gray-700">
               <th className="px-4 py-3 font-medium">
-                <span className="flex items-center gap-1">Time <HelpTip content="Horodatage de l'appel d'outil." position="bottom" size="xs" /></span>
+                <span className="flex items-center gap-1">Time <HelpTip content="Timestamp of the tool call." position="bottom" size="xs" /></span>
               </th>
               <th className="px-4 py-3 font-medium">
-                <span className="flex items-center gap-1">Profile <HelpTip content="Serveur MCP qui a traité la requête." position="bottom" size="xs" /></span>
+                <span className="flex items-center gap-1">Profile <HelpTip content="MCP server that handled the request." position="bottom" size="xs" /></span>
               </th>
               <th className="px-4 py-3 font-medium">
-                <span className="flex items-center gap-1">Tool <HelpTip content="Nom de l'outil MCP appelé." position="bottom" size="xs" /></span>
+                <span className="flex items-center gap-1">Tool <HelpTip content="Name of the MCP tool that was called." position="bottom" size="xs" /></span>
               </th>
               <th className="px-4 py-3 font-medium">
-                <span className="flex items-center gap-1">Result <HelpTip content="Résultat de l'exécution : succès ou erreur." position="bottom" size="xs" /></span>
+                <span className="flex items-center gap-1">Result <HelpTip content="Execution outcome: success or error." position="bottom" size="xs" /></span>
               </th>
               <th className="px-4 py-3 font-medium">
-                <span className="flex items-center gap-1">Duration <HelpTip content="Temps d'exécution total de l'outil, en millisecondes ou secondes." position="bottom" size="xs" /></span>
+                <span className="flex items-center gap-1">Duration <HelpTip content="Total execution time of the tool, in milliseconds or seconds." position="bottom" size="xs" /></span>
               </th>
               <th className="px-4 py-3 font-medium">
-                <span className="flex items-center gap-1">Summary <HelpTip content="Résumé court du résultat ou de l'erreur retournée." position="bottom" size="xs" /></span>
+                <span className="flex items-center gap-1">Summary <HelpTip content="Short summary of the result or error returned." position="bottom" size="xs" /></span>
               </th>
             </tr>
           </thead>

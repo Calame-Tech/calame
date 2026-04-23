@@ -6,10 +6,10 @@ import HelpTip from './HelpTip.js';
 const TOOLS = ['describe', 'aggregate', 'query', 'write'] as const;
 
 const TOOL_TOOLTIPS: Record<typeof TOOLS[number], string> = {
-  describe: 'Expose un outil MCP permettant de décrire la structure de la table (colonnes, types, relations).',
-  aggregate: 'Expose un outil MCP permettant d\'effectuer des agrégations (COUNT, SUM, AVG, GROUP BY) sur la table.',
-  query: 'Expose un outil MCP permettant d\'interroger les données brutes de la table avec filtres et pagination.',
-  write: 'Expose un outil MCP permettant d\'insérer ou de modifier des données dans la table (opérations d\'écriture).',
+  describe: 'Exposes an MCP tool that describes the table structure (columns, types, relations).',
+  aggregate: 'Exposes an MCP tool that runs aggregations (COUNT, SUM, AVG, GROUP BY) on this table.',
+  query: 'Exposes an MCP tool that queries raw table data with filters and pagination.',
+  write: 'Exposes an MCP tool that inserts or updates data in this table (write operations).',
 };
 
 interface TableOptionsCardProps {
@@ -51,7 +51,7 @@ export default function TableOptionsCard({ tableName, table, options, onChange, 
         <span className="flex items-center gap-1 text-xs font-medium text-gray-400 mb-2">
           Tools
           <HelpTip
-            content="Sélectionner les outils MCP exposés pour cette table. Chaque outil correspond à une capacité accessible par les clients MCP."
+            content="Select the MCP tools exposed for this table. Each tool is a capability accessible by MCP clients."
             maxWidth={320}
             size="xs"
           />
@@ -77,7 +77,7 @@ export default function TableOptionsCard({ tableName, table, options, onChange, 
         <span className="flex items-center gap-1 text-xs font-medium text-gray-400 mb-1.5">
           Max rows
           <HelpTip
-            content="Nombre maximum de lignes retournées par requête pour cette table. Limite appliquée côté serveur MCP."
+            content="Maximum number of rows returned per query for this table. Limit enforced by the MCP server."
             position="right"
             size="xs"
           />
@@ -96,7 +96,7 @@ export default function TableOptionsCard({ tableName, table, options, onChange, 
         <span className="flex items-center gap-1 text-xs font-medium text-gray-400 mb-2">
           Filterable columns
           <HelpTip
-            content="Colonnes sur lesquelles les clients MCP pourront appliquer des filtres WHERE. Décocher une colonne empêche tout filtrage sur celle-ci."
+            content="Columns on which MCP clients can apply WHERE filters. Unchecking a column prevents any filtering on it."
             maxWidth={300}
             size="xs"
           />
@@ -121,7 +121,7 @@ export default function TableOptionsCard({ tableName, table, options, onChange, 
         <span className="flex items-center gap-1 text-xs font-medium text-gray-400 mb-2">
           Groupable columns
           <HelpTip
-            content="Colonnes disponibles dans les clauses GROUP BY lors d'une agrégation. Décocher une colonne l'exclut des regroupements possibles."
+            content="Columns available in GROUP BY clauses during aggregation. Unchecking a column excludes it from possible groupings."
             maxWidth={300}
             size="xs"
           />
@@ -147,7 +147,7 @@ export default function TableOptionsCard({ tableName, table, options, onChange, 
           <span className="flex items-center gap-1 text-xs font-medium text-gray-400 mb-2">
             Column Masking
             <HelpTip
-              content="Définir comment chaque colonne est masquée avant d'être transmise aux clients MCP. Les colonnes PII sont détectées automatiquement."
+              content="Define how each column is masked before being transmitted to MCP clients. PII columns are detected automatically."
               maxWidth={320}
               size="xs"
             />
@@ -183,7 +183,7 @@ export default function TableOptionsCard({ tableName, table, options, onChange, 
                           + PII
                         </button>
                         <HelpTip
-                          content="Marquer manuellement cette colonne comme données personnelles (PII) pour lui appliquer un masquage"
+                          content="Manually mark this column as personal data (PII) to apply masking"
                           position="right"
                           size="xs"
                         />

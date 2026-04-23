@@ -809,7 +809,7 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
             <div>
               <label className="flex items-center gap-1 text-sm text-gray-400 mb-1" htmlFor="form-role">
                 Role
-                <HelpTip content="Admin : accès complet à la gestion des utilisateurs, tokens et configuration. User : accès limité aux serveurs MCP autorisés." position="top" maxWidth={300} size="xs" />
+                <HelpTip content="Admin: full access to user management, tokens, and configuration. User: limited access to authorized MCP servers only." position="top" maxWidth={300} size="xs" />
               </label>
               <select
                 id="form-role"
@@ -824,7 +824,7 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
             <div>
               <label className="flex items-center gap-1 text-sm text-gray-400 mb-1" htmlFor="form-rate-limit">
                 Rate limit (req/min, 0 = unlimited)
-                <HelpTip content="Limite le nombre de requêtes par minute pour cet utilisateur. Saisissez 0 pour ne pas appliquer de limite." position="top" maxWidth={280} size="xs" />
+                <HelpTip content="Limits the number of requests per minute for this user. Enter 0 to apply no limit." position="top" maxWidth={280} size="xs" />
               </label>
               <input
                 id="form-rate-limit"
@@ -951,7 +951,7 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
             />
             <span className="flex items-center gap-1 text-sm text-gray-300">
               Send invitation email
-              <HelpTip content="Envoie automatiquement un e-mail contenant le lien d'inscription à l'utilisateur." position="right" size="xs" />
+              <HelpTip content="Automatically sends the user an email containing their registration link." position="right" size="xs" />
             </span>
           </label>
 

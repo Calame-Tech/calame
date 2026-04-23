@@ -41,9 +41,7 @@ export default function ProfilePreview({ profileName, onClose }: ProfilePreviewP
         });
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
-          const msg = (body as { message?: string; error?: string }).message
-            || (body as { error?: string }).error
-            || `Error ${res.status}`;
+          const msg = (body as { message?: string }).message || `Error ${res.status}`;
           throw new Error(msg);
         }
         const body = await res.json();

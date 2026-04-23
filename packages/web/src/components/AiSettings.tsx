@@ -192,7 +192,7 @@ export default function AiSettings() {
           <div className="flex items-center gap-2">
             <h2 className="text-lg font-semibold text-gray-100">AI Settings</h2>
             <HelpTip
-              content="Configure le fournisseur de LLM utilisé par le chat Calame. Tous les utilisateurs partagent cette configuration — leur clé API n'est jamais exposée. Le modèle choisit les outils MCP disponibles selon le profil de connexion de chaque utilisateur."
+              content="Configure the LLM provider used by the Calame chat. All users share this configuration — their API key is never exposed. The model selects available MCP tools based on each user's connection profile."
               position="right"
               maxWidth={320}
             />
@@ -218,7 +218,7 @@ export default function AiSettings() {
         <div className="flex items-center gap-1.5 mb-2">
           <label className="text-sm text-gray-400">Provider</label>
           <HelpTip
-            content="Fournisseur de LLM utilisé pour le chat. Anthropic donne accès aux modèles Claude directement. OpenRouter est une passerelle multi-modèles (Claude, GPT, Gemini…). Custom permet d'utiliser un serveur OpenAI-compatible local comme Ollama ou vLLM."
+            content="LLM provider used for chat. Anthropic provides direct access to Claude models. OpenRouter is a multi-model gateway (Claude, GPT, Gemini, etc.). Custom lets you use a local OpenAI-compatible server such as Ollama or vLLM."
             position="right"
             maxWidth={320}
           />
@@ -254,8 +254,8 @@ export default function AiSettings() {
             <HelpTip
               content={
                 provider === 'openrouter'
-                  ? "Clé API OpenRouter — obtenez-la sur openrouter.ai/keys. Commence par « sk-or- ». Cette clé est stockée chiffrée côté serveur et n'est jamais exposée aux utilisateurs du chat."
-                  : "Clé API Anthropic — obtenez-la sur console.anthropic.com. Commence par « sk-ant- ». Stockée chiffrée côté serveur. Assurez-vous que votre compte dispose d'un accès aux modèles Claude souhaités."
+                  ? "OpenRouter API key — get it at openrouter.ai/keys. Starts with \"sk-or-\". Stored encrypted on the server and never exposed to chat users."
+                  : "Anthropic API key — get it at console.anthropic.com. Starts with \"sk-ant-\". Stored encrypted on the server. Make sure your account has access to the desired Claude models."
               }
               position="right"
               maxWidth={320}
@@ -285,7 +285,7 @@ export default function AiSettings() {
           <div className="flex items-center gap-1.5 mb-1">
             <label className="text-sm text-gray-400">API Key (optional)</label>
             <HelpTip
-              content="Clé API pour votre endpoint personnalisé. Laissez vide si votre serveur local (Ollama, LM Studio) ne requiert pas d'authentification. Requis pour certains déploiements vLLM ou services cloud compatibles OpenAI."
+              content="API key for your custom endpoint. Leave empty if your local server (Ollama, LM Studio) does not require authentication. Required for some vLLM deployments or OpenAI-compatible cloud services."
               position="right"
               maxWidth={320}
             />
@@ -308,8 +308,8 @@ export default function AiSettings() {
             <HelpTip
               content={
                 provider === 'openrouter'
-                  ? "Identifiant du modèle OpenRouter au format « fournisseur/modèle » (ex. anthropic/claude-sonnet-4, openai/gpt-4o, google/gemini-pro). Consultez openrouter.ai/models pour la liste complète et les tarifs."
-                  : "Nom du modèle tel qu'il est exposé par votre serveur local (ex. llama3, mistral, phi3). Doit correspondre exactement au nom retourné par /v1/models de votre endpoint."
+                  ? "OpenRouter model identifier in the format \"provider/model\" (e.g. anthropic/claude-sonnet-4, openai/gpt-4o, google/gemini-pro). See openrouter.ai/models for the full list and pricing."
+                  : "Model name as exposed by your local server (e.g. llama3, mistral, phi3). Must exactly match the name returned by /v1/models on your endpoint."
               }
               position="right"
               maxWidth={340}
@@ -335,7 +335,7 @@ export default function AiSettings() {
           <div className="flex items-center gap-1.5 mb-1">
             <label className="text-sm text-gray-400">Base URL</label>
             <HelpTip
-              content="URL de base de votre endpoint compatible OpenAI. Le chemin /v1 est généralement inclus. Exemples : http://localhost:11434/v1 (Ollama), http://localhost:1234/v1 (LM Studio), http://localhost:8000/v1 (vLLM). Doit être accessible depuis le serveur Node.js, pas depuis le navigateur."
+              content="Base URL of your OpenAI-compatible endpoint. The /v1 path is typically included. Examples: http://localhost:11434/v1 (Ollama), http://localhost:1234/v1 (LM Studio), http://localhost:8000/v1 (vLLM). Must be reachable from the Node.js server, not from the browser."
               position="right"
               maxWidth={340}
             />
@@ -400,7 +400,7 @@ export default function AiSettings() {
             <div className="flex items-center gap-2">
               <h3 className="text-sm font-semibold text-gray-200">LLM Router / Classifier</h3>
               <HelpTip
-                content="Pipeline en deux étapes : un modèle léger (classifieur) analyse chaque message avant le LLM principal. Il détecte les tentatives d'injection de prompt et les requêtes hors-sujet, réduisant les coûts et renforçant la sécurité."
+                content="Two-stage pipeline: a lightweight classifier analyzes each message before the main LLM. It detects prompt injection attempts and off-topic queries, reducing costs and improving security."
                 position="right"
                 maxWidth={340}
               />
@@ -428,7 +428,7 @@ export default function AiSettings() {
               <div className="flex items-center gap-1.5 mb-1">
                 <label className="text-sm text-gray-400">Classifier Provider</label>
                 <HelpTip
-                  content="Fournisseur du modèle classifieur. Pour optimiser les coûts, choisissez un modèle différent et moins cher que le LLM principal (ex. Claude Haiku si le principal est Claude Sonnet). Custom/Ollama permet d'utiliser un modèle local entièrement gratuit."
+                  content="Provider for the classifier model. To optimize costs, choose a cheaper model than the main LLM (e.g. Claude Haiku when the main is Claude Sonnet). Custom/Ollama lets you run a completely free local model."
                   position="right"
                   maxWidth={340}
                 />
@@ -454,7 +454,7 @@ export default function AiSettings() {
                   Classifier Model <span className="text-red-400">*</span>
                 </label>
                 <HelpTip
-                  content="Modèle léger utilisé pour la classification. Privilégiez les modèles rapides et économiques : claude-haiku-4-5 (Anthropic), gpt-4o-mini (OpenAI via OpenRouter), llama3:8b (Ollama local). La qualité de classification n'exige pas un grand modèle."
+                  content="Lightweight model used for classification. Prefer fast, cost-effective models: claude-haiku-4-5 (Anthropic), gpt-4o-mini (OpenAI via OpenRouter), llama3:8b (local Ollama). Classification quality does not require a large model."
                   position="right"
                   maxWidth={340}
                 />
@@ -477,7 +477,7 @@ export default function AiSettings() {
               <div className="flex items-center gap-1.5 mb-1">
                 <label className="text-sm text-gray-400">Classifier API Key</label>
                 <HelpTip
-                  content="Clé API dédiée au classifieur. Laissez vide pour réutiliser la clé du fournisseur principal. Utile si le classifieur utilise un fournisseur différent ou un compte séparé pour contrôler les dépenses."
+                  content="Dedicated API key for the classifier. Leave empty to reuse the main provider's key. Useful when the classifier uses a different provider or a separate account for cost tracking."
                   position="right"
                   maxWidth={320}
                 />
@@ -500,7 +500,7 @@ export default function AiSettings() {
                 <div className="flex items-center gap-1.5 mb-1">
                   <label className="text-sm text-gray-400">Classifier Endpoint</label>
                   <HelpTip
-                    content="URL de base de l'endpoint OpenAI-compatible pour le classifieur. Peut être différente de l'endpoint principal (ex. classifieur Ollama local + LLM principal sur un autre serveur vLLM)."
+                    content="Base URL of the OpenAI-compatible endpoint for the classifier. Can differ from the main endpoint (e.g. local Ollama classifier + main LLM on a separate vLLM server)."
                     position="right"
                     maxWidth={320}
                   />
@@ -522,7 +522,7 @@ export default function AiSettings() {
                   Injection Detection Threshold: {injectionThreshold}%
                 </label>
                 <HelpTip
-                  content="Seuil de confiance au-delà duquel le classifieur bloque un message comme injection. Valeur basse (50-65 %) : très strict, peut bloquer des requêtes légitimes ambiguës. Valeur haute (85-100 %) : permissif, laisse passer plus de requêtes mais moins sécurisé. Valeur recommandée : 75-80 %."
+                  content="Confidence threshold above which the classifier blocks a message as an injection attempt. Low value (50-65%): very strict, may block ambiguous legitimate queries. High value (85-100%): permissive, passes more requests but less secure. Recommended value: 75-80%."
                   position="left"
                   maxWidth={340}
                 />

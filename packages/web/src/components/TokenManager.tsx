@@ -273,7 +273,7 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                     Generate Token
                   </button>
                   <HelpTip
-                    content="Générer un nouveau token d'accès API pour ce profil. Le token ne sera affiché qu'une seule fois."
+                    content="Generate a new API access token for this profile. The token will only be displayed once."
                     position="left"
                     maxWidth={280}
                     size="xs"
@@ -309,7 +309,7 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                         {generating ? 'Generating...' : 'Create'}
                       </button>
                       <HelpTip
-                        content="Créer le token avec le libellé saisi. Ce token servira à authentifier un client MCP spécifique."
+                        content="Create the token with the given label. This token will authenticate a specific MCP client."
                         position="top"
                         size="xs"
                       />
@@ -347,7 +347,7 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                                   Reveal
                                 </button>
                                 <HelpTip
-                                  content="Révéler la valeur complète du token (mot de passe administrateur requis)"
+                                  content="Reveal the full token value (admin password required)"
                                   position="top"
                                   size="xs"
                                 />

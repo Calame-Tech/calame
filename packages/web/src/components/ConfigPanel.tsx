@@ -88,7 +88,7 @@ export default function ConfigPanel({ config, onConfigChange, schema, selectedTa
               <span className="text-xs text-gray-500 font-normal">({activeTables.length} tables)</span>
             </button>
             <HelpTip
-              content="Configurer individuellement chaque table : outils exposés, limite de lignes, colonnes filtrables/groupables et masquage des données sensibles."
+              content="Configure each table individually: exposed tools, row limit, filterable/groupable columns, and sensitive data masking."
               maxWidth={320}
               position="right"
               size="xs"
@@ -105,7 +105,7 @@ export default function ConfigPanel({ config, onConfigChange, schema, selectedTa
                   placeholder="Filter tables..."
                   className="flex-1 px-3 py-1.5 rounded-lg bg-gray-800/80 border border-gray-700 text-gray-100 text-sm placeholder-gray-500 focus:outline-none focus:border-os-500 focus:ring-1 focus:ring-os-500/30 transition-all duration-200"
                 />
-                <HelpTip content="Filtrer les tables affichées par leur nom" position="right" size="xs" />
+                <HelpTip content="Filter the displayed tables by name." position="right" size="xs" />
               </div>
               {activeTables.filter(({ name }) => name.toLowerCase().includes(tableFilter.toLowerCase())).map(({ name, info }) => (
                 <TableOptionsCard

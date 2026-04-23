@@ -1,7 +1,8 @@
 {
   "name": "calame",
   "version": "0.1.0",
-  "description": "Generate MCP servers for your PostgreSQL database — visually",
+  "private": true,
+  "description": "Generate MCP servers for your PostgreSQL, MySQL or SQLite database — visually",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

@@ -1,6 +1,7 @@
 {
   "name": "@calame/connectors",
   "version": "0.1.0",
+  "private": true,
   "description": "Database connector plugins for Calame — PostgreSQL, MySQL, SQLite",
   "type": "module",
   "main": "./dist/index.js",

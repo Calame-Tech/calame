@@ -1,6 +1,0 @@
-{
-  "name": "@calame/templates",
-  "version": "0.1.0",
-  "description": "Handlebars templates for generated MCP servers",
-  "license": "Apache-2.0"
-}

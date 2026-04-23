@@ -171,8 +171,6 @@ importers:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@25.4.0)
 
-  packages/templates: {}
-
   packages/web:
     dependencies:
       react:

@@ -35,7 +35,6 @@ COPY --from=builder /app/packages/connectors/dist ./packages/connectors/dist
 COPY --from=builder /app/packages/connectors/package.json ./packages/connectors/
 COPY --from=builder /app/packages/web/dist ./packages/web/dist
 COPY --from=builder /app/packages/web/package.json ./packages/web/
-COPY --from=builder /app/packages/templates/ ./packages/templates/
 
 # Install production dependencies only
 RUN pnpm install --frozen-lockfile --prod

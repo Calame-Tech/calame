@@ -69,6 +69,31 @@ function arraysToSets(sel: Record<string, string[]>): Record<string, Set<string>
   return result;
 }
 
+/**
+ * POST a serialized profiles map to the backend. Returns the raw fetch Response
+ * so each caller can choose its own error strategy (await + throw, fire-and-forget,
+ * chained .then()).
+ */
+function persistProfiles(profiles: Record<string, Record<string, unknown>>): Promise<Response> {
+  return fetch('/api/profiles/save', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ profiles }),
+  });
+}
+
+/**
+ * Navigate to another URL via a useEffect so the redirect is a post-mount side
+ * effect rather than an impure render. Returns null so the current route renders
+ * nothing while the browser transitions away.
+ */
+function Redirect({ to }: { to: string }): null {
+  useEffect(() => {
+    window.location.href = to;
+  }, [to]);
+  return null;
+}
+
 export default function App() {
   // --- Auth state ---
   const [authChecked, setAuthChecked] = useState(false);
@@ -433,14 +458,7 @@ export default function App() {
         };
       }
       try {
-        await fetch('/api/profiles/save', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            connection: { type: 'postgresql', envVar: 'DATABASE_URL' },
-            profiles: profilesData,
-          }),
-        });
+        await persistProfiles(profilesData);
       } catch {
         // ignore save errors
       }
@@ -550,8 +568,7 @@ export default function App() {
       );
     }
     // Not authenticated — redirect to unified login
-    window.location.href = '/login';
-    return null;
+    return <Redirect to="/login" />;
   }
 
   // First-run setup
@@ -571,12 +588,10 @@ export default function App() {
   if (isUserLoginPage || (authRequired && !authenticated)) {
     // If already authenticated, redirect to the right dashboard
     if (authenticated) {
-      window.location.href = '/';
-      return null;
+      return <Redirect to="/" />;
     }
     if (userAuthenticated) {
-      window.location.href = '/account';
-      return null;
+      return <Redirect to="/account" />;
     }
     return (
       <LoginPage
@@ -1337,14 +1352,7 @@ function McpDetailView({
           sharedTables: prof.sharedTables,
         };
       }
-      fetch('/api/profiles/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          connection: { type: 'postgresql', envVar: 'DATABASE_URL' },
-          profiles: profilesData,
-        }),
-      }).catch(() => {});
+      persistProfiles(profilesData).catch(() => {});
       return updated;
     });
   };
@@ -1380,14 +1388,7 @@ function McpDetailView({
           sharedTables: prof.sharedTables,
         };
       }
-      fetch('/api/profiles/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          connection: { type: 'postgresql', envVar: 'DATABASE_URL' },
-          profiles: profilesData,
-        }),
-      }).catch(() => {});
+      persistProfiles(profilesData).catch(() => {});
       return updated;
     });
   };
@@ -1421,14 +1422,7 @@ function McpDetailView({
           sharedTables: prof.sharedTables,
         };
       }
-      fetch('/api/profiles/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          connection: { type: 'postgresql', envVar: 'DATABASE_URL' },
-          profiles: profilesData,
-        }),
-      }).catch(() => {});
+      persistProfiles(profilesData).catch(() => {});
       return updated;
     });
   };
@@ -1455,14 +1449,7 @@ function McpDetailView({
           sharedTables: prof.sharedTables,
         };
       }
-      fetch('/api/profiles/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          connection: { type: 'postgresql', envVar: 'DATABASE_URL' },
-          profiles: profilesData,
-        }),
-      }).catch(() => {});
+      persistProfiles(profilesData).catch(() => {});
       return updated;
     });
   };
@@ -1513,14 +1500,7 @@ function McpDetailView({
         responseMode: p.responseMode,
       };
     }
-    await fetch('/api/profiles/save', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        connection: { type: 'postgresql', envVar: 'DATABASE_URL' },
-        profiles: profilesData,
-      }),
-    });
+    await persistProfiles(profilesData);
   };
 
   const handleStartProfile = async () => {
@@ -1622,14 +1602,7 @@ function McpDetailView({
           sharedTables: prof.sharedTables,
         };
       }
-      fetch('/api/profiles/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          connection: { type: 'postgresql', envVar: 'DATABASE_URL' },
-          profiles: profilesData,
-        }),
-      })
+      persistProfiles(profilesData)
         .then(() => fetch('/api/serve/refresh', { method: 'POST' }))
         .catch(() => {});
 

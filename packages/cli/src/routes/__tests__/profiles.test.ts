@@ -360,7 +360,8 @@ describe('PATCH /api/profiles/:name/response-mode', () => {
       .send({ mode: 'friendly' })
       .expect(404);
 
-    expect(res.body.error).toMatch(/not found/i);
+    expect(res.body.success).toBe(false);
+    expect(res.body.message).toMatch(/not found/i);
   });
 
   it('should return 404 when the profile name does not exist', async () => {
@@ -374,7 +375,8 @@ describe('PATCH /api/profiles/:name/response-mode', () => {
       .send({ mode: 'raw' })
       .expect(404);
 
-    expect(res.body.error).toMatch(/not found/i);
+    expect(res.body.success).toBe(false);
+    expect(res.body.message).toMatch(/not found/i);
   });
 
   it('should return 400 for an invalid mode value', async () => {
@@ -388,7 +390,8 @@ describe('PATCH /api/profiles/:name/response-mode', () => {
       .send({ mode: 'verbose' })
       .expect(400);
 
-    expect(res.body.error).toBe('Invalid request body');
+    expect(res.body.success).toBe(false);
+    expect(res.body.message).toBe('Invalid request body');
   });
 
   it('should return 400 when mode is missing', async () => {
@@ -402,7 +405,8 @@ describe('PATCH /api/profiles/:name/response-mode', () => {
       .send({})
       .expect(400);
 
-    expect(res.body.error).toBe('Invalid request body');
+    expect(res.body.success).toBe(false);
+    expect(res.body.message).toBe('Invalid request body');
   });
 
   it('should set responseMode to friendly on an existing profile', async () => {

@@ -83,7 +83,7 @@ export function registerProfilePreviewRoute(app: Express, state: AppState): void
 
     try {
       if (!state.db) {
-        res.status(500).json({ error: 'Database not initialized.' });
+        res.status(500).json({ success: false, message: 'Database not initialized.' });
         return;
       }
 
@@ -93,7 +93,7 @@ export function registerProfilePreviewRoute(app: Express, state: AppState): void
         .get() as { data: string } | undefined;
 
       if (!row) {
-        res.status(404).json({ error: `Profile "${profileName}" not found.` });
+        res.status(404).json({ success: false, message: `Profile "${profileName}" not found.` });
         return;
       }
 
@@ -113,7 +113,7 @@ export function registerProfilePreviewRoute(app: Express, state: AppState): void
 
       const profile = profilesData.profiles?.[profileName];
       if (!profile) {
-        res.status(404).json({ error: `Profile "${profileName}" not found.` });
+        res.status(404).json({ success: false, message: `Profile "${profileName}" not found.` });
         return;
       }
 
@@ -135,7 +135,7 @@ export function registerProfilePreviewRoute(app: Express, state: AppState): void
         }>;
 
         if (resolvedConfigs.length === 0) {
-          res.status(400).json({ error: 'No valid configurations found for this profile.' });
+          res.status(400).json({ success: false, message: 'No valid configurations found for this profile.' });
           return;
         }
 
@@ -258,7 +258,7 @@ export function registerProfilePreviewRoute(app: Express, state: AppState): void
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       console.error(`[POST /api/profiles/${profileName}/preview] ${message}`);
-      res.status(500).json({ error: 'Preview failed', details: message });
+      res.status(500).json({ success: false, message: 'Preview failed' });
     }
   });
 }

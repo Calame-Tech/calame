@@ -143,7 +143,7 @@ export function registerServeRoute(app: Express, state: AppState): void {
         // Accept bearer tokens and validate against an external API.
         const authHeader = req.headers.authorization;
         if (!authHeader?.startsWith('Bearer ')) {
-          res.status(401).json({ error: 'Bearer token required for external authentication.' });
+          res.status(401).json({ success: false, message: 'Bearer token required for external authentication.' });
           return;
         }
         const externalToken = authHeader.slice(7);
@@ -152,7 +152,7 @@ export function registerServeRoute(app: Express, state: AppState): void {
           const { validateExternalToken } = await import('../external-auth.js');
           const result = await validateExternalToken(externalToken, earlyProfile.externalAuthConfig);
           if (!result.valid) {
-            res.status(401).json({ error: 'External token validation failed.' });
+            res.status(401).json({ success: false, message: 'External token validation failed.' });
             return;
           }
           // Build userIdentity from external auth response for data scoping
@@ -183,7 +183,7 @@ export function registerServeRoute(app: Express, state: AppState): void {
             }
           }
         } else {
-          res.status(500).json({ error: 'External auth not configured for this profile.' });
+          res.status(500).json({ success: false, message: 'External auth not configured for this profile.' });
           return;
         }
       } else if (authMode === 'oauth') {
@@ -204,7 +204,8 @@ export function registerServeRoute(app: Express, state: AppState): void {
             res.redirect(`/mcp/${encodeURIComponent(profileName)}/oauth/login`);
           } else {
             res.status(401).json({
-              error: 'Authentication required.',
+              success: false,
+              message: 'Authentication required.',
               loginUrl: `/mcp/${encodeURIComponent(profileName)}/oauth/login`,
             });
           }
@@ -219,7 +220,7 @@ export function registerServeRoute(app: Express, state: AppState): void {
           req,
         );
         if (oauthAuthResult.error) {
-          res.status(oauthAuthResult.status).json({ error: oauthAuthResult.error });
+          res.status(oauthAuthResult.status).json({ success: false, message: oauthAuthResult.error });
           return;
         }
         userAllowedTables = oauthAuthResult.allowedTables;
@@ -240,7 +241,7 @@ export function registerServeRoute(app: Express, state: AppState): void {
         }
 
         if (!bearerToken) {
-          res.status(401).json({ error: 'Missing token. Use Authorization header (Bearer <token>) or ?token=<token> query param.' });
+          res.status(401).json({ success: false, message: 'Missing token. Use Authorization header (Bearer <token>) or ?token=<token> query param.' });
           return;
         }
 
@@ -251,7 +252,7 @@ export function registerServeRoute(app: Express, state: AppState): void {
           req,
         );
         if (tokenAuthResult.error) {
-          res.status(tokenAuthResult.status).json({ error: tokenAuthResult.error });
+          res.status(tokenAuthResult.status).json({ success: false, message: tokenAuthResult.error });
           return;
         }
         userAllowedTables = tokenAuthResult.allowedTables;
@@ -269,7 +270,8 @@ export function registerServeRoute(app: Express, state: AppState): void {
           const retryAfterSec = Math.ceil(rl.retryAfterMs / 1000);
           res.setHeader('Retry-After', String(retryAfterSec));
           res.status(429).json({
-            error: 'Rate limit exceeded.',
+            success: false,
+            message: 'Rate limit exceeded.',
             retryAfterMs: rl.retryAfterMs,
           });
           return;
@@ -278,13 +280,13 @@ export function registerServeRoute(app: Express, state: AppState): void {
 
       // --- Check that this specific profile is active ---
       if (!state.activeProfileNames.has(profileName)) {
-        res.status(503).json({ error: `Profile "${profileName}" is not active.` });
+        res.status(503).json({ success: false, message: `Profile "${profileName}" is not active.` });
         return;
       }
 
       const profile = state.serveProfiles[profileName];
       if (!profile) {
-        res.status(404).json({ error: `Profile "${profileName}" is not being served.` });
+        res.status(404).json({ success: false, message: `Profile "${profileName}" is not being served.` });
         return;
       }
 

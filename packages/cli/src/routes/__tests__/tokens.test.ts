@@ -62,7 +62,9 @@ describe('tokens routes', () => {
         .expect(400);
 
       expect(res.body.success).toBe(false);
-      expect(res.body.message).toContain('profileName');
+      // zod v4 validation error — field path carries the field name
+      const paths = res.body.errors?.map((e: { path: string[] }) => e.path).flat() ?? [];
+      expect(paths).toContain('profileName');
     });
 
     it('requires label', async () => {
@@ -73,7 +75,8 @@ describe('tokens routes', () => {
         .expect(400);
 
       expect(res.body.success).toBe(false);
-      expect(res.body.message).toContain('label');
+      const paths = res.body.errors?.map((e: { path: string[] }) => e.path).flat() ?? [];
+      expect(paths).toContain('label');
     });
   });
 
@@ -135,7 +138,9 @@ describe('tokens routes', () => {
         .expect(400);
 
       expect(res.body.success).toBe(false);
-      expect(res.body.message).toContain('Admin password');
+      // zod v4 validation error — field path carries the field name
+      const paths = res.body.errors?.map((e: { path: string[] }) => e.path).flat() ?? [];
+      expect(paths).toContain('password');
     });
 
     it('returns 401 when not authenticated', async () => {

@@ -1,40 +1,43 @@
 import type { Express } from 'express';
+import { z } from 'zod';
 import { getConnector } from '@calame/connectors';
-import type { DatabaseType } from '@calame/connectors';
+import type { SslConfig } from '@calame/connectors';
 import type { AppState } from '../state.js';
 import { redactSecrets } from '../sanitize.js';
 
-/** Database types accepted by the connect endpoint. */
-const VALID_DB_TYPES: ReadonlySet<string> = new Set<DatabaseType>([
-  'postgresql',
-  'mysql',
-  'sqlite',
-]);
+const sslConfigSchema: z.ZodType<SslConfig> = z.object({
+  enabled: z.boolean(),
+  ca: z.string().optional(),
+  cert: z.string().optional(),
+  key: z.string().optional(),
+  rejectUnauthorized: z.boolean().optional(),
+});
 
-function isDatabaseType(value: unknown): value is DatabaseType {
-  return typeof value === 'string' && VALID_DB_TYPES.has(value);
-}
+const connectBodySchema = z.object({
+  connectionString: z.string().min(1, 'connectionString is required'),
+  databaseType: z.enum(['postgresql', 'mysql', 'sqlite']).default('postgresql'),
+  name: z.string().optional(),
+  sslConfig: sslConfigSchema.optional(),
+});
 
 export function registerConnectRoute(app: Express, state: AppState): void {
   app.post('/api/connect', async (req, res) => {
     try {
-      const { connectionString, databaseType, name: connectionName } = req.body as {
-        connectionString?: unknown;
-        databaseType?: unknown;
-        name?: unknown;
-      };
-
-      if (!connectionString || typeof connectionString !== 'string') {
-        res.status(400).json({ success: false, message: 'connectionString is required' });
+      const parsed = connectBodySchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({
+          success: false,
+          message: parsed.error.issues[0]?.message ?? 'Invalid request body',
+          errors: parsed.error.issues,
+        });
         return;
       }
 
-      // Default to postgresql for backwards-compatibility.
-      const dbType: DatabaseType = isDatabaseType(databaseType) ? databaseType : 'postgresql';
+      const { connectionString, databaseType: dbType, name: connectionName, sslConfig } = parsed.data;
 
       const connector = getConnector(dbType);
       const schema = await connector.introspect(connectionString, {
-        ssl: typeof req.body.sslConfig === 'object' && req.body.sslConfig ? req.body.sslConfig : undefined,
+        ssl: sslConfig,
       });
 
       state.cachedSchema = schema;
@@ -43,10 +46,7 @@ export function registerConnectRoute(app: Express, state: AppState): void {
       state.cachedPiiDetections = null;
 
       // Also register as a named connection
-      const connName =
-        typeof connectionName === 'string' && connectionName.length > 0
-          ? connectionName
-          : 'default';
+      const connName = connectionName && connectionName.length > 0 ? connectionName : 'default';
       state.addConnection(connName, {
         connection: {
           name: connName,

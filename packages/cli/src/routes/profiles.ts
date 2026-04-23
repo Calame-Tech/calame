@@ -132,6 +132,8 @@ export function registerProfilesRoute(app: Express, state: AppState): void {
         .get() as { data: string } | undefined;
 
       if (!row) {
+        // Intentionally not { success: false } — this is not an error.
+        // { found: false } signals "no profiles have been saved yet" (normal first-run state).
         res.json({ found: false });
         return;
       }
@@ -189,8 +191,9 @@ export function registerProfilesRoute(app: Express, state: AppState): void {
     const parsed = responseModeSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({
-        error: 'Invalid request body',
-        details: parsed.error.issues.map((i) => i.message).join('; '),
+        success: false,
+        message: 'Invalid request body',
+        errors: parsed.error.issues,
       });
       return;
     }
@@ -205,14 +208,14 @@ export function registerProfilesRoute(app: Express, state: AppState): void {
         .get() as { data: string } | undefined;
 
       if (!row) {
-        res.status(404).json({ error: `Profile "${profileName}" not found.` });
+        res.status(404).json({ success: false, message: `Profile "${profileName}" not found.` });
         return;
       }
 
       const data = JSON.parse(row.data) as { profiles?: Record<string, Record<string, unknown>> };
 
       if (!data.profiles || !data.profiles[profileName]) {
-        res.status(404).json({ error: `Profile "${profileName}" not found.` });
+        res.status(404).json({ success: false, message: `Profile "${profileName}" not found.` });
         return;
       }
 
@@ -231,7 +234,7 @@ export function registerProfilesRoute(app: Express, state: AppState): void {
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       state.logger?.error('Response mode update error', { component: 'profiles', error: message });
-      res.status(500).json({ error: 'Failed to update response mode', details: message });
+      res.status(500).json({ success: false, message: 'Failed to update response mode' });
     }
   });
 }

@@ -1,4 +1,5 @@
 import type { Express } from 'express';
+import { z } from 'zod';
 import type { AppState } from '../state.js';
 import { verifyPassword } from '../crypto.js';
 import { TokenRateLimiter } from '../rate-limiter.js';
@@ -6,6 +7,34 @@ import { parseCookies } from '../utils/cookies.js';
 
 const userChatLimiter = new TokenRateLimiter();
 const USER_CHAT_RPM = 30;
+
+const setupSchema = z.object({
+  name: z.string().min(1, 'Name is required'),
+  email: z.string().email('A valid email is required'),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
+});
+
+const loginSchema = z.object({
+  email: z.string().min(1, 'Email is required'),
+  password: z.string().min(1, 'Password is required'),
+});
+
+const userChatSchema = z.object({
+  message: z.string().min(1, 'Message is required'),
+  profileName: z.string().min(1, 'Profile name is required'),
+  history: z
+    .array(z.object({ role: z.string(), content: z.string() }))
+    .optional(),
+});
+
+const changePasswordSchema = z.object({
+  newPassword: z.string().min(8, 'New password must be at least 8 characters'),
+  currentPassword: z.string().optional(),
+});
+
+const revealTokenSchema = z.object({
+  password: z.string().min(1, 'Password is required'),
+});
 import {
   createSession,
   validateSession,
@@ -47,25 +76,17 @@ export function registerAuthRoute(app: Express, state: AppState): void {
       return;
     }
 
-    const { name, email, password } = req.body as {
-      name?: string;
-      email?: string;
-      password?: string;
-    };
+    const setupParsed = setupSchema.safeParse(req.body);
+    if (!setupParsed.success) {
+      res.status(400).json({
+        success: false,
+        message: setupParsed.error.issues[0]?.message ?? 'Invalid request body',
+        errors: setupParsed.error.issues,
+      });
+      return;
+    }
 
-    // Validation
-    if (!name || typeof name !== 'string' || !name.trim()) {
-      res.status(400).json({ success: false, message: 'Name is required.' });
-      return;
-    }
-    if (!email || typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      res.status(400).json({ success: false, message: 'A valid email is required.' });
-      return;
-    }
-    if (!password || typeof password !== 'string' || password.length < 8) {
-      res.status(400).json({ success: false, message: 'Password must be at least 8 characters.' });
-      return;
-    }
+    const { name, email, password } = setupParsed.data;
 
     try {
       const result = userManager.createAdminAccount({
@@ -116,17 +137,17 @@ export function registerAuthRoute(app: Express, state: AppState): void {
       return;
     }
 
-    const { email, password } = req.body as { email?: string; password?: string };
-
-    if (!email || typeof email !== 'string') {
-      res.status(400).json({ success: false, message: 'Email is required.' });
+    const loginParsed = loginSchema.safeParse(req.body);
+    if (!loginParsed.success) {
+      res.status(400).json({
+        success: false,
+        message: loginParsed.error.issues[0]?.message ?? 'Invalid request body',
+        errors: loginParsed.error.issues,
+      });
       return;
     }
 
-    if (!password || typeof password !== 'string') {
-      res.status(400).json({ success: false, message: 'Password is required.' });
-      return;
-    }
+    const { email, password } = loginParsed.data;
 
     const user = userManager.authenticateByEmail(email, password);
 
@@ -174,12 +195,17 @@ export function registerAuthRoute(app: Express, state: AppState): void {
       return;
     }
 
-    const { email, password } = req.body as { email?: string; password?: string };
-
-    if (!email || !password) {
-      res.status(400).json({ success: false, message: 'Email and password are required.' });
+    const userLoginParsed = loginSchema.safeParse(req.body);
+    if (!userLoginParsed.success) {
+      res.status(400).json({
+        success: false,
+        message: userLoginParsed.error.issues[0]?.message ?? 'Invalid request body',
+        errors: userLoginParsed.error.issues,
+      });
       return;
     }
+
+    const { email, password } = userLoginParsed.data;
 
     const userManager = state.userManager;
     if (!userManager) {
@@ -407,11 +433,17 @@ export function registerAuthRoute(app: Express, state: AppState): void {
       return;
     }
 
-    const { password } = req.body as { password?: string };
-    if (!password || typeof password !== 'string') {
-      res.status(400).json({ success: false, message: 'Password is required.' });
+    const revealParsed = revealTokenSchema.safeParse(req.body);
+    if (!revealParsed.success) {
+      res.status(400).json({
+        success: false,
+        message: revealParsed.error.issues[0]?.message ?? 'Invalid request body',
+        errors: revealParsed.error.issues,
+      });
       return;
     }
+
+    const { password } = revealParsed.data;
 
     const userManager = state.userManager;
     if (!userManager) {
@@ -501,21 +533,17 @@ export function registerAuthRoute(app: Express, state: AppState): void {
       return;
     }
 
-    const { message, history, profileName } = req.body as {
-      message?: string;
-      history?: Array<{ role: string; content: string }>;
-      profileName?: string;
-    };
-
-    if (!message || typeof message !== 'string') {
-      res.status(400).json({ success: false, message: 'Message is required.' });
+    const chatParsed = userChatSchema.safeParse(req.body);
+    if (!chatParsed.success) {
+      res.status(400).json({
+        success: false,
+        message: chatParsed.error.issues[0]?.message ?? 'Invalid request body',
+        errors: chatParsed.error.issues,
+      });
       return;
     }
 
-    if (!profileName || typeof profileName !== 'string') {
-      res.status(400).json({ success: false, message: 'Profile name is required.' });
-      return;
-    }
+    const { message, history, profileName } = chatParsed.data;
 
     // Check AI config — required regardless of authMode
     const aiConfig = state.aiConfigManager?.getConfig();
@@ -690,11 +718,17 @@ export function registerAuthRoute(app: Express, state: AppState): void {
       return;
     }
 
-    const { currentPassword, newPassword } = req.body as { currentPassword?: string; newPassword?: string };
-    if (!newPassword || newPassword.length < 8) {
-      res.status(400).json({ success: false, message: 'New password must be at least 8 characters.' });
+    const pwParsed = changePasswordSchema.safeParse(req.body);
+    if (!pwParsed.success) {
+      res.status(400).json({
+        success: false,
+        message: pwParsed.error.issues[0]?.message ?? 'Invalid request body',
+        errors: pwParsed.error.issues,
+      });
       return;
     }
+
+    const { newPassword, currentPassword } = pwParsed.data;
 
     const userManager = state.userManager;
     if (!userManager) {

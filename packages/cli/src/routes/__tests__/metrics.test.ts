@@ -39,14 +39,16 @@ describe('metrics routes', () => {
     it('returns 500 when db is not initialised', async () => {
       const res = await request(app).get('/api/metrics/summary');
       expect(res.status).toBe(500);
-      expect(res.body.error).toBe('Database not initialised.');
+      expect(res.body.success).toBe(false);
+      expect(res.body.message).toBe('Database not initialised.');
     });
 
     it('rejects invalid period values', async () => {
       state.db = makeMockDb({}) as unknown as typeof state.db;
       const res = await request(app).get('/api/metrics/summary?period=bad');
       expect(res.status).toBe(400);
-      expect(res.body.error).toBeDefined();
+      expect(res.body.success).toBe(false);
+      expect(res.body.message).toBeDefined();
     });
 
     it('defaults period to 24h when not provided', async () => {
@@ -116,7 +118,8 @@ describe('metrics routes', () => {
 
       const res = await request(app).get('/api/metrics/summary');
       expect(res.status).toBe(500);
-      expect(res.body.error).toBe('Failed to fetch metrics summary');
+      expect(res.body.success).toBe(false);
+      expect(res.body.message).toBe('Failed to fetch metrics summary');
     });
   });
 
@@ -169,7 +172,8 @@ describe('metrics routes', () => {
 
       const res = await request(app).get('/api/metrics/pool');
       expect(res.status).toBe(500);
-      expect(res.body.error).toBe('Failed to fetch pool metrics');
+      expect(res.body.success).toBe(false);
+      expect(res.body.message).toBe('Failed to fetch pool metrics');
     });
   });
 });

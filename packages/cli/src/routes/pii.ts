@@ -11,7 +11,7 @@ export function registerPiiRoute(app: Express, state: AppState): void {
   app.post('/api/pii/scan', async (req, res) => {
     try {
       if (state.connections.size === 0) {
-        res.status(400).json({ error: 'No database connection. Connect first.' });
+        res.status(400).json({ success: false, message: 'No database connection. Connect first.' });
         return;
       }
 
@@ -54,7 +54,7 @@ export function registerPiiRoute(app: Express, state: AppState): void {
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       state.logger?.error('Scan error', { component: 'pii', error: message });
-      res.status(500).json({ error: 'PII scan failed', details: message });
+      res.status(500).json({ success: false, message: 'PII scan failed' });
     }
   });
 }

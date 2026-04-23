@@ -1,7 +1,31 @@
 import type { Express, Request } from 'express';
+import { z } from 'zod';
 import type { AppState } from '../state.js';
 import type { UserRole, AccessMode, UserProfileAccess } from '../user.js';
 import { EmailService } from '../email.js';
+
+const accessModeEnum = z.enum(['mcp', 'chat', 'both']);
+
+/** Zod schema for the scalars of POST /api/users (profiles logic stays manual due to dual legacy/multi format). */
+const createUserScalarsSchema = z.object({
+  name: z.string().min(1, 'name is required'),
+  email: z.string().email('A valid email is required'),
+  role: z.enum(['admin', 'user'], { error: 'role must be "admin" or "user"' }),
+  sendInvitation: z.boolean().optional(),
+});
+
+const addProfileSchema = z.object({
+  profileName: z.string().min(1, 'profileName is required'),
+  accessMode: accessModeEnum.default('both'),
+  allowedTables: z.array(z.string()).nullable().optional(),
+  allowedTools: z.array(z.string()).nullable().optional(),
+});
+
+const importUsersSchema = z.object({
+  users: z.array(z.unknown()).min(1, 'users array must not be empty'),
+  profileName: z.string().optional(),
+  accessMode: accessModeEnum.optional(),
+});
 
 /** Build the base URL of the current request (protocol + host). */
 function buildBaseUrl(req: Request): string {
@@ -109,25 +133,17 @@ export function registerUsersRoute(app: Express, state: AppState): void {
         return;
       }
 
-      const { name, email, role, sendInvitation } = req.body as {
-        name?: string;
-        email?: string;
-        role?: string;
-        sendInvitation?: boolean;
-      };
+      const scalarsParsed = createUserScalarsSchema.safeParse(req.body);
+      if (!scalarsParsed.success) {
+        res.status(400).json({
+          success: false,
+          message: scalarsParsed.error.issues[0]?.message ?? 'Invalid request body',
+          errors: scalarsParsed.error.issues,
+        });
+        return;
+      }
 
-      if (!name || typeof name !== 'string') {
-        res.status(400).json({ success: false, message: 'name is required.' });
-        return;
-      }
-      if (!email || typeof email !== 'string') {
-        res.status(400).json({ success: false, message: 'email is required.' });
-        return;
-      }
-      if (!role || !['admin', 'user'].includes(role)) {
-        res.status(400).json({ success: false, message: 'role must be "admin" or "user".' });
-        return;
-      }
+      const { name, email, role, sendInvitation } = scalarsParsed.data;
 
       // Build profiles array — support both new multi-profile and legacy single-profile format
       let profiles: UserProfileAccess[];
@@ -260,28 +276,23 @@ export function registerUsersRoute(app: Express, state: AppState): void {
         return;
       }
 
-      const { profileName, accessMode, allowedTables, allowedTools } = req.body as {
-        profileName?: string;
-        accessMode?: string;
-        allowedTables?: string[] | null;
-        allowedTools?: string[] | null;
-      };
+      const profileParsed = addProfileSchema.safeParse(req.body);
+      if (!profileParsed.success) {
+        res.status(400).json({
+          success: false,
+          message: profileParsed.error.issues[0]?.message ?? 'Invalid request body',
+          errors: profileParsed.error.issues,
+        });
+        return;
+      }
 
-      if (!profileName || typeof profileName !== 'string') {
-        res.status(400).json({ success: false, message: 'profileName is required.' });
-        return;
-      }
-      const am = accessMode ?? 'both';
-      if (!['mcp', 'chat', 'both'].includes(am)) {
-        res.status(400).json({ success: false, message: 'accessMode must be "mcp", "chat", or "both".' });
-        return;
-      }
+      const { profileName, accessMode, allowedTables, allowedTools } = profileParsed.data;
 
       const user = userManager.addProfileAccess(req.params.id, {
         profileName,
         allowedTables: allowedTables ?? null,
         allowedTools: allowedTools ?? null,
-        accessMode: am as AccessMode,
+        accessMode: accessMode as AccessMode,
       });
 
       if (!user) {
@@ -516,22 +527,24 @@ export function registerUsersRoute(app: Express, state: AppState): void {
         return;
       }
 
-      const { users: importList, profileName, accessMode: rawAccessMode } = req.body as {
-        users?: unknown[];
-        profileName?: string;
-        accessMode?: string;
-      };
-
-      if (!Array.isArray(importList) || importList.length === 0) {
-        res.status(400).json({ success: false, message: 'users array is required and must not be empty.' });
+      const importParsed = importUsersSchema.safeParse(req.body);
+      if (!importParsed.success) {
+        res.status(400).json({
+          success: false,
+          message: importParsed.error.issues[0]?.message ?? 'Invalid request body',
+          errors: importParsed.error.issues,
+        });
         return;
       }
+
+      const { users: importList, profileName, accessMode: rawAccessMode } = importParsed.data;
+
       if (importList.length > 10000) {
         res.status(400).json({ success: false, message: 'Maximum 10,000 users per import.' });
         return;
       }
 
-      const accessMode: AccessMode = (['mcp', 'chat', 'both'].includes(rawAccessMode ?? '') ? rawAccessMode : 'both') as AccessMode;
+      const accessMode: AccessMode = (rawAccessMode ?? 'both') as AccessMode;
 
       let created = 0;
       let updated = 0;

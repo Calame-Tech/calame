@@ -1,7 +1,15 @@
 import type { Express } from 'express';
+import { z } from 'zod';
 import { getConnector } from '@calame/connectors';
 import type { AppState } from '../state.js';
 import { redactSecrets } from '../sanitize.js';
+
+const queryBodySchema = z.object({
+  tableName: z.string().min(1, 'tableName is required'),
+  limit: z.number().int().positive().max(200).optional(),
+  offset: z.number().int().min(0).optional(),
+  filters: z.record(z.string(), z.unknown()).optional(),
+});
 
 /** Read the global query timeout from config or environment (default 10000ms). */
 function getQueryTimeoutMs(): number {
@@ -11,7 +19,17 @@ function getQueryTimeoutMs(): number {
 export function registerQueryRoute(app: Express, state: AppState): void {
   app.post('/api/query', async (req, res) => {
     try {
-      const { tableName, limit, offset, filters } = req.body;
+      const parsed = queryBodySchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({
+          success: false,
+          message: parsed.error.issues[0]?.message ?? 'Invalid request body',
+          errors: parsed.error.issues,
+        });
+        return;
+      }
+
+      const { tableName, limit, offset, filters } = parsed.data;
 
       if (!state.cachedSchema || !state.cachedConnectionString || !state.cachedDatabaseType) {
         res.status(400).json({ success: false, message: 'No database connected.' });

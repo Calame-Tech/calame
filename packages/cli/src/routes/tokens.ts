@@ -1,22 +1,33 @@
 import type { Express } from 'express';
+import { z } from 'zod';
 import type { AppState } from '../state.js';
 import { verifyPassword, decrypt, getSecretKey } from '../crypto.js';
 import { validateSession } from '../session.js';
 import { parseCookies } from '../utils/cookies.js';
 
+const generateTokenSchema = z.object({
+  profileName: z.string().min(1, 'profileName is required'),
+  label: z.string().min(1, 'label is required'),
+});
+
+const revealTokenSchema = z.object({
+  password: z.string().min(1, 'Admin password is required'),
+});
+
 export function registerTokensRoute(app: Express, state: AppState): void {
   app.post('/api/tokens/generate', async (req, res) => {
     try {
-      const { profileName, label } = req.body as { profileName?: string; label?: string };
+      const parsed = generateTokenSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({
+          success: false,
+          message: parsed.error.issues[0]?.message ?? 'Invalid request body',
+          errors: parsed.error.issues,
+        });
+        return;
+      }
 
-      if (!profileName || typeof profileName !== 'string') {
-        res.status(400).json({ success: false, message: 'profileName is required.' });
-        return;
-      }
-      if (!label || typeof label !== 'string') {
-        res.status(400).json({ success: false, message: 'label is required.' });
-        return;
-      }
+      const { profileName, label } = parsed.data;
 
       const tokenManager = state.tokenManager;
       if (!tokenManager) {
@@ -114,12 +125,17 @@ export function registerTokensRoute(app: Express, state: AppState): void {
   // POST /api/tokens/:id/reveal — Reveal a token in plaintext (requires admin password re-confirmation)
   app.post('/api/tokens/:id/reveal', async (req, res) => {
     try {
-      const { password } = req.body as { password?: string };
-
-      if (!password || typeof password !== 'string') {
-        res.status(400).json({ success: false, message: 'Admin password is required.' });
+      const parsed = revealTokenSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({
+          success: false,
+          message: parsed.error.issues[0]?.message ?? 'Invalid request body',
+          errors: parsed.error.issues,
+        });
         return;
       }
+
+      const { password } = parsed.data;
 
       const cookies = parseCookies(req.headers.cookie);
       const sessionId = cookies.calame_session as string | undefined;

@@ -52,7 +52,7 @@ export function registerMetricsRoute(app: Express, state: AppState): void {
     try {
       const parseResult = periodSchema.safeParse(req.query.period);
       if (!parseResult.success) {
-        res.status(400).json({ error: 'Invalid period. Use 24h, 7d, or 30d.' });
+        res.status(400).json({ success: false, message: 'Invalid period. Use 24h, 7d, or 30d.' });
         return;
       }
       const period = parseResult.data;
@@ -60,7 +60,7 @@ export function registerMetricsRoute(app: Express, state: AppState): void {
       const since = new Date(Date.now() - periodMs).toISOString();
 
       if (!state.db) {
-        res.status(500).json({ error: 'Database not initialised.' });
+        res.status(500).json({ success: false, message: 'Database not initialised.' });
         return;
       }
       const db = state.db.raw;
@@ -132,7 +132,7 @@ export function registerMetricsRoute(app: Express, state: AppState): void {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       console.error(`[GET /api/metrics/summary] ${message}`);
-      res.status(500).json({ error: 'Failed to fetch metrics summary', details: message });
+      res.status(500).json({ success: false, message: 'Failed to fetch metrics summary' });
     }
   });
 
@@ -162,7 +162,7 @@ export function registerMetricsRoute(app: Express, state: AppState): void {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       console.error(`[GET /api/metrics/pool] ${message}`);
-      res.status(500).json({ error: 'Failed to fetch pool metrics', details: message });
+      res.status(500).json({ success: false, message: 'Failed to fetch pool metrics' });
     }
   });
 }

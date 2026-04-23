@@ -38,7 +38,8 @@ describe('POST /api/profiles/:name/preview', () => {
       .set('Cookie', cookie)
       .expect(404);
 
-    expect(res.body.error).toMatch(/not found/i);
+    expect(res.body.success).toBe(false);
+    expect(res.body.message).toMatch(/not found/i);
   });
 
   it('should return 404 when profiles exist but requested profile is missing', async () => {
@@ -60,7 +61,8 @@ describe('POST /api/profiles/:name/preview', () => {
       .set('Cookie', cookie)
       .expect(404);
 
-    expect(res.body.error).toMatch(/not found/i);
+    expect(res.body.success).toBe(false);
+    expect(res.body.message).toMatch(/not found/i);
   });
 
   it('should return success with preview structure for a known profile (no active connection)', async () => {

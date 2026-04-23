@@ -375,6 +375,16 @@ export default function UserDashboard({ onLogout }: { onLogout: () => void }) {
                 </div>
               )}
 
+              <div className="mt-4 pt-4 border-t border-gray-700/50">
+                <button
+                  onClick={handleRegenerateToken}
+                  className="text-xs text-gray-400 hover:text-red-400 transition-colors"
+                >
+                  Regenerate token
+                </button>
+                {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
+              </div>
+
             </div>
 
             {/* MCP Access */}

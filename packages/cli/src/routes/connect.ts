@@ -25,7 +25,7 @@ export function registerConnectRoute(app: Express, state: AppState): void {
       };
 
       if (!connectionString || typeof connectionString !== 'string') {
-        res.json({ success: false, message: 'connectionString is required' });
+        res.status(400).json({ success: false, message: 'connectionString is required' });
         return;
       }
 
@@ -62,7 +62,7 @@ export function registerConnectRoute(app: Express, state: AppState): void {
     } catch (error: unknown) {
       const rawMessage = error instanceof Error ? error.message : 'Unknown error';
       const message = redactSecrets(rawMessage);
-      res.json({ success: false, message });
+      res.status(500).json({ success: false, message });
     }
   });
 }

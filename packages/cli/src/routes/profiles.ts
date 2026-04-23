@@ -120,7 +120,7 @@ export function registerProfilesRoute(app: Express, state: AppState): void {
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       state.logger?.error('Save error', { component: 'profiles', error: message });
-      res.json({ success: false, message });
+      res.status(500).json({ success: false, message });
     }
   });
 
@@ -175,7 +175,7 @@ export function registerProfilesRoute(app: Express, state: AppState): void {
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       state.logger?.error('Load error', { component: 'profiles', error: message });
-      res.json({ found: false, message });
+      res.status(500).json({ found: false, message });
     }
   });
 

@@ -5,18 +5,10 @@ import { getConnector } from '@calame/connectors';
 import type { AppState, ConnectionState } from '../state.js';
 import type { TableToolOptions, ColumnMasking, UserIdentity } from '@calame/core';
 import {
-  snakeCaseToLabel,
-  buildLabelMap,
-  buildReverseLabelMap,
-  formatResponseRows,
-  friendlyType,
   registerDynamicTools,
   resolveUserScope,
   createScopeGuard,
 } from '@calame/core';
-import type { SslConfig } from '@calame/connectors';
-import { z } from 'zod';
-import crypto from 'crypto';
 import { readConfigurationsFile } from './configurations.js';
 import { INTERNAL_CHAT_SECRET } from '../chat-engine.js';
 
@@ -120,95 +112,6 @@ export function mergeConfigurations(
     tableOptions,
     columnMasking,
   };
-}
-
-/** Get the set of columns that should be excluded from SELECT queries. */
-function getExcludedColumns(
-  tableName: string,
-  columnMasking: Record<string, Record<string, ColumnMasking>> | undefined,
-): Set<string> {
-  const excluded = new Set<string>();
-  if (!columnMasking) return excluded;
-  const tableMasking = columnMasking[tableName];
-  if (!tableMasking) return excluded;
-  for (const [col, config] of Object.entries(tableMasking)) {
-    if (config.maskingMode === 'exclude' || config.maskingMode === 'aggregate_only') {
-      excluded.add(col);
-    }
-  }
-  return excluded;
-}
-
-/** Apply column masking to query result rows. */
-function applyMasking(
-  rows: Record<string, unknown>[],
-  tableName: string,
-  columnMasking: Record<string, Record<string, ColumnMasking>> | undefined,
-): Record<string, unknown>[] {
-  if (!columnMasking) return rows;
-  const tableMasking = columnMasking[tableName];
-  if (!tableMasking) return rows;
-
-  return rows.map((row) => {
-    const masked = { ...row };
-    for (const [col, config] of Object.entries(tableMasking)) {
-      if (!(col in masked)) continue;
-      const mode = config.maskingMode;
-      if (mode === 'exclude' || mode === 'aggregate_only') {
-        delete masked[col];
-      } else if (mode === 'hash') {
-        const val = String(masked[col] ?? '');
-        if (val.length > 0) {
-          masked[col] = crypto.createHash('sha256').update(val).digest('hex').slice(0, 16);
-        }
-      } else if (mode === 'truncate') {
-        const val = String(masked[col] ?? '');
-        const showFirst = config.truncateOptions?.showFirst ?? 3;
-        const showLast = config.truncateOptions?.showLast ?? 0;
-        if (val.length > showFirst + showLast) {
-          masked[col] = val.slice(0, showFirst) + '...' + (showLast > 0 ? val.slice(-showLast) : '');
-        }
-      } else if (mode === 'replace') {
-        masked[col] = config.replaceValue ?? '[REDACTED]';
-      }
-      // 'none' — no masking
-    }
-    return masked;
-  });
-}
-
-/** Validate WHERE clause to prevent sub-queries, CTEs, and dangerous patterns. */
-function validateWhereClause(where: string): void {
-  const upper = where.toUpperCase();
-  const forbidden = [
-    // DML / DDL
-    'UNION', 'INSERT', 'UPDATE', 'DELETE', 'DROP', 'ALTER', 'CREATE', 'TRUNCATE',
-    // Execution
-    'EXEC', 'EXECUTE',
-    // Comments
-    '--', '/*',
-    // Subqueries & CTEs
-    'WITH ', 'RECURSIVE', 'LATERAL',
-    // Dangerous functions
-    'PG_SLEEP', 'GENERATE_SERIES', 'DBLINK',
-    // System catalogs
-    'INFORMATION_SCHEMA', 'PG_CATALOG', 'PG_SHADOW', 'SQLITE_MASTER',
-    // Output control
-    'RETURNING', 'INTO ',
-  ];
-  for (const keyword of forbidden) {
-    if (upper.includes(keyword)) {
-      throw new Error(`WHERE clause contains forbidden keyword: ${keyword.trim()}`);
-    }
-  }
-  // Block subqueries: any SELECT inside the WHERE clause
-  if (/\bSELECT\b/i.test(where)) {
-    throw new Error('WHERE clause cannot contain SELECT subqueries');
-  }
-  // Block CASE WHEN expressions (can hide expensive computations)
-  if (/\bCASE\b/i.test(where)) {
-    throw new Error('WHERE clause cannot contain CASE expressions');
-  }
 }
 
 export function registerServeRoute(app: Express, state: AppState): void {
@@ -714,33 +617,7 @@ async function verifyBearerToken(
   };
 }
 
-/** Quote a SQL identifier (column, table, schema name) for the given database type. */
-function quoteIdent(name: string, databaseType: string): string {
-  if (databaseType === 'mysql') return `\`${name}\``;
-  return `"${name}"`; // postgresql, sqlite
-}
-
-/** Quote a fully-qualified table reference (schema.table) for the given database type. */
-function quoteTable(schemaName: string, tableName: string, databaseType: string): string {
-  if (databaseType === 'mysql') return `\`${schemaName}\`.\`${tableName}\``;
-  if (databaseType === 'sqlite') return `"${tableName}"`; // sqlite has no schemas
-  return `"${schemaName}"."${tableName}"`;
-}
-
 /** Read the global query timeout from environment (default 10000ms). */
 function getQueryTimeoutMs(): number {
   return parseInt(process.env.CALAME_QUERY_TIMEOUT_MS ?? '10000', 10) || 10000;
-}
-
-/**
- * Execute a read-only SQL query using the connector's pooled connection with timeout.
- */
-async function executeQuery(
-  connector: ReturnType<typeof getConnector>,
-  connectionString: string,
-  sql: string,
-  _databaseType: string,
-  sslConfig?: SslConfig,
-): Promise<{ rows: Record<string, unknown>[] }> {
-  return connector.query(connectionString, sql, { timeoutMs: getQueryTimeoutMs(), ssl: sslConfig });
 }

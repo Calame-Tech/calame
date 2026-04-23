@@ -3,6 +3,7 @@ import type { AppState } from '../state.js';
 import { createMcpChatTools, executeChatTurn, getDefaultSystemPrompt } from '../chat-engine.js';
 import { validateSession } from '../session.js';
 import { TokenRateLimiter } from '../rate-limiter.js';
+import { parseCookies } from '../utils/cookies.js';
 
 const chatLimiter = new TokenRateLimiter();
 const CHAT_RPM = 30;
@@ -24,18 +25,18 @@ export function registerChatRoute(app: Express, state: AppState): void {
       // Use admin AI config (set via AI Settings panel)
       const aiConfig = state.aiConfigManager?.getConfig();
       if (!aiConfig || !state.aiConfigManager?.isConfigured()) {
-        res.json({ success: false, message: 'AI chat is not configured. Go to AI Settings to set up a provider.' });
+        res.status(503).json({ success: false, message: 'AI chat is not configured. Go to AI Settings to set up a provider.' });
         return;
       }
 
       if (!state.serveMode) {
-        res.json({ success: false, message: 'MCP server is not running. Start the server first.' });
+        res.status(503).json({ success: false, message: 'MCP server is not running. Start the server first.' });
         return;
       }
 
       const profileNames = Object.keys(state.serveProfiles);
       if (profileNames.length === 0) {
-        res.json({ success: false, message: 'No profiles are being served.' });
+        res.status(503).json({ success: false, message: 'No profiles are being served.' });
         return;
       }
       const profileName = profileNames[0];
@@ -52,13 +53,13 @@ export function registerChatRoute(app: Express, state: AppState): void {
 
       const userManager = state.userManager;
       if (!userManager) {
-        res.json({ success: false, message: 'User manager not initialized.' });
+        res.status(500).json({ success: false, message: 'User manager not initialized.' });
         return;
       }
 
       const adminToken = userManager.getUserToken(session.userId);
       if (!adminToken) {
-        res.json({
+        res.status(503).json({
           success: false,
           message: 'Cannot use chat without CALAME_SECRET_KEY. Set this environment variable to enable chat.',
         });
@@ -79,7 +80,7 @@ export function registerChatRoute(app: Express, state: AppState): void {
           const toolNames = tools.map((t: { name: string }) => t.name);
           const classifierResult = await state.llmRouter.classify(message as string, toolNames);
           if (state.llmRouter.shouldBlock(classifierResult)) {
-            res.json({ success: false, message: state.llmRouter.getBlockMessage(classifierResult) });
+            res.status(403).json({ success: false, message: state.llmRouter.getBlockMessage(classifierResult) });
             return;
           }
         }
@@ -102,18 +103,7 @@ export function registerChatRoute(app: Express, state: AppState): void {
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       state.logger?.error('Error', { component: 'chat', error: message });
-      res.json({ success: false, message });
+      res.status(500).json({ success: false, message });
     }
   });
-}
-
-function parseCookies(cookieHeader: string): Record<string, string> {
-  return cookieHeader.split(';').reduce(
-    (acc, cookie) => {
-      const [key, ...vals] = cookie.trim().split('=');
-      if (key) acc[key] = vals.join('=');
-      return acc;
-    },
-    {} as Record<string, string>,
-  );
 }

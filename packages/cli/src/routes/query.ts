@@ -14,13 +14,13 @@ export function registerQueryRoute(app: Express, state: AppState): void {
       const { tableName, limit, offset, filters } = req.body;
 
       if (!state.cachedSchema || !state.cachedConnectionString || !state.cachedDatabaseType) {
-        res.json({ success: false, message: 'No database connected.' });
+        res.status(400).json({ success: false, message: 'No database connected.' });
         return;
       }
 
       const table = state.cachedSchema.tables.find((t) => t.name === tableName);
       if (!table) {
-        res.json({ success: false, message: `Table "${tableName}" not found in schema.` });
+        res.status(404).json({ success: false, message: `Table "${tableName}" not found in schema.` });
         return;
       }
 
@@ -104,7 +104,7 @@ export function registerQueryRoute(app: Express, state: AppState): void {
       const rawMessage = error instanceof Error ? error.message : 'Unknown error';
       const message = redactSecrets(rawMessage);
       state.logger?.error('Error', { component: 'query', error: message });
-      res.json({ success: false, message });
+      res.status(500).json({ success: false, message });
     }
   });
 }

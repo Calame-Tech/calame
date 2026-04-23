@@ -675,7 +675,7 @@ function registerAggregateTool(
   _maskingRules: Record<string, MaskingRule>,
   excludedCols: Set<string>,
   labelMap: Record<string, string>,
-  reverseLabelMap: Record<string, string>,
+  _reverseLabelMap: Record<string, string>,
 ): void {
   const { server, executeQuery, dialect, onAuditLog, profileName, responseMode, wrapResponse, scopeGuard } = ctx;
   const friendly = responseMode === 'friendly';

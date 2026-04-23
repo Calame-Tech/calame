@@ -2,16 +2,7 @@ import type { Express } from 'express';
 import type { AppState } from '../state.js';
 import { verifyPassword } from '../crypto.js';
 import { validateSession } from '../session.js';
-
-function parseCookies(cookieHeader: string | undefined): Record<string, string> {
-  if (!cookieHeader) return {};
-  const cookies: Record<string, string> = {};
-  for (const pair of cookieHeader.split(';')) {
-    const [key, ...rest] = pair.split('=');
-    if (key) cookies[key.trim()] = rest.join('=').trim();
-  }
-  return cookies;
-}
+import { parseCookies } from '../utils/cookies.js';
 
 export function registerOidcSettingsRoute(app: Express, state: AppState): void {
   /** GET /api/oidc-settings — Return the current OIDC config (clientSecret masked). */

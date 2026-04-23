@@ -40,15 +40,20 @@ interface PragmaForeignKeyRow {
  * Accepted formats:
  *   - sqlite:///absolute/path/db.sqlite   → /absolute/path/db.sqlite
  *   - sqlite://relative/path/db.sqlite    → relative/path/db.sqlite
+ *   - sqlite:./relative/path/db.sqlite    → ./relative/path/db.sqlite
+ *   - sqlite:/absolute/path/db.sqlite     → /absolute/path/db.sqlite
  *   - /absolute/path/db.sqlite            → /absolute/path/db.sqlite
  *   - relative/path/db.sqlite             → relative/path/db.sqlite
  */
 function parseDsn(dsn: string): string {
   if (dsn.startsWith('sqlite://')) {
-    // Strip the scheme: "sqlite://" → keep everything after the two slashes.
     // "sqlite:///foo" → "/foo"  (three slashes: scheme + absolute path)
     // "sqlite://foo"  → "foo"   (two slashes:  scheme + relative path)
     return dsn.slice('sqlite://'.length);
+  }
+  if (dsn.startsWith('sqlite:')) {
+    // Short form: "sqlite:./foo" → "./foo", "sqlite:/abs" → "/abs"
+    return dsn.slice('sqlite:'.length);
   }
   return dsn;
 }

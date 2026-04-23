@@ -10,6 +10,7 @@ import { createSshTunnel } from '../ssh-tunnel.js';
 import type { SshTunnelConfig } from '../ssh-tunnel.js';
 import { resolveSecret } from '../secrets.js';
 import { redactSecrets } from '../sanitize.js';
+import { parseCookies } from '../utils/cookies.js';
 
 /** SSH config shape as stored in the DB / sent over the API. */
 export interface SshConfig {
@@ -21,16 +22,6 @@ export interface SshConfig {
   password?: string;
   dbHost?: string;
   dbPort?: number;
-}
-
-function parseCookies(cookieHeader: string | undefined): Record<string, string> {
-  if (!cookieHeader) return {};
-  const cookies: Record<string, string> = {};
-  for (const pair of cookieHeader.split(';')) {
-    const [key, ...rest] = pair.split('=');
-    if (key) cookies[key.trim()] = rest.join('=').trim();
-  }
-  return cookies;
 }
 
 /** Database types accepted by the connections endpoints. */

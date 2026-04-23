@@ -3,16 +3,7 @@ import type { AppState } from '../state.js';
 import { EmailService } from '../email.js';
 import { verifyPassword } from '../crypto.js';
 import { validateSession } from '../session.js';
-
-function parseCookies(cookieHeader: string | undefined): Record<string, string> {
-  if (!cookieHeader) return {};
-  const cookies: Record<string, string> = {};
-  for (const pair of cookieHeader.split(';')) {
-    const [key, ...rest] = pair.split('=');
-    if (key) cookies[key.trim()] = rest.join('=').trim();
-  }
-  return cookies;
-}
+import { parseCookies } from '../utils/cookies.js';
 
 export function registerSmtpSettingsRoute(app: Express, state: AppState): void {
   /** GET /api/smtp-settings — Return the current SMTP config (password masked). */
@@ -90,11 +81,11 @@ export function registerSmtpSettingsRoute(app: Express, state: AppState): void {
       if (ok) {
         res.json({ success: true, message: 'SMTP connection verified successfully.' });
       } else {
-        res.json({ success: false, message: 'SMTP connection failed. Check your settings.' });
+        res.status(502).json({ success: false, message: 'SMTP connection failed. Check your settings.' });
       }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Connection test failed.';
-      res.json({ success: false, message });
+      res.status(502).json({ success: false, message });
     }
   });
 

@@ -2,6 +2,7 @@ import type { Express } from 'express';
 import type { AppState } from '../state.js';
 import { verifyPassword } from '../crypto.js';
 import { TokenRateLimiter } from '../rate-limiter.js';
+import { parseCookies } from '../utils/cookies.js';
 
 const userChatLimiter = new TokenRateLimiter();
 const USER_CHAT_RPM = 30;
@@ -372,8 +373,6 @@ export function registerAuthRoute(app: Express, state: AppState): void {
       mcpUrl: p.accessMode !== 'chat' ? `${protocol}://${host}/mcp/${p.profileName}` : null,
     }));
 
-    // Try to decrypt the token for display. Falls back to hash preview if no secret key.
-    const decryptedToken = userManager.getUserToken(user.id);
     const tokenPreview = user.tokenHash.substring(0, 8) + '...';
 
     res.json({
@@ -565,7 +564,7 @@ export function registerAuthRoute(app: Express, state: AppState): void {
       } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : 'Unknown error';
         state.logger?.error('Error', { component: 'user-chat/open', error: msg });
-        res.json({ success: false, message: msg });
+        res.status(500).json({ success: false, message: msg });
       }
       return;
     }
@@ -669,7 +668,7 @@ export function registerAuthRoute(app: Express, state: AppState): void {
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : 'Unknown error';
       state.logger?.error('Error', { component: 'user-chat', error: msg });
-      res.json({ success: false, message: msg });
+      res.status(500).json({ success: false, message: msg });
     }
   });
 
@@ -765,13 +764,3 @@ export function registerAuthRoute(app: Express, state: AppState): void {
   });
 }
 
-function parseCookies(cookieHeader: string): Record<string, string> {
-  return cookieHeader.split(';').reduce(
-    (acc, cookie) => {
-      const [key, ...vals] = cookie.trim().split('=');
-      if (key) acc[key] = vals.join('=');
-      return acc;
-    },
-    {} as Record<string, string>,
-  );
-}

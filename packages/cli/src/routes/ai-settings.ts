@@ -97,7 +97,7 @@ export function registerAiSettingsRoute(app: Express, state: AppState): void {
       }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Connection test failed.';
-      res.json({ success: false, message });
+      res.status(502).json({ success: false, message });
     }
   });
 }

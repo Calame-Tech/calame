@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import type { Request, Response, NextFunction } from 'express';
 import type { UserManager } from './user.js';
+import { parseCookies } from './utils/cookies.js';
 
 export interface Session {
   id: string;
@@ -126,18 +127,6 @@ export function clearUserSessionCookie(res: Response): void {
 }
 
 // --- Middleware ---
-
-function parseCookies(cookieHeader: string | undefined): Record<string, string> {
-  if (!cookieHeader) return {};
-  return cookieHeader.split(';').reduce(
-    (acc, cookie) => {
-      const [key, ...vals] = cookie.trim().split('=');
-      if (key) acc[key] = vals.join('=');
-      return acc;
-    },
-    {} as Record<string, string>,
-  );
-}
 
 /**
  * Factory that creates the admin session middleware.

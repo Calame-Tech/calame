@@ -160,7 +160,7 @@ describe('profiles routes', () => {
       const res = await request(app)
         .get('/api/profiles/load')
         .set('Cookie', cookie)
-        .expect(200);
+        .expect(500);
 
       expect(res.body.found).toBe(false);
       expect(res.body.message).toBeDefined();

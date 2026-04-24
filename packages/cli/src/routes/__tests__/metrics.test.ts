@@ -88,10 +88,12 @@ describe('metrics routes', () => {
       expect(res.body.period).toBe('7d');
       expect(res.body.requestsByHour).toHaveLength(1);
       expect(res.body.requestsByHour[0].count).toBe(12);
-      expect(res.body.topTools[0].tool_name).toBe('query_users');
-      expect(res.body.topTokens[0].token_label).toBe('alice');
+      expect(res.body.requestsByHour[0].profile).toBe('prod');
+      expect(res.body.topTools[0].toolName).toBe('query_users');
+      expect(res.body.topTokens[0].tokenLabel).toBe('alice');
       expect(res.body.errorRate).toHaveLength(2);
-      expect(res.body.avgResponseTime[0].avg_ms).toBe(123.4);
+      expect(res.body.avgResponseTime[0].profileName).toBe('prod');
+      expect(res.body.avgResponseTime[0].avgMs).toBe(123.4);
     });
 
     it('accepts period=30d', async () => {

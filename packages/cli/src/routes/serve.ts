@@ -136,6 +136,8 @@ export function registerServeRoute(app: Express, state: AppState): void {
       let rateLimitRpm: number | undefined;
       /** Resolved user identity for data scoping. Null for admin/legacy/open auth. */
       let userIdentity: UserIdentity | null = null;
+      /** Label of the legacy token used for this request, if any. */
+      let resolvedTokenLabel: string | undefined;
 
       if (authMode === 'open') {
         // No authentication required — proceed immediately.
@@ -228,6 +230,7 @@ export function registerServeRoute(app: Express, state: AppState): void {
         rateLimitId = oauthAuthResult.rateLimitId;
         rateLimitRpm = oauthAuthResult.rateLimitRpm;
         userIdentity = oauthAuthResult.userIdentity ?? null;
+        resolvedTokenLabel = oauthAuthResult.tokenLabel;
       } else {
         // 'token', 'calame', 'sso' — all require a Bearer token.
         // For 'calame' and 'sso' modes, session cookies are handled at the UI layer;
@@ -260,6 +263,7 @@ export function registerServeRoute(app: Express, state: AppState): void {
         rateLimitId = tokenAuthResult.rateLimitId;
         rateLimitRpm = tokenAuthResult.rateLimitRpm;
         userIdentity = tokenAuthResult.userIdentity ?? null;
+        resolvedTokenLabel = tokenAuthResult.tokenLabel;
       }
 
       // --- Rate limit enforcement ---
@@ -457,7 +461,7 @@ export function registerServeRoute(app: Express, state: AppState): void {
           },
           onAuditLog: (entry) => {
             if (state.auditLog) {
-              state.auditLog.addEntry(entry);
+              state.auditLog.addEntry({ ...entry, tokenLabel: resolvedTokenLabel });
               state.auditLog.save().catch(() => {});
             }
           },
@@ -488,7 +492,7 @@ export function registerServeRoute(app: Express, state: AppState): void {
             },
             onAuditLog: (entry) => {
               if (state.auditLog) {
-                state.auditLog.addEntry(entry);
+                state.auditLog.addEntry({ ...entry, tokenLabel: resolvedTokenLabel });
                 state.auditLog.save().catch(() => {});
               }
             },
@@ -543,6 +547,8 @@ interface BearerAuthResult {
   status: number;
   /** Resolved user identity for data scoping. Null for legacy tokens or admin. */
   userIdentity?: UserIdentity | null;
+  /** Human-readable label of the legacy token used, if any. */
+  tokenLabel?: string;
 }
 
 /**
@@ -643,6 +649,16 @@ async function verifyBearerToken(
     authenticatedProfileName = tokenEntry.profileName;
     rateLimitId = tokenEntry.id;
     await tokenManager.save();
+    return {
+      profileName: authenticatedProfileName,
+      allowedTables: userAllowedTables,
+      allowedTools: userAllowedTools,
+      rateLimitId,
+      rateLimitRpm,
+      userIdentity,
+      tokenLabel: tokenEntry.label,
+      status: 200,
+    };
   }
 
   return {

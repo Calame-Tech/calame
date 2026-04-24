@@ -728,8 +728,8 @@ export default function MetricsDashboard() {
               {!metrics || metrics.topTools.length === 0 ? (
                 <p className="text-gray-600 text-sm text-center py-4">No tool usage recorded.</p>
               ) : (
-                <div className="space-y-0.5">
-                  {metrics.topTools.slice(0, 10).map((t, i) => (
+                <div className="space-y-0.5 max-h-64 overflow-y-auto pr-1">
+                  {metrics.topTools.map((t, i) => (
                     <HorizontalBar
                       key={t.toolName}
                       label={t.toolName}
@@ -757,8 +757,8 @@ export default function MetricsDashboard() {
               {!metrics || metrics.topTokens.length === 0 ? (
                 <p className="text-gray-600 text-sm text-center py-4">No token activity recorded.</p>
               ) : (
-                <div className="space-y-0.5">
-                  {metrics.topTokens.slice(0, 10).map((t, i) => (
+                <div className="space-y-0.5 max-h-64 overflow-y-auto pr-1">
+                  {metrics.topTokens.map((t, i) => (
                     <HorizontalBar
                       key={t.tokenLabel}
                       label={t.tokenLabel}

@@ -65,40 +65,46 @@ export function registerMetricsRoute(app: Express, state: AppState): void {
       }
       const db = state.db.raw;
 
-      const requestsByHour = db
-        .prepare(
-          `SELECT strftime('%Y-%m-%dT%H:00', timestamp) AS hour,
+      const requestsByHour = (
+        db
+          .prepare(
+            `SELECT strftime('%Y-%m-%dT%H:00', timestamp) AS hour,
                   profile_name,
                   COUNT(*) AS count
            FROM audit_log
            WHERE timestamp >= ?
            GROUP BY hour, profile_name
            ORDER BY hour`,
-        )
-        .all(since) as RequestsByHourRow[];
+          )
+          .all(since) as RequestsByHourRow[]
+      ).map((row) => ({ hour: row.hour, profile: row.profile_name, count: row.count }));
 
-      const topTools = db
-        .prepare(
-          `SELECT tool_name, COUNT(*) AS count
+      const topTools = (
+        db
+          .prepare(
+            `SELECT tool_name, COUNT(*) AS count
            FROM audit_log
            WHERE timestamp >= ?
            GROUP BY tool_name
            ORDER BY count DESC
            LIMIT 20`,
-        )
-        .all(since) as TopToolRow[];
+          )
+          .all(since) as TopToolRow[]
+      ).map((row) => ({ toolName: row.tool_name, count: row.count }));
 
-      const topTokens = db
-        .prepare(
-          `SELECT token_label, COUNT(*) AS count
+      const topTokens = (
+        db
+          .prepare(
+            `SELECT token_label, COUNT(*) AS count
            FROM audit_log
            WHERE timestamp >= ?
              AND token_label IS NOT NULL
            GROUP BY token_label
            ORDER BY count DESC
            LIMIT 20`,
-        )
-        .all(since) as TopTokenRow[];
+          )
+          .all(since) as TopTokenRow[]
+      ).map((row) => ({ tokenLabel: row.token_label, count: row.count }));
 
       const errorRate = db
         .prepare(
@@ -109,16 +115,18 @@ export function registerMetricsRoute(app: Express, state: AppState): void {
         )
         .all(since) as ErrorRateRow[];
 
-      const avgResponseTime = db
-        .prepare(
-          `SELECT profile_name,
+      const avgResponseTime = (
+        db
+          .prepare(
+            `SELECT profile_name,
                   ROUND(AVG(duration_ms), 1) AS avg_ms,
                   COUNT(*) AS count
            FROM audit_log
            WHERE timestamp >= ?
            GROUP BY profile_name`,
-        )
-        .all(since) as AvgResponseRow[];
+          )
+          .all(since) as AvgResponseRow[]
+      ).map((row) => ({ profileName: row.profile_name, avgMs: row.avg_ms, count: row.count }));
 
       res.json({
         period,

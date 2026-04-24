@@ -102,9 +102,9 @@ export default function DataScopingSection({
   const hasRules = rules.length > 0;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Explanation */}
-      <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-5">
+      <div className="card-primary p-4">
         <h3 className="text-sm font-semibold text-gray-300 mb-2">Data Scoping (Row-Level Isolation)</h3>
         <p className="text-sm text-gray-400 mb-3">
           Restrict each user to only see their own data. Configure rules that automatically filter
@@ -129,7 +129,7 @@ export default function DataScopingSection({
       </div>
 
       {/* Scope Rules */}
-      <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-5">
+      <div className="card-primary p-4">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-semibold text-gray-300">Scope Rules</h3>
           <span className="text-xs text-gray-500">{rules.length} rule{rules.length !== 1 ? 's' : ''}</span>
@@ -140,7 +140,7 @@ export default function DataScopingSection({
             {rules.map((rule, i) => {
               const cols = columnsPerTable[rule.tableName] ?? [];
               return (
-                <div key={i} className="flex items-start gap-2 p-3 rounded-lg border border-gray-600/50 bg-gray-900/30">
+                <div key={i} className="flex items-start gap-2 p-3 rounded-lg border border-white/5 bg-gray-900/30">
                   {/* Table name (read-only) */}
                   <div className="flex-shrink-0 min-w-[120px]">
                     <label className="text-xs text-gray-500 block mb-1">Table</label>
@@ -153,7 +153,7 @@ export default function DataScopingSection({
                     <select
                       value={rule.column}
                       onChange={(e) => updateRule(i, { column: e.target.value })}
-                      className="w-full bg-gray-900 border border-gray-600 rounded px-2 py-1 text-sm text-gray-200"
+                      className="w-full bg-gray-900 border border-white/10 rounded px-2 py-1 text-sm text-gray-200"
                     >
                       <option value="">Select column...</option>
                       {cols.map((c) => (
@@ -168,7 +168,7 @@ export default function DataScopingSection({
                     <select
                       value={rule.identityField}
                       onChange={(e) => updateRule(i, { identityField: e.target.value as DataScopeRule['identityField'] })}
-                      className="w-full bg-gray-900 border border-gray-600 rounded px-2 py-1 text-sm text-gray-200"
+                      className="w-full bg-gray-900 border border-white/10 rounded px-2 py-1 text-sm text-gray-200"
                     >
                       <option value="email">User email</option>
                       <option value="externalId">External ID (OIDC sub)</option>
@@ -185,7 +185,7 @@ export default function DataScopingSection({
                         value={rule.customKey ?? ''}
                         onChange={(e) => updateRule(i, { customKey: e.target.value })}
                         placeholder="e.g. client_id"
-                        className="w-full bg-gray-900 border border-gray-600 rounded px-2 py-1 text-sm text-gray-200"
+                        className="w-full bg-gray-900 border border-white/10 rounded px-2 py-1 text-sm text-gray-200"
                       />
                     </div>
                   )}
@@ -212,7 +212,7 @@ export default function DataScopingSection({
             <select
               value={newRuleTable}
               onChange={(e) => setNewRuleTable(e.target.value)}
-              className="bg-gray-900 border border-gray-600 rounded px-2 py-1.5 text-sm text-gray-200"
+              className="bg-gray-900 border border-white/10 rounded px-2 py-1.5 text-sm text-gray-200"
             >
               <option value="">Select table...</option>
               {unassignedTables.filter((t) => !shared.includes(t)).map((t) => (
@@ -232,7 +232,7 @@ export default function DataScopingSection({
 
       {/* Shared Tables */}
       {hasRules && (
-        <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-5">
+        <div className="card-primary p-4">
           <h3 className="text-sm font-semibold text-gray-300 mb-2">Shared Tables</h3>
           <p className="text-xs text-gray-500 mb-3">
             Tables listed here are visible to all authenticated users without filtering (e.g., product catalogs, reference data).
@@ -263,7 +263,7 @@ export default function DataScopingSection({
             <div className="flex items-center gap-2">
               <select
                 id="shared-table-select"
-                className="bg-gray-900 border border-gray-600 rounded px-2 py-1.5 text-sm text-gray-200"
+                className="bg-gray-900 border border-white/10 rounded px-2 py-1.5 text-sm text-gray-200"
                 defaultValue=""
                 onChange={(e) => {
                   if (e.target.value) {

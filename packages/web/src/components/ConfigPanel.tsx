@@ -56,10 +56,10 @@ export default function ConfigPanel({ config, onConfigChange, schema, selectedTa
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Data Masking */}
       {piiDetections && onGlobalMaskingRulesChange && (
-        <div className="border border-gray-700 rounded-lg p-4 bg-gray-800/40">
+        <div className="card-primary p-4">
           <GlobalMaskingRulesComponent
             rules={globalMaskingRules ?? []}
             onRulesChange={onGlobalMaskingRulesChange}
@@ -103,7 +103,7 @@ export default function ConfigPanel({ config, onConfigChange, schema, selectedTa
                   value={tableFilter}
                   onChange={(e) => setTableFilter(e.target.value)}
                   placeholder="Filter tables..."
-                  className="flex-1 px-3 py-1.5 rounded-lg bg-gray-800/80 border border-gray-700 text-gray-100 text-sm placeholder-gray-500 focus:outline-none focus:border-os-500 focus:ring-1 focus:ring-os-500/30 transition-all duration-200"
+                  className="input-editorial flex-1 text-sm"
                 />
                 <HelpTip content="Filter the displayed tables by name." position="right" size="xs" />
               </div>

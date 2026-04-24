@@ -49,3 +49,13 @@ export type { EmptyStateProps } from './EmptyState.js';
 
 export { PageHeader } from './PageHeader.js';
 export type { PageHeaderProps, BreadcrumbItem } from './PageHeader.js';
+
+// Design system primitives
+export { Eyebrow } from './Eyebrow.js';
+export type {} from './Eyebrow.js';
+
+export { SegmentedControl } from './SegmentedControl.js';
+export type { SegmentOption } from './SegmentedControl.js';
+
+export { KpiCard } from './KpiCard.js';
+export type {} from './KpiCard.js';

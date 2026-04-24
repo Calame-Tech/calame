@@ -235,9 +235,9 @@ function UserDetailPanel({
     : true;
 
   return (
-    <div className="bg-gray-800 rounded-lg p-4 space-y-3">
+    <div className="card-primary p-4 space-y-3">
       <div className="flex items-center justify-between">
-        <h3 className="text-white font-medium">{user.name}</h3>
+        <h3 className="heading-md">{user.name}</h3>
         <button onClick={onClose} className="text-gray-400 hover:text-white">×</button>
       </div>
 
@@ -665,7 +665,7 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold text-white">Users</h2>
+        <h2 className="heading-md">Users</h2>
         <div className="flex items-center gap-2">
           <button
             onClick={() => { setShowImport(!showImport); setImportResult(null); }}
@@ -726,8 +726,8 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
 
       {/* Import form */}
       {showImport && (
-        <div className="bg-gray-800/60 border border-gray-700 rounded-lg p-5 space-y-3">
-          <h3 className="text-sm font-semibold text-gray-300">Bulk Import Users</h3>
+        <div className="card-primary p-4 space-y-3">
+          <h3 className="eyebrow">Bulk Import Users</h3>
           <p className="text-xs text-gray-500">
             Paste a JSON array or CSV data. CSV format: first row = headers (email required), extra columns become custom attributes.
           </p>
@@ -781,8 +781,8 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
 
       {/* Create form */}
       {showCreateForm && (
-        <form onSubmit={handleCreate} className="bg-gray-800 rounded-lg p-4 space-y-3">
-          <h3 className="text-white font-medium">Create User</h3>
+        <form onSubmit={handleCreate} className="card-primary p-4 space-y-3">
+          <h3 className="heading-md">Create User</h3>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm text-gray-400 mb-1" htmlFor="form-name">Name <span className="text-red-400">*</span></label>
@@ -1014,7 +1014,7 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
-            <thead className="text-gray-400 border-b border-gray-700">
+            <thead className="text-gray-400 border-b border-white/5">
               <tr>
                 <th className="px-3 py-2">Name</th>
                 <th className="px-3 py-2">Email</th>
@@ -1028,7 +1028,7 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
               {users.map((user) => (
                 <tr
                   key={user.id}
-                  className="border-b border-gray-800 hover:bg-gray-800/50 cursor-pointer"
+                  className="border-b border-white/5 hover:bg-gray-800/40 cursor-pointer"
                   onClick={() => setSelectedUser(user)}
                 >
                   <td className="px-3 py-2 font-medium text-white">{user.name}</td>

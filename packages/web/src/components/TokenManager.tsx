@@ -150,7 +150,7 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {error && (
         <div className="p-3 rounded-lg bg-red-950/30 border border-red-800/50 text-red-400 text-sm">
           {error}
@@ -248,8 +248,8 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
         profiles.map((profile) => {
           const profileTokens = tokensByProfile[profile.name] ?? [];
           return (
-            <div key={profile.name} className="rounded-lg border border-gray-700 bg-gray-800/40">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
+            <div key={profile.name} className="card-primary">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
                 <div className="flex items-center gap-2">
                   <h3 className="text-sm font-medium text-gray-200">{profile.label}</h3>
                   <span className="text-xs text-gray-500 font-mono">({profile.name})</span>
@@ -269,7 +269,7 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                       }
                     }}
                     className="px-4 py-2 rounded-lg bg-os-700 hover:bg-os-600 text-white text-sm font-medium transition-all duration-200"
-                  >
+                >
                     Generate Token
                   </button>
                   <HelpTip
@@ -283,16 +283,16 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
 
               {/* Generate token form */}
               {generatingFor === profile.name && (
-                <div className="px-4 py-3 border-b border-gray-700 bg-gray-800/60">
+                <div className="px-4 py-3 border-b border-white/5 bg-gray-800/30">
                   <div className="flex items-end gap-3">
                     <div className="flex-1">
-                      <label className="block text-xs text-gray-400 mb-1">Token Label</label>
+                      <label className="block eyebrow mb-1">Token Label</label>
                       <input
                         type="text"
                         value={newLabel}
                         onChange={(e) => setNewLabel(e.target.value)}
                         placeholder="e.g. Claude Desktop, CI/CD..."
-                        className="w-full px-4 py-2.5 rounded-lg bg-gray-800/80 border border-gray-700 text-gray-100 text-sm focus:outline-none focus:border-os-500 focus:ring-1 focus:ring-os-500/30"
+                        className="input-editorial w-full text-sm"
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') handleGenerate(profile.name);
                           if (e.key === 'Escape') { setGeneratingFor(null); setNewLabel(''); }
@@ -304,7 +304,7 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                       <button
                         onClick={() => handleGenerate(profile.name)}
                         disabled={generating || !newLabel.trim()}
-                        className="px-4 py-2.5 rounded-lg bg-os-700 hover:bg-os-600 text-white text-sm font-medium transition-all duration-200 disabled:opacity-50"
+                        className="px-4 py-2 rounded-lg bg-os-700 hover:bg-os-600 text-white text-sm font-medium transition-all duration-200 disabled:opacity-50"
                       >
                         {generating ? 'Generating...' : 'Create'}
                       </button>
@@ -316,7 +316,7 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                     </div>
                     <button
                       onClick={() => { setGeneratingFor(null); setNewLabel(''); }}
-                      className="px-3 py-2.5 rounded-lg border border-gray-700 text-gray-400 hover:text-gray-200 text-sm transition-colors"
+                      className="px-3 py-2 rounded-lg border border-white/10 text-gray-400 hover:text-gray-200 text-sm transition-colors"
                     >
                       Cancel
                     </button>
@@ -326,7 +326,7 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
 
               {/* Token list */}
               {profileTokens.length > 0 ? (
-                <div className="divide-y divide-gray-800">
+                <div className="divide-y divide-white/5">
                   {profileTokens.map((tok) => (
                     <div key={tok.id ?? tok.tokenHash} className="px-4 py-3">
                       <div className="flex items-center gap-4">
@@ -400,7 +400,7 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                                   setRevealError('');
                                 }
                               }}
-                              className="flex-1 px-2 py-1 text-xs rounded bg-gray-800/80 border border-gray-700 text-gray-100 focus:outline-none focus:border-os-500 focus:ring-1 focus:ring-os-500/30"
+                              className="input-editorial flex-1 text-xs"
                             />
                             <button
                               onClick={() => handleReveal(tok.id)}
@@ -468,8 +468,8 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
       )}
 
       {/* Endpoint URL reference */}
-      <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4">
-        <h3 className="text-sm font-medium text-gray-300 mb-2">MCP Endpoints</h3>
+      <div className="card-primary p-4">
+        <h3 className="eyebrow mb-2">MCP Endpoints</h3>
         <p className="text-xs text-gray-500 mb-3">Each profile has its own MCP endpoint:</p>
         <div className="space-y-1">
           {profiles.map((profile) => (

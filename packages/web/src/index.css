@@ -5,6 +5,7 @@
 @layer base {
   body {
     @apply bg-gray-950 text-gray-100;
+    font-family: 'IBM Plex Sans', system-ui, sans-serif;
   }
 
   /* Dark theme scrollbar */
@@ -21,6 +22,65 @@
   ::-webkit-scrollbar-thumb:hover {
     @apply bg-gray-600;
   }
+}
+
+@layer components {
+  .font-display {
+    font-family: 'IBM Plex Sans', system-ui, sans-serif;
+    font-weight: 300;
+    letter-spacing: -0.02em;
+  }
+  .font-mono-plex {
+    font-family: 'IBM Plex Mono', monospace;
+  }
+
+  /* --- Eyebrows (section labels) --- */
+  .eyebrow {
+    font-family: 'IBM Plex Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.25em;
+    font-size: 10px;
+    color: rgb(107 114 128); /* gray-500 */
+  }
+  .eyebrow-accent {
+    font-family: 'IBM Plex Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.25em;
+    font-size: 10px;
+    color: rgb(116 143 252 / 0.7); /* os-400/70 */
+  }
+
+  /* --- Hairline divider --- */
+  .hairline { @apply border-t border-white/5; }
+  .hairline-b { @apply border-b border-white/5; }
+
+  /* --- Cards --- */
+  .card-primary {
+    @apply bg-gray-900/40 backdrop-blur-xl border border-white/5 rounded-2xl;
+  }
+  .card-nested {
+    @apply bg-gray-900/60 border border-white/[0.03] rounded-xl;
+  }
+  .card-interactive {
+    @apply bg-gray-900/40 backdrop-blur-xl border border-white/5 rounded-2xl transition-all duration-300;
+  }
+  .card-interactive:hover {
+    @apply ring-1 ring-os-500/20 bg-gray-900/60;
+  }
+
+  /* --- Inputs editorial --- */
+  .input-editorial {
+    @apply bg-black/30 border border-white/10 rounded-lg px-4 py-2 transition-all duration-200 text-gray-100 placeholder-gray-600;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+  .input-editorial:focus {
+    @apply outline-none border-os-500/50 ring-1 ring-os-500/30 bg-black/40;
+  }
+
+  /* --- Display headings (font-display already defined = Plex Sans 300 tight) --- */
+  .heading-xl { @apply font-display text-5xl text-gray-100; }
+  .heading-lg { @apply font-display text-3xl text-gray-100; }
+  .heading-md { @apply font-display text-2xl text-gray-100; }
 }
 
 @layer utilities {

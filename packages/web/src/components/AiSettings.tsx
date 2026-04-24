@@ -186,11 +186,11 @@ export default function AiSettings() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <h2 className="text-lg font-semibold text-gray-100">AI Settings</h2>
+            <h2 className="heading-md">AI Settings</h2>
             <HelpTip
               content="Configure the LLM provider used by the Calame chat. All users share this configuration — their API key is never exposed. The model selects available MCP tools based on each user's connection profile."
               position="right"
@@ -203,7 +203,7 @@ export default function AiSettings() {
         </div>
         <div className="flex items-center gap-2">
           <div
-            className={`w-2.5 h-2.5 rounded-full ${
+            className={`w-2 h-2 rounded-full ${
               configured ? 'bg-green-500 shadow-lg shadow-green-500/30' : 'bg-gray-600'
             }`}
           />
@@ -231,7 +231,7 @@ export default function AiSettings() {
               className={`flex-1 px-4 py-3 rounded-lg border text-left transition-all duration-200 ${
                 provider === p.value
                   ? 'border-os-500 bg-os-700/20'
-                  : 'border-gray-700 bg-gray-900/40 hover:border-gray-600'
+                  : 'border-white/5 bg-gray-900/40 hover:border-white/10'
               }`}
             >
               <div className={`text-sm font-medium ${provider === p.value ? 'text-os-400' : 'text-gray-300'}`}>
@@ -267,7 +267,7 @@ export default function AiSettings() {
               value={apiKey}
               onChange={(e) => updateField('apiKey', e.target.value)}
               placeholder={provider === 'openrouter' ? 'sk-or-...' : 'sk-ant-...'}
-              className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500 pr-16"
+              className="input-editorial w-full text-sm pr-16"
             />
             <button
               onClick={() => setShowApiKey(!showApiKey)}
@@ -295,7 +295,7 @@ export default function AiSettings() {
             value={apiKey}
             onChange={(e) => updateField('apiKey', e.target.value)}
             placeholder="Leave empty if not required"
-            className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
+            className="input-editorial w-full text-sm"
           />
         </div>
       )}
@@ -324,7 +324,7 @@ export default function AiSettings() {
                 ? 'anthropic/claude-sonnet-4'
                 : 'llama3, mistral, etc.'
             }
-            className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
+            className="input-editorial w-full text-sm"
           />
         </div>
       )}
@@ -345,7 +345,7 @@ export default function AiSettings() {
             value={baseUrl}
             onChange={(e) => updateField('baseUrl', e.target.value)}
             placeholder="http://localhost:11434/v1"
-            className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
+            className="input-editorial w-full text-sm"
           />
           <p className="text-xs text-gray-600 mt-1">
             OpenAI-compatible API URL (Ollama, vLLM, LM Studio, etc.)
@@ -391,14 +391,14 @@ export default function AiSettings() {
       )}
 
       {/* Divider */}
-      <div className="border-t border-gray-700 my-6"></div>
+      <div className="border-t border-white/5 my-4"></div>
 
       {/* LLM Router / Classifier */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="text-sm font-semibold text-gray-200">LLM Router / Classifier</h3>
+              <h3 className="eyebrow">LLM Router / Classifier</h3>
               <HelpTip
                 content="Two-stage pipeline: a lightweight classifier analyzes each message before the main LLM. It detects prompt injection attempts and off-topic queries, reducing costs and improving security."
                 position="right"
@@ -422,7 +422,7 @@ export default function AiSettings() {
         </div>
 
         {routerEnabled && (
-          <div className="space-y-4 pl-2 border-l-2 border-gray-700">
+          <div className="space-y-4 pl-2 border-l-2 border-white/10">
             {/* Classifier Provider */}
             <div>
               <div className="flex items-center gap-1.5 mb-1">
@@ -436,7 +436,7 @@ export default function AiSettings() {
               <select
                 value={classifierProvider}
                 onChange={(e) => setClassifierProvider(e.target.value as ClassifierProvider)}
-                className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
+                className="input-editorial w-full text-sm"
               >
                 <option value="anthropic">Anthropic (Claude)</option>
                 <option value="openrouter">OpenRouter</option>
@@ -468,7 +468,7 @@ export default function AiSettings() {
                     ? 'claude-haiku-4-5-20251001'
                     : 'gpt-4o-mini'
                 }
-                className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
+                className="input-editorial w-full text-sm"
               />
             </div>
 
@@ -487,7 +487,7 @@ export default function AiSettings() {
                 value={classifierApiKey}
                 onChange={(e) => setClassifierApiKey(e.target.value)}
                 placeholder="sk-..."
-                className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
+                className="input-editorial w-full text-sm"
               />
               <p className="text-xs text-gray-600 mt-1">
                 Leave empty to use the same key as the main provider.
@@ -510,7 +510,7 @@ export default function AiSettings() {
                   value={classifierEndpoint}
                   onChange={(e) => setClassifierEndpoint(e.target.value)}
                   placeholder="http://localhost:11434/v1"
-                  className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
+                  className="input-editorial w-full text-sm"
                 />
               </div>
             )}

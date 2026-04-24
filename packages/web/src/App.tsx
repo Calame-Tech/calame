@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
-import { Button, Card, PageHeader } from './components/ui/index.js';
+import { Button, Card, PageHeader, Eyebrow, KpiCard, EmptyState } from './components/ui/index.js';
 import Sidebar from './components/Sidebar.js';
 import HelpTip from './components/HelpTip.js';
 import ConnectionManager from './components/ConnectionManager.js';
@@ -649,7 +649,14 @@ export default function App() {
         >
           <div className="max-w-7xl mx-auto w-full">
             {view.page === 'dashboard' && (
-              <div className="space-y-8 animate-fade-in-up">
+              <div className="relative space-y-4">
+                {/* Fixed background blobs */}
+                <div className="fixed inset-0 -z-10 pointer-events-none overflow-hidden" aria-hidden="true">
+                  <div className="absolute -top-40 -left-40 w-[500px] h-[500px] bg-os-900/20 rounded-full blur-3xl" />
+                  <div className="absolute top-1/3 -right-40 w-[400px] h-[400px] bg-indigo-900/15 rounded-full blur-3xl" />
+                  <div className="absolute -bottom-40 left-1/3 w-[450px] h-[450px] bg-os-800/10 rounded-full blur-3xl" />
+                </div>
+
                 {/* Page header */}
                 <PageHeader
                   title="Dashboard"
@@ -661,319 +668,245 @@ export default function App() {
                   }
                 />
 
-                {/* Top row: MCP Servers / Data Profiles / Databases */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {/* MCP Servers card */}
-                  <div className="rounded-xl border border-gray-700 bg-gray-800/40 overflow-hidden">
-                    <button
-                      onClick={() => setView({ page: 'mcp-list' })}
-                      className="w-full p-6 text-left hover:bg-gray-800/60 transition-all duration-200"
-                    >
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-2">
-                          <div
-                            className={`w-2.5 h-2.5 rounded-full ${hasActiveMcp ? 'bg-green-500 shadow-lg shadow-green-500/30' : 'bg-gray-600'}`}
-                          />
-                          <h2 className="text-base font-semibold text-gray-100 flex items-center gap-1.5">
-                            MCP Servers{' '}
-                            <HelpTip
-                              content="Start, stop and manage your MCP servers exposed to AI clients"
-                              position="bottom"
-                            />
-                          </h2>
-                        </div>
-                        <span className="text-2xl font-bold text-os-400">
-                          {activeMcpCount}/{totalMcpCount}
-                        </span>
-                      </div>
-                      <p className="text-xs text-gray-500 mb-3">
-                        active server{activeMcpCount !== 1 ? 's' : ''}
-                      </p>
-                    </button>
-                    <div className="border-t border-gray-700/50 px-4 py-3 space-y-1.5 max-h-40 overflow-y-auto">
-                      {profiles.map((p) => {
-                        const pStatus = serveStatus.profileStatuses?.[p.name];
-                        const pActive = pStatus?.active === true;
-                        return (
-                          <button
-                            key={p.name}
-                            onClick={() => setView({ page: 'mcp-detail', profileName: p.name })}
-                            className="w-full flex items-center justify-between px-2 py-1.5 rounded-lg hover:bg-gray-700/40 transition-all duration-200 text-left"
-                          >
-                            <div className="flex items-center gap-2 min-w-0">
-                              <div
-                                className={`w-2 h-2 rounded-full flex-shrink-0 ${pActive ? 'bg-green-400' : 'bg-gray-600'}`}
-                              />
-                              <span className="text-sm text-gray-300 truncate">
-                                {p.label || p.name}
-                              </span>
-                            </div>
-                            <span
-                              className={`text-xs flex-shrink-0 ${pActive ? 'text-green-400' : 'text-gray-600'}`}
+                {/* Status ribbon */}
+                <div
+                  className="card-primary rounded-full px-4 py-2 flex flex-wrap items-center gap-3 animate-fade-in-up"
+                  style={{ animationDelay: '0ms' }}
+                >
+                  <Eyebrow live>{activeMcpCount} server{activeMcpCount !== 1 ? 's' : ''} running</Eyebrow>
+                  <span className="eyebrow text-gray-700">·</span>
+                  <Eyebrow>{connectedCount} database{connectedCount !== 1 ? 's' : ''} connected</Eyebrow>
+                  <span className="eyebrow text-gray-700">·</span>
+                  <Eyebrow>{profiles.length} profile{profiles.length !== 1 ? 's' : ''}</Eyebrow>
+                  {recentActivity.length > 0 && (() => {
+                    const last = recentActivity[0];
+                    const diffMs = Date.now() - new Date(last.timestamp).getTime();
+                    const diffMin = Math.floor(diffMs / 60000);
+                    const diffHour = Math.floor(diffMs / 3600000);
+                    const ago = diffMin < 1 ? 'just now' : diffMin < 60 ? `${diffMin}m ago` : `${diffHour}h ago`;
+                    return (
+                      <>
+                        <span className="eyebrow text-gray-700">·</span>
+                        <Eyebrow>last activity {ago}</Eyebrow>
+                      </>
+                    );
+                  })()}
+                </div>
+
+                {/* Resources grid: MCP Servers / Data Profiles / Databases */}
+                <div
+                  className="grid grid-cols-1 md:grid-cols-3 gap-4 animate-fade-in-up"
+                  style={{ animationDelay: '80ms' }}
+                >
+                  {/* MCP Servers */}
+                  <KpiCard
+                    accent="indigo"
+                    eyebrow={
+                      <Eyebrow dotColor={hasActiveMcp ? 'bg-emerald-400' : 'bg-gray-600'}>
+                        MCP SERVERS
+                        <HelpTip
+                          content="Start, stop and manage your MCP servers exposed to AI clients"
+                          position="bottom"
+                        />
+                      </Eyebrow>
+                    }
+                    value={
+                      <>
+                        <span className="text-3xl">{activeMcpCount}</span>
+                        <span className="text-lg text-gray-500">/{totalMcpCount}</span>
+                      </>
+                    }
+                    footer={
+                      <div className="space-y-0 max-h-40 overflow-y-auto">
+                        {profiles.slice(0, 4).map((p) => {
+                          const pStatus = serveStatus.profileStatuses?.[p.name];
+                          const pActive = pStatus?.active === true;
+                          return (
+                            <button
+                              key={p.name}
+                              onClick={() => setView({ page: 'mcp-detail', profileName: p.name })}
+                              className="w-full flex items-center justify-between px-2 py-1 rounded-md hover:bg-white/[0.02] transition-all duration-200 text-left"
                             >
-                              {pActive ? 'ON' : 'OFF'}
-                            </span>
-                          </button>
-                        );
-                      })}
-                      {profiles.length === 0 && (
-                        <p className="text-xs text-gray-600 text-center py-2">No servers</p>
-                      )}
-                    </div>
-                    <div className="border-t border-gray-700/50 px-4 py-2">
-                      <button
-                        onClick={() => setView({ page: 'mcp-list' })}
-                        className="text-xs text-os-400 hover:text-os-300 transition-colors"
-                      >
-                        View all &rarr;
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Configurations card */}
-                  <div className="rounded-xl border border-gray-700 bg-gray-800/40 overflow-hidden">
-                    <button
-                      onClick={() => setView({ page: 'configurations' })}
-                      className="w-full p-6 text-left hover:bg-gray-800/60 transition-all duration-200"
-                    >
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-2">
-                          <div
-                            className={`w-2.5 h-2.5 rounded-full ${configurations.length > 0 ? 'bg-blue-500 shadow-lg shadow-blue-500/30' : 'bg-gray-600'}`}
-                          />
-                          <h2 className="text-base font-semibold text-gray-100 flex items-center gap-1.5">
-                            Data Profiles{' '}
-                            <HelpTip
-                              content="Configure which tables and columns from your databases are exposed to AI clients"
-                              position="bottom"
-                            />
-                          </h2>
-                        </div>
-                        <span className="text-2xl font-bold text-os-400">
-                          {configurations.length}
-                        </span>
-                      </div>
-                      <p className="text-xs text-gray-500 mb-3">
-                        data profile{configurations.length !== 1 ? 's' : ''}
-                      </p>
-                    </button>
-                    <div className="border-t border-gray-700/50 px-4 py-3 space-y-1.5 max-h-40 overflow-y-auto">
-                      {configurations.map((cfg) => {
-                        const tCount = Object.keys(cfg.selectedTables).length;
-                        return (
-                          <button
-                            key={cfg.name}
-                            onClick={() =>
-                              setView({ page: 'config-detail', configName: cfg.name })
-                            }
-                            className="w-full flex items-center justify-between px-2 py-1.5 rounded-lg hover:bg-gray-700/40 transition-all duration-200 text-left"
-                          >
-                            <span className="text-sm text-gray-300 truncate">{cfg.label}</span>
-                            <span className="text-xs text-gray-500 flex-shrink-0">
-                              {tCount} table{tCount !== 1 ? 's' : ''}
-                            </span>
-                          </button>
-                        );
-                      })}
-                      {configurations.length === 0 && (
-                        <p className="text-xs text-gray-600 text-center py-2">No profiles</p>
-                      )}
-                    </div>
-                    <div className="border-t border-gray-700/50 px-4 py-2">
-                      <button
-                        onClick={() => setView({ page: 'configurations' })}
-                        className="text-xs text-os-400 hover:text-os-300 transition-colors"
-                      >
-                        View all &rarr;
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Connections card */}
-                  <div className="rounded-xl border border-gray-700 bg-gray-800/40 overflow-hidden">
-                    <button
-                      onClick={() => setView({ page: 'connections' })}
-                      className="w-full p-6 text-left hover:bg-gray-800/60 transition-all duration-200"
-                    >
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-2">
-                          <div
-                            className={`w-2.5 h-2.5 rounded-full ${hasConnections ? 'bg-green-500 shadow-lg shadow-green-500/30' : 'bg-gray-600'}`}
-                          />
-                          <h2 className="text-base font-semibold text-gray-100 flex items-center gap-1.5">
-                            Databases{' '}
-                            <HelpTip
-                              content="Manage connections to PostgreSQL, MySQL or SQLite databases"
-                              position="bottom"
-                            />
-                          </h2>
-                        </div>
-                        <span className="text-2xl font-bold text-os-400">
-                          {connectedCount}/{totalConnCount}
-                        </span>
-                      </div>
-                      <p className="text-xs text-gray-500 mb-3">
-                        connected database{connectedCount !== 1 ? 's' : ''}
-                      </p>
-                    </button>
-                    <div className="border-t border-gray-700/50 px-4 py-3 space-y-1.5 max-h-40 overflow-y-auto">
-                      {connections.map((conn) => {
-                        const hasSchema = !!connectionSchemas[conn.name];
-                        return (
-                          <div
-                            key={conn.name}
-                            className="flex items-center justify-between px-2 py-1.5"
-                          >
-                            <div className="flex items-center gap-2 min-w-0">
-                              <div
-                                className={`w-2 h-2 rounded-full flex-shrink-0 ${hasSchema ? 'bg-green-400' : 'bg-gray-600'}`}
-                                title={
-                                  hasSchema
-                                    ? 'Base de données connectée et schéma chargé'
-                                    : 'Base de données non connectée'
-                                }
-                              />
-                              <span className="text-sm text-gray-300 truncate">
-                                {conn.label || conn.name}
+                              <div className="flex items-center gap-2 min-w-0">
+                                <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${pActive ? 'bg-emerald-400' : 'bg-gray-600'}`} />
+                                <span className="font-mono-plex text-xs text-gray-300 truncate">{p.label || p.name}</span>
+                              </div>
+                              <span className={`font-mono-plex text-[10px] px-2 py-0.5 rounded-full flex-shrink-0 ${pActive ? 'bg-emerald-400/10 text-emerald-400 ring-1 ring-emerald-400/20' : 'bg-white/5 text-gray-600'}`}>
+                                {pActive ? 'ON' : 'OFF'}
                               </span>
-                            </div>
-                            <span
-                              className={`text-xs px-1.5 py-0.5 rounded font-medium ${
+                            </button>
+                          );
+                        })}
+                        {profiles.length === 0 && (
+                          <p className="text-[10px] text-gray-600 text-center py-2 eyebrow">No servers</p>
+                        )}
+                        <button
+                          onClick={() => setView({ page: 'mcp-list' })}
+                          className="mt-1 w-full text-left"
+                        >
+                          <span className="eyebrow-accent hover:text-os-300 transition-colors">View all &rarr;</span>
+                        </button>
+                      </div>
+                    }
+                  />
+
+                  {/* Data Profiles */}
+                  <KpiCard
+                    accent="blue"
+                    eyebrow={
+                      <Eyebrow dotColor={configurations.length > 0 ? 'bg-blue-400' : 'bg-gray-600'}>
+                        DATA PROFILES
+                        <HelpTip
+                          content="Configure which tables and columns from your databases are exposed to AI clients"
+                          position="bottom"
+                        />
+                      </Eyebrow>
+                    }
+                    value={<span className="text-3xl">{configurations.length}</span>}
+                    footer={
+                      <div className="space-y-0 max-h-40 overflow-y-auto">
+                        {configurations.slice(0, 4).map((cfg) => {
+                          const tCount = Object.keys(cfg.selectedTables).length;
+                          return (
+                            <button
+                              key={cfg.name}
+                              onClick={() => setView({ page: 'config-detail', configName: cfg.name })}
+                              className="w-full flex items-center justify-between px-2 py-1 rounded-md hover:bg-white/[0.02] transition-all duration-200 text-left"
+                            >
+                              <span className="font-mono-plex text-xs text-gray-300 truncate">{cfg.label}</span>
+                              <span className="font-mono-plex text-[10px] text-gray-500 flex-shrink-0">{tCount} table{tCount !== 1 ? 's' : ''}</span>
+                            </button>
+                          );
+                        })}
+                        {configurations.length === 0 && (
+                          <p className="text-[10px] text-gray-600 text-center py-2 eyebrow">No profiles</p>
+                        )}
+                        <button
+                          onClick={() => setView({ page: 'configurations' })}
+                          className="mt-1 w-full text-left"
+                        >
+                          <span className="eyebrow-accent hover:text-os-300 transition-colors">View all &rarr;</span>
+                        </button>
+                      </div>
+                    }
+                  />
+
+                  {/* Databases */}
+                  <KpiCard
+                    accent="emerald"
+                    eyebrow={
+                      <Eyebrow dotColor={hasConnections ? 'bg-emerald-400' : 'bg-gray-600'}>
+                        DATABASES
+                        <HelpTip
+                          content="Manage connections to PostgreSQL, MySQL or SQLite databases"
+                          position="bottom"
+                        />
+                      </Eyebrow>
+                    }
+                    value={
+                      <>
+                        <span className="text-3xl">{connectedCount}</span>
+                        <span className="text-lg text-gray-500">/{totalConnCount}</span>
+                      </>
+                    }
+                    footer={
+                      <div className="space-y-0 max-h-40 overflow-y-auto">
+                        {connections.slice(0, 4).map((conn) => {
+                          const hasSchema = !!connectionSchemas[conn.name];
+                          return (
+                            <div
+                              key={conn.name}
+                              className="flex items-center justify-between px-2 py-1"
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                <div
+                                  className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${hasSchema ? 'bg-emerald-400' : 'bg-gray-600'}`}
+                                  title={hasSchema ? 'Connected and schema loaded' : 'Not connected'}
+                                />
+                                <span className="font-mono-plex text-xs text-gray-300 truncate">{conn.label || conn.name}</span>
+                              </div>
+                              <span className={`font-mono-plex text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 ${
                                 conn.databaseType === 'postgresql'
                                   ? 'text-blue-300 bg-blue-500/10'
                                   : conn.databaseType === 'mysql'
                                     ? 'text-orange-300 bg-orange-500/10'
                                     : 'text-emerald-300 bg-emerald-500/10'
-                              }`}
-                            >
-                              {conn.databaseType === 'postgresql'
-                                ? 'PG'
-                                : conn.databaseType === 'mysql'
-                                  ? 'MySQL'
-                                  : 'SQLite'}
-                            </span>
-                          </div>
-                        );
-                      })}
-                      {connections.length === 0 && (
-                        <p className="text-xs text-gray-600 text-center py-2">No databases</p>
-                      )}
-                    </div>
-                    <div className="border-t border-gray-700/50 px-4 py-2">
-                      <button
-                        onClick={() => setView({ page: 'connections' })}
-                        className="text-xs text-os-400 hover:text-os-300 transition-colors"
-                      >
-                        View all &rarr;
-                      </button>
-                    </div>
-                  </div>
+                              }`}>
+                                {conn.databaseType === 'postgresql' ? 'PG' : conn.databaseType === 'mysql' ? 'MySQL' : 'SQLite'}
+                              </span>
+                            </div>
+                          );
+                        })}
+                        {connections.length === 0 && (
+                          <p className="text-[10px] text-gray-600 text-center py-2 eyebrow">No databases</p>
+                        )}
+                        <button
+                          onClick={() => setView({ page: 'connections' })}
+                          className="mt-1 w-full text-left"
+                        >
+                          <span className="eyebrow-accent hover:text-os-300 transition-colors">View all &rarr;</span>
+                        </button>
+                      </div>
+                    }
+                  />
                 </div>
 
-                {/* Bottom row: Users / Settings / Metrics */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {/* Users card */}
-                  <div className="rounded-xl border border-gray-700 bg-gray-800/40 overflow-hidden">
+                {/* Governance tiles: Users / Settings / Metrics */}
+                <div
+                  className="grid grid-cols-1 md:grid-cols-3 gap-3 animate-fade-in-up"
+                  style={{ animationDelay: '160ms' }}
+                >
+                  {[
+                    {
+                      label: 'USERS',
+                      description: 'Manage user accounts and permissions',
+                      dot: 'bg-purple-500',
+                      page: 'users' as const,
+                    },
+                    {
+                      label: 'SETTINGS',
+                      description: 'AI provider, SMTP and SSO/OIDC',
+                      dot: 'bg-amber-500',
+                      page: 'settings' as const,
+                    },
+                    {
+                      label: 'METRICS',
+                      description: 'Usage analytics and performance',
+                      dot: 'bg-cyan-500',
+                      page: 'metrics' as const,
+                    },
+                  ].map((tile) => (
                     <button
-                      onClick={() => setView({ page: 'users' })}
-                      className="w-full p-6 text-left hover:bg-gray-800/60 transition-all duration-200"
+                      key={tile.page}
+                      onClick={() => setView({ page: tile.page })}
+                      className="card-interactive group p-3 flex items-center gap-3 text-left"
                     >
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-2">
-                          <div className="w-2.5 h-2.5 rounded-full bg-purple-500 shadow-lg shadow-purple-500/30" />
-                          <h2 className="text-base font-semibold text-gray-100 flex items-center gap-1.5">
-                            Users{' '}
-                            <HelpTip
-                              content="Manage user accounts, their permissions and access to MCP servers"
-                              position="bottom"
-                            />
-                          </h2>
-                        </div>
+                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${tile.dot}`} aria-hidden="true" />
+                      <div className="flex-1 min-w-0">
+                        <div className="eyebrow mb-0.5">{tile.label}</div>
+                        <p className="text-xs text-gray-400 truncate">{tile.description}</p>
                       </div>
-                      <p className="text-xs text-gray-500">Manage user accounts and permissions</p>
+                      <span className="font-mono-plex text-sm text-gray-600 group-hover:text-os-400 transition-colors flex-shrink-0">
+                        &rarr;
+                      </span>
                     </button>
-                    <div className="border-t border-gray-700/50 px-4 py-2">
-                      <button
-                        onClick={() => setView({ page: 'users' })}
-                        className="text-xs text-os-400 hover:text-os-300 transition-colors"
-                      >
-                        Manage users &rarr;
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Settings card */}
-                  <div className="rounded-xl border border-gray-700 bg-gray-800/40 overflow-hidden">
-                    <button
-                      onClick={() => setView({ page: 'settings' })}
-                      className="w-full p-6 text-left hover:bg-gray-800/60 transition-all duration-200"
-                    >
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-2">
-                          <div className="w-2.5 h-2.5 rounded-full bg-amber-500 shadow-lg shadow-amber-500/30" />
-                          <h2 className="text-base font-semibold text-gray-100 flex items-center gap-1.5">
-                            Settings{' '}
-                            <HelpTip
-                              content="Configurer le fournisseur IA, l'envoi d'emails SMTP et l'authentification SSO/OIDC"
-                              position="bottom"
-                            />
-                          </h2>
-                        </div>
-                      </div>
-                      <p className="text-xs text-gray-500">Configure AI provider for user chat</p>
-                    </button>
-                    <div className="border-t border-gray-700/50 px-4 py-2">
-                      <button
-                        onClick={() => setView({ page: 'settings' })}
-                        className="text-xs text-os-400 hover:text-os-300 transition-colors"
-                      >
-                        Configure &rarr;
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Metrics card */}
-                  <div className="rounded-xl border border-gray-700 bg-gray-800/40 overflow-hidden">
-                    <button
-                      onClick={() => setView({ page: 'metrics' })}
-                      className="w-full p-6 text-left hover:bg-gray-800/60 transition-all duration-200"
-                    >
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-2">
-                          <div className="w-2.5 h-2.5 rounded-full bg-cyan-500 shadow-lg shadow-cyan-500/30" />
-                          <h2 className="text-base font-semibold text-gray-100 flex items-center gap-1.5">
-                            Metrics{' '}
-                            <HelpTip
-                              content="View usage statistics and MCP query performance metrics"
-                              position="bottom"
-                            />
-                          </h2>
-                        </div>
-                      </div>
-                      <p className="text-xs text-gray-500">Usage analytics and performance data</p>
-                    </button>
-                    <div className="border-t border-gray-700/50 px-4 py-2">
-                      <button
-                        onClick={() => setView({ page: 'metrics' })}
-                        className="text-xs text-os-400 hover:text-os-300 transition-colors"
-                      >
-                        View metrics &rarr;
-                      </button>
-                    </div>
-                  </div>
+                  ))}
                 </div>
 
                 {/* Recent Activity */}
                 {recentActivity.length > 0 && (
-                  <div className="rounded-xl border border-gray-700 bg-gray-800/40 overflow-hidden">
-                    <div className="px-5 py-4 border-b border-gray-700/50">
-                      <h2 className="text-base font-semibold text-gray-100">Recent Activity</h2>
+                  <div
+                    className="card-primary overflow-hidden animate-fade-in-up"
+                    style={{ animationDelay: '240ms' }}
+                  >
+                    <div className="flex items-center justify-between px-4 py-2 hairline-b">
+                      <Eyebrow accent live>RECENT ACTIVITY</Eyebrow>
+                      <Eyebrow>{recentActivity.length} events</Eyebrow>
                     </div>
-                    <div className="divide-y divide-gray-800/80">
+                    <div>
                       {recentActivity.slice(0, 8).map((entry) => {
                         const time = new Date(entry.timestamp);
-                        const now = new Date();
-                        const diffMs = now.getTime() - time.getTime();
+                        const diffMs = Date.now() - time.getTime();
                         const diffMin = Math.floor(diffMs / 60000);
                         const diffHour = Math.floor(diffMs / 3600000);
                         const timeAgo =
@@ -986,21 +919,19 @@ export default function App() {
                                 : time.toLocaleDateString();
 
                         return (
-                          <div key={entry.id} className="px-5 py-3 flex items-center gap-3">
+                          <div key={entry.id} className="px-4 py-1.5 border-b border-white/5 last:border-0 flex items-center gap-3">
                             <span
-                              className={`flex-shrink-0 w-2 h-2 rounded-full ${
-                                entry.result === 'success' ? 'bg-green-400' : 'bg-red-400'
+                              className={`flex-shrink-0 w-1.5 h-1.5 rounded-full ${
+                                entry.result === 'success' ? 'bg-emerald-400' : 'bg-rose-400'
                               }`}
-                              title={
-                                entry.result === 'success' ? 'Requête réussie' : 'Requête échouée'
-                              }
+                              title={entry.result === 'success' ? 'Success' : 'Error'}
                             />
                             <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm text-gray-200 font-mono truncate">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-mono-plex text-sm text-gray-200 truncate">
                                   {entry.toolName}
                                 </span>
-                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-os-700/20 text-os-400 border border-os-600/30 font-mono">
+                                <span className="font-mono-plex text-[10px] px-2 py-0.5 rounded-full bg-os-500/10 text-os-300 ring-1 ring-os-500/20 flex-shrink-0">
                                   {entry.profileName}
                                 </span>
                               </div>
@@ -1010,7 +941,7 @@ export default function App() {
                                 </p>
                               )}
                             </div>
-                            <span className="text-xs text-gray-600 flex-shrink-0 whitespace-nowrap">
+                            <span className="font-mono-plex text-xs text-gray-600 flex-shrink-0 whitespace-nowrap">
                               {timeAgo}
                             </span>
                           </div>
@@ -1023,7 +954,7 @@ export default function App() {
             )}
 
             {view.page === 'connections' && (
-              <div className="space-y-6">
+              <div className="space-y-4">
                 <PageHeader
                   breadcrumb={[
                     { label: 'Dashboard', onClick: () => setView({ page: 'dashboard' }) },
@@ -1045,7 +976,7 @@ export default function App() {
 
             {view.page === 'configurations' && (
               <div className="max-w-7xl mx-auto">
-                <nav className="flex items-center gap-2 text-sm mb-6">
+                <nav className="flex items-center gap-2 text-sm mb-4">
                   <button
                     onClick={() => setView({ page: 'dashboard' })}
                     className="text-os-400 hover:text-os-300 transition-colors"
@@ -1077,7 +1008,7 @@ export default function App() {
 
             {view.page === 'config-detail' && (
               <div className="max-w-7xl mx-auto">
-                <nav className="flex items-center gap-2 text-sm mb-6">
+                <nav className="flex items-center gap-2 text-sm mb-4">
                   <button
                     onClick={() => setView({ page: 'dashboard' })}
                     className="text-os-400 hover:text-os-300 transition-colors"
@@ -1142,7 +1073,7 @@ export default function App() {
             )}
 
             {view.page === 'mcp-list' && (
-              <div className="space-y-6">
+              <div className="space-y-4">
                 <PageHeader
                   breadcrumb={[
                     { label: 'Dashboard', onClick: () => setView({ page: 'dashboard' }) },
@@ -1151,7 +1082,7 @@ export default function App() {
                   title="MCP Servers"
                   description="Manage your MCP server profiles. Start, stop, and configure access for each profile."
                 />
-                <div className="mt-6">
+                <div className="mt-4">
                   <ServePanel
                     config={configWithProfileOptions}
                     selectedTables={selectedTables}
@@ -1173,7 +1104,7 @@ export default function App() {
 
             {view.page === 'mcp-detail' && (
               <div className="max-w-7xl mx-auto">
-                <nav className="flex items-center gap-2 text-sm mb-6">
+                <nav className="flex items-center gap-2 text-sm mb-4">
                   <button
                     onClick={() => setView({ page: 'dashboard' })}
                     className="text-os-400 hover:text-os-300 transition-colors"
@@ -1245,13 +1176,13 @@ export default function App() {
 
             {view.page === 'settings' && (
               <SettingsPage
-                allProfileNames={allProfileNames}
+                allProfileNames={Array.from(allProfileNames)}
                 onNavigateDashboard={() => setView({ page: 'dashboard' })}
               />
             )}
 
             {view.page === 'users' && (
-              <div className="space-y-6">
+              <div className="space-y-4">
                 <PageHeader
                   breadcrumb={[
                     { label: 'Dashboard', onClick: () => setView({ page: 'dashboard' }) },
@@ -1265,7 +1196,7 @@ export default function App() {
             )}
 
             {view.page === 'metrics' && (
-              <div className="space-y-6">
+              <div className="space-y-4">
                 <PageHeader
                   breadcrumb={[
                     { label: 'Dashboard', onClick: () => setView({ page: 'dashboard' }) },
@@ -1684,9 +1615,9 @@ function McpDetailView({
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Header card */}
-      <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-5">
+      <div className="card-primary p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div
@@ -2347,9 +2278,9 @@ function McpDetailView({
 
       {/* Section content */}
       {activeSection === 'tables' && (
-        <div className="space-y-6">
+        <div className="space-y-4">
           {/* Configurations selection */}
-          <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-5">
+          <div className="card-primary p-4">
             <div className="flex items-center justify-between mb-3">
               <h4 className="text-sm font-semibold text-gray-300">Assigned Data Profiles</h4>
               <div className="flex items-center gap-1">
@@ -2481,7 +2412,7 @@ function McpDetailView({
       )}
 
       {activeSection === 'users' && (
-        <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-5">
+        <div className="card-primary p-4">
           <h3 className="text-sm font-semibold text-gray-300 mb-3">
             Users with access to {profile.name}
           </h3>
@@ -2498,14 +2429,14 @@ function McpDetailView({
       )}
 
       {activeSection === 'tokens' && (
-        <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-5">
+        <div className="card-primary p-4">
           <h3 className="text-sm font-semibold text-gray-300 mb-3">Tokens</h3>
           <TokenManagerLazy profile={profile} port={serveStatus.port} />
         </div>
       )}
 
       {activeSection === 'audit' && (
-        <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-5">
+        <div className="card-primary p-4">
           <h3 className="text-sm font-semibold text-gray-300 mb-3">Audit Log</h3>
           <AuditLogViewerLazy profile={profile} />
         </div>
@@ -2572,15 +2503,12 @@ function ConfigurationListView({
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-xl font-semibold text-gray-100">Data Profiles</h2>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="heading-md">Data Profiles</h2>
         <div className="flex items-center gap-1.5">
-          <button
-            onClick={() => setCreating(true)}
-            className="px-4 py-2 rounded-lg bg-os-700 hover:bg-os-600 text-white text-sm font-medium transition-all duration-200 shadow-md shadow-os-900/20"
-          >
+          <Button variant="primary" onClick={() => setCreating(true)}>
             + New Data Profile
-          </button>
+          </Button>
           <HelpTip
             content="Create a new data profile to define which tables and columns to expose"
             position="bottom"
@@ -2589,43 +2517,37 @@ function ConfigurationListView({
       </div>
 
       {creating && (
-        <div className="rounded-lg border border-os-600/40 bg-gray-800/60 p-4 mb-6">
+        <div className="card-primary p-4 mb-4 ring-1 ring-os-500/20">
           <div className="flex gap-3">
             <input
               type="text"
               placeholder="Profile name"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
-              className="flex-1 px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
+              className="input-editorial flex-1 text-sm"
             />
             <input
               type="text"
               placeholder="Display name"
               value={newLabel}
               onChange={(e) => setNewLabel(e.target.value)}
-              className="flex-1 px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
+              className="input-editorial flex-1 text-sm"
             />
-            <button
-              onClick={handleCreate}
-              disabled={!newName.trim()}
-              className="px-4 py-2 rounded-lg bg-os-700 hover:bg-os-600 text-white text-sm font-medium disabled:opacity-50 transition-all duration-200"
-            >
+            <Button variant="primary" onClick={handleCreate} disabled={!newName.trim()}>
               Create
-            </button>
-            <button
-              onClick={() => setCreating(false)}
-              className="px-3 py-2 text-sm text-gray-500 hover:text-gray-300"
-            >
+            </Button>
+            <Button variant="ghost" onClick={() => setCreating(false)}>
               Cancel
-            </button>
+            </Button>
           </div>
         </div>
       )}
 
       {configurations.length === 0 && !creating ? (
-        <div className="text-center text-gray-500 py-12">
-          <p>No data profiles yet. Create one to define which tables to expose.</p>
-        </div>
+        <EmptyState
+          title="No data profiles"
+          description="Create one to define which tables to expose."
+        />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {configurations.map((cfg) => {
@@ -2633,11 +2555,11 @@ function ConfigurationListView({
             return (
               <div
                 key={cfg.name}
-                className="group rounded-lg border border-gray-700 bg-gray-800/40 p-5 hover:border-os-600 transition-all duration-200 cursor-pointer"
+                className="group card-interactive p-4 cursor-pointer"
                 onClick={() => onSelect(cfg.name)}
               >
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-base font-semibold text-gray-100 group-hover:text-os-400 transition-all duration-200">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="font-display text-lg text-gray-100 group-hover:text-os-400 transition-all duration-200">
                     {cfg.label}
                   </h3>
                   <button
@@ -2648,7 +2570,7 @@ function ConfigurationListView({
                       }
                     }}
                     title="Supprimer ce profil de données"
-                    className="opacity-0 group-hover:opacity-100 p-1 text-gray-500 hover:text-red-400 transition-all duration-200"
+                    className="opacity-0 group-hover:opacity-100 p-1 text-gray-500 hover:text-rose-400 transition-all duration-200"
                   >
                     <svg
                       className="w-4 h-4"
@@ -2675,7 +2597,9 @@ function ConfigurationListView({
                   </span>
                 </div>
                 {cfg.name !== cfg.label && (
-                  <p className="text-xs text-gray-600 font-mono mt-2">{cfg.name}</p>
+                  <p className="font-mono-plex text-[10px] text-gray-600 uppercase tracking-widest mt-2">
+                    {cfg.name}
+                  </p>
                 )}
               </div>
             );
@@ -2904,18 +2828,19 @@ function ConfigurationDetailView({
 
   if (!config && configName) {
     return (
-      <div className="text-center text-gray-500 py-12">
-        <p>Configuration &quot;{configName}&quot; not found.</p>
-      </div>
+      <EmptyState
+        title={`Configuration "${configName}" not found.`}
+        className="py-10"
+      />
     );
   }
 
   const tableCount = Object.keys(localSelectedTables).length;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Header */}
-      <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-5">
+      <div className="card-primary p-4">
         <div className="flex items-center justify-between">
           <div>
             {editingLabel ? (
@@ -2929,14 +2854,11 @@ function ConfigurationDetailView({
                     if (e.key === 'Escape') setEditingLabel(false);
                   }}
                   autoFocus
-                  className="px-2 py-1 rounded-lg bg-gray-900/60 border border-os-500 text-gray-100 text-lg font-semibold focus:outline-none focus:ring-1 focus:ring-os-500/30"
+                  className="input-editorial text-lg font-semibold border-os-500"
                 />
-                <button
-                  onClick={() => setEditingLabel(false)}
-                  className="text-xs text-os-400 hover:text-os-300"
-                >
+                <Button variant="ghost" size="sm" onClick={() => setEditingLabel(false)}>
                   OK
-                </button>
+                </Button>
               </div>
             ) : (
               <h2
@@ -2958,7 +2880,7 @@ function ConfigurationDetailView({
                   />
                 </svg>
                 {configName !== label && (
-                  <span className="ml-2 text-sm font-normal text-gray-500 font-mono">
+                  <span className="ml-2 font-mono-plex text-[10px] text-gray-600 uppercase tracking-widest font-normal">
                     {configName}
                   </span>
                 )}
@@ -2975,41 +2897,44 @@ function ConfigurationDetailView({
             </p>
           </div>
           <div className="flex items-center gap-3">
-            {saveError && <span className="text-sm text-red-400">{saveError}</span>}
-            <button
+            {saveError && <span className="text-sm text-rose-400">{saveError}</span>}
+            <Button
               onClick={handleSave}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 shadow-md ${
+              variant={saved ? 'ghost' : saveError ? 'ghost' : 'primary'}
+              className={
                 saved
-                  ? 'bg-green-700/30 text-green-400'
+                  ? 'bg-emerald-700/30 text-emerald-400 hover:bg-emerald-700/30'
                   : saveError
-                    ? 'bg-red-700/30 text-red-400'
-                    : 'bg-os-700 hover:bg-os-600 text-white shadow-os-900/20'
-              }`}
+                    ? 'bg-rose-700/30 text-rose-400 hover:bg-rose-700/30'
+                    : ''
+              }
             >
               {saved ? 'Saved!' : saveError ? 'Error' : 'Save'}
-            </button>
+            </Button>
             {confirmDelete ? (
               <div className="flex items-center gap-1">
                 <span className="text-xs text-gray-400 mr-1">Are you sure?</span>
-                <button
+                <Button
+                  variant="danger"
+                  size="sm"
                   onClick={handleDelete}
                   disabled={deleting}
-                  className="px-2 py-1.5 text-xs bg-red-600 hover:bg-red-500 text-white rounded transition-all duration-200 disabled:opacity-50"
                 >
                   {deleting ? 'Deleting...' : 'Yes, delete'}
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
                   onClick={() => setConfirmDelete(false)}
-                  className="px-2 py-1.5 text-xs bg-gray-600 hover:bg-gray-500 text-white rounded transition-all duration-200"
                 >
                   Cancel
-                </button>
+                </Button>
               </div>
             ) : (
               <button
                 onClick={() => setConfirmDelete(true)}
                 title="Supprimer ce profil de données"
-                className="p-2 text-gray-500 hover:text-red-400 transition-all duration-200 rounded-lg hover:bg-red-500/10"
+                className="p-2 text-gray-500 hover:text-rose-400 transition-all duration-200 rounded-lg hover:bg-rose-500/10"
               >
                 <svg
                   className="w-4 h-4"
@@ -3031,18 +2956,15 @@ function ConfigurationDetailView({
       </div>
 
       {/* Connections selection */}
-      <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-5">
-        <h3 className="text-sm font-semibold text-gray-300 mb-3">Databases</h3>
+      <div className="card-primary p-4">
+        <div className="mb-3"><Eyebrow>Databases</Eyebrow></div>
         {availableConnectionNames.length === 0 ? (
           <div className="text-center py-4">
             <p className="text-sm text-gray-500 mb-3">No databases connected yet.</p>
             {onNavigateToConnections && (
-              <button
-                onClick={onNavigateToConnections}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-md transition-colors"
-              >
+              <Button variant="primary" onClick={onNavigateToConnections}>
                 + Add a Database
-              </button>
+              </Button>
             )}
           </div>
         ) : (
@@ -3115,7 +3037,7 @@ function ConfigurationDetailView({
 
       {/* Tables & Columns selection — single unified view */}
       {configSchema.tables.length > 0 && (
-        <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-5">
+        <div className="card-primary p-4">
           <SchemaExplorer
             schema={configSchema}
             selectedTables={localSelectedTables}
@@ -3137,10 +3059,8 @@ function ConfigurationDetailView({
 
       {/* Advanced: Table Options & Masking */}
       {Object.keys(localSelectedTables).length > 0 && (
-        <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-5">
-          <h3 className="text-sm font-semibold text-gray-300 mb-3">
-            Advanced: Table Options &amp; Masking
-          </h3>
+        <div className="card-primary p-4">
+          <div className="mb-3"><Eyebrow>Advanced: Table Options &amp; Masking</Eyebrow></div>
           <ConfigPanel
             config={{
               serverName: '',
@@ -3192,7 +3112,7 @@ function SettingsPage({ allProfileNames, onNavigateDashboard }: SettingsPageProp
   const [activeTab, setActiveTab] = useState<SettingsTab>('ai');
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         breadcrumb={[{ label: 'Dashboard', onClick: onNavigateDashboard }, { label: 'Settings' }]}
         title="Settings"
@@ -3223,7 +3143,7 @@ function SettingsPage({ allProfileNames, onNavigateDashboard }: SettingsPageProp
       </div>
 
       {/* Desktop: sidebar nav + content */}
-      <div className="hidden md:grid md:grid-cols-[220px_1fr] md:gap-6">
+      <div className="hidden md:grid md:grid-cols-[220px_1fr] md:gap-4">
         {/* Left tab nav */}
         <nav aria-label="Settings navigation" className="flex flex-col gap-1">
           {SETTINGS_TABS.map((tab) => {

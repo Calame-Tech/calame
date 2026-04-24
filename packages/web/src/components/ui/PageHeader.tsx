@@ -16,6 +16,7 @@ export interface PageHeaderProps {
 
 /**
  * Page-level header with optional breadcrumb, title, description and action slot.
+ * Uses font-display for the title, mono-plex for the breadcrumb, hairline-b separator.
  */
 export function PageHeader({
   title,
@@ -25,7 +26,7 @@ export function PageHeader({
   className,
 }: PageHeaderProps): React.ReactElement {
   return (
-    <header className={cn('flex flex-col gap-2', className)}>
+    <header className={cn('flex flex-col gap-1.5 pb-4 mb-2 hairline-b', className)}>
       {/* Breadcrumb */}
       {breadcrumb && breadcrumb.length > 0 && (
         <nav aria-label="Breadcrumb">
@@ -35,8 +36,11 @@ export function PageHeader({
               return (
                 <li key={index} className="flex items-center gap-1.5">
                   {index > 0 && (
-                    <span className="text-gray-600 text-xs select-none" aria-hidden="true">
-                      ›
+                    <span
+                      className="font-mono-plex text-[10px] text-gray-600 select-none"
+                      aria-hidden="true"
+                    >
+                      /
                     </span>
                   )}
                   {item.onClick && !isLast ? (
@@ -44,7 +48,7 @@ export function PageHeader({
                       type="button"
                       onClick={item.onClick}
                       className={cn(
-                        'text-xs text-gray-400 hover:text-gray-200 transition-colors',
+                        'font-mono-plex text-[10px] uppercase tracking-widest text-gray-500 hover:text-gray-300 transition-colors',
                         'focus:outline-none focus:ring-2 focus:ring-os-400 rounded',
                       )}
                     >
@@ -53,8 +57,8 @@ export function PageHeader({
                   ) : (
                     <span
                       className={cn(
-                        'text-xs',
-                        isLast ? 'text-gray-300 font-medium' : 'text-gray-500',
+                        'font-mono-plex text-[10px] uppercase tracking-widest',
+                        isLast ? 'text-gray-400' : 'text-gray-500',
                       )}
                       aria-current={isLast ? 'page' : undefined}
                     >
@@ -71,8 +75,8 @@ export function PageHeader({
       {/* Title row */}
       <div className="flex items-start justify-between gap-4">
         <div className="flex flex-col gap-1 min-w-0">
-          <h1 className="text-2xl font-bold tracking-tight text-gray-100 truncate">{title}</h1>
-          {description && <p className="text-sm text-gray-400 mt-1">{description}</p>}
+          <h1 className="heading-md truncate">{title}</h1>
+          {description && <p className="text-sm text-gray-500 mt-0.5">{description}</p>}
         </div>
 
         {actions && <div className="flex-shrink-0 flex items-center gap-2">{actions}</div>}

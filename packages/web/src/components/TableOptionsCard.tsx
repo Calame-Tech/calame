@@ -41,7 +41,7 @@ export default function TableOptionsCard({ tableName, table, options, onChange, 
   };
 
   return (
-    <div className="border border-gray-700 rounded-lg p-4 bg-gray-800/40 space-y-4">
+    <div className="card-primary p-4 space-y-4">
       <h4 className="text-sm font-semibold text-gray-200">
         Table: <span className="text-os-400 font-mono">{tableName}</span>
       </h4>
@@ -87,7 +87,7 @@ export default function TableOptionsCard({ tableName, table, options, onChange, 
           min={1}
           value={options.maxLimit}
           onChange={(e) => onChange({ ...options, maxLimit: Math.max(1, Number(e.target.value) || 1) })}
-          className="w-32 px-3 py-1.5 rounded-lg bg-gray-800/80 border border-gray-700 text-gray-100 text-sm font-mono focus:outline-none focus:border-os-500 focus:ring-1 focus:ring-os-500/30 transition-all duration-200"
+          className="input-editorial w-32 text-sm font-mono"
         />
       </div>
 

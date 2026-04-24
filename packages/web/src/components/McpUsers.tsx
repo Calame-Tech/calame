@@ -193,15 +193,15 @@ export default function McpUsers({ profileName, onNavigateToUser }: McpUsersProp
 
       {/* Quick-create form */}
       {showQuickCreate && (
-        <form onSubmit={handleQuickCreate} className="bg-gray-700/50 rounded-lg p-3 space-y-2">
-          <h4 className="text-sm text-white font-medium">Quick Create User for {profileName}</h4>
+        <form onSubmit={handleQuickCreate} className="card-nested p-3 space-y-2">
+          <h4 className="text-sm text-gray-200 font-medium">Quick Create User for {profileName}</h4>
           <div className="flex gap-2">
             <input
               type="text"
               placeholder="Name"
               value={qcName}
               onChange={(e) => setQcName(e.target.value)}
-              className="flex-1 px-2 py-1.5 bg-gray-800 border border-gray-600 rounded text-white text-sm"
+              className="input-editorial flex-1 text-sm"
               required
             />
             <input
@@ -209,13 +209,13 @@ export default function McpUsers({ profileName, onNavigateToUser }: McpUsersProp
               placeholder="Email"
               value={qcEmail}
               onChange={(e) => setQcEmail(e.target.value)}
-              className="flex-1 px-2 py-1.5 bg-gray-800 border border-gray-600 rounded text-white text-sm"
+              className="input-editorial flex-1 text-sm"
               required
             />
             <select
               value={qcAccessMode}
               onChange={(e) => setQcAccessMode(e.target.value as AccessMode)}
-              className="px-2 py-1.5 bg-gray-800 border border-gray-600 rounded text-white text-sm"
+              className="input-editorial text-sm"
             >
               <option value="both">MCP + Chat</option>
               <option value="mcp">MCP only</option>
@@ -233,14 +233,14 @@ export default function McpUsers({ profileName, onNavigateToUser }: McpUsersProp
 
       {/* Add existing user */}
       {showAddExisting && (
-        <div className="bg-gray-700/50 rounded-lg p-3 space-y-2">
-          <h4 className="text-sm text-white font-medium">Add Existing User to {profileName}</h4>
+        <div className="card-nested p-3 space-y-2">
+          <h4 className="text-sm text-gray-200 font-medium">Add Existing User to {profileName}</h4>
           <div className="flex items-center gap-2 mb-2">
             <span className="text-xs text-gray-400">Access mode:</span>
             <select
               value={addAccessMode}
               onChange={(e) => setAddAccessMode(e.target.value as AccessMode)}
-              className="px-2 py-1 bg-gray-800 border border-gray-600 rounded text-white text-xs"
+              className="input-editorial text-xs"
             >
               <option value="both">MCP + Chat</option>
               <option value="mcp">MCP only</option>
@@ -278,7 +278,7 @@ export default function McpUsers({ profileName, onNavigateToUser }: McpUsersProp
         </div>
       ) : (
         <table className="w-full text-sm text-left">
-          <thead className="text-gray-400 border-b border-gray-700">
+          <thead className="text-gray-400 border-b border-white/5">
             <tr>
               <th className="px-3 py-2">Name</th>
               <th className="px-3 py-2">Email</th>
@@ -294,7 +294,7 @@ export default function McpUsers({ profileName, onNavigateToUser }: McpUsersProp
               return (
                 <tr
                   key={user.id}
-                  className="border-b border-gray-800 hover:bg-gray-800/50 cursor-pointer"
+                  className="border-b border-white/5 hover:bg-gray-800/50 cursor-pointer"
                   onClick={() => onNavigateToUser?.(user.id)}
                 >
                   <td className="px-3 py-2 font-medium text-white">{user.name}</td>

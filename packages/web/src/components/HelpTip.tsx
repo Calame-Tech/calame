@@ -74,10 +74,10 @@ export default function HelpTip({
   };
 
   const arrowClasses: Record<string, string> = {
-    top: 'left-1/2 -translate-x-1/2 -bottom-1 border-l-transparent border-r-transparent border-b-transparent border-t-gray-800',
-    bottom: 'left-1/2 -translate-x-1/2 -top-1 border-l-transparent border-r-transparent border-t-transparent border-b-gray-800',
-    left: 'top-1/2 -translate-y-1/2 -right-1 border-t-transparent border-b-transparent border-r-transparent border-l-gray-800',
-    right: 'top-1/2 -translate-y-1/2 -left-1 border-t-transparent border-b-transparent border-l-transparent border-r-gray-800',
+    top: 'left-1/2 -translate-x-1/2 -bottom-1 border-l-transparent border-r-transparent border-b-transparent border-t-gray-900',
+    bottom: 'left-1/2 -translate-x-1/2 -top-1 border-l-transparent border-r-transparent border-t-transparent border-b-gray-900',
+    left: 'top-1/2 -translate-y-1/2 -right-1 border-t-transparent border-b-transparent border-r-transparent border-l-gray-900',
+    right: 'top-1/2 -translate-y-1/2 -left-1 border-t-transparent border-b-transparent border-l-transparent border-r-gray-900',
   };
 
   const sizeClasses = size === 'xs'
@@ -107,7 +107,7 @@ export default function HelpTip({
       {visible && createPortal(
         <div
           role="tooltip"
-          className={`fixed z-[9999] px-3 py-2 text-xs leading-relaxed text-gray-200 bg-gray-800 border border-gray-700 rounded-lg shadow-xl ${positionClasses[position]} pointer-events-none`}
+          className={`fixed z-[9999] px-3 py-2 text-xs leading-relaxed text-gray-200 bg-gray-900/95 border border-white/10 rounded-lg shadow-xl ${positionClasses[position]} pointer-events-none`}
           style={{ top: coords.top, left: coords.left, maxWidth }}
         >
           {content}

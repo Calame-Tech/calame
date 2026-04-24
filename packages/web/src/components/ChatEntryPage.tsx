@@ -81,7 +81,7 @@ function InlineChatPanel({ profileName }: { profileName: string }) {
   };
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 rounded-lg border border-gray-700 bg-gray-800/30">
+    <div className="flex flex-col flex-1 min-h-0 card-primary">
       {/* Messages */}
       <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 space-y-3">
         {chatMessages.length === 0 && (
@@ -127,7 +127,7 @@ function InlineChatPanel({ profileName }: { profileName: string }) {
       </div>
 
       {/* Input */}
-      <div className="border-t border-gray-700 p-3 flex gap-2">
+      <div className="border-t border-white/5 p-3 flex gap-2">
         <input
           type="text"
           value={chatInput}
@@ -141,7 +141,7 @@ function InlineChatPanel({ profileName }: { profileName: string }) {
           placeholder="Ask about your data..."
           disabled={chatLoading}
           aria-label="Chat message input"
-          className="flex-1 px-3 py-2 rounded-lg bg-gray-900 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:border-os-500 focus:ring-1 focus:ring-os-500/30 disabled:opacity-50"
+          className="input-editorial flex-1 text-sm disabled:opacity-50"
         />
         <button
           onClick={handleChatSend}
@@ -198,7 +198,7 @@ function TokenLoginForm({
 
   return (
     <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
-      <div className="max-w-md w-full rounded-xl border border-gray-700 bg-gray-800/40 p-8">
+      <div className="card-primary max-w-md w-full p-8">
         <div className="mb-6">
           <img src="/logo.png" alt="Calame" className="h-8 w-8 object-contain mb-4" />
           <h1 className="text-xl font-semibold text-gray-100 mb-1">
@@ -226,7 +226,7 @@ function TokenLoginForm({
               placeholder="fmcp_..."
               autoFocus
               autoComplete="off"
-              className="w-full px-3 py-2.5 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-500 focus:outline-none focus:border-os-500 focus:ring-1 focus:ring-os-500/30"
+              className="input-editorial w-full text-sm"
             />
           </div>
 
@@ -293,7 +293,7 @@ function CalameLoginForm({
 
   return (
     <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
-      <div className="max-w-md w-full rounded-xl border border-gray-700 bg-gray-800/40 p-8">
+      <div className="card-primary max-w-md w-full p-8">
         <div className="mb-6">
           <img src="/logo.png" alt="Calame" className="h-8 w-8 object-contain mb-4" />
           <h1 className="text-xl font-semibold text-gray-100 mb-1">
@@ -318,7 +318,7 @@ function CalameLoginForm({
               placeholder="email@example.com"
               autoFocus
               autoComplete="email"
-              className="w-full px-3 py-2.5 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-500 focus:outline-none focus:border-os-500 focus:ring-1 focus:ring-os-500/30"
+              className="input-editorial w-full text-sm"
             />
           </div>
 
@@ -336,7 +336,7 @@ function CalameLoginForm({
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
               autoComplete="current-password"
-              className="w-full px-3 py-2.5 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-500 focus:outline-none focus:border-os-500 focus:ring-1 focus:ring-os-500/30"
+              className="input-editorial w-full text-sm"
             />
           </div>
 
@@ -367,7 +367,7 @@ function SsoLoginForm({ profile }: { profile: ChatProfile }) {
 
   return (
     <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
-      <div className="max-w-md w-full rounded-xl border border-gray-700 bg-gray-800/40 p-8 text-center">
+      <div className="card-primary max-w-md w-full p-8 text-center">
         <img src="/logo.png" alt="Calame" className="h-8 w-8 object-contain mb-4 mx-auto" />
         <h1 className="text-xl font-semibold text-gray-100 mb-1">
           {profile.label || profile.name}
@@ -425,7 +425,7 @@ function ExternalLoginForm({
 
   return (
     <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
-      <div className="max-w-md w-full rounded-xl border border-gray-700 bg-gray-800/40 p-8">
+      <div className="card-primary max-w-md w-full p-8">
         <div className="mb-6">
           <img src="/logo.png" alt="Calame" className="h-8 w-8 object-contain mb-4" />
           <h1 className="text-xl font-semibold text-gray-100 mb-1">
@@ -453,7 +453,7 @@ function ExternalLoginForm({
               placeholder="Your access token..."
               autoFocus
               autoComplete="off"
-              className="w-full px-3 py-2.5 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-500 focus:outline-none focus:border-os-500 focus:ring-1 focus:ring-os-500/30"
+              className="input-editorial w-full text-sm"
             />
           </div>
 
@@ -485,7 +485,7 @@ function OAuthLoginForm({ profile }: { profile: ChatProfile }) {
 
   return (
     <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
-      <div className="max-w-md w-full rounded-xl border border-gray-700 bg-gray-800/40 p-8 text-center">
+      <div className="card-primary max-w-md w-full p-8 text-center">
         <img src="/logo.png" alt="Calame" className="h-8 w-8 object-contain mb-4 mx-auto" />
         <h1 className="text-xl font-semibold text-gray-100 mb-1">
           {profile.label || profile.name}
@@ -517,7 +517,7 @@ function ChatView({ profile, onLogout }: { profile: ChatProfile; onLogout: () =>
   };
 
   return (
-    <div className="h-screen flex flex-col bg-gray-900">
+    <div className="h-screen flex flex-col bg-gray-950">
       {/* Minimal header */}
       <header className="flex-shrink-0 border-b border-gray-800/80 px-4 sm:px-6 py-3 bg-gray-900/60 backdrop-blur-sm">
         <div className="flex items-center justify-between max-w-4xl mx-auto w-full">
@@ -667,7 +667,7 @@ export default function ChatEntryPage({ profileName }: ChatEntryPageProps) {
   // Loading
   if (pageState.step === 'loading') {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center">
         <div
           className="h-6 w-6 rounded-full border-2 border-os-500 border-t-transparent animate-spin"
           role="status"
@@ -680,8 +680,8 @@ export default function ChatEntryPage({ profileName }: ChatEntryPageProps) {
   // Error
   if (pageState.step === 'error') {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
-        <div className="max-w-md w-full rounded-xl border border-gray-700 bg-gray-800/40 p-8 text-center">
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
+        <div className="card-primary max-w-md w-full p-8 text-center">
           <div className="w-12 h-12 rounded-full bg-red-900/30 border border-red-800/50 flex items-center justify-center mx-auto mb-4">
             <svg
               className="w-6 h-6 text-red-400"
@@ -717,7 +717,7 @@ export default function ChatEntryPage({ profileName }: ChatEntryPageProps) {
     };
 
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
         <div className="max-w-md w-full rounded-xl border border-amber-800/50 bg-gray-800/40 p-8 text-center">
           <div className="w-12 h-12 rounded-full bg-amber-900/30 border border-amber-800/50 flex items-center justify-center mx-auto mb-4">
             <svg

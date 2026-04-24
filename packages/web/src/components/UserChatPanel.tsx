@@ -85,12 +85,12 @@ export default function UserChatPanel({ profiles }: UserChatPanelProps) {
   return (
     <div className="flex-1 flex flex-col min-h-0">
       <div className="flex items-center justify-between mb-3 flex-shrink-0">
-        <h2 className="text-lg font-semibold text-white">Chat with your database</h2>
+        <h2 className="heading-md">Chat with your database</h2>
         {chatProfiles.length > 1 && (
           <select
             value={selectedProfile}
             onChange={(e) => setSelectedProfile(e.target.value)}
-            className="px-3 py-1.5 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
+            className="input-editorial text-sm"
           >
             {chatProfiles.map((p) => (
               <option key={p.profileName} value={p.profileName}>
@@ -101,7 +101,7 @@ export default function UserChatPanel({ profiles }: UserChatPanelProps) {
         )}
       </div>
 
-      <div className="rounded-lg border border-gray-700 bg-gray-800/30 flex flex-col flex-1 min-h-0">
+      <div className="card-primary flex flex-col flex-1 min-h-0">
         {/* Messages */}
         <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 space-y-3">
           {chatMessages.length === 0 && (
@@ -153,7 +153,7 @@ export default function UserChatPanel({ profiles }: UserChatPanelProps) {
         </div>
 
         {/* Input */}
-        <div className="border-t border-gray-700 p-3 flex gap-2">
+        <div className="border-t border-white/5 p-3 flex gap-2">
           <input
             type="text"
             value={chatInput}
@@ -166,7 +166,7 @@ export default function UserChatPanel({ profiles }: UserChatPanelProps) {
             }}
             placeholder="Ask about your data..."
             disabled={chatLoading}
-            className="flex-1 px-3 py-2 rounded-lg bg-gray-900 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:border-os-500 disabled:opacity-50"
+            className="input-editorial flex-1 text-sm disabled:opacity-50"
           />
           <button
             onClick={handleChatSend}

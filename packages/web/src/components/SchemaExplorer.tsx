@@ -258,7 +258,7 @@ export default function SchemaExplorer({
     const color = connName ? getConnColor(connName) : null;
 
     return (
-      <div key={`accordion-${table.name}`} className="col-span-full mt-1 mb-2 rounded-lg border border-os-500/40 bg-gray-800/60 p-4">
+      <div key={`accordion-${table.name}`} className="col-span-full mt-1 mb-2 rounded-xl border border-os-500/40 bg-gray-900/60 p-4">
         {/* Accordion header */}
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
@@ -276,7 +276,7 @@ export default function SchemaExplorer({
           </div>
           <button
             onClick={() => toggleAllColumns(table)}
-            className="text-xs text-gray-400 hover:text-gray-200 transition-colors px-2 py-1 rounded border border-gray-700 hover:border-gray-600"
+            className="text-xs text-gray-400 hover:text-gray-200 transition-colors px-2 py-1 rounded border border-white/10 hover:border-white/20"
           >
             {selectedCols.size === table.columns.length ? 'Deselect all' : 'Select all'}
           </button>
@@ -362,9 +362,9 @@ export default function SchemaExplorer({
   return (
     <div>
       {/* Header row */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-5">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
         <div>
-          <h2 className="text-xl font-semibold">Tables &amp; Columns</h2>
+          <h2 className="heading-md">Tables &amp; Columns</h2>
           <p className="text-sm text-gray-500 mt-1">
             <span className="text-os-400 font-medium">{stats.tablesSelected}</span> table{stats.tablesSelected !== 1 ? 's' : ''} selected,{' '}
             <span className="text-os-400 font-medium">{stats.columnsTotal}</span> column{stats.columnsTotal !== 1 ? 's' : ''} total
@@ -392,7 +392,7 @@ export default function SchemaExplorer({
       </div>
 
       {/* Search bar */}
-      <div className="relative mb-5">
+      <div className="relative mb-4">
         <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
         </svg>
@@ -401,14 +401,14 @@ export default function SchemaExplorer({
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search tables..."
-          className="w-full sm:w-72 pl-10 pr-4 py-2 rounded-lg bg-gray-800/80 border border-gray-700 text-gray-100 placeholder-gray-500 text-sm focus:outline-none focus:border-os-500 focus:ring-1 focus:ring-os-500/30 transition-all duration-200"
+          className="input-editorial w-full sm:w-72 pl-10 text-sm"
         />
       </div>
 
       {/* Tables — grouped by database or flat */}
       {groupedTables && !searchQuery.trim() ? (
         // Grouped by database
-        <div className="space-y-6">
+        <div className="space-y-4">
           {connectionNames.map((connName) => {
             const tables = groupedTables[connName];
             if (!tables || tables.length === 0) return null;
@@ -419,7 +419,7 @@ export default function SchemaExplorer({
               <div key={connName}>
                 {/* Database group header */}
                 <div className="flex items-center gap-2 mb-3">
-                  <span className={`w-2.5 h-2.5 rounded-full ${color.dot}`} />
+                  <span className={`w-2 h-2 rounded-full ${color.dot}`} />
                   <h3 className="text-sm font-semibold text-gray-200">{displayName}</h3>
                   <span className="text-xs text-gray-500">({tables.length} table{tables.length !== 1 ? 's' : ''})</span>
                 </div>

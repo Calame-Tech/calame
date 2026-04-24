@@ -160,7 +160,7 @@ export default function PendingQueries({ onPendingCountChange }: PendingQueriesP
       {loading && entries.length === 0 ? (
         <div className="text-center text-gray-500 py-8">Loading...</div>
       ) : entries.length === 0 ? (
-        <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-8 text-center text-gray-500">
+        <div className="card-primary p-8 text-center text-gray-500">
           No {statusFilter === 'all' ? '' : statusFilter} write queries.
         </div>
       ) : (
@@ -168,7 +168,7 @@ export default function PendingQueries({ onPendingCountChange }: PendingQueriesP
           {entries.map((entry) => (
             <div
               key={entry.id}
-              className="rounded-lg border border-gray-700 bg-gray-800/40 p-4"
+              className="card-primary p-4"
             >
               {/* Header row */}
               <div className="flex items-center justify-between gap-3">
@@ -213,7 +213,7 @@ export default function PendingQueries({ onPendingCountChange }: PendingQueriesP
 
               {/* Expanded details */}
               {expandedId === entry.id && (
-                <div className="mt-3 pt-3 border-t border-gray-700 space-y-2">
+                <div className="mt-3 pt-3 border-t border-white/5 space-y-2">
                   <div>
                     <span className="text-xs text-gray-500">SQL:</span>
                     <pre className="mt-1 p-2 rounded bg-gray-900 border border-gray-700 text-xs text-gray-300 font-mono overflow-x-auto whitespace-pre-wrap">

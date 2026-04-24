@@ -87,7 +87,7 @@ export default function ProfilePreview({ profileName, onClose }: ProfilePreviewP
       className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
       onClick={handleBackdropClick}
     >
-      <div className="bg-gray-800 rounded-xl border border-gray-700 max-w-4xl w-full max-h-[80vh] overflow-y-auto p-6">
+      <div className="card-primary max-w-4xl w-full max-h-[80vh] overflow-y-auto p-6">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-lg font-semibold text-gray-100">
@@ -158,7 +158,7 @@ export default function ProfilePreview({ profileName, onClose }: ProfilePreviewP
             {data.tables.map((table) => (
               <div
                 key={table.name}
-                className="mb-6 rounded-lg border border-gray-700 bg-gray-800/60 p-4"
+                className="mb-4 card-nested px-4 py-3"
               >
                 {/* Table header */}
                 <div className="flex items-center justify-between mb-3">
@@ -184,7 +184,7 @@ export default function ProfilePreview({ profileName, onClose }: ProfilePreviewP
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm" aria-label={`Columns of table ${table.name}`}>
                     <thead>
-                      <tr className="text-gray-500 text-xs border-b border-gray-700">
+                      <tr className="text-gray-500 text-xs border-b border-white/5">
                         <th className="text-left pb-2 pr-4 font-medium">Column</th>
                         <th className="text-left pb-2 pr-4 font-medium">Type</th>
                         <th className="text-left pb-2 font-medium">Status</th>
@@ -192,7 +192,7 @@ export default function ProfilePreview({ profileName, onClose }: ProfilePreviewP
                     </thead>
                     <tbody>
                       {table.columns.map((col) => (
-                        <tr key={col.name} className="border-b border-gray-700/40 last:border-0">
+                        <tr key={col.name} className="border-b border-white/5 last:border-0">
                           <td className="py-1.5 pr-4 text-gray-200 font-mono text-xs">
                             {col.name}
                           </td>

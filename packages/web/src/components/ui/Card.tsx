@@ -24,9 +24,9 @@ export function Card({
   return (
     <Tag
       className={cn(
-        'rounded-xl border border-gray-800/80 bg-gray-900/60 backdrop-blur-sm',
-        padded && 'p-6',
-        hoverable && 'hover:border-gray-700 hover:bg-gray-900/80 transition-colors cursor-pointer',
+        'card-primary',
+        padded && 'p-4',
+        hoverable && 'card-interactive cursor-pointer',
         className,
       )}
     >
@@ -84,7 +84,7 @@ export interface CardFooterProps {
 
 export function CardFooter({ children, className }: CardFooterProps): React.ReactElement {
   return (
-    <div className={cn('flex items-center gap-3 pt-4 border-t border-gray-800/60', className)}>
+    <div className={cn('flex items-center gap-3 pt-3 border-t border-white/5', className)}>
       {children}
     </div>
   );

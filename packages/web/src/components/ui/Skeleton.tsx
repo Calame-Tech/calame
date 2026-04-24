@@ -17,7 +17,7 @@ export function Skeleton({ className, width, height }: SkeletonProps): React.Rea
 
   return (
     <div
-      className={cn('animate-pulse rounded bg-gray-800/60', className)}
+      className={cn('animate-pulse rounded bg-white/5', className)}
       style={style}
       aria-hidden="true"
     />

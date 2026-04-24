@@ -34,7 +34,7 @@ const DB_OPTIONS: { type: DatabaseType; label: string; description: string; plac
 ];
 
 const TEXTAREA_CLASS =
-  'w-full px-3 py-2 rounded-lg bg-gray-800/80 border border-gray-700 text-gray-100 placeholder-gray-500 text-xs font-mono focus:outline-none focus:border-os-500 focus:ring-1 focus:ring-os-500/30 transition-all duration-200 resize-none';
+  'input-editorial w-full text-xs resize-none';
 
 export default function ConnectionForm({
   connectionString,
@@ -107,29 +107,29 @@ export default function ConnectionForm({
 
   return (
     <div className="max-w-xl mx-auto">
-      <div className="flex items-center gap-3 mb-6">
+      <div className="flex items-center gap-3 mb-4">
         <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-os-700/20 ring-1 ring-os-600/30">
           <svg className="w-5 h-5 text-os-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125v-3.75" />
           </svg>
         </div>
         <div>
-          <h2 className="text-xl font-semibold">Base de données</h2>
+          <h2 className="heading-md">Base de données</h2>
           <p className="text-sm text-gray-500">Connectez-vous à votre base de données</p>
         </div>
       </div>
 
       {/* Database type selector */}
-      <div className="mb-6">
-        <label className="block text-sm font-medium text-gray-300 mb-3">Database Type</label>
+      <div className="mb-4">
+        <p className="eyebrow mb-3">Database Type</p>
         <div className="flex flex-col gap-3">
           {DB_OPTIONS.map((opt) => (
             <label
               key={opt.type}
-              className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all duration-200 ${
+              className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all duration-200 ${
                 databaseType === opt.type
                   ? 'border-os-600/60 bg-os-700/10 ring-1 ring-os-600/20'
-                  : 'border-gray-700 hover:border-gray-600 bg-gray-800/30'
+                  : 'border-white/5 hover:border-white/10 bg-gray-900/40'
               }`}
             >
               <input
@@ -149,16 +149,14 @@ export default function ConnectionForm({
         </div>
       </div>
 
-      <label className="block text-sm font-medium text-gray-300 mb-2">
-        Chaîne de connexion
-      </label>
+      <p className="eyebrow mb-2">Chaîne de connexion</p>
       <div className="relative">
         <input
           type={showPassword ? 'text' : 'password'}
           value={connectionString}
           onChange={(e) => setConnectionString(e.target.value)}
           placeholder={activeOption.placeholder}
-          className="w-full px-4 py-2.5 rounded-lg bg-gray-800/80 border border-gray-700 text-gray-100 placeholder-gray-500 focus:outline-none focus:border-os-500 focus:ring-1 focus:ring-os-500/30 transition-all duration-200 pr-16"
+          className="input-editorial w-full pr-16"
         />
         <button
           onClick={() => setShowPassword(!showPassword)}
@@ -202,7 +200,7 @@ export default function ConnectionForm({
           </button>
 
           {sslExpanded && (
-            <div id="ssl-section" className="mt-3 space-y-3 pl-2 border-l-2 border-gray-700">
+            <div id="ssl-section" className="mt-3 space-y-3 pl-2 border-l-2 border-white/10">
               {/* Enable toggle */}
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
@@ -289,7 +287,7 @@ export default function ConnectionForm({
       <button
         onClick={handleTest}
         disabled={!connectionString || status === 'loading'}
-        className="mt-4 px-6 py-2.5 bg-os-700 hover:bg-os-600 disabled:opacity-50 rounded-lg font-medium transition-all duration-200 shadow-md shadow-os-900/20 hover:shadow-lg hover:shadow-os-900/30 disabled:shadow-none flex items-center gap-2"
+        className="mt-4 px-6 py-2 bg-os-700 hover:bg-os-600 disabled:opacity-50 rounded-lg font-medium transition-all duration-200 shadow-md shadow-os-900/20 hover:shadow-lg hover:shadow-os-900/30 disabled:shadow-none flex items-center gap-2"
         type="button"
       >
         {status === 'loading' && (

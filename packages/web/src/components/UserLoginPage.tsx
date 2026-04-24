@@ -37,12 +37,12 @@ export default function UserLoginPage({ onLogin }: UserLoginPageProps) {
   };
 
   return (
-    <div className="min-h-screen bg-gray-900 flex items-center justify-center">
-      <div className="bg-gray-800 rounded-lg shadow-xl p-8 w-full max-w-md">
+    <div className="min-h-screen bg-gray-950 flex items-center justify-center">
+      <div className="card-primary p-6 w-full max-w-md">
         <div className="text-center mb-8">
           <div className="flex items-center justify-center gap-3 mb-2">
             <img src="/logo.png" alt="Calame" className="h-10 w-10 object-contain" />
-            <h1 className="text-3xl font-bold text-white">Calame</h1>
+            <h1 className="heading-lg">Calame</h1>
           </div>
           <p className="text-gray-400 mt-2">Sign in to your account</p>
         </div>
@@ -57,7 +57,7 @@ export default function UserLoginPage({ onLogin }: UserLoginPageProps) {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="input-editorial w-full"
               placeholder="your@email.com"
               autoFocus
               required
@@ -73,14 +73,14 @@ export default function UserLoginPage({ onLogin }: UserLoginPageProps) {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="input-editorial w-full"
               placeholder="Enter your password"
               required
             />
           </div>
 
           {error && (
-            <div className="bg-red-900/50 border border-red-700 rounded-md p-3 text-red-300 text-sm">
+            <div className="bg-red-950/30 border border-red-800/50 rounded-lg p-3 text-red-400 text-sm">
               {error}
             </div>
           )}
@@ -88,7 +88,7 @@ export default function UserLoginPage({ onLogin }: UserLoginPageProps) {
           <button
             type="submit"
             disabled={loading || !email || !password}
-            className="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-medium rounded-md transition-colors"
+            className="w-full py-2 px-4 bg-os-700 hover:bg-os-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors"
           >
             {loading ? 'Signing in...' : 'Sign In'}
           </button>

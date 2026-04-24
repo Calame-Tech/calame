@@ -123,7 +123,7 @@ export default function ChatPanel({ selectedTables, activeProfiles }: ChatPanelP
 
   return (
     <div>
-      <h2 className="text-xl font-semibold mb-2">Chat with your database</h2>
+      <h2 className="heading-md mb-2">Chat with your database</h2>
       <p className="text-sm text-gray-400 mb-4">
         Ask questions in natural language. The AI will query your database using the MCP tools and
         answer.
@@ -185,7 +185,7 @@ export default function ChatPanel({ selectedTables, activeProfiles }: ChatPanelP
 
       {/* Chat area */}
       <div
-        className="rounded-lg border border-gray-700 bg-gray-800/30 flex flex-col"
+        className="card-primary flex flex-col"
         style={{ height: '400px' }}
       >
         {/* Messages */}
@@ -239,7 +239,7 @@ export default function ChatPanel({ selectedTables, activeProfiles }: ChatPanelP
         </div>
 
         {/* Input */}
-        <div className="border-t border-gray-700 p-3 flex gap-2">
+        <div className="border-t border-white/5 p-3 flex gap-2">
           <input
             type="text"
             value={chatInput}
@@ -258,7 +258,7 @@ export default function ChatPanel({ selectedTables, activeProfiles }: ChatPanelP
                   : 'Configure AI in Settings first'
             }
             disabled={!canChat || chatLoading}
-            className="flex-1 px-3 py-2 rounded-lg bg-gray-900 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:border-os-500 disabled:opacity-50"
+            className="input-editorial flex-1 text-sm disabled:opacity-50"
           />
           <button
             onClick={handleChatSend}

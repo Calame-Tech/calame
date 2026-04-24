@@ -47,7 +47,7 @@ export default function GlobalMaskingRules({ rules, onRulesChange }: GlobalMaski
         <div className="flex items-center gap-1">
           <button
             onClick={addRule}
-            className="text-xs px-2 py-1 rounded border border-gray-700 text-gray-300 hover:bg-gray-800 hover:border-gray-600 transition-colors"
+            className="text-xs px-2 py-1 rounded border border-white/10 text-gray-300 hover:bg-gray-800 hover:border-white/20 transition-colors"
           >
             + Add Rule
           </button>
@@ -66,7 +66,7 @@ export default function GlobalMaskingRules({ rules, onRulesChange }: GlobalMaski
             <select
               value={rule.piiCategory}
               onChange={(e) => updateRule(i, { piiCategory: e.target.value as PiiCategory })}
-              className="px-2 py-1 rounded bg-gray-800/80 border border-gray-700 text-gray-200 text-xs focus:outline-none focus:border-os-500"
+              className="px-2 py-1 rounded bg-gray-800/80 border border-white/10 text-gray-200 text-xs focus:outline-none focus:border-os-500"
             >
               {PII_CATEGORIES.map((c) => (
                 <option key={c} value={c}>{c}</option>
@@ -79,7 +79,7 @@ export default function GlobalMaskingRules({ rules, onRulesChange }: GlobalMaski
             <select
               value={rule.defaultMode}
               onChange={(e) => updateRule(i, { defaultMode: e.target.value as MaskingMode })}
-              className="px-2 py-1 rounded bg-gray-800/80 border border-gray-700 text-gray-200 text-xs focus:outline-none focus:border-os-500"
+              className="px-2 py-1 rounded bg-gray-800/80 border border-white/10 text-gray-200 text-xs focus:outline-none focus:border-os-500"
             >
               {MASKING_MODES.map((m) => (
                 <option key={m.value} value={m.value}>{m.label}</option>
@@ -98,14 +98,14 @@ export default function GlobalMaskingRules({ rules, onRulesChange }: GlobalMaski
                 type="number" min={0} max={10}
                 value={rule.truncateOptions?.showFirst ?? 1}
                 onChange={(e) => updateRule(i, { truncateOptions: { ...rule.truncateOptions, showFirst: Number(e.target.value) || 0 } })}
-                className="w-10 px-1 py-0.5 rounded bg-gray-800 border border-gray-700 text-gray-200 text-xs"
+                className="w-10 px-1 py-0.5 rounded bg-gray-800 border border-white/10 text-gray-200 text-xs"
               />
               <span>/</span>
               <input
                 type="number" min={0} max={10}
                 value={rule.truncateOptions?.showLast ?? 0}
                 onChange={(e) => updateRule(i, { truncateOptions: { ...rule.truncateOptions, showLast: Number(e.target.value) || 0 } })}
-                className="w-10 px-1 py-0.5 rounded bg-gray-800 border border-gray-700 text-gray-200 text-xs"
+                className="w-10 px-1 py-0.5 rounded bg-gray-800 border border-white/10 text-gray-200 text-xs"
               />
               <HelpTip content="Number of characters preserved at the start / end of the value." position="bottom" size="xs" />
             </div>
@@ -116,7 +116,7 @@ export default function GlobalMaskingRules({ rules, onRulesChange }: GlobalMaski
                 type="text"
                 value={rule.replaceValue ?? '[MASKED]'}
                 onChange={(e) => updateRule(i, { replaceValue: e.target.value })}
-                className="w-28 px-2 py-0.5 rounded bg-gray-800 border border-gray-700 text-gray-200 text-xs"
+                className="w-28 px-2 py-0.5 rounded bg-gray-800 border border-white/10 text-gray-200 text-xs"
               />
               <HelpTip content="Replacement value displayed in place of the sensitive data." position="bottom" size="xs" />
             </div>

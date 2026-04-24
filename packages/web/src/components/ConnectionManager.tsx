@@ -493,7 +493,7 @@ export default function ConnectionManager({
   const formTitle = editingConnection ? 'Modifier la base de données' : 'Nouvelle base de données';
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center gap-3">
         <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-os-700/20 ring-1 ring-os-600/30">
@@ -512,7 +512,7 @@ export default function ConnectionManager({
           </svg>
         </div>
         <div>
-          <h2 className="text-xl font-semibold text-gray-100">Databases</h2>
+          <h2 className="heading-md">Databases</h2>
           <p className="text-sm text-gray-500">Manage your database connections</p>
         </div>
       </div>
@@ -530,7 +530,7 @@ export default function ConnectionManager({
           return (
             <div
               key={name}
-              className="relative p-4 rounded-lg border border-gray-700 bg-gray-800/40 transition-all duration-200 hover:border-gray-600"
+              className="relative p-4 card-interactive"
             >
               {/* Action buttons (edit + delete) */}
               {confirmDelete === name ? (
@@ -583,7 +583,7 @@ export default function ConnectionManager({
               <div className="flex items-center gap-2 mb-2 pr-16">
                 <span
                   title={connected ? 'Connexion active' : 'Non connecté — cliquez sur Modifier pour vous connecter'}
-                  className={`inline-block w-2.5 h-2.5 rounded-full flex-shrink-0 ${
+                  className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${
                     connected ? 'bg-green-400 shadow-sm shadow-green-400/50' : 'bg-gray-500'
                   }`}
                 />
@@ -639,7 +639,7 @@ export default function ConnectionManager({
               setShowForm(true);
             }
           }}
-          className="flex flex-col items-center justify-center p-4 rounded-lg border-2 border-dashed border-gray-700 hover:border-os-500/50 bg-gray-800/20 hover:bg-os-700/10 transition-all duration-200 min-h-[120px] cursor-pointer group"
+          className="flex flex-col items-center justify-center p-4 rounded-xl border-2 border-dashed border-white/10 hover:border-os-500/50 bg-gray-800/20 hover:bg-os-700/10 transition-all duration-200 min-h-[120px] cursor-pointer group"
         >
           <svg
             className="w-8 h-8 text-gray-600 group-hover:text-os-400 transition-all duration-200"
@@ -658,18 +658,18 @@ export default function ConnectionManager({
 
       {/* Add / Edit form */}
       {showForm && (
-        <div className="p-5 rounded-lg border border-gray-700 bg-gray-800/40 space-y-5">
-          <h3 className="text-lg font-semibold text-gray-100">{formTitle}</h3>
+        <div className="p-4 card-primary space-y-4">
+          <h3 className="heading-md">{formTitle}</h3>
 
           {/* Label */}
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1.5">Name <span className="text-red-400">*</span></label>
+            <label className="block eyebrow mb-1.5">Name <span className="text-red-400">*</span></label>
             <input
               type="text"
               value={formLabel}
               onChange={(e) => setFormLabel(e.target.value)}
               placeholder="My Production DB"
-              className="w-full px-4 py-2.5 rounded-lg bg-gray-800/80 border border-gray-700 text-gray-100 placeholder-gray-500 focus:outline-none focus:border-os-500 focus:ring-1 focus:ring-os-500/30 transition-all duration-200"
+              className="input-editorial w-full"
             />
           </div>
 
@@ -695,7 +695,7 @@ export default function ConnectionManager({
             {/* Identifier (slug) field — shown only when toggled */}
             {showIdentifier && (
               <div className="mt-2">
-                <label className="block text-sm font-medium text-gray-300 mb-1.5">Identifier</label>
+                <label className="block eyebrow mb-1.5">Identifier</label>
                 <input
                   type="text"
                   value={formName}
@@ -704,7 +704,7 @@ export default function ConnectionManager({
                     setFormName(slugify(e.target.value));
                   }}
                   placeholder="my-production-db"
-                  className="w-full px-4 py-2.5 rounded-lg bg-gray-800/80 border border-gray-700 text-gray-100 placeholder-gray-500 focus:outline-none focus:border-os-500 focus:ring-1 focus:ring-os-500/30 transition-all duration-200 font-mono text-sm"
+                  className="input-editorial w-full"
                 />
                 {!formNameManual && formName && !nameAlreadyExists && (
                   <p className="mt-1 text-xs text-gray-500">Auto-generated from name</p>
@@ -728,15 +728,15 @@ export default function ConnectionManager({
 
           {/* Database type */}
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-3">Database Type</label>
+            <p className="eyebrow mb-3">Database Type</p>
             <div className="flex flex-col gap-3">
               {DB_OPTIONS.map((opt) => (
                 <label
                   key={opt.type}
-                  className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all duration-200 ${
+                  className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all duration-200 ${
                     formDbType === opt.type
                       ? 'border-os-600/60 bg-os-700/10 ring-1 ring-os-600/20'
-                      : 'border-gray-700 hover:border-gray-600 bg-gray-800/30'
+                      : 'border-white/5 hover:border-white/10 bg-gray-900/40'
                   }`}
                 >
                   <input
@@ -758,7 +758,7 @@ export default function ConnectionManager({
 
           {/* Connection string */}
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1.5">
+            <label className="block eyebrow mb-1.5">
               Chaîne de connexion <span className="text-red-400">*</span>
             </label>
             <div className="relative">
@@ -768,7 +768,7 @@ export default function ConnectionManager({
                 onChange={(e) => setFormConnStr(e.target.value)}
                 placeholder={activeDbOption.placeholder}
                 readOnly={hasSavedConnStr && !connStringRevealed && !formConnStr}
-                className={`w-full px-4 py-2.5 rounded-lg bg-gray-800/80 border border-gray-700 text-gray-100 placeholder-gray-500 focus:outline-none focus:border-os-500 focus:ring-1 focus:ring-os-500/30 transition-all duration-200 pr-20 ${
+                className={`input-editorial w-full pr-20 ${
                   hasSavedConnStr && !connStringRevealed && !formConnStr ? 'cursor-pointer' : ''
                 }`}
                 onClick={() => {
@@ -811,7 +811,7 @@ export default function ConnectionManager({
                     onChange={(e) => setRevealPassword(e.target.value)}
                     placeholder="Admin password"
                     autoFocus
-                    className="flex-1 px-3 py-1.5 rounded-lg bg-gray-800/80 border border-gray-700 text-gray-100 placeholder-gray-500 text-sm focus:outline-none focus:border-os-500 focus:ring-1 focus:ring-os-500/30 transition-all duration-200"
+                    className="input-editorial flex-1 text-sm"
                     onKeyDown={(e) => { if (e.key === 'Enter') handleRevealConnectionString(); }}
                   />
                   <button
@@ -871,7 +871,7 @@ export default function ConnectionManager({
               </div>
 
               {sslExpanded && (
-                <div className="mt-3 space-y-3 pl-2 border-l-2 border-gray-700">
+                <div className="mt-3 space-y-3 pl-2 border-l-2 border-white/10">
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
                       type="checkbox"
@@ -885,34 +885,34 @@ export default function ConnectionManager({
                   {sslEnabled && (
                     <>
                       <div>
-                        <label className="block text-xs font-medium text-gray-400 mb-1">CA Certificate (PEM)</label>
+                        <label className="block eyebrow mb-1">CA Certificate (PEM)</label>
                         <textarea
                           value={sslCa}
                           onChange={(e) => setSslCa(e.target.value)}
                           rows={4}
                           placeholder={"-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"}
-                          className="w-full px-3 py-2 rounded-lg bg-gray-800/80 border border-gray-700 text-gray-100 placeholder-gray-500 text-xs font-mono focus:outline-none focus:border-os-500 focus:ring-1 focus:ring-os-500/30 transition-all duration-200 resize-none"
+                          className="input-editorial w-full text-xs resize-none"
                         />
                         <p className="mt-1 text-xs text-gray-600">Paste your server CA certificate in PEM format.</p>
                       </div>
                       <div>
-                        <label className="block text-xs font-medium text-gray-400 mb-1">Client Certificate (PEM, optional)</label>
+                        <label className="block eyebrow mb-1">Client Certificate (PEM, optional)</label>
                         <textarea
                           value={sslCert}
                           onChange={(e) => setSslCert(e.target.value)}
                           rows={3}
                           placeholder="-----BEGIN CERTIFICATE-----"
-                          className="w-full px-3 py-2 rounded-lg bg-gray-800/80 border border-gray-700 text-gray-100 placeholder-gray-500 text-xs font-mono focus:outline-none focus:border-os-500 focus:ring-1 focus:ring-os-500/30 transition-all duration-200 resize-none"
+                          className="input-editorial w-full text-xs resize-none"
                         />
                       </div>
                       <div>
-                        <label className="block text-xs font-medium text-gray-400 mb-1">Client Key (PEM, optional)</label>
+                        <label className="block eyebrow mb-1">Client Key (PEM, optional)</label>
                         <textarea
                           value={sslKey}
                           onChange={(e) => setSslKey(e.target.value)}
                           rows={3}
                           placeholder="-----BEGIN PRIVATE KEY-----"
-                          className="w-full px-3 py-2 rounded-lg bg-gray-800/80 border border-gray-700 text-gray-100 placeholder-gray-500 text-xs font-mono focus:outline-none focus:border-os-500 focus:ring-1 focus:ring-os-500/30 transition-all duration-200 resize-none"
+                          className="input-editorial w-full text-xs resize-none"
                         />
                       </div>
                       <label className="flex items-center gap-2 cursor-pointer">
@@ -976,7 +976,7 @@ export default function ConnectionManager({
             </div>
 
             {sshExpanded && (
-              <div className="mt-3 space-y-3 pl-2 border-l-2 border-gray-700">
+              <div className="mt-3 space-y-3 pl-2 border-l-2 border-white/10">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
@@ -997,67 +997,67 @@ export default function ConnectionManager({
                     {/* SSH Host + Port */}
                     <div className="grid grid-cols-3 gap-2">
                       <div className="col-span-2">
-                        <label className="block text-xs font-medium text-gray-400 mb-1">SSH Host</label>
+                        <label className="block eyebrow mb-1">SSH Host</label>
                         <input
                           type="text"
                           value={sshHost}
                           onChange={(e) => setSshHost(e.target.value)}
                           placeholder="bastion.example.com"
-                          className="w-full px-3 py-2 rounded-lg bg-gray-800/80 border border-gray-700 text-gray-100 placeholder-gray-500 text-xs focus:outline-none focus:border-os-500 focus:ring-1 focus:ring-os-500/30 transition-all duration-200"
+                          className="input-editorial w-full text-xs"
                         />
                       </div>
                       <div>
-                        <label className="block text-xs font-medium text-gray-400 mb-1">SSH Port</label>
+                        <label className="block eyebrow mb-1">SSH Port</label>
                         <input
                           type="number"
                           value={sshPort}
                           onChange={(e) => setSshPort(parseInt(e.target.value, 10) || 22)}
-                          className="w-full px-3 py-2 rounded-lg bg-gray-800/80 border border-gray-700 text-gray-100 text-xs focus:outline-none focus:border-os-500 focus:ring-1 focus:ring-os-500/30 transition-all duration-200"
+                          className="input-editorial w-full text-xs"
                         />
                       </div>
                     </div>
 
                     {/* SSH Username */}
                     <div>
-                      <label className="block text-xs font-medium text-gray-400 mb-1">SSH Username</label>
+                      <label className="block eyebrow mb-1">SSH Username</label>
                       <input
                         type="text"
                         value={sshUsername}
                         onChange={(e) => setSshUsername(e.target.value)}
                         placeholder="ec2-user"
-                        className="w-full px-3 py-2 rounded-lg bg-gray-800/80 border border-gray-700 text-gray-100 placeholder-gray-500 text-xs focus:outline-none focus:border-os-500 focus:ring-1 focus:ring-os-500/30 transition-all duration-200"
+                        className="input-editorial w-full text-xs"
                       />
                     </div>
 
                     {/* Private Key */}
                     <div>
-                      <label className="block text-xs font-medium text-gray-400 mb-1">Private Key (PEM)</label>
+                      <label className="block eyebrow mb-1">Private Key (PEM)</label>
                       <textarea
                         value={sshPrivateKey}
                         onChange={(e) => setSshPrivateKey(e.target.value)}
                         rows={4}
                         placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
-                        className="w-full px-3 py-2 rounded-lg bg-gray-800/80 border border-gray-700 text-gray-100 placeholder-gray-500 text-xs font-mono focus:outline-none focus:border-os-500 focus:ring-1 focus:ring-os-500/30 transition-all duration-200 resize-none"
+                        className="input-editorial w-full text-xs resize-none"
                       />
                     </div>
 
                     {/* Password */}
                     <div>
-                      <label className="block text-xs font-medium text-gray-400 mb-1">
+                      <label className="block eyebrow mb-1">
                         Password (if no key)
                       </label>
                       <input
                         type="password"
                         value={sshPassword}
                         onChange={(e) => setSshPassword(e.target.value)}
-                        className="w-full px-3 py-2 rounded-lg bg-gray-800/80 border border-gray-700 text-gray-100 placeholder-gray-500 text-xs focus:outline-none focus:border-os-500 focus:ring-1 focus:ring-os-500/30 transition-all duration-200"
+                        className="input-editorial w-full text-xs"
                       />
                     </div>
 
                     {/* Remote DB Host + Port */}
                     <div className="grid grid-cols-3 gap-2">
                       <div className="col-span-2">
-                        <label className="block text-xs font-medium text-gray-400 mb-1">
+                        <label className="block eyebrow mb-1">
                           DB Host (from bastion)
                         </label>
                         <input
@@ -1065,16 +1065,16 @@ export default function ConnectionManager({
                           value={sshDbHost}
                           onChange={(e) => setSshDbHost(e.target.value)}
                           placeholder="10.0.1.5"
-                          className="w-full px-3 py-2 rounded-lg bg-gray-800/80 border border-gray-700 text-gray-100 placeholder-gray-500 text-xs focus:outline-none focus:border-os-500 focus:ring-1 focus:ring-os-500/30 transition-all duration-200"
+                          className="input-editorial w-full text-xs"
                         />
                       </div>
                       <div>
-                        <label className="block text-xs font-medium text-gray-400 mb-1">DB Port</label>
+                        <label className="block eyebrow mb-1">DB Port</label>
                         <input
                           type="number"
                           value={sshDbPort}
                           onChange={(e) => setSshDbPort(parseInt(e.target.value, 10) || 5432)}
-                          className="w-full px-3 py-2 rounded-lg bg-gray-800/80 border border-gray-700 text-gray-100 text-xs focus:outline-none focus:border-os-500 focus:ring-1 focus:ring-os-500/30 transition-all duration-200"
+                          className="input-editorial w-full text-xs"
                         />
                       </div>
                     </div>
@@ -1101,7 +1101,7 @@ export default function ConnectionManager({
             <button
               onClick={handleTest}
               disabled={!formConnStr || !formName || formStatus === 'testing' || formStatus === 'connecting'}
-              className="px-4 py-2.5 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 rounded-lg font-medium text-sm transition-all duration-200 flex items-center gap-2"
+              className="px-4 py-2 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 rounded-lg font-medium text-sm transition-all duration-200 flex items-center gap-2"
             >
               {formStatus === 'testing' && (
                 <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
@@ -1118,7 +1118,7 @@ export default function ConnectionManager({
               disabled={
                 !formConnStr || !formName || !formLabel || formStatus === 'testing' || formStatus === 'connecting'
               }
-              className="px-4 py-2.5 bg-os-700 hover:bg-os-600 disabled:opacity-50 rounded-lg font-medium text-sm transition-all duration-200 shadow-md shadow-os-900/20 hover:shadow-lg hover:shadow-os-900/30 disabled:shadow-none flex items-center gap-2"
+              className="px-4 py-2 bg-os-700 hover:bg-os-600 disabled:opacity-50 rounded-lg font-medium text-sm transition-all duration-200 shadow-md shadow-os-900/20 hover:shadow-lg hover:shadow-os-900/30 disabled:shadow-none flex items-center gap-2"
             >
               {formStatus === 'connecting' && (
                 <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
@@ -1132,7 +1132,7 @@ export default function ConnectionManager({
 
             <button
               onClick={resetForm}
-              className="px-4 py-2.5 text-gray-400 hover:text-gray-200 rounded-lg font-medium text-sm transition-all duration-200"
+              className="px-4 py-2 text-gray-400 hover:text-gray-200 rounded-lg font-medium text-sm transition-all duration-200"
             >
               Cancel
             </button>

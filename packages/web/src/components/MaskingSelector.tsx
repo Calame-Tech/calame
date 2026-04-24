@@ -33,7 +33,7 @@ export default function MaskingSelector({ masking, onChange }: MaskingSelectorPr
           onChange(updated);
         }}
         title={currentMode?.description ?? 'Sélectionnez un mode de masquage pour cette colonne.'}
-        className="px-2 py-1 rounded bg-gray-800/80 border border-gray-700 text-gray-200 text-xs focus:outline-none focus:border-os-500 focus:ring-1 focus:ring-os-500/30"
+        className="px-2 py-1 rounded bg-gray-800/80 border border-white/10 text-gray-200 text-xs focus:outline-none focus:border-os-500 focus:ring-1 focus:ring-os-500/30"
       >
         {MODES.map((m) => (
           <option key={m.value} value={m.value}>{m.label}</option>
@@ -58,7 +58,7 @@ export default function MaskingSelector({ masking, onChange }: MaskingSelectorPr
               })
             }
             title="Nombre de caractères à conserver depuis le début de la valeur."
-            className="w-12 px-1.5 py-0.5 rounded bg-gray-800 border border-gray-700 text-gray-200 text-xs focus:outline-none focus:border-os-500"
+            className="w-12 px-1.5 py-0.5 rounded bg-gray-800 border border-white/10 text-gray-200 text-xs focus:outline-none focus:border-os-500"
           />
           <span>first /</span>
           <input
@@ -76,7 +76,7 @@ export default function MaskingSelector({ masking, onChange }: MaskingSelectorPr
               })
             }
             title="Nombre de caractères à conserver depuis la fin de la valeur."
-            className="w-12 px-1.5 py-0.5 rounded bg-gray-800 border border-gray-700 text-gray-200 text-xs focus:outline-none focus:border-os-500"
+            className="w-12 px-1.5 py-0.5 rounded bg-gray-800 border border-white/10 text-gray-200 text-xs focus:outline-none focus:border-os-500"
           />
           <span>last</span>
         </div>
@@ -89,7 +89,7 @@ export default function MaskingSelector({ masking, onChange }: MaskingSelectorPr
           onChange={(e) => onChange({ ...masking, replaceValue: e.target.value })}
           placeholder="[MASKED]"
           title="Valeur fixe qui remplacera la donnée réelle dans toutes les réponses."
-          className="w-32 px-2 py-0.5 rounded bg-gray-800 border border-gray-700 text-gray-200 text-xs focus:outline-none focus:border-os-500"
+          className="w-32 px-2 py-0.5 rounded bg-gray-800 border border-white/10 text-gray-200 text-xs focus:outline-none focus:border-os-500"
         />
       )}
     </div>

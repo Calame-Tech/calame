@@ -84,7 +84,7 @@ export default function PiiBadge({ detection, onChangeCategory, onRemove }: PiiB
       </span>
 
       {open && editable && (
-        <div className="absolute z-50 top-full left-0 mt-1 bg-gray-800 border border-gray-600 rounded-lg shadow-xl py-1 min-w-[120px]">
+        <div className="absolute z-50 top-full left-0 mt-1 bg-gray-900/95 border border-white/10 rounded-lg shadow-xl py-1 min-w-[120px]">
           {ALL_PII_CATEGORIES.map((cat) => (
             <button
               key={cat}
@@ -92,7 +92,7 @@ export default function PiiBadge({ detection, onChangeCategory, onRemove }: PiiB
                 onChangeCategory?.(cat);
                 setOpen(false);
               }}
-              className={`block w-full text-left px-3 py-1 text-xs hover:bg-gray-700 transition-colors ${
+              className={`block w-full text-left px-3 py-1 text-xs hover:bg-gray-800 transition-colors ${
                 cat === detection.category ? 'text-os-400 font-medium' : 'text-gray-300'
               }`}
             >
@@ -101,10 +101,10 @@ export default function PiiBadge({ detection, onChangeCategory, onRemove }: PiiB
           ))}
           {onRemove && (
             <>
-              <div className="border-t border-gray-700 my-1" />
+              <div className="border-t border-white/5 my-1" />
               <button
                 onClick={() => { onRemove(); setOpen(false); }}
-                className="block w-full text-left px-3 py-1 text-xs text-red-400 hover:bg-gray-700 transition-colors"
+                className="block w-full text-left px-3 py-1 text-xs text-red-400 hover:bg-gray-800 transition-colors"
               >
                 Remove PII tag
               </button>

@@ -183,7 +183,7 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
     const tableCount = Object.keys(detailProfile.selectedTables).length;
 
     return (
-      <div className="max-w-5xl mx-auto space-y-6">
+      <div className="space-y-4">
         {/* Back button */}
         <button
           onClick={() => setSelectedProfile(null)}
@@ -193,16 +193,16 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
         </button>
 
         {/* Header */}
-        <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-5">
+        <div className="card-primary p-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div
-                className={`w-3 h-3 rounded-full ${
+                className={`w-2 h-2 rounded-full ${
                   isActive ? 'bg-green-500 shadow-lg shadow-green-500/30' : 'bg-gray-600'
                 }`}
               />
               <div>
-                <h2 className="text-lg font-semibold text-gray-100">
+                <h2 className="heading-md">
                   {detailProfile.name}
                   {detailProfile.label && detailProfile.label !== detailProfile.name && (
                     <span className="ml-2 text-sm font-normal text-gray-500">
@@ -266,11 +266,11 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
 
           {/* Endpoint URL (copiable) */}
           <div className="mt-3">
-            <p className="text-xs text-gray-500 mb-1">Endpoint</p>
+            <p className="eyebrow mb-1">Endpoint</p>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => handleCopyEndpoint(endpoint)}
-                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-900/60 border border-gray-700 hover:border-os-600 transition-all duration-200 group"
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-900/60 border border-white/10 hover:border-os-600 transition-all duration-200 group"
               >
                 <code className="text-sm text-os-400 font-mono">{endpoint}</code>
                 <span className="text-xs text-gray-500 group-hover:text-os-400 transition-all duration-200">
@@ -295,8 +295,8 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
 
 
         {/* Tables section */}
-        <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-5">
-          <h3 className="text-sm font-semibold text-gray-300 mb-3">Tables</h3>
+        <div className="card-primary p-4">
+          <h3 className="eyebrow mb-3">Tables</h3>
           {tableCount === 0 ? (
             <p className="text-sm text-gray-500">No tables selected.</p>
           ) : (
@@ -304,7 +304,7 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
               {Object.entries(detailProfile.selectedTables).map(([table, columns]) => (
                 <div
                   key={table}
-                  className="rounded-lg border border-gray-700 bg-gray-900/50 px-4 py-3"
+                  className="card-nested px-4 py-3"
                 >
                   <p className="text-sm font-medium text-gray-200">{table}</p>
                   <p className="text-xs text-gray-500 mt-1">
@@ -318,8 +318,8 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
         </div>
 
         {/* Tools section */}
-        <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-5">
-          <h3 className="text-sm font-semibold text-gray-300 mb-3">Tools</h3>
+        <div className="card-primary p-4">
+          <h3 className="eyebrow mb-3">Tools</h3>
           {tableCount === 0 ? (
             <p className="text-sm text-gray-500">No tables selected.</p>
           ) : (
@@ -330,7 +330,7 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
                 return (
                   <div
                     key={table}
-                    className="flex items-center justify-between rounded-lg border border-gray-700 bg-gray-900/50 px-4 py-3"
+                    className="flex items-center justify-between card-nested px-4 py-3"
                   >
                     <p className="text-sm font-medium text-gray-200">{table}</p>
                     <div className="flex gap-2">
@@ -351,8 +351,8 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
         </div>
 
         {/* Configuration section */}
-        <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-5">
-          <h3 className="text-sm font-semibold text-gray-300 mb-3">Profile</h3>
+        <div className="card-primary p-4">
+          <h3 className="eyebrow mb-3">Profile</h3>
           <div className="space-y-3">
             {/* Table options summary */}
             {detailProfile.tableOptions &&
@@ -363,7 +363,7 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
                   {Object.entries(detailProfile.tableOptions).map(([table, opts]) => (
                     <div
                       key={table}
-                      className="rounded-lg border border-gray-700 bg-gray-900/50 px-4 py-3"
+                      className="card-nested px-4 py-3"
                     >
                       <p className="text-sm font-medium text-gray-200">{table}</p>
                       <div className="mt-1 text-xs text-gray-500 space-y-0.5">
@@ -392,7 +392,7 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
                   {Object.entries(detailProfile.columnMasking).map(([table, columns]) => (
                     <div
                       key={table}
-                      className="rounded-lg border border-gray-700 bg-gray-900/50 px-4 py-3"
+                      className="card-nested px-4 py-3"
                     >
                       <p className="text-sm font-medium text-gray-200">{table}</p>
                       <div className="mt-1 text-xs text-gray-500 space-y-0.5">
@@ -420,14 +420,14 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
         </div>
 
         {/* Tokens section (filtered for this profile) */}
-        <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-5">
-          <h3 className="text-sm font-semibold text-gray-300 mb-3">Tokens</h3>
+        <div className="card-primary p-4">
+          <h3 className="eyebrow mb-3">Tokens</h3>
           <TokenManager profiles={[detailProfile]} port={serveStatus.port} />
         </div>
 
         {/* Audit section (filtered for this profile) */}
-        <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-5">
-          <h3 className="text-sm font-semibold text-gray-300 mb-3">Audit Log</h3>
+        <div className="card-primary p-4">
+          <h3 className="eyebrow mb-3">Audit Log</h3>
           <AuditLogViewer profiles={[detailProfile]} />
         </div>
       </div>
@@ -436,18 +436,18 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
 
   // --- DASHBOARD VIEW ---
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
+    <div className="space-y-4">
       {/* Summary card */}
-      <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4">
+      <div className="card-primary p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div
-              className={`w-3 h-3 rounded-full ${
+              className={`w-2 h-2 rounded-full ${
                 hasAnyActive ? 'bg-green-500 shadow-lg shadow-green-500/30' : 'bg-gray-600'
               }`}
             />
             <div>
-              <h2 className="text-lg font-semibold text-gray-100">MCP Servers</h2>
+              <h2 className="heading-md">MCP Servers</h2>
               <p className="text-sm text-gray-500">
                 {activeCount}/{allProfiles.length} active
               </p>
@@ -478,7 +478,7 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {/* "+" card to create a new MCP profile */}
         {showCreateForm ? (
-          <div className="rounded-lg border-2 border-os-600/40 bg-gray-800/40 p-5 min-h-[140px] flex flex-col justify-between">
+          <div className="rounded-xl border-2 border-os-600/40 bg-gray-900/40 p-4 min-h-[140px] flex flex-col justify-between">
             <div className="space-y-3">
               <input
                 type="text"
@@ -491,7 +491,7 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
                 }}
                 placeholder="MCP name..."
                 autoFocus
-                className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-500 focus:outline-none focus:border-os-500 focus:ring-1 focus:ring-os-500/30"
+                className="input-editorial w-full text-sm"
               />
               {newName && (
                 <p className="text-xs text-gray-500 font-mono">{newName}</p>
@@ -523,7 +523,7 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
         ) : (
           <button
             onClick={() => setShowCreateForm(true)}
-            className="rounded-lg border-2 border-dashed border-gray-700 bg-gray-800/20 p-6 flex flex-col items-center justify-center gap-2 hover:border-os-500 hover:bg-gray-800/40 transition-all duration-200 text-gray-500 hover:text-os-400 min-h-[140px]"
+            className="rounded-xl border-2 border-dashed border-white/10 bg-gray-800/20 p-6 flex flex-col items-center justify-center gap-2 hover:border-os-500 hover:bg-gray-800/40 transition-all duration-200 text-gray-500 hover:text-os-400 min-h-[140px]"
           >
             <span className="text-3xl font-light">+</span>
             <span className="text-sm font-medium">New MCP Server</span>
@@ -543,7 +543,7 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
           return (
             <div
               key={profile.name}
-              className="relative rounded-lg border border-gray-700 bg-gray-800/40 p-5 cursor-pointer hover:border-os-600 hover:bg-gray-800/60 transition-all duration-200 flex flex-col justify-between min-h-[140px]"
+              className="relative card-interactive p-4 cursor-pointer flex flex-col justify-between min-h-[140px]"
               onClick={() => onSelectProfile ? onSelectProfile(profile.name) : setSelectedProfile(profile.name)}
             >
               {/* Delete button */}
@@ -578,7 +578,7 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
               <div>
                 <div className="flex items-center gap-2 mb-2 pr-8">
                   <div
-                    className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${
+                    className={`w-2 h-2 rounded-full flex-shrink-0 ${
                       isActive
                         ? 'bg-green-500 shadow-lg shadow-green-500/30'
                         : 'bg-gray-600'
@@ -707,7 +707,7 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
       </div>
 
       {/* Dashboard tabs: Chat + Pending */}
-      <div className="border-b border-gray-700">
+      <div className="border-b border-white/5">
         <div className="flex gap-0">
           {dashboardTabs.map((tab) => (
             <button

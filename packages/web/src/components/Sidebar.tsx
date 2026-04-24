@@ -43,7 +43,7 @@ const IconHome = (
     viewBox="0 0 24 24"
     strokeWidth={1.5}
     stroke="currentColor"
-    className="w-5 h-5"
+    className="w-4 h-4"
     aria-hidden="true"
   >
     <path
@@ -61,7 +61,7 @@ const IconServerStack = (
     viewBox="0 0 24 24"
     strokeWidth={1.5}
     stroke="currentColor"
-    className="w-5 h-5"
+    className="w-4 h-4"
     aria-hidden="true"
   >
     <path
@@ -79,7 +79,7 @@ const IconRectangleStack = (
     viewBox="0 0 24 24"
     strokeWidth={1.5}
     stroke="currentColor"
-    className="w-5 h-5"
+    className="w-4 h-4"
     aria-hidden="true"
   >
     <path
@@ -97,7 +97,7 @@ const IconCircleStack = (
     viewBox="0 0 24 24"
     strokeWidth={1.5}
     stroke="currentColor"
-    className="w-5 h-5"
+    className="w-4 h-4"
     aria-hidden="true"
   >
     <path
@@ -115,7 +115,7 @@ const IconUsers = (
     viewBox="0 0 24 24"
     strokeWidth={1.5}
     stroke="currentColor"
-    className="w-5 h-5"
+    className="w-4 h-4"
     aria-hidden="true"
   >
     <path
@@ -133,7 +133,7 @@ const IconChartBar = (
     viewBox="0 0 24 24"
     strokeWidth={1.5}
     stroke="currentColor"
-    className="w-5 h-5"
+    className="w-4 h-4"
     aria-hidden="true"
   >
     <path
@@ -151,7 +151,7 @@ const IconCog = (
     viewBox="0 0 24 24"
     strokeWidth={1.5}
     stroke="currentColor"
-    className="w-5 h-5"
+    className="w-4 h-4"
     aria-hidden="true"
   >
     <path
@@ -318,40 +318,40 @@ export default function Sidebar({ currentPage, onNavigate, user, onLogout }: Sid
         aria-label="Main navigation"
         className={[
           // Base styles shared by mobile and desktop
-          'bg-gray-900/95 backdrop-blur-sm flex flex-col overflow-y-auto',
+          'bg-gray-950/60 backdrop-blur-xl flex flex-col overflow-y-auto',
           // Mobile: fixed slide-in drawer from the left
           'fixed inset-y-0 left-0 z-40 w-64',
           'transform transition-transform duration-300 ease-in-out',
           isOpen ? 'translate-x-0' : '-translate-x-full',
           // Desktop: sticky sidebar pinned to viewport height so the user footer stays visible on long pages
-          'md:sticky md:top-0 md:h-screen md:translate-x-0 md:w-60 md:shrink-0 md:z-auto',
-          'md:border-r md:border-gray-800/80',
+          'md:sticky md:top-0 md:h-screen md:translate-x-0 md:w-56 md:shrink-0 md:z-auto',
+          'md:border-r md:border-white/5',
         ].join(' ')}
       >
         {/* Branding block */}
-        <div className="flex flex-col px-4 py-5 border-b border-gray-800/80 shrink-0">
-          <div className="flex items-center gap-3">
-            <img src="/logo.png" alt="Calame" className="h-9 w-9 object-contain" />
+        <div className="flex flex-col px-3 py-4 hairline-b shrink-0">
+          <div className="flex items-center gap-2.5">
+            <img src="/logo.png" alt="Calame" className="h-8 w-8 object-contain" />
             <div>
-              <p className="text-lg font-bold tracking-tight text-gray-100 leading-tight">
+              <p className="text-base font-bold tracking-tight text-gray-100 leading-tight">
                 Calame
               </p>
-              <p className="text-xs text-gray-500 leading-tight">
-                MCP proxy server for your database
+              <p className="font-mono-plex text-[10px] uppercase tracking-widest text-gray-500 leading-tight">
+                MCP proxy
               </p>
             </div>
           </div>
         </div>
 
         {/* Navigation sections — flex-1 so user footer is pushed to the bottom */}
-        <div className="flex-1 flex flex-col mt-4 overflow-y-auto">
+        <div className="flex-1 flex flex-col mt-3 overflow-y-auto">
           {NAV_SECTIONS.map((section, sectionIndex) => (
             <div
               key={section.label}
-              className={['flex flex-col w-full', sectionIndex > 0 ? 'mt-6' : ''].join(' ')}
+              className={['flex flex-col w-full', sectionIndex > 0 ? 'mt-4' : ''].join(' ')}
             >
-              {/* Section label */}
-              <p className="px-4 py-2 text-xs font-semibold uppercase tracking-wider text-gray-500 select-none">
+              {/* Section label — eyebrow style */}
+              <p className="px-3 py-1.5 font-mono-plex text-[10px] uppercase tracking-[0.25em] text-gray-500 select-none">
                 {section.label}
               </p>
 
@@ -368,16 +368,16 @@ export default function Sidebar({ currentPage, onNavigate, user, onLogout }: Sid
                         aria-current={isActive ? 'page' : undefined}
                         className={[
                           // Base layout & typography
-                          'w-full flex items-center gap-3 px-3 py-2.5 text-sm transition-colors rounded-lg',
+                          'w-full flex items-center gap-2.5 px-2.5 py-2 text-sm transition-colors rounded-lg',
                           'whitespace-nowrap',
                           // Active vs inactive appearance
                           isActive
-                            ? 'bg-gray-800/70 text-gray-100'
-                            : 'text-gray-300 hover:bg-gray-800/40',
+                            ? 'bg-os-500/15 text-os-300 ring-1 ring-os-500/30'
+                            : 'text-gray-400 hover:bg-white/5 hover:text-gray-200',
                         ].join(' ')}
                       >
                         {/* Icon: accent color when active, muted gray otherwise */}
-                        <span className={isActive ? 'text-os-400' : 'text-gray-400'}>{icon}</span>
+                        <span className={isActive ? 'text-os-400' : 'text-gray-500'}>{icon}</span>
                         <span>{label}</span>
                         {/* Chevron indicates the active item */}
                         {isActive && IconChevronRight}
@@ -392,11 +392,11 @@ export default function Sidebar({ currentPage, onNavigate, user, onLogout }: Sid
 
         {/* User footer — only rendered when logout is available or user info exists */}
         {(onLogout !== undefined || user !== undefined) && (
-          <div className="mt-auto border-t border-gray-800/80 px-3 py-3 shrink-0">
-            <div className="flex items-center gap-3 min-w-0">
+          <div className="mt-auto hairline px-2.5 py-2.5 shrink-0">
+            <div className="flex items-center gap-2.5 min-w-0">
               {/* Avatar with initials */}
               <div
-                className="flex-shrink-0 w-10 h-10 rounded-full bg-os-500 text-white flex items-center justify-center text-sm font-semibold select-none"
+                className="flex-shrink-0 w-8 h-8 rounded-full bg-os-500 text-white flex items-center justify-center text-xs font-semibold select-none"
                 aria-hidden="true"
               >
                 {initials}
@@ -404,10 +404,10 @@ export default function Sidebar({ currentPage, onNavigate, user, onLogout }: Sid
 
               {/* User info */}
               <div className="flex-1 min-w-0">
-                <p className="text-sm text-gray-200 truncate" title={displayEmail}>
+                <p className="text-xs text-gray-200 truncate" title={displayEmail}>
                   {displayEmail}
                 </p>
-                <p className="text-xs text-gray-500">{displayRole}</p>
+                <p className="font-mono-plex text-[10px] text-gray-500">{displayRole}</p>
               </div>
 
               {/* Logout button */}
@@ -417,7 +417,7 @@ export default function Sidebar({ currentPage, onNavigate, user, onLogout }: Sid
                   size="sm"
                   onClick={onLogout}
                   aria-label="Log out"
-                  className="flex-shrink-0 p-1.5 text-gray-400 hover:text-gray-100"
+                  className="flex-shrink-0 p-1 text-gray-400 hover:text-gray-100"
                   title="Log out"
                 >
                   {IconLogout}

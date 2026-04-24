@@ -69,26 +69,24 @@ export function StatCard({
   return (
     <div
       className={cn(
-        'rounded-xl border border-gray-800/80 bg-gray-900/60 backdrop-blur-sm p-6',
+        'card-primary p-4',
         className,
       )}
     >
       <div className="flex items-start justify-between gap-4">
-        <div className="flex flex-col gap-3 flex-1 min-w-0">
+        <div className="flex flex-col gap-2 flex-1 min-w-0">
           {/* Label */}
           {loading ? (
-            <Skeleton width={80} height={14} />
+            <Skeleton width={80} height={12} />
           ) : (
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wider truncate">
-              {label}
-            </p>
+            <p className="eyebrow truncate">{label}</p>
           )}
 
           {/* Value */}
           {loading ? (
-            <Skeleton width={100} height={36} />
+            <Skeleton width={100} height={32} />
           ) : (
-            <p className="text-3xl font-bold text-gray-100 leading-none tabular-nums">{value}</p>
+            <p className="font-display text-3xl leading-none tabular-nums text-gray-100">{value}</p>
           )}
 
           {/* Trend */}
@@ -114,7 +112,7 @@ export function StatCard({
         {/* Icon — top-right */}
         {icon && (
           <div
-            className="flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-lg bg-gray-800/60 text-gray-500"
+            className="flex-shrink-0 flex items-center justify-center w-8 h-8 rounded-lg bg-white/5 text-gray-500"
             aria-hidden="true"
           >
             {icon}

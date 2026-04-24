@@ -239,8 +239,8 @@ export default function UserDashboard({ onLogout }: { onLogout: () => void }) {
             )}
 
             {/* Profile info */}
-            <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-5">
-              <h2 className="text-lg font-semibold text-white mb-3">My Profile</h2>
+            <div className="card-primary p-4">
+              <h2 className="heading-md mb-3">My Profile</h2>
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
                   <span className="text-gray-500">Name</span>
@@ -268,7 +268,7 @@ export default function UserDashboard({ onLogout }: { onLogout: () => void }) {
                       type="password"
                       value={currentPw}
                       onChange={(e) => setCurrentPw(e.target.value)}
-                      className="w-full px-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-white text-sm"
+                      className="input-editorial w-full text-sm"
                     />
                   </div>
                   <div>
@@ -277,7 +277,7 @@ export default function UserDashboard({ onLogout }: { onLogout: () => void }) {
                       type="password"
                       value={newPw}
                       onChange={(e) => setNewPw(e.target.value)}
-                      className="w-full px-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-white text-sm"
+                      className="input-editorial w-full text-sm"
                       minLength={8}
                       required
                     />
@@ -291,8 +291,8 @@ export default function UserDashboard({ onLogout }: { onLogout: () => void }) {
             </div>
 
             {/* Token section */}
-            <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-5">
-              <h2 className="text-lg font-semibold text-white mb-3">My Token</h2>
+            <div className="card-primary p-4">
+              <h2 className="heading-md mb-3">My Token</h2>
 
               {newToken ? (
                 <div className="bg-green-900/30 border border-green-700 rounded-lg p-4 mb-4">
@@ -352,7 +352,7 @@ export default function UserDashboard({ onLogout }: { onLogout: () => void }) {
                           onChange={(e) => setRevealPassword(e.target.value)}
                           placeholder="Your password"
                           autoFocus
-                          className="flex-1 px-3 py-1.5 rounded-lg bg-gray-800/80 border border-gray-700 text-gray-100 placeholder-gray-500 text-sm focus:outline-none focus:border-os-500 focus:ring-1 focus:ring-os-500/30"
+                          className="input-editorial flex-1 text-sm"
                           onKeyDown={(e) => { if (e.key === 'Enter') handleRevealToken(); }}
                         />
                         <button
@@ -375,7 +375,7 @@ export default function UserDashboard({ onLogout }: { onLogout: () => void }) {
                 </div>
               )}
 
-              <div className="mt-4 pt-4 border-t border-gray-700/50">
+              <div className="mt-4 pt-4 border-t border-white/5">
                 <button
                   onClick={handleRegenerateToken}
                   className="text-xs text-gray-400 hover:text-red-400 transition-colors"
@@ -388,15 +388,15 @@ export default function UserDashboard({ onLogout }: { onLogout: () => void }) {
             </div>
 
             {/* MCP Access */}
-            <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-5">
-              <h2 className="text-lg font-semibold text-white mb-3">My MCP Servers</h2>
+            <div className="card-primary p-4">
+              <h2 className="heading-md mb-3">My MCP Servers</h2>
 
               {profiles.length === 0 ? (
                 <p className="text-sm text-gray-500">No MCP servers assigned to your account.</p>
               ) : (
                 <div className="space-y-4">
                   {profiles.map((p) => (
-                    <div key={p.profileName} className="rounded-lg border border-gray-700 bg-gray-900/50 p-4">
+                    <div key={p.profileName} className="card-nested px-4 py-3">
                       <div className="flex items-center justify-between mb-2">
                         <h3 className="text-white font-medium">{p.profileName}</h3>
                         <span className="text-xs px-2 py-0.5 rounded bg-blue-900/50 text-blue-300 border border-blue-800">

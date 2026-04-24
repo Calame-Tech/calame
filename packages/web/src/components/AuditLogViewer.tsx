@@ -121,7 +121,7 @@ export default function AuditLogViewer({ profiles }: AuditLogViewerProps) {
           <select
             value={filterProfile}
             onChange={(e) => setFilterProfile(e.target.value)}
-            className="px-3 py-2 rounded-lg bg-gray-800/80 border border-gray-700 text-gray-100 text-sm focus:outline-none focus:border-os-500 focus:ring-1 focus:ring-os-500/30 appearance-none pr-8"
+            className="input-editorial text-sm appearance-none pr-8"
             style={{
               backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
               backgroundRepeat: 'no-repeat',
@@ -145,7 +145,7 @@ export default function AuditLogViewer({ profiles }: AuditLogViewerProps) {
             type="date"
             value={filterDateFrom}
             onChange={(e) => setFilterDateFrom(e.target.value)}
-            className="px-3 py-2 rounded-lg bg-gray-800/80 border border-gray-700 text-gray-100 text-sm focus:outline-none focus:border-os-500 focus:ring-1 focus:ring-os-500/30"
+            className="input-editorial text-sm"
           />
         </div>
 
@@ -159,7 +159,7 @@ export default function AuditLogViewer({ profiles }: AuditLogViewerProps) {
             type="date"
             value={filterDateTo}
             onChange={(e) => setFilterDateTo(e.target.value)}
-            className="px-3 py-2 rounded-lg bg-gray-800/80 border border-gray-700 text-gray-100 text-sm focus:outline-none focus:border-os-500 focus:ring-1 focus:ring-os-500/30"
+            className="input-editorial text-sm"
           />
         </div>
 
@@ -190,14 +190,14 @@ export default function AuditLogViewer({ profiles }: AuditLogViewerProps) {
         <button
           onClick={() => handleExport('json')}
           title="Télécharger toutes les entrées filtrées au format JSON."
-          className="px-3 py-2 rounded-lg border border-gray-700 text-gray-400 hover:text-gray-200 hover:bg-gray-800 text-sm transition-colors"
+          className="px-3 py-2 rounded-lg border border-white/10 text-gray-400 hover:text-gray-200 hover:bg-gray-800 text-sm transition-colors"
         >
           Export JSON
         </button>
         <button
           onClick={() => handleExport('csv')}
           title="Télécharger toutes les entrées filtrées au format CSV (compatible Excel)."
-          className="px-3 py-2 rounded-lg border border-gray-700 text-gray-400 hover:text-gray-200 hover:bg-gray-800 text-sm transition-colors"
+          className="px-3 py-2 rounded-lg border border-white/10 text-gray-400 hover:text-gray-200 hover:bg-gray-800 text-sm transition-colors"
         >
           Export CSV
         </button>
@@ -210,10 +210,10 @@ export default function AuditLogViewer({ profiles }: AuditLogViewerProps) {
       )}
 
       {/* Table */}
-      <div className="rounded-lg border border-gray-700 bg-gray-800/40 overflow-hidden">
+      <div className="card-primary overflow-hidden">
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-gray-400 border-b border-gray-700">
+            <tr className="text-left text-gray-400 border-b border-white/5">
               <th className="px-4 py-3 font-medium">
                 <span className="flex items-center gap-1">Time <HelpTip content="Timestamp of the tool call." position="bottom" size="xs" /></span>
               </th>
@@ -252,7 +252,7 @@ export default function AuditLogViewer({ profiles }: AuditLogViewerProps) {
                 <>
                   <tr
                     key={entry.id}
-                    className="border-b border-gray-800 hover:bg-gray-800/60 cursor-pointer transition-colors"
+                    className="border-b border-white/5 hover:bg-gray-800/40 cursor-pointer transition-colors"
                     onClick={() => setExpandedId(expandedId === entry.id ? null : entry.id)}
                   >
                     <td className="px-4 py-3 text-gray-300 whitespace-nowrap">
@@ -284,7 +284,7 @@ export default function AuditLogViewer({ profiles }: AuditLogViewerProps) {
                     </td>
                   </tr>
                   {expandedId === entry.id && (
-                    <tr key={`${entry.id}-expanded`} className="border-b border-gray-800">
+                    <tr key={`${entry.id}-expanded`} className="border-b border-white/5">
                       <td colSpan={6} className="px-4 py-3 bg-gray-900/50">
                         <div className="text-xs text-gray-400 mb-1">Tool Arguments:</div>
                         <pre className="p-3 rounded bg-gray-900 border border-gray-700 text-xs text-gray-300 font-mono overflow-x-auto whitespace-pre-wrap">
@@ -310,7 +310,7 @@ export default function AuditLogViewer({ profiles }: AuditLogViewerProps) {
             <button
               onClick={() => handlePageChange(Math.max(0, offset - PAGE_SIZE))}
               disabled={offset === 0}
-              className="px-3 py-1.5 rounded-lg border border-gray-700 text-gray-400 hover:text-gray-200 hover:bg-gray-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              className="px-3 py-1.5 rounded-lg border border-white/10 text-gray-400 hover:text-gray-200 hover:bg-gray-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
             >
               Previous
             </button>
@@ -320,7 +320,7 @@ export default function AuditLogViewer({ profiles }: AuditLogViewerProps) {
             <button
               onClick={() => handlePageChange(offset + PAGE_SIZE)}
               disabled={offset + PAGE_SIZE >= totalCount}
-              className="px-3 py-1.5 rounded-lg border border-gray-700 text-gray-400 hover:text-gray-200 hover:bg-gray-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              className="px-3 py-1.5 rounded-lg border border-white/10 text-gray-400 hover:text-gray-200 hover:bg-gray-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
             >
               Next
             </button>

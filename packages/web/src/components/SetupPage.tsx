@@ -57,12 +57,12 @@ export default function SetupPage({ onSetupComplete }: SetupPageProps) {
   };
 
   return (
-    <div className="min-h-screen bg-gray-900 flex items-center justify-center">
-      <div className="bg-gray-800 rounded-lg shadow-xl p-8 w-full max-w-md">
+    <div className="min-h-screen bg-gray-950 flex items-center justify-center">
+      <div className="card-primary p-6 w-full max-w-md">
         <div className="text-center mb-8">
           <div className="flex items-center justify-center gap-3 mb-3">
             <img src="/logo.png" alt="Calame" className="h-10 w-10 object-contain" />
-            <h1 className="text-3xl font-bold text-gray-100">Calame</h1>
+            <h1 className="heading-lg">Calame</h1>
           </div>
           <p className="text-gray-400 mt-2">
             Bienvenue — Cr&eacute;ez votre compte administrateur
@@ -79,7 +79,7 @@ export default function SetupPage({ onSetupComplete }: SetupPageProps) {
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-os-500 focus:border-transparent"
+              className="input-editorial w-full"
               placeholder="Your name"
               autoFocus
             />
@@ -94,7 +94,7 @@ export default function SetupPage({ onSetupComplete }: SetupPageProps) {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-os-500 focus:border-transparent"
+              className="input-editorial w-full"
               placeholder="admin@example.com"
             />
           </div>
@@ -108,7 +108,7 @@ export default function SetupPage({ onSetupComplete }: SetupPageProps) {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-os-500 focus:border-transparent"
+              className="input-editorial w-full"
               placeholder="Minimum 8 characters"
             />
           </div>
@@ -122,13 +122,13 @@ export default function SetupPage({ onSetupComplete }: SetupPageProps) {
               type="password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
-              className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-os-500 focus:border-transparent"
+              className="input-editorial w-full"
               placeholder="Repeat your password"
             />
           </div>
 
           {error && (
-            <div className="bg-red-900/50 border border-red-700 rounded-md p-3 text-red-300 text-sm">
+            <div className="bg-red-950/30 border border-red-800/50 rounded-lg p-3 text-red-400 text-sm">
               {error}
             </div>
           )}
@@ -136,7 +136,7 @@ export default function SetupPage({ onSetupComplete }: SetupPageProps) {
           <button
             type="submit"
             disabled={loading || !name || !email || !password || !confirmPassword}
-            className="w-full py-2 px-4 bg-os-600 hover:bg-os-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-medium rounded-md transition-colors"
+            className="w-full py-2 px-4 bg-os-700 hover:bg-os-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors"
           >
             {loading ? 'Creating account...' : 'Create Admin Account'}
           </button>

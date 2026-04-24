@@ -190,12 +190,12 @@ export default function OidcSettings({ availableProfiles = [] }: OidcSettingsPro
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <h2 className="text-lg font-semibold text-gray-100">OIDC / SSO Settings</h2>
+            <h2 className="heading-md">OIDC / SSO Settings</h2>
             <HelpTip
               content="OpenID Connect (OIDC) lets your users sign in through an external identity provider (Keycloak, Azure AD, Google Workspace, etc.) without creating a local account."
               position="right"
@@ -208,7 +208,7 @@ export default function OidcSettings({ availableProfiles = [] }: OidcSettingsPro
         </div>
         <div className="flex items-center gap-2">
           <div
-            className={`w-2.5 h-2.5 rounded-full ${
+            className={`w-2 h-2 rounded-full ${
               configured ? 'bg-green-500 shadow-lg shadow-green-500/30' : 'bg-gray-600'
             }`}
           />
@@ -219,7 +219,7 @@ export default function OidcSettings({ availableProfiles = [] }: OidcSettingsPro
       </div>
 
       {/* Enable OIDC toggle */}
-      <div className="flex items-center justify-between p-4 rounded-lg bg-gray-900/40 border border-gray-700">
+      <div className="flex items-center justify-between card-primary p-4">
         <div>
           <div className="flex items-center gap-2">
             <p className="text-sm font-medium text-gray-200">Enable OIDC</p>
@@ -276,7 +276,7 @@ export default function OidcSettings({ availableProfiles = [] }: OidcSettingsPro
             }
           }}
           placeholder="https://login.microsoftonline.com/{tenant}/v2.0"
-          className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
+          className="input-editorial w-full text-sm"
         />
       </div>
 
@@ -306,7 +306,7 @@ export default function OidcSettings({ availableProfiles = [] }: OidcSettingsPro
             }
           }}
           placeholder="your-client-id"
-          className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
+          className="input-editorial w-full text-sm"
         />
       </div>
 
@@ -333,7 +333,7 @@ export default function OidcSettings({ availableProfiles = [] }: OidcSettingsPro
             }}
             placeholder="••••••••"
             readOnly={isSecretMasked}
-            className={`w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500 pr-16 ${isSecretMasked ? 'cursor-pointer' : ''}`}
+            className={`input-editorial w-full text-sm pr-16 ${isSecretMasked ? 'cursor-pointer' : ''}`}
             onClick={() => {
               if (isSecretMasked) setShowRevealPrompt(true);
             }}
@@ -366,7 +366,7 @@ export default function OidcSettings({ availableProfiles = [] }: OidcSettingsPro
                 onChange={(e) => setRevealPassword(e.target.value)}
                 placeholder="Admin password"
                 autoFocus
-                className="flex-1 px-3 py-1.5 rounded-lg bg-gray-800/80 border border-gray-700 text-gray-100 placeholder-gray-500 text-sm focus:outline-none focus:border-os-500 focus:ring-1 focus:ring-os-500/30 transition-all duration-200"
+                className="input-editorial flex-1 text-sm"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') handleRevealSecret();
                 }}
@@ -424,7 +424,7 @@ export default function OidcSettings({ availableProfiles = [] }: OidcSettingsPro
           value={redirectUri}
           onChange={(e) => setRedirectUri(e.target.value)}
           placeholder={DEFAULT_REDIRECT_URI}
-          className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
+          className="input-editorial w-full text-sm"
         />
         <p className="text-xs text-gray-600 mt-1">
           Register this URI in your identity provider's allowed redirect URIs.
@@ -449,7 +449,7 @@ export default function OidcSettings({ availableProfiles = [] }: OidcSettingsPro
           value={scopes}
           onChange={(e) => setScopes(e.target.value)}
           placeholder={DEFAULT_SCOPES}
-          className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
+          className="input-editorial w-full text-sm"
         />
       </div>
 
@@ -471,7 +471,7 @@ export default function OidcSettings({ availableProfiles = [] }: OidcSettingsPro
           value={groupClaim}
           onChange={(e) => setGroupClaim(e.target.value)}
           placeholder={DEFAULT_GROUP_CLAIM}
-          className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
+          className="input-editorial w-full text-sm"
         />
         <p className="text-xs text-gray-600 mt-1">
           JWT claim name that contains the user's group list.
@@ -479,7 +479,7 @@ export default function OidcSettings({ availableProfiles = [] }: OidcSettingsPro
       </div>
 
       {/* Auto-create Users */}
-      <div className="flex items-center justify-between p-4 rounded-lg bg-gray-900/40 border border-gray-700">
+      <div className="flex items-center justify-between card-primary p-4">
         <div>
           <div className="flex items-center gap-2">
             <p className="text-sm font-medium text-gray-200">Auto-create Users</p>
@@ -543,7 +543,7 @@ export default function OidcSettings({ availableProfiles = [] }: OidcSettingsPro
                   value={m.profile}
                   onChange={(e) => updateMapping(i, 'profile', e.target.value)}
                   aria-label={`Calame profile for mapping ${i + 1}`}
-                  className="flex-1 px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
+                  className="input-editorial flex-1 text-sm"
                 >
                   <option value="" className="bg-gray-800">Select a profile...</option>
                   {availableProfiles.map((p) => (
@@ -557,7 +557,7 @@ export default function OidcSettings({ availableProfiles = [] }: OidcSettingsPro
                   onChange={(e) => updateMapping(i, 'profile', e.target.value)}
                   placeholder="Calame profile"
                   aria-label={`Calame profile for mapping ${i + 1}`}
-                  className="flex-1 px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
+                  className="input-editorial flex-1 text-sm"
                 />
               )}
               <button

@@ -6,7 +6,7 @@ import { ColumnMasking } from '../pii/types.js';
 import type { AuditLogEntry, PendingWriteQuery } from './types.js';
 import { snakeCaseToLabel, friendlyType, buildLabelMap, buildReverseLabelMap, formatResponseRows } from './response-formatter.js';
 import type { ScopeGuard, Dialect } from './scoped-executor.js';
-import { ScopeBlockedError, createScopeGuard } from './scoped-executor.js';
+import { ScopeBlockedError, createScopeGuard, buildPlainConditions } from './scoped-executor.js';
 
 // We use `as any` in server.tool() calls because the dynamic Zod schemas
 // (Record<string, z.ZodTypeAny>) cause TS2589 "excessively deep" errors with
@@ -356,13 +356,15 @@ export function registerDynamicTools(options: DynamicToolsOptions): void {
   const visibleTables = tables.filter(t => visibleTableNames.includes(t.name));
 
   // -----------------------------------------------------------------------
-  // list_tables
+  // Per-table tools — register first so list_tables can reflect ground truth
   // -----------------------------------------------------------------------
-  registerListTables(ctx, visibleTables, selectedTables, tableOptions, columnMasking);
+  // Tracks which tool names were actually registered for each visible table.
+  // Used by list_tables so the discovery output never advertises a tool that
+  // is missing from the MCP manifest (previously a silent drift: list_tables
+  // promised describe_<table> while no server.tool call was made because the
+  // table had no numeric columns or no visible columns).
+  const registeredToolsByTable = new Map<string, string[]>();
 
-  // -----------------------------------------------------------------------
-  // Per-table tools
-  // -----------------------------------------------------------------------
   for (const table of visibleTables) {
     const selectedCols = selectedTables[table.name];
     if (!selectedCols || selectedCols.length === 0) continue;
@@ -405,22 +407,44 @@ export function registerDynamicTools(options: DynamicToolsOptions): void {
     const labelMap = buildLabelMap(visibleColumns.map(c => ({ name: c.name })));
     const reverseLabelMap = buildReverseLabelMap(labelMap);
 
+    const tableTools: string[] = [];
+
     if (enabledTools.includes('describe')) {
       registerDescribeTool(ctx, table, visibleColumns, tableRelations, enabledTools, labelMap, maskingRules);
+      tableTools.push(`describe_${table.name}`);
     }
 
     if (enabledTools.includes('aggregate')) {
-      registerAggregateTool(ctx, table, visibleColumns, opts, maskingRules, excludedCols, labelMap, reverseLabelMap);
+      // Mirror registerAggregateTool's early return: no aggregate without a numeric column.
+      const aggregateNumericCols = visibleColumns.filter(c => isNumericType(c.type));
+      if (aggregateNumericCols.length > 0) {
+        registerAggregateTool(ctx, table, visibleColumns, opts, maskingRules, excludedCols, labelMap, reverseLabelMap);
+        tableTools.push(`aggregate_${table.name}`);
+      }
     }
 
     if (enabledTools.includes('query')) {
-      registerQueryTool(ctx, table, visibleColumns, opts, maskingRules, excludedCols, tableMasking, labelMap, reverseLabelMap);
+      // Mirror registerQueryTool's early return: no query without visible columns.
+      if (visibleColumns.length > 0) {
+        registerQueryTool(ctx, table, visibleColumns, opts, maskingRules, excludedCols, tableMasking, labelMap, reverseLabelMap);
+        tableTools.push(`query_${table.name}`);
+      }
     }
 
     if (enabledTools.includes('write') && onWriteRequest) {
       registerWriteTool(server, table, visibleColumns, onWriteRequest, onAuditLog, profileName, dialect, scopeGuard);
+      tableTools.push(`write_${table.name}`);
+    }
+
+    if (tableTools.length > 0) {
+      registeredToolsByTable.set(table.name, tableTools);
     }
   }
+
+  // -----------------------------------------------------------------------
+  // list_tables — reflects the actual manifest, not aspirational settings
+  // -----------------------------------------------------------------------
+  registerListTables(ctx, visibleTables, selectedTables, columnMasking, registeredToolsByTable);
 }
 
 // ---------------------------------------------------------------------------
@@ -431,8 +455,8 @@ function registerListTables(
   ctx: ToolContext,
   visibleTables: TableInfo[],
   selectedTables: Record<string, string[]>,
-  tableOptions: Record<string, TableToolOptions> | undefined,
   columnMasking: Record<string, Record<string, ColumnMasking>> | undefined,
+  registeredToolsByTable: Map<string, string[]>,
 ): void {
   const { server, executeQuery, dialect, onAuditLog, profileName, responseMode, scopeGuard } = ctx;
   const friendly = responseMode === 'friendly';
@@ -445,44 +469,43 @@ function registerListTables(
       })
     : visibleTables;
 
-  // Pre-compute the static table list
-  const tableList = accessibleTables.map(table => {
-    const opts = tableOptions?.[table.name];
-    const enabledTools = opts?.enabledTools ?? ['describe', 'aggregate', 'query'];
-    const tblMasking = columnMasking?.[table.name];
+  // Only list tables that ended up with at least one registered tool — keeps
+  // the discovery output and the actual MCP manifest in lockstep.
+  const tableList = accessibleTables
+    .filter(t => registeredToolsByTable.has(t.name))
+    .map(table => {
+      const tblMasking = columnMasking?.[table.name];
 
-    const excludedCols = new Set<string>();
-    if (tblMasking) {
-      for (const [colName, m] of Object.entries(tblMasking)) {
-        if (m.maskingMode === 'exclude') {
-          excludedCols.add(colName);
+      const excludedCols = new Set<string>();
+      if (tblMasking) {
+        for (const [colName, m] of Object.entries(tblMasking)) {
+          if (m.maskingMode === 'exclude') {
+            excludedCols.add(colName);
+          }
         }
       }
-    }
 
-    const selectedCols = selectedTables[table.name] ?? [];
-    const visibleCols = selectedCols.filter(c => !excludedCols.has(c));
+      const selectedCols = selectedTables[table.name] ?? [];
+      const visibleCols = selectedCols.filter(c => !excludedCols.has(c));
 
-    const hasNumeric = table.columns.some(
-      c => selectedCols.includes(c.name) && !excludedCols.has(c.name) && isNumericType(c.type),
-    );
+      const tools = registeredToolsByTable.get(table.name) ?? [];
 
-    const tools: string[] = [];
-    if (enabledTools.includes('describe')) tools.push(`describe_${table.name}`);
-    if (enabledTools.includes('aggregate') && hasNumeric) tools.push(`aggregate_${table.name}`);
-    if (enabledTools.includes('query')) tools.push(`query_${table.name}`);
-    if (enabledTools.includes('write')) tools.push(`write_${table.name}`);
+      const displayName = friendly ? snakeCaseToLabel(table.name) : table.name;
+      const displayCols = friendly ? visibleCols.map(c => snakeCaseToLabel(c)) : visibleCols;
 
-    const displayName = friendly ? snakeCaseToLabel(table.name) : table.name;
-    const displayCols = friendly ? visibleCols.map(c => snakeCaseToLabel(c)) : visibleCols;
+      // Hint mentions describe only if it is actually available.
+      const hint = tools.includes(`describe_${table.name}`)
+        ? `Call describe_${table.name} first`
+        : undefined;
 
-    return {
-      name: displayName,
-      columns: displayCols,
-      hint: `Call describe_${table.name} first`,
-      tools,
-    };
-  });
+      const entry: Record<string, unknown> = {
+        name: displayName,
+        columns: displayCols,
+        tools,
+      };
+      if (hint) entry.hint = hint;
+      return entry;
+    });
 
   const listDesc = friendly
     ? 'Lister les tables disponibles. Appeler describe_<table> avant de lancer une requete.'
@@ -557,66 +580,121 @@ function registerDescribeTool(
           );
           const rowCount = Number(countResult.rows[0].total);
 
-          // Numeric stats: MIN, MAX, AVG (scoped)
+          // Combined stats pass: per-column NULL count + distinct count, plus
+          // numeric MIN/MAX/AVG. One query, scoped, no per-column round-trip.
           const numericStats: Record<string, { min: unknown; max: unknown; avg: unknown }> = {};
-          if (numericCols.length > 0) {
-            const parts = numericCols.map(col => {
+          const colStats: Record<string, { nullCount: number; distinctCount: number }> = {};
+          const allColsForStats = includeStats ? visibleColumns : [];
+          if (allColsForStats.length > 0) {
+            const parts: string[] = [];
+            for (const c of allColsForStats) {
+              const qi = dialect.quoteIdent(c.name);
+              parts.push(
+                `SUM(CASE WHEN ${qi} IS NULL THEN 1 ELSE 0 END) as ${dialect.quoteIdent(`${c.name}__nulls`)}`,
+                `COUNT(DISTINCT ${qi}) as ${dialect.quoteIdent(`${c.name}__distinct`)}`,
+              );
+            }
+            for (const col of numericCols) {
               const qi = dialect.quoteIdent(col);
-              return `MIN(${qi}) as ${dialect.quoteIdent(`${col}_min`)}, MAX(${qi}) as ${dialect.quoteIdent(`${col}_max`)}, AVG(${qi}) as ${dialect.quoteIdent(`${col}_avg`)}`;
-            });
-            const numResult = await exec(
+              parts.push(
+                `MIN(${qi}) as ${dialect.quoteIdent(`${col}__min`)}`,
+                `MAX(${qi}) as ${dialect.quoteIdent(`${col}__max`)}`,
+                `AVG(${qi}) as ${dialect.quoteIdent(`${col}__avg`)}`,
+              );
+            }
+            const statsResult = await exec(
               `SELECT ${parts.join(', ')} FROM ${qualifiedTable} ${scopeWhere}`,
               [...scopeValues],
             );
-            const row = numResult.rows[0];
+            const row = statsResult.rows[0] as Record<string, unknown>;
+            for (const c of allColsForStats) {
+              colStats[c.name] = {
+                nullCount: Number(row[`${c.name}__nulls`] ?? 0),
+                distinctCount: Number(row[`${c.name}__distinct`] ?? 0),
+              };
+            }
             for (const col of numericCols) {
               const key = friendly ? (labelMap[col] ?? snakeCaseToLabel(col)) : col;
               numericStats[key] = {
-                min: row[`${col}_min`],
-                max: row[`${col}_max`],
-                avg: row[`${col}_avg`],
+                min: row[`${col}__min`],
+                max: row[`${col}__max`],
+                avg: row[`${col}__avg`],
               };
             }
           }
 
-          // Text stats + sampleValues for low-cardinality columns (scoped)
-          const textStats: Record<string, { distinctCount: number; sampleValues?: string[] }> = {};
+          // For low-cardinality columns (any type, distinctCount <= MAX_ENUM),
+          // pull the exhaustive distinct value list. For text columns above
+          // that threshold but still small (<= MAX_SAMPLE), keep a sample.
+          // This eliminates the LLM's "guess the enum" round-trips (fragile
+          // 0/1, priorite urgente vs URGENTE, statut echec vs Échec, etc.).
+          const MAX_ENUM = 20;
           const MAX_SAMPLE = 50;
-          for (const col of textCols) {
+          const distinctByCol: Record<string, unknown[]> = {};
+          const sampleByCol: Record<string, string[] | undefined> = {};
+          for (const c of allColsForStats) {
+            const stats = colStats[c.name];
+            if (!stats) continue;
+            const distinct = stats.distinctCount;
+            const isLowCardinality = distinct > 0 && distinct <= MAX_ENUM;
+            const isSampleable = isTextType(c.type) && distinct > MAX_ENUM && distinct <= MAX_SAMPLE;
+            if (!isLowCardinality && !isSampleable) continue;
             try {
-              const qi = dialect.quoteIdent(col);
-              // Build scoped WHERE for this DISTINCT query
+              const qi = dialect.quoteIdent(c.name);
               const notNullCondition = `${qi} IS NOT NULL`;
-              let valWhere: string;
-              let valParams: unknown[];
-              if (scopeWhere) {
-                // Combine scope WHERE with NOT NULL condition
-                valWhere = `${scopeWhere} AND ${notNullCondition}`;
-                valParams = [...scopeValues];
+              const valWhere = scopeWhere
+                ? `${scopeWhere} AND ${notNullCondition}`
+                : `WHERE ${notNullCondition}`;
+              const cap = isLowCardinality ? MAX_ENUM : MAX_SAMPLE;
+              const valSql = `SELECT DISTINCT ${qi} AS val FROM ${qualifiedTable} ${valWhere} ORDER BY val LIMIT ${cap + 1}`;
+              const valResult = await exec(valSql, [...scopeValues]);
+              const rawVals = valResult.rows.map((r) => (r as Record<string, unknown>).val);
+              if (isLowCardinality) {
+                let vals: unknown[] = rawVals;
+                const colMaskRule = maskingRules[c.name];
+                if (colMaskRule && (colMaskRule.mode === 'hash' || colMaskRule.mode === 'truncate' || colMaskRule.mode === 'replace')) {
+                  vals = applyMasking(rawVals.map((v) => ({ [c.name]: v })), { [c.name]: colMaskRule }).map((r) => r[c.name]);
+                }
+                distinctByCol[c.name] = vals;
               } else {
-                valWhere = `WHERE ${notNullCondition}`;
-                valParams = [];
-              }
-              const valSql = `SELECT DISTINCT ${qi} AS val FROM ${qualifiedTable} ${valWhere} ORDER BY val LIMIT ${MAX_SAMPLE + 1}`;
-              const valResult = await exec(valSql, valParams);
-              let vals = valResult.rows.map(r => String((r as Record<string, unknown>).val));
-              // Apply masking to sampleValues (hash/truncate/replace)
-              const colMaskRule = maskingRules[col];
-              if (colMaskRule && (colMaskRule.mode === 'hash' || colMaskRule.mode === 'truncate' || colMaskRule.mode === 'replace')) {
-                vals = applyMasking(vals.map(v => ({ [col]: v })), { [col]: colMaskRule }).map(r => String(r[col]));
-              }
-              const key = friendly ? (labelMap[col] ?? snakeCaseToLabel(col)) : col;
-              if (vals.length <= MAX_SAMPLE) {
-                textStats[key] = { distinctCount: vals.length, sampleValues: vals };
-              } else {
-                textStats[key] = { distinctCount: vals.length };
+                let vals = rawVals.map((v) => String(v));
+                const colMaskRule = maskingRules[c.name];
+                if (colMaskRule && (colMaskRule.mode === 'hash' || colMaskRule.mode === 'truncate' || colMaskRule.mode === 'replace')) {
+                  vals = applyMasking(vals.map((v) => ({ [c.name]: v })), { [c.name]: colMaskRule }).map((r) => String(r[c.name]));
+                }
+                if (vals.length <= MAX_SAMPLE) sampleByCol[c.name] = vals;
               }
             } catch {
               // Skip sampling errors
             }
           }
 
-          // Build columns metadata
+          // Legacy textStats shape kept for backward compatibility with any
+          // consumer that already parsed it (also surfaced in raw mode payload).
+          const textStats: Record<string, { distinctCount: number; sampleValues?: string[] }> = {};
+          for (const col of textCols) {
+            const stats = colStats[col];
+            if (!stats) continue;
+            const key = friendly ? (labelMap[col] ?? snakeCaseToLabel(col)) : col;
+            const sample = sampleByCol[col];
+            const lowCardVals = distinctByCol[col];
+            const sampleValues = sample
+              ? sample
+              : lowCardVals
+                ? lowCardVals.map((v) => String(v))
+                : undefined;
+            textStats[key] = sampleValues
+              ? { distinctCount: stats.distinctCount, sampleValues }
+              : { distinctCount: stats.distinctCount };
+          }
+
+          // Build columns metadata.
+          // Raw mode exposes everything the LLM needs to avoid round-trips:
+          // native column type, null_count + null_ratio (so AVG/SUM ambiguity
+          // is visible), distinct_count, and either an exhaustive
+          // distinct_values list (for low-cardinality categorical/boolean
+          // columns) or a sample_values list (for text with moderate
+          // cardinality). Friendly mode keeps the lighter shape.
           const columnsMetadata = friendly
             ? visibleColumns.map(c => {
                 const colMeta: Record<string, unknown> = {
@@ -624,18 +702,34 @@ function registerDescribeTool(
                   type: friendlyType(c.type),
                   required: !c.nullable,
                 };
-                const key = labelMap[c.name] ?? snakeCaseToLabel(c.name);
-                if (textStats[key]?.sampleValues) colMeta.sampleValues = textStats[key].sampleValues;
+                if (distinctByCol[c.name]) {
+                  colMeta.possibleValues = distinctByCol[c.name];
+                } else if (sampleByCol[c.name]) {
+                  colMeta.sampleValues = sampleByCol[c.name];
+                }
                 return colMeta;
               })
             : visibleColumns.map(c => {
+                const stats = colStats[c.name];
+                const nullCount = stats?.nullCount;
+                const distinctCount = stats?.distinctCount;
+                const nullRatio = stats && rowCount > 0
+                  ? Math.round((nullCount! / rowCount) * 10000) / 10000
+                  : undefined;
                 const colMeta: Record<string, unknown> = {
                   name: c.name,
                   type: c.type,
                   nullable: c.nullable,
                   defaultValue: c.defaultValue,
                 };
-                if (textStats[c.name]?.sampleValues) colMeta.sampleValues = textStats[c.name].sampleValues;
+                if (nullCount !== undefined) colMeta.null_count = nullCount;
+                if (nullRatio !== undefined) colMeta.null_ratio = nullRatio;
+                if (distinctCount !== undefined) colMeta.distinct_count = distinctCount;
+                if (distinctByCol[c.name]) {
+                  colMeta.distinct_values = distinctByCol[c.name];
+                } else if (sampleByCol[c.name]) {
+                  colMeta.sample_values = sampleByCol[c.name];
+                }
                 return colMeta;
               });
 
@@ -726,19 +820,34 @@ function registerAggregateTool(
 
   const groupByEnum = zodEnum(groupableColumns);
   const numericEnum = zodEnum(numericCols);
-  const orderByEnum = zodEnum(allColumnNames);
+  // Order-by accepts any visible column AND the alias 'result' so the LLM can
+  // request "top N by computed aggregation" (e.g. ORDER BY COUNT(*) DESC) in
+  // a single call instead of pulling all groups and sorting client-side.
+  const orderByEnum = zodEnum([...allColumnNames, 'result']);
 
   if (!numericEnum) return; // Safety: should not happen since we checked above
 
   const inputShape: Record<string, z.ZodTypeAny> = {
-    aggregation: z.enum(['count', 'sum', 'avg', 'min', 'max']),
-    aggregation_column: numericEnum.optional().describe('Required for sum, avg, min, max. Not needed for count.'),
-    filters: z.object(filterShape).optional(),
+    aggregation: z.enum(['count', 'sum', 'avg', 'min', 'max', 'ratio']).describe(
+      'Aggregation kind. Use "ratio" with `ratio_filter` to compute per-group ratios (e.g. failure rate per courier) in a single call instead of two aggregates plus client-side division.',
+    ),
+    aggregation_column: numericEnum.optional().describe('Required for sum, avg, min, max. Not needed for count or ratio.'),
+    filters: z.object(filterShape).optional().describe(
+      'WHERE filters applied to ALL rows (denominator for ratio). Combine with `ratio_filter` for "subset / total" computations.',
+    ),
+    ratio_filter: z.object(filterShape).optional().describe(
+      'Numerator filter for `aggregation: "ratio"`. Result = rows matching `filters` AND `ratio_filter` divided by rows matching `filters` only. Ignored for non-ratio aggregations.',
+    ),
+    having_min_total: z.number().optional().describe(
+      'Minimum row count per group (denominator), evaluated as HAVING. Use to drop small-sample groups in ratio rankings (e.g. ignore couriers with fewer than 50 packages).',
+    ),
     order_direction: z.enum(['asc', 'desc']).optional(),
     limit: z.number().optional().default(20).describe(`Max rows, capped at ${maxLimit}`),
   };
   if (groupByEnum) inputShape.group_by = groupByEnum.optional();
-  if (orderByEnum) inputShape.order_by = orderByEnum.optional();
+  if (orderByEnum) inputShape.order_by = orderByEnum.optional().describe(
+    'Column name to sort by. Pass "result" to sort by the aggregated value itself (count, sum, avg, ratio, etc.) — required for "top N by count", "top N by ratio", or "top N by total" queries.',
+  );
 
   const displayName = friendly ? snakeCaseToLabel(tableName) : tableName;
   const aggDesc = friendly
@@ -750,11 +859,23 @@ function registerAggregateTool(
     aggDesc,
     inputShape as AnyToolArgs,
     async (args: Record<string, unknown>) => {
-      const { group_by, aggregation, aggregation_column, filters, order_by, order_direction, limit } = args as {
+      const {
+        group_by,
+        aggregation,
+        aggregation_column,
+        filters,
+        ratio_filter,
+        having_min_total,
+        order_by,
+        order_direction,
+        limit,
+      } = args as {
         group_by?: string;
         aggregation: string;
         aggregation_column?: string;
         filters?: Record<string, FilterValue | undefined>;
+        ratio_filter?: Record<string, FilterValue | undefined>;
+        having_min_total?: number;
         order_by?: string;
         order_direction?: string;
         limit?: number;
@@ -768,10 +889,44 @@ function registerAggregateTool(
           // WHERE (scope-aware: scope filters are always injected first)
           const { clause: whereClause, values, nextParamIndex } =
             scopeGuard.buildWhereClause(tableName, filters, allowedFilterColumns, dialect);
+          let paramCursor = nextParamIndex;
 
-          // SELECT expression
+          // SELECT expression.
+          // - count: just COUNT(*).
+          // - sum/avg/min/max: AGG(col) + COUNT(*) + COUNT(col) so the LLM can
+          //   distinguish "AVG over all rows" vs "AVG over non-null rows"
+          //   (SQL AVG/SUM/MIN/MAX silently ignore NULLs).
+          // - ratio: AVG(CASE WHEN <ratio_filter> THEN 1 ELSE 0 END) on rows
+          //   matching `filters`. We also expose `numerator` and `denominator`
+          //   counts so the LLM can sanity-check sample size and combine with
+          //   `having_min_total` to drop small-sample groups.
           let selectExpr: string;
-          if (aggregation === 'count' && !aggregation_column) {
+          if (aggregation === 'ratio') {
+            if (!ratio_filter || Object.keys(ratio_filter).length === 0) {
+              return {
+                content: [{ type: 'text' as const, text: 'ratio_filter is required for aggregation: "ratio".' }],
+                isError: true,
+              };
+            }
+            const { conditions: ratioConds, values: ratioValues, nextParamIndex: ratioNext } =
+              buildPlainConditions(ratio_filter, allowedFilterColumns, dialect, paramCursor);
+            if (ratioConds.length === 0) {
+              return {
+                content: [{ type: 'text' as const, text: 'ratio_filter has no usable conditions (unknown columns?).' }],
+                isError: true,
+              };
+            }
+            values.push(...ratioValues);
+            paramCursor = ratioNext;
+            const caseExpr = `CASE WHEN ${ratioConds.join(' AND ')} THEN 1 ELSE 0 END`;
+            // 1.0 multiplier promotes integer counts to float on SQLite, where
+            // SUM/COUNT are otherwise integer-typed and AVG of a CASE alone
+            // can already give a float — this is belt-and-suspenders.
+            selectExpr =
+              `AVG(1.0 * (${caseExpr})) as result,` +
+              ` SUM(${caseExpr}) as numerator,` +
+              ` COUNT(*) as denominator`;
+          } else if (aggregation === 'count' && !aggregation_column) {
             selectExpr = 'COUNT(*) as result';
           } else if (!aggregation_column) {
             return {
@@ -786,7 +941,11 @@ function registerAggregateTool(
                 isError: true,
               };
             }
-            selectExpr = `${aggregation.toUpperCase()}(${dialect.quoteIdent(aggregation_column)}) as result`;
+            const qiCol = dialect.quoteIdent(aggregation_column);
+            selectExpr =
+              `${aggregation.toUpperCase()}(${qiCol}) as result,` +
+              ` COUNT(*) as count_total,` +
+              ` COUNT(${qiCol}) as count_non_null`;
           }
 
           // GROUP BY
@@ -803,24 +962,37 @@ function registerAggregateTool(
             groupByClause = `GROUP BY ${dialect.quoteIdent(group_by)}`;
           }
 
-          // ORDER BY
+          // HAVING — drops small-sample groups (sample-size floor for ratios).
+          // Only meaningful with GROUP BY; silently ignored otherwise.
+          let havingClause = '';
+          if (group_by && typeof having_min_total === 'number' && having_min_total > 0) {
+            values.push(having_min_total);
+            havingClause = `HAVING COUNT(*) >= ${dialect.param(paramCursor++)}`;
+          }
+
+          // ORDER BY. The literal alias 'result' is special: it sorts on
+          // the aggregated SELECT expression alias (count/sum/avg/min/max/ratio).
+          // No identifier quoting because 'result' is a SQL alias, not a
+          // column. Other values are validated against the table's columns.
           let orderByClause = '';
           if (order_by) {
-            if (!allColumnNames.includes(order_by)) {
+            const isResultAlias = order_by === 'result';
+            if (!isResultAlias && !allColumnNames.includes(order_by)) {
               return {
                 content: [{ type: 'text' as const, text: `Invalid order_by column: ${order_by}` }],
                 isError: true,
               };
             }
             const dir = order_direction === 'desc' ? 'DESC' : 'ASC';
-            orderByClause = `ORDER BY ${dialect.quoteIdent(order_by)} ${dir}`;
+            const target = isResultAlias ? 'result' : dialect.quoteIdent(order_by);
+            orderByClause = `ORDER BY ${target} ${dir}`;
           }
 
           // LIMIT
           values.push(cappedLimit);
-          const limitParam = dialect.param(nextParamIndex);
+          const limitParam = dialect.param(paramCursor);
 
-          const sql = `SELECT ${selectPrefix}${selectExpr} FROM ${qualifiedTable} ${whereClause} ${groupByClause} ${orderByClause} LIMIT ${limitParam}`;
+          const sql = `SELECT ${selectPrefix}${selectExpr} FROM ${qualifiedTable} ${whereClause} ${groupByClause} ${havingClause} ${orderByClause} LIMIT ${limitParam}`;
           const result = await exec(sql, values);
 
           const formattedRows = formatResponseRows(result.rows, labelMap, responseMode);

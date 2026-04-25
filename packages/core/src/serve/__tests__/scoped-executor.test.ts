@@ -422,3 +422,71 @@ describe('IS NULL / IS NOT NULL operators', () => {
     expect(result.values).toEqual(['livre']);
   });
 });
+
+describe('Boolean coercion (LLM-friendly bind)', () => {
+  const unscopedGuard = createScopeGuard([]);
+
+  it('coerces true to 1 for SQLite (eq)', () => {
+    const result = unscopedGuard.buildWhereClause(
+      'colis',
+      { fragile: { op: 'eq', value: true } },
+      ['fragile'],
+      sqliteDialect,
+    );
+    expect(result.clause).toBe('WHERE "fragile" = ?');
+    expect(result.values).toEqual([1]);
+  });
+
+  it('coerces false to 0 for SQLite (neq)', () => {
+    const result = unscopedGuard.buildWhereClause(
+      'colis',
+      { fragile: { op: 'neq', value: false } },
+      ['fragile'],
+      sqliteDialect,
+    );
+    expect(result.clause).toBe('WHERE "fragile" != ?');
+    expect(result.values).toEqual([0]);
+  });
+
+  it('keeps booleans as-is for PostgreSQL (native bool support)', () => {
+    const result = unscopedGuard.buildWhereClause(
+      'colis',
+      { fragile: { op: 'eq', value: true } },
+      ['fragile'],
+      pgDialect,
+    );
+    expect(result.clause).toBe('WHERE "fragile" = $1');
+    expect(result.values).toEqual([true]);
+  });
+
+  it('coerces booleans inside between for SQLite', () => {
+    const result = unscopedGuard.buildWhereClause(
+      'colis',
+      { fragile: { op: 'between', value: [false, true] } },
+      ['fragile'],
+      sqliteDialect,
+    );
+    expect(result.values).toEqual([0, 1]);
+  });
+
+  it('coerces booleans inside in array for SQLite', () => {
+    const result = unscopedGuard.buildWhereClause(
+      'colis',
+      { fragile: { op: 'in', value: [true, false] } },
+      ['fragile'],
+      sqliteDialect,
+    );
+    expect(result.clause).toBe('WHERE "fragile" IN (?, ?)');
+    expect(result.values).toEqual([1, 0]);
+  });
+
+  it('does not affect non-boolean values', () => {
+    const result = unscopedGuard.buildWhereClause(
+      'colis',
+      { statut: { op: 'eq', value: 'livre' }, poids_kg: { op: 'gt', value: 5.5 } },
+      ['statut', 'poids_kg'],
+      sqliteDialect,
+    );
+    expect(result.values).toEqual(['livre', 5.5]);
+  });
+});

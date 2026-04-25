@@ -98,6 +98,37 @@ export class ScopeBlockedError extends Error {
 // WHERE clause builder (extracted from dynamic-tools, scope-aware)
 // ---------------------------------------------------------------------------
 
+/**
+ * Coerce a filter value for binding. SQLite and MySQL drivers reject native
+ * JS booleans (better-sqlite3 throws "can only bind numbers, strings,
+ * bigints, buffers, and null"). LLMs naturally pass `true`/`false` for
+ * BOOLEAN-like columns that are actually stored as INTEGER 0/1, so we
+ * normalize them here. PostgreSQL has a native bool type and accepts
+ * booleans directly, so we leave them alone there.
+ */
+function coerceValue(value: unknown, dialect: Dialect): unknown {
+  if (typeof value === 'boolean' && !dialect.isPostgres) {
+    return value ? 1 : 0;
+  }
+  return value;
+}
+
+/**
+ * Build WHERE-style conditions (no leading WHERE keyword, no scope filters).
+ * Same security guarantees as the scope-aware path: column allowlist check
+ * and parameterized binding (no concat). Exported for tools that need to
+ * inject the conditions inside a SELECT expression (e.g. ratio aggregation
+ * uses `SUM(CASE WHEN <conds> THEN 1 ELSE 0 END)`).
+ */
+export function buildPlainConditions(
+  filters: Record<string, FilterValue | undefined>,
+  allowedColumns: string[],
+  dialect: Dialect,
+  startParamIndex: number,
+): { conditions: string[]; values: unknown[]; nextParamIndex: number } {
+  return buildWhereConditions(filters, allowedColumns, dialect, startParamIndex);
+}
+
 function buildWhereConditions(
   filters: Record<string, FilterValue | undefined>,
   allowedColumns: string[],
@@ -117,34 +148,34 @@ function buildWhereConditions(
     switch (filter.op) {
       case 'eq':
         conditions.push(`${qi} = ${dialect.param(paramIndex++)}`);
-        values.push(filter.value);
+        values.push(coerceValue(filter.value, dialect));
         break;
       case 'neq':
         conditions.push(`${qi} != ${dialect.param(paramIndex++)}`);
-        values.push(filter.value);
+        values.push(coerceValue(filter.value, dialect));
         break;
       case 'gt':
         conditions.push(`${qi} > ${dialect.param(paramIndex++)}`);
-        values.push(filter.value);
+        values.push(coerceValue(filter.value, dialect));
         break;
       case 'gte':
         conditions.push(`${qi} >= ${dialect.param(paramIndex++)}`);
-        values.push(filter.value);
+        values.push(coerceValue(filter.value, dialect));
         break;
       case 'lt':
         conditions.push(`${qi} < ${dialect.param(paramIndex++)}`);
-        values.push(filter.value);
+        values.push(coerceValue(filter.value, dialect));
         break;
       case 'lte':
         conditions.push(`${qi} <= ${dialect.param(paramIndex++)}`);
-        values.push(filter.value);
+        values.push(coerceValue(filter.value, dialect));
         break;
       case 'between': {
         const [min, max] = filter.value as [unknown, unknown];
         conditions.push(
           `${qi} >= ${dialect.param(paramIndex++)} AND ${qi} <= ${dialect.param(paramIndex++)}`,
         );
-        values.push(min, max);
+        values.push(coerceValue(min, dialect), coerceValue(max, dialect));
         break;
       }
       case 'in': {
@@ -165,13 +196,15 @@ function buildWhereConditions(
           break;
         }
 
+        const coercedArray = valueArray.map((v) => coerceValue(v, dialect));
+
         if (dialect.isPostgres) {
           conditions.push(`${qi} = ANY(${dialect.param(paramIndex++)})`);
-          values.push(valueArray);
+          values.push(coercedArray);
         } else {
-          const placeholders = valueArray.map(() => dialect.param(paramIndex++));
+          const placeholders = coercedArray.map(() => dialect.param(paramIndex++));
           conditions.push(`${qi} IN (${placeholders.join(', ')})`);
-          values.push(...valueArray);
+          values.push(...coercedArray);
         }
         break;
       }

@@ -400,21 +400,22 @@ export function registerServeRoute(app: Express, state: AppState): void {
       const responseMode = profile.responseMode ?? 'friendly';
 
       /**
-       * Wrap response JSON with LLM presentation instructions in friendly mode.
-       * In raw mode, returns the JSON string unchanged.
+       * Pass-through. Data shape is already adapted upstream (column names
+       * are replaced by labels when responseMode is 'friendly'); we no
+       * longer inject presentation instructions into the tool return,
+       * because:
+       *   1. They are trivially overridden by any explicit user request
+       *      for structured output (cf. tests with Claude browser).
+       *   2. They burn ~50 tokens on every tool call, multiplying with
+       *      tool-loop length.
+       *   3. Tool-call returns are an injection-prone surface — directives
+       *      belong in the system prompt, not in payloads.
+       * For Calame's internal chat, the equivalent guidance is already in
+       * the system prompt (see chat-engine.ts FRIENDLY_ADDENDUM). External
+       * MCP clients receive friendly-shaped data without the meta-text.
        */
-      const wrapResponse = (jsonData: string): string => {
-        if (responseMode !== 'friendly') return jsonData;
-        return (
-          '[INSTRUCTIONS POUR LE MODELE]\n' +
-          'Presente ces donnees en langage naturel et fluide. Ne mentionne JAMAIS de noms de colonnes, ' +
-          'de champs, de tables, ou de structure technique. Ne presente JAMAIS les donnees sous forme ' +
-          '"champ: valeur". Decris les informations comme si tu racontais quelque chose a quelqu\'un, ' +
-          'de maniere naturelle et humaine.\n\n' +
-          '[DONNEES]\n' +
-          jsonData
-        );
-      };
+      const wrapResponse = (jsonData: string): string => jsonData;
+      void responseMode; // kept on the closure for future per-mode logic
 
       // --- Register tools via core registerDynamicTools (grouped by connection) ---
       // Group tables by connection

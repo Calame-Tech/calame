@@ -154,7 +154,17 @@ function isTextType(pgType: string): boolean {
 // WHERE clause builder (runtime version, multi-dialect)
 // ---------------------------------------------------------------------------
 
-type FilterOperator = 'eq' | 'neq' | 'gt' | 'gte' | 'lt' | 'lte' | 'between' | 'in';
+type FilterOperator =
+  | 'eq'
+  | 'neq'
+  | 'gt'
+  | 'gte'
+  | 'lt'
+  | 'lte'
+  | 'between'
+  | 'in'
+  | 'is_null'
+  | 'is_not_null';
 
 interface FilterValue {
   op: FilterOperator;
@@ -704,11 +714,12 @@ function registerAggregateTool(
   const filterShape: Record<string, z.ZodTypeAny> = {};
   for (const col of filterableCols) {
     filterShape[col.name] = z.object({
-      op: z.enum(['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'between', 'in']),
+      op: z.enum(['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'between', 'in', 'is_null', 'is_not_null']),
       value: z
         .any()
+        .optional()
         .describe(
-          'Filter value. For `in` operator: prefer an array like ["a","b"] — a comma-separated string like "a,b,c" is also accepted and will be split automatically. For `between`: pass a two-element array [min, max].',
+          'Filter value. For `in` operator: prefer an array like ["a","b"] — a comma-separated string like "a,b,c" is also accepted and will be split automatically. For `between`: pass a two-element array [min, max]. For `is_null` and `is_not_null`: no value needed (ignored).',
         ),
     }).optional();
   }
@@ -876,11 +887,12 @@ function registerQueryTool(
   const filterShape: Record<string, z.ZodTypeAny> = {};
   for (const col of filterableCols) {
     filterShape[col.name] = z.object({
-      op: z.enum(['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'between', 'in']),
+      op: z.enum(['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'between', 'in', 'is_null', 'is_not_null']),
       value: z
         .any()
+        .optional()
         .describe(
-          'Filter value. For `in` operator: prefer an array like ["a","b"] — a comma-separated string like "a,b,c" is also accepted and will be split automatically. For `between`: pass a two-element array [min, max].',
+          'Filter value. For `in` operator: prefer an array like ["a","b"] — a comma-separated string like "a,b,c" is also accepted and will be split automatically. For `between`: pass a two-element array [min, max]. For `is_null` and `is_not_null`: no value needed (ignored).',
         ),
     }).optional();
   }
@@ -1063,11 +1075,12 @@ function registerWriteTool(
   const filterShape: Record<string, z.ZodTypeAny> = {};
   for (const col of filterableCols) {
     filterShape[col.name] = z.object({
-      op: z.enum(['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'between', 'in']),
+      op: z.enum(['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'between', 'in', 'is_null', 'is_not_null']),
       value: z
         .any()
+        .optional()
         .describe(
-          'Filter value. For `in` operator: prefer an array like ["a","b"] — a comma-separated string like "a,b,c" is also accepted and will be split automatically. For `between`: pass a two-element array [min, max].',
+          'Filter value. For `in` operator: prefer an array like ["a","b"] — a comma-separated string like "a,b,c" is also accepted and will be split automatically. For `between`: pass a two-element array [min, max]. For `is_null` and `is_not_null`: no value needed (ignored).',
         ),
     }).optional();
   }

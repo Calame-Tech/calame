@@ -5,7 +5,17 @@ import { getTableScopeStatus } from './scope-resolver.js';
 // Shared types (canonical definitions — imported by dynamic-tools.ts)
 // ---------------------------------------------------------------------------
 
-type FilterOperator = 'eq' | 'neq' | 'gt' | 'gte' | 'lt' | 'lte' | 'between' | 'in';
+type FilterOperator =
+  | 'eq'
+  | 'neq'
+  | 'gt'
+  | 'gte'
+  | 'lt'
+  | 'lte'
+  | 'between'
+  | 'in'
+  | 'is_null'
+  | 'is_not_null';
 
 export interface FilterValue {
   op: FilterOperator;
@@ -165,6 +175,12 @@ function buildWhereConditions(
         }
         break;
       }
+      case 'is_null':
+        conditions.push(`${qi} IS NULL`);
+        break;
+      case 'is_not_null':
+        conditions.push(`${qi} IS NOT NULL`);
+        break;
     }
   }
 

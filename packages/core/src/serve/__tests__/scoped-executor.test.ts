@@ -347,3 +347,78 @@ describe('IN operator CSV string normalization', () => {
     expect(result.values).toEqual([]);
   });
 });
+
+describe('IS NULL / IS NOT NULL operators', () => {
+  const unscopedGuard = createScopeGuard([]);
+
+  it('is_null generates IS NULL without binding any value (PostgreSQL)', () => {
+    const result = unscopedGuard.buildWhereClause(
+      'colis',
+      { id_livreur: { op: 'is_null', value: undefined } },
+      ['id_livreur'],
+      pgDialect,
+    );
+    expect(result.clause).toBe('WHERE "id_livreur" IS NULL');
+    expect(result.values).toEqual([]);
+    expect(result.nextParamIndex).toBe(1);
+  });
+
+  it('is_null generates IS NULL without binding any value (SQLite)', () => {
+    const result = unscopedGuard.buildWhereClause(
+      'colis',
+      { id_livreur: { op: 'is_null', value: undefined } },
+      ['id_livreur'],
+      sqliteDialect,
+    );
+    expect(result.clause).toBe('WHERE "id_livreur" IS NULL');
+    expect(result.values).toEqual([]);
+  });
+
+  it('is_not_null generates IS NOT NULL without binding any value (PostgreSQL)', () => {
+    const result = unscopedGuard.buildWhereClause(
+      'colis',
+      { id_livreur: { op: 'is_not_null', value: undefined } },
+      ['id_livreur'],
+      pgDialect,
+    );
+    expect(result.clause).toBe('WHERE "id_livreur" IS NOT NULL');
+    expect(result.values).toEqual([]);
+  });
+
+  it('is_not_null generates IS NOT NULL without binding any value (SQLite)', () => {
+    const result = unscopedGuard.buildWhereClause(
+      'colis',
+      { id_livreur: { op: 'is_not_null', value: undefined } },
+      ['id_livreur'],
+      sqliteDialect,
+    );
+    expect(result.clause).toBe('WHERE "id_livreur" IS NOT NULL');
+    expect(result.values).toEqual([]);
+  });
+
+  it('ignores value passed to is_null (LLM robustness)', () => {
+    const result = unscopedGuard.buildWhereClause(
+      'colis',
+      { id_livreur: { op: 'is_null', value: 'anything' } },
+      ['id_livreur'],
+      sqliteDialect,
+    );
+    expect(result.clause).toBe('WHERE "id_livreur" IS NULL');
+    expect(result.values).toEqual([]);
+  });
+
+  it('combines is_not_null with other filters preserving param order', () => {
+    const result = unscopedGuard.buildWhereClause(
+      'colis',
+      {
+        id_livreur: { op: 'is_not_null', value: undefined },
+        statut: { op: 'eq', value: 'livre' },
+      },
+      ['id_livreur', 'statut'],
+      sqliteDialect,
+    );
+    expect(result.clause).toContain('"id_livreur" IS NOT NULL');
+    expect(result.clause).toContain('"statut" = ?');
+    expect(result.values).toEqual(['livre']);
+  });
+});

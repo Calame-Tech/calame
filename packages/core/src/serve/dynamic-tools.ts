@@ -705,7 +705,11 @@ function registerAggregateTool(
   for (const col of filterableCols) {
     filterShape[col.name] = z.object({
       op: z.enum(['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'between', 'in']),
-      value: z.any(),
+      value: z
+        .any()
+        .describe(
+          'Filter value. For `in` operator: prefer an array like ["a","b"] — a comma-separated string like "a,b,c" is also accepted and will be split automatically. For `between`: pass a two-element array [min, max].',
+        ),
     }).optional();
   }
 
@@ -873,7 +877,11 @@ function registerQueryTool(
   for (const col of filterableCols) {
     filterShape[col.name] = z.object({
       op: z.enum(['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'between', 'in']),
-      value: z.any(),
+      value: z
+        .any()
+        .describe(
+          'Filter value. For `in` operator: prefer an array like ["a","b"] — a comma-separated string like "a,b,c" is also accepted and will be split automatically. For `between`: pass a two-element array [min, max].',
+        ),
     }).optional();
   }
 
@@ -1056,7 +1064,11 @@ function registerWriteTool(
   for (const col of filterableCols) {
     filterShape[col.name] = z.object({
       op: z.enum(['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'between', 'in']),
-      value: z.any(),
+      value: z
+        .any()
+        .describe(
+          'Filter value. For `in` operator: prefer an array like ["a","b"] — a comma-separated string like "a,b,c" is also accepted and will be split automatically. For `between`: pass a two-element array [min, max].',
+        ),
     }).optional();
   }
   const allowedFilterColumns = filterableCols.map(c => c.name);

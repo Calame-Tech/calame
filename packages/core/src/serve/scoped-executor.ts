@@ -137,17 +137,34 @@ function buildWhereConditions(
         values.push(min, max);
         break;
       }
-      case 'in':
+      case 'in': {
+        // Normalize value to an array — accept both an array and a comma-separated string
+        const rawIn = filter.value;
+        const valueArray: unknown[] = Array.isArray(rawIn)
+          ? rawIn
+          : typeof rawIn === 'string'
+            ? rawIn
+                .split(',')
+                .map((s) => s.trim())
+                .filter((s) => s.length > 0)
+            : [rawIn];
+
+        if (valueArray.length === 0) {
+          // Empty IN list — intentionally matches nothing
+          conditions.push('1=0');
+          break;
+        }
+
         if (dialect.isPostgres) {
           conditions.push(`${qi} = ANY(${dialect.param(paramIndex++)})`);
-          values.push(filter.value);
+          values.push(valueArray);
         } else {
-          const arr = Array.isArray(filter.value) ? filter.value : [filter.value];
-          const placeholders = arr.map(() => dialect.param(paramIndex++));
+          const placeholders = valueArray.map(() => dialect.param(paramIndex++));
           conditions.push(`${qi} IN (${placeholders.join(', ')})`);
-          values.push(...arr);
+          values.push(...valueArray);
         }
         break;
+      }
     }
   }
 

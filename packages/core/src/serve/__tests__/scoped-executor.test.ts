@@ -229,3 +229,121 @@ describe('ScopeGuard with complex user filters', () => {
     expect(result.values).toEqual(['dupont@gmail.com', 'en_cours', 'livre']);
   });
 });
+
+// ---------------------------------------------------------------------------
+// IN operator — CSV string normalization (bug fix)
+// ---------------------------------------------------------------------------
+
+describe('IN operator CSV string normalization', () => {
+  const unscopedGuard = createScopeGuard([]);
+
+  it('accepts an array directly (PostgreSQL) — baseline', () => {
+    const result = unscopedGuard.buildWhereClause(
+      'colis',
+      { statut: { op: 'in', value: ['echec', 'en_attente'] } },
+      ['statut'],
+      pgDialect,
+    );
+    expect(result.clause).toBe('WHERE "statut" = ANY($1)');
+    expect(result.values).toEqual([['echec', 'en_attente']]);
+  });
+
+  it('accepts an array directly (SQLite) — baseline', () => {
+    const result = unscopedGuard.buildWhereClause(
+      'colis',
+      { statut: { op: 'in', value: ['echec', 'en_attente'] } },
+      ['statut'],
+      sqliteDialect,
+    );
+    expect(result.clause).toBe('WHERE "statut" IN (?, ?)');
+    expect(result.values).toEqual(['echec', 'en_attente']);
+  });
+
+  it('splits a CSV string into individual values (PostgreSQL)', () => {
+    const result = unscopedGuard.buildWhereClause(
+      'colis',
+      { statut: { op: 'in', value: 'echec,en_attente,en_cours' } },
+      ['statut'],
+      pgDialect,
+    );
+    expect(result.clause).toBe('WHERE "statut" = ANY($1)');
+    expect(result.values).toEqual([['echec', 'en_attente', 'en_cours']]);
+  });
+
+  it('splits a CSV string into individual values (SQLite)', () => {
+    const result = unscopedGuard.buildWhereClause(
+      'colis',
+      { statut: { op: 'in', value: 'echec,en_attente,en_cours' } },
+      ['statut'],
+      sqliteDialect,
+    );
+    expect(result.clause).toBe('WHERE "statut" IN (?, ?, ?)');
+    expect(result.values).toEqual(['echec', 'en_attente', 'en_cours']);
+  });
+
+  it('trims whitespace around CSV values (PostgreSQL)', () => {
+    const result = unscopedGuard.buildWhereClause(
+      'colis',
+      { statut: { op: 'in', value: 'echec, en_attente , en_cours' } },
+      ['statut'],
+      pgDialect,
+    );
+    expect(result.clause).toBe('WHERE "statut" = ANY($1)');
+    expect(result.values).toEqual([['echec', 'en_attente', 'en_cours']]);
+  });
+
+  it('trims whitespace around CSV values (SQLite)', () => {
+    const result = unscopedGuard.buildWhereClause(
+      'colis',
+      { statut: { op: 'in', value: ' a , b , c ' } },
+      ['statut'],
+      sqliteDialect,
+    );
+    expect(result.clause).toBe('WHERE "statut" IN (?, ?, ?)');
+    expect(result.values).toEqual(['a', 'b', 'c']);
+  });
+
+  it('empty string produces 1=0 (match nothing, no crash) — PostgreSQL', () => {
+    const result = unscopedGuard.buildWhereClause(
+      'colis',
+      { statut: { op: 'in', value: '' } },
+      ['statut'],
+      pgDialect,
+    );
+    expect(result.clause).toBe('WHERE 1=0');
+    expect(result.values).toEqual([]);
+  });
+
+  it('empty string produces 1=0 (match nothing, no crash) — SQLite', () => {
+    const result = unscopedGuard.buildWhereClause(
+      'colis',
+      { statut: { op: 'in', value: '' } },
+      ['statut'],
+      sqliteDialect,
+    );
+    expect(result.clause).toBe('WHERE 1=0');
+    expect(result.values).toEqual([]);
+  });
+
+  it('empty array produces 1=0 (match nothing, no crash) — PostgreSQL', () => {
+    const result = unscopedGuard.buildWhereClause(
+      'colis',
+      { statut: { op: 'in', value: [] } },
+      ['statut'],
+      pgDialect,
+    );
+    expect(result.clause).toBe('WHERE 1=0');
+    expect(result.values).toEqual([]);
+  });
+
+  it('empty array produces 1=0 (match nothing, no crash) — SQLite', () => {
+    const result = unscopedGuard.buildWhereClause(
+      'colis',
+      { statut: { op: 'in', value: [] } },
+      ['statut'],
+      sqliteDialect,
+    );
+    expect(result.clause).toBe('WHERE 1=0');
+    expect(result.values).toEqual([]);
+  });
+});

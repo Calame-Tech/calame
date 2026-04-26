@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import DarkSelect from './ui/DarkSelect.js';
 
 interface ChatMessage {
   role: 'user' | 'assistant';
@@ -16,29 +17,42 @@ interface AiStatus {
   model?: string;
 }
 
+interface AiSettingMeta {
+  name: string;
+  label: string;
+  provider: string;
+  configured: boolean;
+}
+
 export default function ChatPanel({ selectedTables, activeProfiles }: ChatPanelProps) {
   const [chatInput, setChatInput] = useState('');
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatLoading, setChatLoading] = useState(false);
   const [aiStatus, setAiStatus] = useState<AiStatus>({ configured: false });
   const [statusLoading, setStatusLoading] = useState(true);
+  const [allAiSettings, setAllAiSettings] = useState<AiSettingMeta[]>([]);
+  const [profileMeta, setProfileMeta] = useState<Record<string, { aiSettings?: Array<{ name: string; label: string }> }>>({});
   const [selectedProfile, setSelectedProfile] = useState<string | null>(
     activeProfiles[0] ?? null,
   );
+  const [selectedAi, setSelectedAi] = useState<string | undefined>(undefined);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
 
-  // Load AI config status
+  // Load AI config status + the full list of AI settings (for the per-MCP picker)
   useEffect(() => {
     (async () => {
       try {
         const res = await fetch('/api/ai-settings', { credentials: 'include' });
         const data = await res.json();
-        if (data.success && data.config) {
-          setAiStatus({
-            configured: data.config.configured,
-            provider: data.config.provider,
-            model: data.config.model,
-          });
+        if (data.success) {
+          setAllAiSettings((data.settings ?? []) as AiSettingMeta[]);
+          if (data.config) {
+            setAiStatus({
+              configured: data.config.configured,
+              provider: data.config.provider,
+              model: data.config.model,
+            });
+          }
         }
       } catch {
         // ignore
@@ -47,6 +61,43 @@ export default function ChatPanel({ selectedTables, activeProfiles }: ChatPanelP
       }
     })();
   }, []);
+
+  // Load each active profile's allowed AI settings (cached client-side)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const next: typeof profileMeta = {};
+      await Promise.all(
+        activeProfiles.map(async (name) => {
+          try {
+            const res = await fetch(`/api/chat-profile/${encodeURIComponent(name)}`, {
+              credentials: 'include',
+            });
+            const data = await res.json();
+            if (data.success && data.profile) {
+              next[name] = { aiSettings: data.profile.aiSettings };
+            }
+          } catch {
+            // ignore
+          }
+        }),
+      );
+      if (!cancelled) setProfileMeta(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeProfiles]);
+
+  // Compute the AI settings the user can pick from for the currently selected MCP
+  const profileAiSettings: Array<{ name: string; label: string }> | undefined = selectedProfile
+    ? profileMeta[selectedProfile]?.aiSettings
+    : undefined;
+
+  // Reset the AI selection when the profile changes
+  useEffect(() => {
+    setSelectedAi(profileAiSettings?.[0]?.name);
+  }, [selectedProfile, profileAiSettings]);
 
   // Sync selectedProfile when activeProfiles changes (e.g. MCP server stopped mid-session)
   useEffect(() => {
@@ -83,6 +134,7 @@ export default function ChatPanel({ selectedTables, activeProfiles }: ChatPanelP
         body: JSON.stringify({
           message: userMessage,
           ...(selectedProfile ? { profileName: selectedProfile } : {}),
+          ...(selectedAi ? { aiSettingName: selectedAi } : {}),
           history: chatMessages,
           selectedTables: Object.fromEntries(
             Object.entries(selectedTables)
@@ -146,35 +198,51 @@ export default function ChatPanel({ selectedTables, activeProfiles }: ChatPanelP
         </div>
       ) : (
         <div className="mb-4 flex items-center gap-3 px-3 py-2 rounded-lg bg-gray-800/50 border border-gray-700/50 text-sm">
-          <label htmlFor="chat-profile-select" className="text-gray-400 shrink-0">
-            Profile to test:
-          </label>
-          <select
-            id="chat-profile-select"
+          <span className="text-gray-400 shrink-0">Profile to test:</span>
+          <DarkSelect
+            ariaLabel="Profile to test"
             value={selectedProfile ?? ''}
-            onChange={(e) => setSelectedProfile(e.target.value)}
-            className="flex-1 px-3 py-1.5 rounded-lg bg-gray-900 border border-gray-700 text-gray-100 text-sm focus:outline-none focus:border-os-500"
-          >
-            {activeProfiles.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
+            options={activeProfiles.map((name) => ({ value: name, label: name }))}
+            onChange={(v) => setSelectedProfile(v)}
+            className="flex-1"
+          />
         </div>
       )}
 
-      {/* AI Status */}
+      {/* AI Status / picker */}
       {!statusLoading && activeProfiles.length > 0 && (
         aiStatus.configured ? (
-          <div className="mb-4 flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-800/50 border border-gray-700/50 text-sm">
-            <div className="w-2 h-2 rounded-full bg-green-500 shadow-lg shadow-green-500/30" />
-            <span className="text-gray-400">
-              Using <span className="text-gray-200 font-medium">{providerLabel}</span>
-              {aiStatus.model && <span className="text-gray-500"> / {aiStatus.model}</span>}
-            </span>
-            <span className="text-gray-600 ml-auto text-xs">Configure in AI Settings</span>
-          </div>
+          profileAiSettings && profileAiSettings.length > 1 ? (
+            <div className="mb-4 flex items-center gap-3 px-3 py-2 rounded-lg bg-gray-800/50 border border-gray-700/50 text-sm">
+              <span className="text-gray-400 shrink-0">AI:</span>
+              <DarkSelect
+                ariaLabel="AI provider"
+                value={selectedAi ?? ''}
+                options={profileAiSettings.map((s) => ({ value: s.name, label: s.label }))}
+                onChange={(v) => setSelectedAi(v || undefined)}
+                className="flex-1"
+              />
+              <span className="text-gray-600 text-xs">{profileAiSettings.length} available</span>
+            </div>
+          ) : (
+            <div className="mb-4 flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-800/50 border border-gray-700/50 text-sm">
+              <div className="w-2 h-2 rounded-full bg-green-500 shadow-lg shadow-green-500/30" />
+              <span className="text-gray-400">
+                Using{' '}
+                <span className="text-gray-200 font-medium">
+                  {profileAiSettings?.[0]?.label ?? providerLabel}
+                </span>
+                {aiStatus.model && !profileAiSettings?.[0] && (
+                  <span className="text-gray-500"> / {aiStatus.model}</span>
+                )}
+              </span>
+              <span className="text-gray-600 ml-auto text-xs">
+                {allAiSettings.length > 1
+                  ? 'Assign more in the MCP detail page'
+                  : 'Configure in AI Settings'}
+              </span>
+            </div>
+          )
         ) : (
           <div className="mb-4 px-4 py-3 rounded-lg bg-amber-950/30 border border-amber-800/50 text-sm text-amber-400">
             AI is not configured. Go to <span className="font-medium">AI Settings</span> to set up

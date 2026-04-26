@@ -108,12 +108,21 @@ function mockSuccessfulChat(): void {
   });
 }
 
-/** Minimal AI config mock — inject on state.aiConfigManager. */
+/** Minimal AI settings mock — inject on state.aiSettingsManager. */
 function mockAiConfig(state: AppState): void {
-  state.aiConfigManager = {
-    getConfig: vi.fn().mockReturnValue({ provider: 'anthropic', apiKey: 'key', model: 'claude' }),
+  const setting = {
+    name: 'default',
+    label: 'Default',
+    provider: 'anthropic',
+    apiKey: 'key',
+    model: 'claude',
+  };
+  state.aiSettingsManager = {
+    getConfig: vi.fn().mockReturnValue(setting),
     isConfigured: vi.fn().mockReturnValue(true),
-  } as unknown as typeof state.aiConfigManager;
+    listSettings: vi.fn().mockReturnValue([setting]),
+    getSetting: vi.fn().mockImplementation((name: string) => (name === 'default' ? setting : null)),
+  } as unknown as typeof state.aiSettingsManager;
 }
 
 // ---------------------------------------------------------------------------
@@ -197,9 +206,12 @@ describe('POST /api/chat', () => {
 
   describe('upstream guards', () => {
     it('returns 503 when AI config is not configured', async () => {
-      // No aiConfigManager set on state — default is null
-      const res = await request(app).post('/api/chat').send({ message: 'test' }).expect(503);
-      expect(res.body.message).toContain('AI chat is not configured');
+      // Seed profiles + active so we reach the AI resolver guard (AI is now resolved
+      // after the profile, since each profile may pin its own AI setting).
+      seedProfiles(state, [makeProfile('demo')]);
+      // No aiSettingsManager set on state — default is null
+      const res = await request(app).post('/api/chat').send({ message: 'test' }).expect(500);
+      expect(res.body.message).toContain('AI settings manager not initialized');
     });
 
     it('returns 503 when MCP server is not running (no active profiles)', async () => {

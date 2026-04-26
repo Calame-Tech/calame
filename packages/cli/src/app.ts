@@ -6,7 +6,7 @@ import { TokenManager } from './token.js';
 import { UserManager } from './user.js';
 import { AuditLog } from './audit.js';
 import { CalameDatabase } from './database.js';
-import { AiConfigManager } from './ai-config.js';
+import { AiSettingsManager } from './ai-config.js';
 import { SmtpConfigManager } from './smtp-config.js';
 import { OidcConfigManager } from './oidc-config.js';
 import { EmailService, isSmtpConfigured } from './email.js';
@@ -96,8 +96,8 @@ export function createApp(
   if (!appState.writeQueue) {
     appState.writeQueue = new WriteQueue(appState.db);
   }
-  if (!appState.aiConfigManager) {
-    appState.aiConfigManager = new AiConfigManager(appState.db);
+  if (!appState.aiSettingsManager) {
+    appState.aiSettingsManager = new AiSettingsManager(appState.db);
   }
   if (!appState.smtpConfigManager) {
     appState.smtpConfigManager = new SmtpConfigManager(appState.db);

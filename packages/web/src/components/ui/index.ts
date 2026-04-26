@@ -50,6 +50,9 @@ export type { EmptyStateProps } from './EmptyState.js';
 export { PageHeader } from './PageHeader.js';
 export type { PageHeaderProps, BreadcrumbItem } from './PageHeader.js';
 
+export { Breadcrumb } from './Breadcrumb.js';
+export type { BreadcrumbProps } from './Breadcrumb.js';
+
 // Design system primitives
 export { Eyebrow } from './Eyebrow.js';
 export type {} from './Eyebrow.js';

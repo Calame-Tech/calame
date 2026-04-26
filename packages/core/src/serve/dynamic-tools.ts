@@ -4,7 +4,7 @@ import { createHash } from 'crypto';
 import { TableInfo, Relation, TableToolOptions } from '../introspect/types.js';
 import { ColumnMasking } from '../pii/types.js';
 import type { AuditLogEntry, PendingWriteQuery } from './types.js';
-import { snakeCaseToLabel, friendlyType, buildLabelMap, buildReverseLabelMap, formatResponseRows } from './response-formatter.js';
+import { snakeCaseToLabel, friendlyType, buildLabelMap, formatResponseRows } from './response-formatter.js';
 import type { ScopeGuard, Dialect } from './scoped-executor.js';
 import { ScopeBlockedError, createScopeGuard, buildPlainConditions } from './scoped-executor.js';
 
@@ -38,9 +38,17 @@ interface DynamicToolsOptions {
   maxOffset?: number;
   /** Row-level data scoping guard. When provided, filters queries to the current user's data. */
   scopeGuard?: ScopeGuard;
+  /**
+   * Pre-computed distinct values per table/column, baked into the catalogue
+   * the LLM sees in the description of `aggregate`/`query`. Caller (serve.ts
+   * route) is responsible for running `SELECT DISTINCT ... LIMIT 21` on each
+   * filterable string column at MCP server startup. Skipped columns / tables
+   * just appear as their friendly type label (no enum hint).
+   */
+  distinctValuesByTable?: Record<string, Record<string, unknown[]>>;
 }
 
-/** Shared context passed to all register*Tool functions to avoid long parameter lists. */
+/** Shared context passed to register* helpers to avoid long parameter lists. */
 interface ToolContext {
   server: McpServer;
   executeQuery: DynamicToolsOptions['executeQuery'];
@@ -150,33 +158,124 @@ function isTextType(pgType: string): boolean {
   return pgTypeToZod(pgType) === 'string';
 }
 
-// Build a Zod schema for the `value` of a {op, value} filter entry, typed
-// per the column's SQL kind. Replaces the legacy `z.any()` shape that left
-// weaker LLMs (Gemini Flash, Qwen 7B) guessing the expected JSON type and
-// silently producing zero-row results when they got it wrong.
-//
-// Single value (eq/neq/gt/gte/lt/lte) and multi-value forms (in, between)
-// are merged into a small union so a single Zod field covers every operator
-// without the JSON-Schema explosion of a discriminated union per op.
-//
-// Numeric columns also accept arrays of strings as a fallback so an LLM
-// that emits `["1","2"]` (or the runtime CSV path) still parses; the
-// runtime layer (scoped-executor) does the actual coercion before binding.
-function valueSchemaForColumn(col: { type: string }): z.ZodTypeAny {
-  const kind = pgTypeToZod(col.type);
-  switch (kind) {
-    case 'number':
-      return z.union([z.number(), z.array(z.number())]).optional();
-    case 'boolean':
-      return z.boolean().optional();
-    case 'string':
-    default:
-      return z.union([z.string(), z.array(z.string())]).optional();
+// Friendly column-type label baked into the Phase-2 catalogue (string in tool
+// description). Distinguishes 'date' from generic 'string' so the LLM doesn't
+// pass `[min,max]` between filters as numbers on date columns.
+function friendlyTypeLabel(sqlType: string): string {
+  const t = sqlType.toLowerCase();
+  if (isNumericType(sqlType)) return 'number';
+  if (t === 'boolean' || t === 'bool') return 'bool';
+  if (
+    t === 'timestamp' || t === 'timestamp with time zone' ||
+    t === 'timestamp without time zone' || t === 'timestamptz' ||
+    t === 'date' || t === 'time' || t === 'time with time zone' ||
+    t === 'time without time zone' || t === 'timetz'
+  ) return 'date';
+  return 'string';
+}
+
+// Levenshtein for did-you-mean hints in structured errors. Small data sets
+// (≤ 20 columns / ≤ 50 tables) so the O(n·m) dp is fine.
+function levenshtein(a: string, b: string): number {
+  if (a === b) return 0;
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+  const dp: number[][] = [];
+  for (let i = 0; i <= a.length; i++) {
+    dp[i] = new Array(b.length + 1).fill(0);
+    dp[i][0] = i;
   }
+  for (let j = 0; j <= b.length; j++) dp[0][j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
+    }
+  }
+  return dp[a.length][b.length];
+}
+
+function didYouMean(input: string, valid: string[]): string | undefined {
+  if (!input || valid.length === 0) return undefined;
+  const target = input.toLowerCase();
+  let best: { name: string; dist: number } | undefined;
+  for (const name of valid) {
+    const dist = levenshtein(target, name.toLowerCase());
+    if (!best || dist < best.dist) best = { name, dist };
+  }
+  if (!best) return undefined;
+  // Only suggest if reasonably close. Allows ~1 typo per 3 chars; capped at 3.
+  const threshold = Math.min(3, Math.max(2, Math.floor(input.length / 3)));
+  return best.dist <= threshold ? best.name : undefined;
+}
+
+// Returns a tool result that is structured-error-shaped (single text content,
+// JSON body, isError=true). Designed to be parsed by an LLM follow-up turn.
+function structuredError(payload: Record<string, unknown>): {
+  content: { type: 'text'; text: string }[];
+  isError: true;
+  resultSummary?: string;
+} {
+  const summary = typeof payload.error === 'string' ? payload.error.slice(0, 80) : 'invalid args';
+  return {
+    content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }],
+    isError: true,
+    resultSummary: summary,
+  };
+}
+
+// Per-table view computed once at registerDynamicTools time. Carries
+// everything the generic tool handlers need to validate `table` arg and run
+// the right SQL.
+interface AccessibleTable {
+  table: TableInfo;
+  opts: TableToolOptions | undefined;
+  enabledTools: string[];
+  visibleColumns: TableInfo['columns'];
+  excludedCols: Set<string>;
+  tableMasking: Record<string, ColumnMasking> | undefined;
+  maskingRules: Record<string, MaskingRule>;
+  labelMap: Record<string, string>;
+  filterableCols: TableInfo['columns'];
+  numericCols: string[];
+  groupableColumns: string[];
+  allColumnNames: string[];
+  relations: Relation[];
+}
+
+// Build the catalogue text baked in `aggregate` and `query` tool descriptions.
+// Mentions every visible column with a 1-letter type tag, low-cardinality
+// enums when available, and FK arrows so the LLM can plan multi-hop queries.
+function buildCatalogue(
+  accessible: AccessibleTable[],
+  distinctValuesByTable: Record<string, Record<string, unknown[]>>,
+): string {
+  const lines: string[] = ['TABLES & COLUMNS:'];
+  for (const at of accessible) {
+    const cols: string[] = [];
+    for (const col of at.visibleColumns) {
+      const friendly = friendlyTypeLabel(col.type);
+      const distinct = distinctValuesByTable[at.table.name]?.[col.name];
+      const fk = at.relations.find(r => r.fromTable === at.table.name && r.fromColumn === col.name);
+      const fkSuffix = fk ? `→${fk.toTable}.${fk.toColumn}` : '';
+      let typeLabel: string;
+      if (Array.isArray(distinct) && distinct.length > 0 && distinct.length <= 20) {
+        typeLabel = `enum:${distinct.map(v => String(v)).join('|')}`;
+      } else {
+        typeLabel = friendly;
+      }
+      cols.push(`${col.name}(${typeLabel})${fkSuffix}`);
+    }
+    lines.push(`  ${at.table.name}: ${cols.join(', ')}`);
+  }
+  lines.push('');
+  lines.push('OPS: eq, neq, gt, gte, lt, lte (single value), between (value=[min,max]),');
+  lines.push('     in (value=array), is_null, is_not_null (omit value)');
+  return lines.join('\n');
 }
 
 // ---------------------------------------------------------------------------
-// WHERE clause builder (runtime version, multi-dialect)
+// WHERE clause builder runtime types (the build itself lives in scoped-executor)
 // ---------------------------------------------------------------------------
 
 type FilterOperator =
@@ -196,11 +295,8 @@ interface FilterValue {
   value: unknown;
 }
 
-// NOTE: WHERE clause building has been moved to scoped-executor.ts (ScopeGuard).
-// All tools use scopeGuard.buildWhereClause() which handles both scope filters and user filters.
-
 // ---------------------------------------------------------------------------
-// Masking runtime (inline — no imports needed)
+// Masking runtime
 // ---------------------------------------------------------------------------
 
 interface MaskingRule {
@@ -336,218 +432,77 @@ async function executeWithAudit(
   }
 }
 
-// ---------------------------------------------------------------------------
-// Main entry point: registerDynamicTools
-// ---------------------------------------------------------------------------
+// ===========================================================================
+// Phase-2 entry point — registers a small generic tool surface
+// (`list_tables`, `describe`, `aggregate`, `query`, optional `write`).
+//
+// Why generic and not per-table:
+// - Slashes the manifest from O(tables × tool kinds) to O(tool kinds), which
+//   matters for small-context LLMs (Qwen 7B / Gemini Flash Lite).
+// - Drops the `z.union([T, T[]])` -> `anyOf` JSON-Schema pattern that Gemini
+//   silently rejects (cf. zod#5807). Filter values are typed as `z.any()` and
+//   validated at runtime; the LLM gets the column types/enums from the
+//   catalogue baked in the tool descriptions.
+// ===========================================================================
 
 export function registerDynamicTools(options: DynamicToolsOptions): void {
-  const {
-    server,
-    tables,
-    relations,
-    selectedTables,
-    tableOptions,
-    columnMasking,
-    executeQuery,
-    onAuditLog,
-    onWriteRequest,
-    profileName,
-    databaseType,
-    responseMode = 'raw',
-    wrapResponse = (json: string) => json,
-    maxOffset = 10000,
-    scopeGuard: providedScopeGuard,
-  } = options;
-
-  const dialect = makeDialect(databaseType);
-
-  // Use provided scope guard or create an unscoped one (backward compatible)
-  const scopeGuard: ScopeGuard = providedScopeGuard ?? createScopeGuard([]);
-
+  const dialect = makeDialect(options.databaseType);
+  const scopeGuard: ScopeGuard = options.scopeGuard ?? createScopeGuard([]);
   const ctx: ToolContext = {
-    server,
-    executeQuery,
-    onAuditLog,
-    profileName,
+    server: options.server,
+    executeQuery: options.executeQuery,
+    onAuditLog: options.onAuditLog,
+    profileName: options.profileName,
     dialect,
-    responseMode,
-    wrapResponse,
-    maxOffset,
+    responseMode: options.responseMode ?? 'raw',
+    wrapResponse: options.wrapResponse ?? ((j) => j),
+    maxOffset: options.maxOffset ?? 10000,
     scopeGuard,
   };
 
-  // Pre-compute which tables are visible
-  const visibleTableNames = Object.keys(selectedTables);
-  const visibleTables = tables.filter(t => visibleTableNames.includes(t.name));
+  const accessible = buildAccessibleTables(options, scopeGuard);
+  if (accessible.length === 0) return;
 
-  // -----------------------------------------------------------------------
-  // Per-table tools — register first so list_tables can reflect ground truth
-  // -----------------------------------------------------------------------
-  // Tracks which tool names were actually registered for each visible table.
-  // Used by list_tables so the discovery output never advertises a tool that
-  // is missing from the MCP manifest (previously a silent drift: list_tables
-  // promised describe_<table> while no server.tool call was made because the
-  // table had no numeric columns or no visible columns).
-  const registeredToolsByTable = new Map<string, string[]>();
+  const distinctValuesByTable = options.distinctValuesByTable ?? {};
+  const catalogue = buildCatalogue(accessible, distinctValuesByTable);
 
-  // -----------------------------------------------------------------------
-  // join_aggregate (global multi-table tool)
-  // -----------------------------------------------------------------------
-  registerJoinAggregateTool(ctx, visibleTables, relations, selectedTables, tableOptions, columnMasking);
+  registerListTablesGeneric(ctx, accessible);
+  registerAggregateGeneric(ctx, accessible, catalogue);
+  registerJoinAggregateGeneric(ctx, accessible, options.relations, catalogue);
+  registerQueryGeneric(ctx, accessible, catalogue);
+  registerDescribeGeneric(ctx, accessible, distinctValuesByTable);
+  if (options.onWriteRequest) {
+    registerWriteGeneric(ctx, accessible, options.onWriteRequest, catalogue);
+  }
+}
 
-  // -----------------------------------------------------------------------
-  // Per-table tools
-  // -----------------------------------------------------------------------
-  for (const table of visibleTables) {
-    const selectedCols = selectedTables[table.name];
+// ---------------------------------------------------------------------------
+// Build per-table descriptors used by every generic tool handler.
+// Mirrors the per-table prep work the old per-table register* functions did.
+// ---------------------------------------------------------------------------
+
+function buildAccessibleTables(
+  options: DynamicToolsOptions,
+  scopeGuard: ScopeGuard,
+): AccessibleTable[] {
+  const result: AccessibleTable[] = [];
+  for (const table of options.tables) {
+    const selectedCols = options.selectedTables[table.name];
     if (!selectedCols || selectedCols.length === 0) continue;
 
-    // Scope guard: skip blocked tables (fail-closed)
     if (scopeGuard.active) {
-      try {
-        scopeGuard.checkTableAccess(table.name);
-      } catch (e) {
-        if (e instanceof ScopeBlockedError) continue; // Don't register tools for blocked tables
+      try { scopeGuard.checkTableAccess(table.name); }
+      catch (e) {
+        if (e instanceof ScopeBlockedError) continue;
         throw e;
       }
     }
 
-    const opts = tableOptions?.[table.name];
+    const opts = options.tableOptions?.[table.name];
     const enabledTools = opts?.enabledTools ?? ['describe', 'aggregate', 'query'];
-    const tableMasking = columnMasking?.[table.name];
+    const tableMasking = options.columnMasking?.[table.name];
     const maskingRules = tableMasking ? buildMaskingRules(tableMasking) : {};
 
-    // Determine excluded columns (completely hidden)
-    const excludedCols = new Set<string>();
-    if (tableMasking) {
-      for (const [colName, m] of Object.entries(tableMasking)) {
-        if (m.maskingMode === 'exclude') {
-          excludedCols.add(colName);
-        }
-      }
-    }
-
-    // Visible columns = selected AND not excluded
-    const visibleColumns = table.columns.filter(
-      c => selectedCols.includes(c.name) && !excludedCols.has(c.name),
-    );
-
-    const tableRelations = relations.filter(
-      r => r.fromTable === table.name || r.toTable === table.name,
-    );
-
-    // Build label map for friendly mode
-    const labelMap = buildLabelMap(visibleColumns.map(c => ({ name: c.name })));
-    const reverseLabelMap = buildReverseLabelMap(labelMap);
-
-    const tableTools: string[] = [];
-
-    if (enabledTools.includes('describe')) {
-      registerDescribeTool(ctx, table, visibleColumns, tableRelations, enabledTools, labelMap, maskingRules);
-      tableTools.push(`describe_${table.name}`);
-    }
-
-    if (enabledTools.includes('aggregate')) {
-      // Mirror registerAggregateTool's early return: no aggregate without a numeric column.
-      const aggregateNumericCols = visibleColumns.filter(c => isNumericType(c.type));
-      if (aggregateNumericCols.length > 0) {
-        registerAggregateTool(ctx, table, visibleColumns, opts, maskingRules, excludedCols, labelMap, reverseLabelMap);
-        tableTools.push(`aggregate_${table.name}`);
-      }
-    }
-
-    if (enabledTools.includes('query')) {
-      // Mirror registerQueryTool's early return: no query without visible columns.
-      if (visibleColumns.length > 0) {
-        registerQueryTool(ctx, table, visibleColumns, opts, maskingRules, excludedCols, tableMasking, labelMap, reverseLabelMap);
-        tableTools.push(`query_${table.name}`);
-      }
-    }
-
-    if (enabledTools.includes('write') && onWriteRequest) {
-      registerWriteTool(server, table, visibleColumns, onWriteRequest, onAuditLog, profileName, dialect, scopeGuard);
-      tableTools.push(`write_${table.name}`);
-    }
-
-    if (tableTools.length > 0) {
-      registeredToolsByTable.set(table.name, tableTools);
-    }
-  }
-
-  // -----------------------------------------------------------------------
-  // list_tables — reflects the actual manifest, not aspirational settings
-  // -----------------------------------------------------------------------
-  registerListTables(ctx, visibleTables, selectedTables, columnMasking, registeredToolsByTable);
-}
-
-// ---------------------------------------------------------------------------
-// join_aggregate tool — global, multi-table
-// ---------------------------------------------------------------------------
-//
-// One-shot SQL aggregate over a JOIN of two tables. Lets a chat client answer
-// cross-table analytic questions ("top livreurs par nombre de colis livrés")
-// without paginating per-table tools.
-//
-// Reuses every existing security mechanism:
-//   - selectedTables / excluded columns (via columnMasking)
-//   - PII masking (post-query, applied to the GROUP BY column only — aggregates
-//     are computed numbers and don't carry PII)
-//   - Row-level scoping (filters from scopeGuard injected for BOTH tables)
-//   - LIMIT cap (default 1000)
-//   - Audit logging via executeWithAudit()
-//
-// Joins are restricted to declared foreign keys (relations introspected from
-// the source DB) to keep the surface tight.
-
-function registerJoinAggregateTool(
-  ctx: ToolContext,
-  visibleTables: TableInfo[],
-  relations: Relation[],
-  selectedTables: Record<string, string[]>,
-  tableOptions: Record<string, TableToolOptions> | undefined,
-  columnMasking: Record<string, Record<string, ColumnMasking>> | undefined,
-): void {
-  const { server, executeQuery, dialect, onAuditLog, profileName, responseMode, wrapResponse, scopeGuard } = ctx;
-  const friendly = responseMode === 'friendly';
-
-  // Only consider tables where the per-table 'aggregate' tool is enabled —
-  // disabling aggregate on a table must also disable join_aggregate against it.
-  // Default enabledTools (when tableOptions is missing) already include 'aggregate'.
-  const aggregateEnabled = (tableName: string): boolean => {
-    const enabled = tableOptions?.[tableName]?.enabledTools ?? ['describe', 'aggregate', 'query'];
-    return enabled.includes('aggregate');
-  };
-
-  // Filter out tables blocked by scope rules — same logic as per-table tools.
-  const accessibleTables = visibleTables.filter((t) => {
-    if (!aggregateEnabled(t.name)) return false;
-    if (scopeGuard.active) {
-      try { scopeGuard.checkTableAccess(t.name); }
-      catch { return false; }
-    }
-    return true;
-  });
-
-  if (accessibleTables.length < 2) return; // Nothing to join.
-
-  // Per-table column metadata (columns visible after selectedTables + masking).
-  interface TableMeta {
-    info: TableInfo;
-    schema: string;
-    numeric: string[];
-    filterable: string[];
-    groupable: string[];
-    maskingRules: Record<string, MaskingRule>;
-    labelMap: Record<string, string>;
-  }
-  const meta: Record<string, TableMeta> = {};
-
-  for (const t of accessibleTables) {
-    const selectedCols = selectedTables[t.name];
-    if (!selectedCols || selectedCols.length === 0) continue;
-
-    const tableMasking = columnMasking?.[t.name];
-    const maskingRules = tableMasking ? buildMaskingRules(tableMasking) : {};
     const excludedCols = new Set<string>();
     if (tableMasking) {
       for (const [colName, m] of Object.entries(tableMasking)) {
@@ -555,79 +510,433 @@ function registerJoinAggregateTool(
       }
     }
 
-    const visibleColumns = t.columns.filter(
-      (c) => selectedCols.includes(c.name) && !excludedCols.has(c.name),
+    const visibleColumns = table.columns.filter(
+      c => selectedCols.includes(c.name) && !excludedCols.has(c.name),
     );
+    if (visibleColumns.length === 0) continue;
 
-    const opts = tableOptions?.[t.name];
-    const allFilterable = visibleColumns.filter((c) => pgTypeToZod(c.type) !== null);
-    const filterableCols = opts?.filterableColumns && opts.filterableColumns.length > 0
-      ? allFilterable.filter((c) => opts.filterableColumns.includes(c.name))
-      : allFilterable;
-    const groupable = (
+    const labelMap = buildLabelMap(visibleColumns.map(c => ({ name: c.name })));
+    const filterableCols = visibleColumns.filter(c => pgTypeToZod(c.type) !== null);
+    const numericCols = visibleColumns
+      .filter(c => isNumericType(c.type))
+      .map(c => c.name);
+    const groupableColumns = (
       opts?.groupableColumns && opts.groupableColumns.length > 0
         ? opts.groupableColumns
-        : filterableCols.map((c) => c.name)
-    ).filter((c) => !excludedCols.has(c));
+        : filterableCols.map(c => c.name)
+    ).filter(c => !excludedCols.has(c));
+    const allColumnNames = visibleColumns.map(c => c.name);
+    const tableRelations = options.relations.filter(
+      r => r.fromTable === table.name || r.toTable === table.name,
+    );
 
-    meta[t.name] = {
-      info: t,
-      schema: t.schema || 'public',
-      numeric: visibleColumns.filter((c) => isNumericType(c.type)).map((c) => c.name),
-      filterable: filterableCols.map((c) => c.name),
-      groupable,
+    result.push({
+      table,
+      opts,
+      enabledTools,
+      visibleColumns,
+      excludedCols,
+      tableMasking,
       maskingRules,
-      labelMap: buildLabelMap(visibleColumns.map((c) => ({ name: c.name }))),
+      labelMap,
+      filterableCols,
+      numericCols,
+      groupableColumns,
+      allColumnNames,
+      relations: tableRelations,
+    });
+  }
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// Resolve a `table` arg from the LLM into an AccessibleTable; structured
+// error otherwise. Capability gate ensures e.g. an aggregate-disabled table
+// can't be hit through the `aggregate` tool.
+// ---------------------------------------------------------------------------
+
+function resolveTable(
+  name: unknown,
+  accessible: AccessibleTable[],
+  capability: 'aggregate' | 'query' | 'describe' | 'write',
+):
+  | { ok: true; at: AccessibleTable }
+  | { ok: false; payload: Record<string, unknown> } {
+  const validTables = accessible
+    .filter(a => a.enabledTools.includes(capability))
+    .map(a => a.table.name);
+
+  if (typeof name !== 'string' || name.length === 0) {
+    return { ok: false, payload: { error: '`table` argument is required', valid_tables: validTables } };
+  }
+  const at = accessible.find(a => a.table.name === name);
+  if (!at) {
+    const dym = didYouMean(name, accessible.map(a => a.table.name));
+    return {
+      ok: false,
+      payload: { error: `Unknown table '${name}'`, valid_tables: validTables, did_you_mean: dym },
     };
   }
+  if (!at.enabledTools.includes(capability)) {
+    return {
+      ok: false,
+      payload: { error: `Table '${name}' does not support '${capability}'`, valid_tables: validTables },
+    };
+  }
+  return { ok: true, at };
+}
 
-  const tableNames = Object.keys(meta);
-  if (tableNames.length < 2) return;
+// ---------------------------------------------------------------------------
+// Generic `list_tables` — names + per-table tool list. Lighter than the
+// catalogue (which is in the description of `aggregate`/`query`); kept for
+// backward compatibility and quick discovery.
+// ---------------------------------------------------------------------------
 
-  // Restrict to pairs that have at least one declared relation (FK).
+function registerListTablesGeneric(ctx: ToolContext, accessible: AccessibleTable[]): void {
+  const { server, executeQuery, dialect, onAuditLog, profileName, responseMode, wrapResponse } = ctx;
+  const friendly = responseMode === 'friendly';
+
+  const tableList = accessible.map(at => {
+    const tools = ['describe', 'aggregate', 'query', 'write'].filter(t => at.enabledTools.includes(t));
+    return {
+      name: friendly ? snakeCaseToLabel(at.table.name) : at.table.name,
+      columns: at.visibleColumns.map(c => (friendly ? snakeCaseToLabel(c.name) : c.name)),
+      enabled: tools,
+    };
+  });
+
+  const desc = friendly
+    ? 'Lister les tables disponibles. Le catalogue détaillé (types, valeurs) est dans la description des outils `aggregate` et `query`.'
+    : 'List available tables. Detailed catalogue (types, enums) is in the description of `aggregate` / `query` tools.';
+
+  server.tool(
+    'list_tables',
+    desc,
+    {},
+    async () =>
+      executeWithAudit(
+        { executeQuery, dialect, onAuditLog, profileName, toolName: 'list_tables', toolArgs: {} },
+        async () => ({
+          content: [{ type: 'text' as const, text: wrapResponse(JSON.stringify(tableList, null, 2)) }],
+          resultSummary: `${tableList.length} tables`,
+        }),
+      ),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Filter-map Zod schema shared by aggregate/query/write. Intentionally untyped
+// at the value level — runtime validates against per-column metadata so the
+// schema stays free of `anyOf`/`oneOf` constructs that Gemini's
+// function-calling rejects.
+// ---------------------------------------------------------------------------
+
+function makeFilterMapSchema(): z.ZodTypeAny {
+  return z
+    .record(
+      z.string(),
+      z.object({
+        op: z.enum(['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'between', 'in', 'is_null', 'is_not_null']),
+        value: z.any().optional(),
+      }),
+    )
+    .optional();
+}
+
+// ---------------------------------------------------------------------------
+// Generic `aggregate` tool — single registration, all eligible tables.
+// ---------------------------------------------------------------------------
+
+function registerAggregateGeneric(
+  ctx: ToolContext,
+  accessible: AccessibleTable[],
+  catalogue: string,
+): void {
+  const { server, executeQuery, dialect, onAuditLog, profileName, responseMode, wrapResponse, scopeGuard } = ctx;
+  const friendly = responseMode === 'friendly';
+
+  const eligible = accessible.filter(at => at.enabledTools.includes('aggregate') && at.numericCols.length > 0);
+  if (eligible.length === 0) return;
+  const tableEnum = zodEnum(eligible.map(at => at.table.name));
+  if (!tableEnum) return;
+
+  const inputShape: Record<string, z.ZodTypeAny> = {
+    table: tableEnum.describe('Target table. See TABLES & COLUMNS.'),
+    aggregation: z
+      .enum(['count', 'sum', 'avg', 'min', 'max', 'ratio'])
+      .describe('Aggregation kind. Use "ratio" with `ratio_filter` for per-group ratios in one call.'),
+    aggregation_column: z
+      .string()
+      .optional()
+      .describe('Required for sum / avg / min / max. Numeric column of `table`.'),
+    filters: makeFilterMapSchema().describe(
+      'WHERE filters (denominator for ratio). Each entry is { op, value }. ' +
+        'OPS: eq, neq, gt, gte, lt, lte (single value), between (value=[min,max]), in (value=array), is_null, is_not_null (omit value).',
+    ),
+    ratio_filter: makeFilterMapSchema().describe(
+      'Numerator filter for `aggregation: "ratio"`. Same shape as `filters`.',
+    ),
+    having_min_total: z
+      .number()
+      .optional()
+      .describe('Minimum row count per group, evaluated as HAVING. Drops small-sample groups in ratio rankings.'),
+    group_by: z.string().optional().describe('Column to group by.'),
+    order_by: z
+      .string()
+      .optional()
+      .describe('Column to sort by. Pass "result" to sort by the aggregated value (count/sum/avg/ratio).'),
+    order_direction: z.enum(['asc', 'desc']).optional(),
+    limit: z.number().optional().default(20).describe('Max rows.'),
+  };
+
+  const examples = friendly
+    ? "EXEMPLES:\n  Compter par statut, top 5: {\"table\":\"<TABLE>\",\"aggregation\":\"count\",\"group_by\":\"<COL>\",\"order_by\":\"result\",\"order_direction\":\"desc\",\"limit\":5}\n  Taux d'échec par groupe (min 50): {\"table\":\"<TABLE>\",\"aggregation\":\"ratio\",\"group_by\":\"<GRP>\",\"ratio_filter\":{\"<COL>\":{\"op\":\"eq\",\"value\":\"<VAL>\"}},\"having_min_total\":50}"
+    : 'EXAMPLES:\n  Count by group, top 5:  {"table":"<TABLE>","aggregation":"count","group_by":"<COL>","order_by":"result","order_direction":"desc","limit":5}\n  Failure rate per group with sample-size floor:  {"table":"<TABLE>","aggregation":"ratio","group_by":"<GRP>","ratio_filter":{"<COL>":{"op":"eq","value":"<VAL>"}},"having_min_total":50}';
+
+  const desc = friendly
+    ? `Agréger les données d'une table (count / sum / avg / min / max / ratio).\n\n${catalogue}\n\n${examples}`
+    : `Aggregate any table with GROUP BY, SUM, AVG, ratio, etc.\n\n${catalogue}\n\n${examples}`;
+
+  server.tool(
+    'aggregate',
+    desc,
+    inputShape as AnyToolArgs,
+    async (args: Record<string, unknown>) => {
+      const resolved = resolveTable(args.table, accessible, 'aggregate');
+      if (!resolved.ok) return structuredError(resolved.payload);
+      const at = resolved.at;
+      if (at.numericCols.length === 0) {
+        return structuredError({
+          error: `Table '${at.table.name}' has no numeric columns and cannot be aggregated`,
+          valid_tables: accessible
+            .filter(a => a.enabledTools.includes('aggregate') && a.numericCols.length > 0)
+            .map(a => a.table.name),
+        });
+      }
+
+      const tableName = at.table.name;
+      const schemaName = at.table.schema || 'public';
+      const qualifiedTable = dialect.quoteTable(schemaName, tableName);
+      const maxLimit = at.opts?.maxLimit ?? 1000;
+      const allowedFilterColumns = at.filterableCols.map(c => c.name);
+
+      const {
+        aggregation,
+        aggregation_column,
+        filters,
+        ratio_filter,
+        having_min_total,
+        group_by,
+        order_by,
+        order_direction,
+        limit,
+      } = args as {
+        aggregation: string;
+        aggregation_column?: string;
+        filters?: Record<string, FilterValue | undefined>;
+        ratio_filter?: Record<string, FilterValue | undefined>;
+        having_min_total?: number;
+        group_by?: string;
+        order_by?: string;
+        order_direction?: string;
+        limit?: number;
+      };
+
+      return executeWithAudit(
+        { executeQuery, dialect, onAuditLog, profileName, toolName: 'aggregate', toolArgs: args },
+        async (exec) => {
+          const cappedLimit = Math.min(limit ?? 20, maxLimit);
+
+          const { clause: whereClause, values, nextParamIndex } = scopeGuard.buildWhereClause(
+            tableName,
+            filters,
+            allowedFilterColumns,
+            dialect,
+          );
+          let paramCursor = nextParamIndex;
+
+          let selectExpr: string;
+          if (aggregation === 'ratio') {
+            if (!ratio_filter || Object.keys(ratio_filter).length === 0) {
+              return structuredError({ error: 'ratio_filter is required for aggregation: "ratio"' });
+            }
+            // The CASE WHEN expression appears twice in the SELECT (once for
+            // `result`, once for `numerator`). Each occurrence has its own
+            // positional placeholders, so we build the conditions twice with
+            // independent paramIndex windows and push the values twice. This
+            // keeps SQLite (`?`) and Postgres (`$N`) consistent.
+            const first = buildPlainConditions(ratio_filter, allowedFilterColumns, dialect, paramCursor);
+            if (first.conditions.length === 0) {
+              return structuredError({
+                error: 'ratio_filter has no usable conditions',
+                valid_columns: allowedFilterColumns,
+              });
+            }
+            values.push(...first.values);
+            paramCursor = first.nextParamIndex;
+            const second = buildPlainConditions(ratio_filter, allowedFilterColumns, dialect, paramCursor);
+            values.push(...second.values);
+            paramCursor = second.nextParamIndex;
+            const caseFirst = `CASE WHEN ${first.conditions.join(' AND ')} THEN 1 ELSE 0 END`;
+            const caseSecond = `CASE WHEN ${second.conditions.join(' AND ')} THEN 1 ELSE 0 END`;
+            selectExpr =
+              `AVG(1.0 * (${caseFirst})) as result,` +
+              ` SUM(${caseSecond}) as numerator,` +
+              ` COUNT(*) as denominator`;
+          } else if (aggregation === 'count' && !aggregation_column) {
+            selectExpr = 'COUNT(*) as result';
+          } else if (!aggregation_column) {
+            return structuredError({
+              error: `aggregation_column is required for ${aggregation}`,
+              valid_columns: at.numericCols,
+            });
+          } else {
+            if (!at.numericCols.includes(aggregation_column)) {
+              return structuredError({
+                error: `Invalid aggregation_column '${aggregation_column}' for table '${tableName}'`,
+                valid_columns: at.numericCols,
+                did_you_mean: didYouMean(aggregation_column, at.numericCols),
+              });
+            }
+            const qiCol = dialect.quoteIdent(aggregation_column);
+            selectExpr =
+              `${aggregation.toUpperCase()}(${qiCol}) as result,` +
+              ` COUNT(*) as count_total,` +
+              ` COUNT(${qiCol}) as count_non_null`;
+          }
+
+          let groupByClause = '';
+          let selectPrefix = '';
+          if (group_by) {
+            if (!at.groupableColumns.includes(group_by)) {
+              return structuredError({
+                error: `Invalid group_by '${group_by}' for table '${tableName}'`,
+                valid_columns: at.groupableColumns,
+                did_you_mean: didYouMean(group_by, at.groupableColumns),
+              });
+            }
+            selectPrefix = `${dialect.quoteIdent(group_by)}, `;
+            groupByClause = `GROUP BY ${dialect.quoteIdent(group_by)}`;
+          }
+
+          let havingClause = '';
+          if (group_by && typeof having_min_total === 'number' && having_min_total > 0) {
+            values.push(having_min_total);
+            havingClause = `HAVING COUNT(*) >= ${dialect.param(paramCursor++)}`;
+          }
+
+          let orderByClause = '';
+          if (order_by) {
+            const isResultAlias = order_by === 'result';
+            if (!isResultAlias && !at.allColumnNames.includes(order_by)) {
+              return structuredError({
+                error: `Invalid order_by '${order_by}' for table '${tableName}'`,
+                valid_columns: [...at.allColumnNames, 'result'],
+                did_you_mean: didYouMean(order_by, [...at.allColumnNames, 'result']),
+              });
+            }
+            const dir = order_direction === 'desc' ? 'DESC' : 'ASC';
+            const target = isResultAlias ? 'result' : dialect.quoteIdent(order_by);
+            orderByClause = `ORDER BY ${target} ${dir}`;
+          }
+
+          values.push(cappedLimit);
+          const limitParam = dialect.param(paramCursor);
+          const sql = `SELECT ${selectPrefix}${selectExpr} FROM ${qualifiedTable} ${whereClause} ${groupByClause} ${havingClause} ${orderByClause} LIMIT ${limitParam}`;
+          const result = await exec(sql, values);
+
+          const formattedRows = formatResponseRows(result.rows, at.labelMap, responseMode);
+          return {
+            content: [{ type: 'text' as const, text: wrapResponse(JSON.stringify(formattedRows, null, 2)) }],
+            resultSummary: `${result.rows.length} rows`,
+          };
+        },
+      );
+    },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Generic `join_aggregate` tool — INNER JOIN of two FK-linked tables with
+// count/sum/avg/min/max + optional GROUP BY. Lets the LLM answer cross-table
+// analytical questions ("top livreurs par nombre de colis livrés") in a
+// single call instead of paginating two per-table aggregates and merging
+// client-side. Restricted to tables linked by a declared FK so the SQL is
+// always sound.
+// ---------------------------------------------------------------------------
+
+function registerJoinAggregateGeneric(
+  ctx: ToolContext,
+  accessible: AccessibleTable[],
+  allRelations: Relation[],
+  catalogue: string,
+): void {
+  const { server, executeQuery, dialect, onAuditLog, profileName, responseMode, wrapResponse, scopeGuard } = ctx;
+  const friendly = responseMode === 'friendly';
+
+  // Only tables where aggregate is enabled. Disabling aggregate on a table
+  // must also block joins against it.
+  const eligible = accessible.filter(at => at.enabledTools.includes('aggregate'));
+  if (eligible.length < 2) return;
+
+  // Restrict the table enum to tables that have at least one FK pointing to
+  // (or coming from) another eligible table. No FK -> no JOIN possible.
+  const eligibleNames = new Set(eligible.map(at => at.table.name));
   const joinable = new Set<string>();
-  for (const r of relations) {
-    if (meta[r.fromTable] && meta[r.toTable]) {
+  for (const r of allRelations) {
+    if (eligibleNames.has(r.fromTable) && eligibleNames.has(r.toTable)) {
       joinable.add(r.fromTable);
       joinable.add(r.toTable);
     }
   }
-  if (joinable.size < 2) return; // No FK between any of the visible tables.
+  if (joinable.size < 2) return;
 
-  const tableEnum = zodEnum(tableNames);
+  const tableEnum = zodEnum([...joinable]);
   if (!tableEnum) return;
 
-  /** Find a foreign-key path between two tables (in either direction). */
+  // Lookup helpers
+  const byName = new Map<string, AccessibleTable>();
+  for (const at of eligible) byName.set(at.table.name, at);
+
   function findRelation(a: string, b: string): { aColumn: string; bColumn: string } | null {
-    for (const r of relations) {
+    for (const r of allRelations) {
       if (r.fromTable === a && r.toTable === b) return { aColumn: r.fromColumn, bColumn: r.toColumn };
       if (r.fromTable === b && r.toTable === a) return { aColumn: r.toColumn, bColumn: r.fromColumn };
     }
     return null;
   }
 
-  const filterSchema = z.object({
-    op: z.enum(['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'between', 'in']),
-    value: z.any(),
-  });
-
   const inputShape: Record<string, z.ZodTypeAny> = {
-    primary_table: tableEnum,
-    join_table: tableEnum,
+    primary_table: tableEnum.describe('Left side of the JOIN.'),
+    join_table: tableEnum.describe('Right side of the JOIN. Must be linked to primary_table by an FK.'),
     aggregation: z.enum(['count', 'sum', 'avg', 'min', 'max']),
-    aggregation_column: z.string().optional().describe('Required for sum/avg/min/max. Column from the table given by aggregation_column_table.'),
-    aggregation_column_table: z.enum(['primary', 'join']).optional().default('primary').describe('Which side of the join the aggregation_column belongs to.'),
-    filters: z.record(z.string(), filterSchema).optional().describe('Filters applied to primary_table.'),
-    join_filters: z.record(z.string(), filterSchema).optional().describe('Filters applied to join_table.'),
+    aggregation_column: z
+      .string()
+      .optional()
+      .describe('Required for sum / avg / min / max. Column from the table given by `aggregation_column_table`.'),
+    aggregation_column_table: z
+      .enum(['primary', 'join'])
+      .optional()
+      .default('primary')
+      .describe('Which side of the JOIN the aggregation_column belongs to.'),
+    filters: makeFilterMapSchema().describe('Filters applied to primary_table.'),
+    join_filters: makeFilterMapSchema().describe('Filters applied to join_table.'),
     group_by_column: z.string().optional().describe('Optional column to GROUP BY.'),
-    group_by_table: z.enum(['primary', 'join']).optional().default('primary').describe('Which side of the join the group_by_column belongs to.'),
-    order_direction: z.enum(['asc', 'desc']).optional().describe('Sort by the aggregate result. Useful for top-N questions.'),
+    group_by_table: z
+      .enum(['primary', 'join'])
+      .optional()
+      .default('primary')
+      .describe('Which side of the JOIN the group_by_column belongs to.'),
+    order_direction: z
+      .enum(['asc', 'desc'])
+      .optional()
+      .describe('Sort by the aggregate result. Useful for top-N questions.'),
     limit: z.number().optional().default(20).describe('Max rows, capped at 1000.'),
   };
 
   const desc = friendly
-    ? 'Effectue un JOIN entre deux tables liées par clé étrangère et retourne un agrégat (count/sum/avg/min/max) avec GROUP BY optionnel. À utiliser pour les questions analytiques croisées (ex. "top livreurs par nombre de colis livrés") sans paginer 20 000 lignes via les outils par-table.'
-    : 'Aggregate over a JOIN of two FK-linked tables (count/sum/avg/min/max with optional GROUP BY). Use this for cross-table analytics instead of paginating per-table tools.';
+    ? `Effectue un JOIN entre deux tables liées par clé étrangère et retourne un agrégat (count/sum/avg/min/max) avec GROUP BY optionnel. Pour les questions analytiques croisées (ex. "top livreurs par nombre de colis livrés").\n\n${catalogue}`
+    : `Aggregate over an INNER JOIN of two FK-linked tables (count/sum/avg/min/max with optional GROUP BY). Use this for cross-table analytics instead of paginating per-table tools.\n\n${catalogue}`;
 
   server.tool(
     'join_aggregate',
@@ -663,38 +972,45 @@ function registerJoinAggregateTool(
       return executeWithAudit(
         { executeQuery, dialect, onAuditLog, profileName, toolName: 'join_aggregate', toolArgs: args },
         async (exec) => {
-          if (primary_table === join_table) {
-            return {
-              content: [{ type: 'text' as const, text: 'primary_table and join_table must be different.' }],
-              isError: true,
-            };
+          if (typeof primary_table !== 'string' || typeof join_table !== 'string') {
+            return structuredError({
+              error: 'Both `primary_table` and `join_table` are required',
+              valid_tables: [...joinable],
+            });
           }
-          const pMeta = meta[primary_table];
-          const jMeta = meta[join_table];
-          if (!pMeta || !jMeta) {
-            return {
-              content: [{ type: 'text' as const, text: 'One of the tables is not accessible in this profile.' }],
-              isError: true,
-            };
+          if (primary_table === join_table) {
+            return structuredError({ error: 'primary_table and join_table must be different' });
+          }
+          const pAt = byName.get(primary_table);
+          const jAt = byName.get(join_table);
+          if (!pAt || !joinable.has(primary_table)) {
+            return structuredError({
+              error: `Table '${primary_table}' is not joinable in this profile`,
+              valid_tables: [...joinable],
+              did_you_mean: didYouMean(primary_table, [...joinable]),
+            });
+          }
+          if (!jAt || !joinable.has(join_table)) {
+            return structuredError({
+              error: `Table '${join_table}' is not joinable in this profile`,
+              valid_tables: [...joinable],
+              did_you_mean: didYouMean(join_table, [...joinable]),
+            });
           }
 
-          // Resolve the JOIN path via declared foreign keys.
           const rel = findRelation(primary_table, join_table);
           if (!rel) {
-            return {
-              content: [{
-                type: 'text' as const,
-                text: `No declared foreign-key relation between "${primary_table}" and "${join_table}". join_aggregate only joins tables linked by an FK.`,
-              }],
-              isError: true,
-            };
+            return structuredError({
+              error: `No declared foreign-key relation between '${primary_table}' and '${join_table}'`,
+              hint: 'join_aggregate only joins tables linked by an FK. Try chaining via an intermediate table.',
+            });
           }
 
           const pAlias = 'p';
           const jAlias = 'j';
 
           // Resolve aggregation target.
-          const aggMeta = aggregation_column_table === 'join' ? jMeta : pMeta;
+          const aggAt = aggregation_column_table === 'join' ? jAt : pAt;
           const aggAlias = aggregation_column_table === 'join' ? jAlias : pAlias;
           const aggTableName = aggregation_column_table === 'join' ? join_table : primary_table;
 
@@ -702,16 +1018,17 @@ function registerJoinAggregateTool(
           if (aggregation === 'count' && !aggregation_column) {
             selectExpr = 'COUNT(*) as result';
           } else if (!aggregation_column) {
-            return {
-              content: [{ type: 'text' as const, text: 'aggregation_column is required for sum, avg, min, max.' }],
-              isError: true,
-            };
+            return structuredError({
+              error: `aggregation_column is required for ${aggregation}`,
+              valid_columns: aggAt.numericCols,
+            });
           } else {
-            if (!aggMeta.numeric.includes(aggregation_column)) {
-              return {
-                content: [{ type: 'text' as const, text: `Invalid aggregation column "${aggregation_column}" for table "${aggTableName}".` }],
-                isError: true,
-              };
+            if (!aggAt.numericCols.includes(aggregation_column)) {
+              return structuredError({
+                error: `Invalid aggregation_column '${aggregation_column}' for table '${aggTableName}'`,
+                valid_columns: aggAt.numericCols,
+                did_you_mean: didYouMean(aggregation_column, aggAt.numericCols),
+              });
             }
             selectExpr = `${aggregation.toUpperCase()}(${aggAlias}.${dialect.quoteIdent(aggregation_column)}) as result`;
           }
@@ -721,14 +1038,15 @@ function registerJoinAggregateTool(
           let groupByClause = '';
           let groupByOriginal: { table: string; column: string } | null = null;
           if (group_by_column) {
-            const gbMeta = group_by_table === 'join' ? jMeta : pMeta;
+            const gbAt = group_by_table === 'join' ? jAt : pAt;
             const gbAlias = group_by_table === 'join' ? jAlias : pAlias;
             const gbTableName = group_by_table === 'join' ? join_table : primary_table;
-            if (!gbMeta.groupable.includes(group_by_column)) {
-              return {
-                content: [{ type: 'text' as const, text: `Invalid group_by_column "${group_by_column}" for table "${gbTableName}".` }],
-                isError: true,
-              };
+            if (!gbAt.groupableColumns.includes(group_by_column)) {
+              return structuredError({
+                error: `Invalid group_by_column '${group_by_column}' for table '${gbTableName}'`,
+                valid_columns: gbAt.groupableColumns,
+                did_you_mean: didYouMean(group_by_column, gbAt.groupableColumns),
+              });
             }
             const qualified = `${gbAlias}.${dialect.quoteIdent(group_by_column)}`;
             // Alias the group-by column so the result key stays stable even if
@@ -750,70 +1068,109 @@ function registerJoinAggregateTool(
             alias: string,
             userFilters: Record<string, FilterValue | undefined> | undefined,
             allowed: string[],
-          ): { ok: true } | { ok: false; message: string } => {
-            // Scope filters
+          ): { ok: true } | { ok: false; payload: Record<string, unknown> } => {
             for (const sf of scopeInfo.filters.filter((f) => f.tableName === tableName)) {
               conditions.push(`${alias}.${dialect.quoteIdent(sf.column)} = ${dialect.param(paramIndex++)}`);
               values.push(sf.value);
             }
-            // User filters
             if (!userFilters) return { ok: true };
             const allowedSet = new Set(allowed);
             for (const [col, filter] of Object.entries(userFilters)) {
               if (!filter) continue;
               if (!allowedSet.has(col)) {
-                return { ok: false, message: `Column "${col}" is not filterable for table "${tableName}".` };
+                return {
+                  ok: false,
+                  payload: {
+                    error: `Column '${col}' is not filterable for table '${tableName}'`,
+                    valid_columns: allowed,
+                    did_you_mean: didYouMean(col, allowed),
+                  },
+                };
               }
               const qi = `${alias}.${dialect.quoteIdent(col)}`;
               switch (filter.op) {
-                case 'eq': conditions.push(`${qi} = ${dialect.param(paramIndex++)}`); values.push(filter.value); break;
-                case 'neq': conditions.push(`${qi} != ${dialect.param(paramIndex++)}`); values.push(filter.value); break;
-                case 'gt': conditions.push(`${qi} > ${dialect.param(paramIndex++)}`); values.push(filter.value); break;
-                case 'gte': conditions.push(`${qi} >= ${dialect.param(paramIndex++)}`); values.push(filter.value); break;
-                case 'lt': conditions.push(`${qi} < ${dialect.param(paramIndex++)}`); values.push(filter.value); break;
-                case 'lte': conditions.push(`${qi} <= ${dialect.param(paramIndex++)}`); values.push(filter.value); break;
+                case 'eq':
+                  conditions.push(`${qi} = ${dialect.param(paramIndex++)}`);
+                  values.push(filter.value);
+                  break;
+                case 'neq':
+                  conditions.push(`${qi} != ${dialect.param(paramIndex++)}`);
+                  values.push(filter.value);
+                  break;
+                case 'gt':
+                  conditions.push(`${qi} > ${dialect.param(paramIndex++)}`);
+                  values.push(filter.value);
+                  break;
+                case 'gte':
+                  conditions.push(`${qi} >= ${dialect.param(paramIndex++)}`);
+                  values.push(filter.value);
+                  break;
+                case 'lt':
+                  conditions.push(`${qi} < ${dialect.param(paramIndex++)}`);
+                  values.push(filter.value);
+                  break;
+                case 'lte':
+                  conditions.push(`${qi} <= ${dialect.param(paramIndex++)}`);
+                  values.push(filter.value);
+                  break;
                 case 'between': {
                   const [min, max] = filter.value as [unknown, unknown];
                   conditions.push(`${qi} >= ${dialect.param(paramIndex++)} AND ${qi} <= ${dialect.param(paramIndex++)}`);
                   values.push(min, max);
                   break;
                 }
-                case 'in':
+                case 'in': {
+                  const raw = filter.value;
+                  const arr: unknown[] = Array.isArray(raw)
+                    ? raw
+                    : typeof raw === 'string'
+                      ? raw.split(',').map((s) => s.trim()).filter((s) => s.length > 0)
+                      : [raw];
+                  if (arr.length === 0) {
+                    conditions.push('1=0');
+                    break;
+                  }
                   if (dialect.isPostgres) {
                     conditions.push(`${qi} = ANY(${dialect.param(paramIndex++)})`);
-                    values.push(filter.value);
+                    values.push(arr);
                   } else {
-                    const arr = Array.isArray(filter.value) ? filter.value : [filter.value];
                     const placeholders = arr.map(() => dialect.param(paramIndex++));
                     conditions.push(`${qi} IN (${placeholders.join(', ')})`);
                     values.push(...arr);
                   }
+                  break;
+                }
+                case 'is_null':
+                  conditions.push(`${qi} IS NULL`);
+                  break;
+                case 'is_not_null':
+                  conditions.push(`${qi} IS NOT NULL`);
                   break;
               }
             }
             return { ok: true };
           };
 
-          const r1 = buildPrefixedFilters(primary_table, pAlias, filters, pMeta.filterable);
-          if (!r1.ok) return { content: [{ type: 'text' as const, text: r1.message }], isError: true };
-          const r2 = buildPrefixedFilters(join_table, jAlias, join_filters, jMeta.filterable);
-          if (!r2.ok) return { content: [{ type: 'text' as const, text: r2.message }], isError: true };
+          const r1 = buildPrefixedFilters(primary_table, pAlias, filters, pAt.filterableCols.map(c => c.name));
+          if (!r1.ok) return structuredError(r1.payload);
+          const r2 = buildPrefixedFilters(join_table, jAlias, join_filters, jAt.filterableCols.map(c => c.name));
+          if (!r2.ok) return structuredError(r2.payload);
 
           const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
-          // ORDER BY — only by the aggregate result (top-N pattern).
           const orderByClause = order_direction
             ? `ORDER BY result ${order_direction === 'desc' ? 'DESC' : 'ASC'}`
             : '';
 
-          // LIMIT
           const cappedLimit = Math.min(limit ?? 20, 1000);
           values.push(cappedLimit);
           const limitParam = dialect.param(paramIndex);
 
+          const pSchema = pAt.table.schema || 'public';
+          const jSchema = jAt.table.schema || 'public';
           const fromClause =
-            `FROM ${dialect.quoteTable(pMeta.schema, primary_table)} ${pAlias} ` +
-            `INNER JOIN ${dialect.quoteTable(jMeta.schema, join_table)} ${jAlias} ` +
+            `FROM ${dialect.quoteTable(pSchema, primary_table)} ${pAlias} ` +
+            `INNER JOIN ${dialect.quoteTable(jSchema, join_table)} ${jAlias} ` +
             `ON ${pAlias}.${dialect.quoteIdent(rel.aColumn)} = ${jAlias}.${dialect.quoteIdent(rel.bColumn)}`;
 
           const sql = `SELECT ${selectPrefix}${selectExpr} ${fromClause} ${whereClause} ${groupByClause} ${orderByClause} LIMIT ${limitParam}`;
@@ -821,20 +1178,20 @@ function registerJoinAggregateTool(
           const result = await exec(sql, values);
 
           // Apply masking ONLY on the GROUP BY column (aggregates are computed
-          // numbers — they don't carry PII).
+          // numbers and don't carry PII).
           let rows = result.rows;
           if (groupByOriginal) {
-            const rules = meta[groupByOriginal.table].maskingRules;
-            const colRule = rules[groupByOriginal.column];
+            const at = byName.get(groupByOriginal.table)!;
+            const colRule = at.maskingRules[groupByOriginal.column];
             if (colRule) rows = applyMasking(rows, { [groupByOriginal.column]: colRule });
           }
 
           // Friendly mode: surface human labels for the group-by column.
           const labelMap: Record<string, string> = {};
           if (groupByOriginal) {
-            const tlMap = meta[groupByOriginal.table].labelMap;
-            if (tlMap[groupByOriginal.column]) {
-              labelMap[groupByOriginal.column] = tlMap[groupByOriginal.column];
+            const at = byName.get(groupByOriginal.table)!;
+            if (at.labelMap[groupByOriginal.column]) {
+              labelMap[groupByOriginal.column] = at.labelMap[groupByOriginal.column];
             }
           }
           const formattedRows = formatResponseRows(rows, labelMap, responseMode);
@@ -850,143 +1207,242 @@ function registerJoinAggregateTool(
 }
 
 // ---------------------------------------------------------------------------
-// list_tables tool
+// Generic `query` tool.
 // ---------------------------------------------------------------------------
 
-function registerListTables(
+function registerQueryGeneric(
   ctx: ToolContext,
-  visibleTables: TableInfo[],
-  selectedTables: Record<string, string[]>,
-  columnMasking: Record<string, Record<string, ColumnMasking>> | undefined,
-  registeredToolsByTable: Map<string, string[]>,
+  accessible: AccessibleTable[],
+  catalogue: string,
 ): void {
-  const { server, executeQuery, dialect, onAuditLog, profileName, responseMode, scopeGuard } = ctx;
+  const { server, executeQuery, dialect, onAuditLog, profileName, responseMode, wrapResponse, maxOffset, scopeGuard } = ctx;
   const friendly = responseMode === 'friendly';
 
-  // Filter out blocked tables when scoping is active
-  const accessibleTables = scopeGuard.active
-    ? visibleTables.filter(table => {
-        try { scopeGuard.checkTableAccess(table.name); return true; }
-        catch { return false; }
-      })
-    : visibleTables;
+  const eligible = accessible.filter(at => at.enabledTools.includes('query') && at.allColumnNames.length > 0);
+  if (eligible.length === 0) return;
+  const tableEnum = zodEnum(eligible.map(at => at.table.name));
+  if (!tableEnum) return;
 
-  // Only list tables that ended up with at least one registered tool — keeps
-  // the discovery output and the actual MCP manifest in lockstep.
-  const tableList = accessibleTables
-    .filter(t => registeredToolsByTable.has(t.name))
-    .map(table => {
-      const tblMasking = columnMasking?.[table.name];
+  const inputShape: Record<string, z.ZodTypeAny> = {
+    table: tableEnum.describe('Target table. See TABLES & COLUMNS.'),
+    columns: z.array(z.string()).optional().describe('Columns to return. Defaults to all visible.'),
+    filters: makeFilterMapSchema().describe(
+      'WHERE filters by column. Each entry is { op, value }. OPS as in `aggregate`.',
+    ),
+    order_by: z.string().optional(),
+    order_direction: z.enum(['asc', 'desc']).optional(),
+    limit: z.number().optional().default(20).describe('Max rows.'),
+    offset: z.number().optional().default(0),
+    sample: z.boolean().optional().describe('If true, return random rows.'),
+  };
 
-      const excludedCols = new Set<string>();
-      if (tblMasking) {
-        for (const [colName, m] of Object.entries(tblMasking)) {
-          if (m.maskingMode === 'exclude') {
-            excludedCols.add(colName);
-          }
-        }
-      }
-
-      const selectedCols = selectedTables[table.name] ?? [];
-      const visibleCols = selectedCols.filter(c => !excludedCols.has(c));
-
-      const tools = registeredToolsByTable.get(table.name) ?? [];
-
-      const displayName = friendly ? snakeCaseToLabel(table.name) : table.name;
-      const displayCols = friendly ? visibleCols.map(c => snakeCaseToLabel(c)) : visibleCols;
-
-      // Hint mentions describe only if it is actually available.
-      const hint = tools.includes(`describe_${table.name}`)
-        ? `Call describe_${table.name} first`
-        : undefined;
-
-      const entry: Record<string, unknown> = {
-        name: displayName,
-        columns: displayCols,
-        tools,
-      };
-      if (hint) entry.hint = hint;
-      return entry;
-    });
-
-  const listDesc = friendly
-    ? 'Lister les tables disponibles. Appeler describe_<table> avant de lancer une requete.'
-    : 'List all available tables. Call describe_<table> before querying a table.';
+  const desc = friendly
+    ? `Rechercher des lignes dans une table.\n\n${catalogue}\n\nEXEMPLE:\n  Lister 10 colis livrés: {"table":"<TABLE>","filters":{"<COL>":{"op":"eq","value":"<VAL>"}},"limit":10}`
+    : `Query rows from any table with filters, ordering, and pagination.\n\n${catalogue}\n\nEXAMPLE:\n  Filter + limit:  {"table":"<TABLE>","filters":{"<COL>":{"op":"eq","value":"<VAL>"}},"limit":10}`;
 
   server.tool(
-    'list_tables',
-    listDesc,
-    {},
-    async () => {
+    'query',
+    desc,
+    inputShape as AnyToolArgs,
+    async (args: Record<string, unknown>) => {
+      const resolved = resolveTable(args.table, accessible, 'query');
+      if (!resolved.ok) return structuredError(resolved.payload);
+      const at = resolved.at;
+
+      const tableName = at.table.name;
+      const schemaName = at.table.schema || 'public';
+      const qualifiedTable = dialect.quoteTable(schemaName, tableName);
+      const maxLimit = at.opts?.maxLimit ?? 1000;
+
+      // aggregate_only mask excludes columns from query SELECT
+      const queryExcludedCols = new Set<string>(at.excludedCols);
+      if (at.tableMasking) {
+        for (const [colName, m] of Object.entries(at.tableMasking)) {
+          if (m.maskingMode === 'aggregate_only') queryExcludedCols.add(colName);
+        }
+      }
+      const queryableColumnNames = at.allColumnNames.filter(c => !queryExcludedCols.has(c));
+      const allowedFilterColumns = at.filterableCols
+        .filter(c => !queryExcludedCols.has(c.name))
+        .map(c => c.name);
+
+      const queryMaskingRules: Record<string, MaskingRule> = {};
+      for (const [col, rule] of Object.entries(at.maskingRules)) {
+        if (rule.mode === 'hash' || rule.mode === 'truncate' || rule.mode === 'replace') {
+          queryMaskingRules[col] = rule;
+        }
+      }
+      const needsMasking = Object.keys(queryMaskingRules).length > 0;
+
+      const { columns, filters, order_by, order_direction, limit, offset, sample } = args as {
+        columns?: string[];
+        filters?: Record<string, FilterValue | undefined>;
+        order_by?: string;
+        order_direction?: string;
+        limit?: number;
+        offset?: number;
+        sample?: boolean;
+      };
+
       return executeWithAudit(
-        { executeQuery, dialect, onAuditLog, profileName, toolName: 'list_tables', toolArgs: {} },
-        async () => ({
-          content: [{ type: 'text' as const, text: ctx.wrapResponse(JSON.stringify(tableList, null, 2)) }],
-          resultSummary: `${tableList.length} tables`,
-        }),
+        { executeQuery, dialect, onAuditLog, profileName, toolName: 'query', toolArgs: args },
+        async (exec) => {
+          const cappedLimit = Math.min(limit ?? 20, maxLimit);
+          const cappedOffset = Math.min(offset ?? 0, maxOffset);
+
+          const { clause: whereClause, values, nextParamIndex } = scopeGuard.buildWhereClause(
+            tableName,
+            filters,
+            allowedFilterColumns,
+            dialect,
+          );
+          let paramIdx = nextParamIndex;
+
+          let selectExpr: string;
+          if (columns && columns.length > 0) {
+            for (const c of columns) {
+              if (!queryableColumnNames.includes(c)) {
+                return structuredError({
+                  error: `Invalid column '${c}' for table '${tableName}'`,
+                  valid_columns: queryableColumnNames,
+                  did_you_mean: didYouMean(c, queryableColumnNames),
+                });
+              }
+            }
+            selectExpr = columns.map(c => dialect.quoteIdent(c)).join(', ');
+          } else {
+            selectExpr = queryableColumnNames.map(c => dialect.quoteIdent(c)).join(', ');
+          }
+
+          let orderByClause = '';
+          if (sample) {
+            orderByClause = `ORDER BY ${dialect.random}`;
+          } else if (order_by) {
+            if (!queryableColumnNames.includes(order_by)) {
+              return structuredError({
+                error: `Invalid order_by '${order_by}' for table '${tableName}'`,
+                valid_columns: queryableColumnNames,
+                did_you_mean: didYouMean(order_by, queryableColumnNames),
+              });
+            }
+            const dir = order_direction === 'desc' ? 'DESC' : 'ASC';
+            orderByClause = `ORDER BY ${dialect.quoteIdent(order_by)} ${dir}`;
+          }
+
+          values.push(cappedLimit);
+          const limitParam = dialect.param(paramIdx++);
+          values.push(cappedOffset);
+          const offsetParam = dialect.param(paramIdx);
+          const sql = `SELECT ${selectExpr} FROM ${qualifiedTable} ${whereClause} ${orderByClause} LIMIT ${limitParam} OFFSET ${offsetParam}`;
+          const result = await exec(sql, values);
+
+          const maskedRows = needsMasking ? applyMasking(result.rows, queryMaskingRules) : result.rows;
+          const formattedRows = formatResponseRows(maskedRows, at.labelMap, responseMode);
+
+          // Zero-result hint: if filters returned 0 rows, fetch distinct values
+          // for filtered text columns and surface as did-you-mean hints.
+          let zeroResultHint = '';
+          if (formattedRows.length === 0 && filters && Object.keys(filters).length > 0) {
+            try {
+              const filteredCols = Object.keys(filters).filter(k => filters[k] !== undefined);
+              const textCols = filteredCols.filter(col => {
+                const colInfo = at.visibleColumns.find(c => c.name === col);
+                return colInfo && isTextType(colInfo.type);
+              });
+              const hints: string[] = [];
+              const { clause: hintScope, values: hintVals } = scopeGuard.buildScopeOnlyWhereClause(
+                tableName,
+                dialect,
+              );
+              for (const col of textCols.slice(0, 5)) {
+                const qi = dialect.quoteIdent(col);
+                const notNull = `${qi} IS NOT NULL`;
+                const where = hintScope ? `${hintScope} AND ${notNull}` : `WHERE ${notNull}`;
+                const hintSql = `SELECT DISTINCT ${qi} AS val FROM ${qualifiedTable} ${where} ORDER BY val LIMIT 30`;
+                const r = await exec(hintSql, [...hintVals]);
+                const vals = r.rows.map(row => String((row as Record<string, unknown>).val));
+                if (vals.length > 0) hints.push(`Possible values for '${col}': ${vals.join(', ')}`);
+              }
+              if (hints.length > 0) {
+                zeroResultHint = '\n\nNo results. ' + hints.join('. ') + '. Retry with one of these exact values.';
+              }
+            } catch {
+              // Non-critical
+            }
+          }
+
+          return {
+            content: [
+              { type: 'text' as const, text: wrapResponse(JSON.stringify(formattedRows, null, 2)) + zeroResultHint },
+            ],
+            resultSummary: `${formattedRows.length} rows`,
+          };
+        },
       );
     },
   );
 }
 
 // ---------------------------------------------------------------------------
-// describe_{tableName} tool
+// Generic `describe` tool. Returns runtime stats: row count, per-column null
+// counts and distinct counts, low-cardinality distinct values (preferring the
+// boot-cached set), text samples, numeric min/max/avg, and FK relations.
 // ---------------------------------------------------------------------------
 
-function registerDescribeTool(
+function registerDescribeGeneric(
   ctx: ToolContext,
-  table: TableInfo,
-  visibleColumns: TableInfo['columns'],
-  tableRelations: Relation[],
-  enabledTools: string[],
-  labelMap: Record<string, string>,
-  maskingRules: Record<string, MaskingRule>,
+  accessible: AccessibleTable[],
+  distinctValuesByTable: Record<string, Record<string, unknown[]>>,
 ): void {
   const { server, executeQuery, dialect, onAuditLog, profileName, responseMode, wrapResponse, scopeGuard } = ctx;
   const friendly = responseMode === 'friendly';
-  const schemaName = table.schema || 'public';
-  const tableName = table.name;
-  const displayName = friendly ? snakeCaseToLabel(tableName) : tableName;
-  const toolName = `describe_${tableName}`;
-  const includeStats = enabledTools.includes('aggregate') || enabledTools.includes('query');
 
-  const numericCols = includeStats
-    ? visibleColumns.filter(c => isNumericType(c.type)).map(c => c.name)
-    : [];
-  const textCols = includeStats
-    ? visibleColumns.filter(c => isTextType(c.type)).map(c => c.name)
-    : [];
+  const eligible = accessible.filter(at => at.enabledTools.includes('describe'));
+  if (eligible.length === 0) return;
+  const tableEnum = zodEnum(eligible.map(at => at.table.name));
+  if (!tableEnum) return;
 
-  const qualifiedTable = dialect.quoteTable(schemaName, tableName);
+  const inputShape: Record<string, z.ZodTypeAny> = {
+    table: tableEnum.describe('Table to describe.'),
+  };
 
-  const describeDesc = friendly
-    ? `Obtenir des details sur la structure de ${displayName}. Appeler AVANT de faire une requete.`
-    : `Get schema, statistics, and relationships for the ${tableName} table. Call this FIRST before querying.`;
+  const desc = friendly
+    ? "Obtenir les statistiques runtime d'une table (row count, valeurs distinctes, FK)."
+    : 'Get runtime statistics for any visible table: row count, per-column null/distinct stats, low-cardinality enum values, text samples, numeric min/max/avg, FK relations.';
 
   server.tool(
-    toolName,
-    describeDesc,
-    {},
-    async () => {
-      return executeWithAudit(
-        { executeQuery, dialect, onAuditLog, profileName, toolName, toolArgs: {} },
-        async (exec) => {
-          // Scope-aware WHERE clause for all describe queries
-          const { clause: scopeWhere, values: scopeValues } =
-            scopeGuard.buildScopeOnlyWhereClause(tableName, dialect);
+    'describe',
+    desc,
+    inputShape as AnyToolArgs,
+    async (args: Record<string, unknown>) => {
+      const resolved = resolveTable(args.table, accessible, 'describe');
+      if (!resolved.ok) return structuredError(resolved.payload);
+      const at = resolved.at;
 
-          // COUNT (scoped)
+      const tableName = at.table.name;
+      const schemaName = at.table.schema || 'public';
+      const qualifiedTable = dialect.quoteTable(schemaName, tableName);
+      const includeStats = at.enabledTools.includes('aggregate') || at.enabledTools.includes('query');
+      const numericCols = includeStats ? at.numericCols : [];
+      const textCols = includeStats ? at.visibleColumns.filter(c => isTextType(c.type)).map(c => c.name) : [];
+
+      return executeWithAudit(
+        { executeQuery, dialect, onAuditLog, profileName, toolName: 'describe', toolArgs: args },
+        async (exec) => {
+          const { clause: scopeWhere, values: scopeValues } = scopeGuard.buildScopeOnlyWhereClause(
+            tableName,
+            dialect,
+          );
+
           const countResult = await exec(
             `SELECT COUNT(*) as total FROM ${qualifiedTable} ${scopeWhere}`,
             scopeValues,
           );
           const rowCount = Number(countResult.rows[0].total);
 
-          // Combined stats pass: per-column NULL count + distinct count, plus
-          // numeric MIN/MAX/AVG. One query, scoped, no per-column round-trip.
           const numericStats: Record<string, { min: unknown; max: unknown; avg: unknown }> = {};
           const colStats: Record<string, { nullCount: number; distinctCount: number }> = {};
-          const allColsForStats = includeStats ? visibleColumns : [];
+          const allColsForStats = includeStats ? at.visibleColumns : [];
           if (allColsForStats.length > 0) {
             const parts: string[] = [];
             for (const c of allColsForStats) {
@@ -1016,7 +1472,7 @@ function registerDescribeTool(
               };
             }
             for (const col of numericCols) {
-              const key = friendly ? (labelMap[col] ?? snakeCaseToLabel(col)) : col;
+              const key = friendly ? at.labelMap[col] ?? snakeCaseToLabel(col) : col;
               numericStats[key] = {
                 min: row[`${col}__min`],
                 max: row[`${col}__max`],
@@ -1025,16 +1481,21 @@ function registerDescribeTool(
             }
           }
 
-          // For low-cardinality columns (any type, distinctCount <= MAX_ENUM),
-          // pull the exhaustive distinct value list. For text columns above
-          // that threshold but still small (<= MAX_SAMPLE), keep a sample.
-          // This eliminates the LLM's "guess the enum" round-trips (fragile
-          // 0/1, priorite urgente vs URGENTE, statut echec vs Échec, etc.).
           const MAX_ENUM = 20;
           const MAX_SAMPLE = 50;
           const distinctByCol: Record<string, unknown[]> = {};
           const sampleByCol: Record<string, string[] | undefined> = {};
+
+          // Reuse the boot-time distinct values when available
+          const cached = distinctValuesByTable[tableName] ?? {};
+          for (const [col, vals] of Object.entries(cached)) {
+            if (Array.isArray(vals) && vals.length > 0 && vals.length <= MAX_ENUM) {
+              distinctByCol[col] = vals;
+            }
+          }
+
           for (const c of allColsForStats) {
+            if (distinctByCol[c.name]) continue;
             const stats = colStats[c.name];
             if (!stats) continue;
             const distinct = stats.distinctCount;
@@ -1044,40 +1505,47 @@ function registerDescribeTool(
             try {
               const qi = dialect.quoteIdent(c.name);
               const notNullCondition = `${qi} IS NOT NULL`;
-              const valWhere = scopeWhere
-                ? `${scopeWhere} AND ${notNullCondition}`
-                : `WHERE ${notNullCondition}`;
+              const valWhere = scopeWhere ? `${scopeWhere} AND ${notNullCondition}` : `WHERE ${notNullCondition}`;
               const cap = isLowCardinality ? MAX_ENUM : MAX_SAMPLE;
               const valSql = `SELECT DISTINCT ${qi} AS val FROM ${qualifiedTable} ${valWhere} ORDER BY val LIMIT ${cap + 1}`;
               const valResult = await exec(valSql, [...scopeValues]);
               const rawVals = valResult.rows.map((r) => (r as Record<string, unknown>).val);
               if (isLowCardinality) {
                 let vals: unknown[] = rawVals;
-                const colMaskRule = maskingRules[c.name];
-                if (colMaskRule && (colMaskRule.mode === 'hash' || colMaskRule.mode === 'truncate' || colMaskRule.mode === 'replace')) {
-                  vals = applyMasking(rawVals.map((v) => ({ [c.name]: v })), { [c.name]: colMaskRule }).map((r) => r[c.name]);
+                const colMaskRule = at.maskingRules[c.name];
+                if (
+                  colMaskRule &&
+                  (colMaskRule.mode === 'hash' || colMaskRule.mode === 'truncate' || colMaskRule.mode === 'replace')
+                ) {
+                  vals = applyMasking(rawVals.map((v) => ({ [c.name]: v })), { [c.name]: colMaskRule }).map(
+                    (r) => r[c.name],
+                  );
                 }
                 distinctByCol[c.name] = vals;
               } else {
                 let vals = rawVals.map((v) => String(v));
-                const colMaskRule = maskingRules[c.name];
-                if (colMaskRule && (colMaskRule.mode === 'hash' || colMaskRule.mode === 'truncate' || colMaskRule.mode === 'replace')) {
-                  vals = applyMasking(vals.map((v) => ({ [c.name]: v })), { [c.name]: colMaskRule }).map((r) => String(r[c.name]));
+                const colMaskRule = at.maskingRules[c.name];
+                if (
+                  colMaskRule &&
+                  (colMaskRule.mode === 'hash' || colMaskRule.mode === 'truncate' || colMaskRule.mode === 'replace')
+                ) {
+                  vals = applyMasking(vals.map((v) => ({ [c.name]: v })), { [c.name]: colMaskRule }).map((r) =>
+                    String(r[c.name]),
+                  );
                 }
                 if (vals.length <= MAX_SAMPLE) sampleByCol[c.name] = vals;
               }
             } catch {
-              // Skip sampling errors
+              // Skip
             }
           }
 
-          // Legacy textStats shape kept for backward compatibility with any
-          // consumer that already parsed it (also surfaced in raw mode payload).
+          // Legacy textStats shape kept for backward compatibility
           const textStats: Record<string, { distinctCount: number; sampleValues?: string[] }> = {};
           for (const col of textCols) {
             const stats = colStats[col];
             if (!stats) continue;
-            const key = friendly ? (labelMap[col] ?? snakeCaseToLabel(col)) : col;
+            const key = friendly ? at.labelMap[col] ?? snakeCaseToLabel(col) : col;
             const sample = sampleByCol[col];
             const lowCardVals = distinctByCol[col];
             const sampleValues = sample
@@ -1090,34 +1558,22 @@ function registerDescribeTool(
               : { distinctCount: stats.distinctCount };
           }
 
-          // Build columns metadata.
-          // Raw mode exposes everything the LLM needs to avoid round-trips:
-          // native column type, null_count + null_ratio (so AVG/SUM ambiguity
-          // is visible), distinct_count, and either an exhaustive
-          // distinct_values list (for low-cardinality categorical/boolean
-          // columns) or a sample_values list (for text with moderate
-          // cardinality). Friendly mode keeps the lighter shape.
           const columnsMetadata = friendly
-            ? visibleColumns.map(c => {
+            ? at.visibleColumns.map(c => {
                 const colMeta: Record<string, unknown> = {
-                  name: labelMap[c.name] ?? snakeCaseToLabel(c.name),
+                  name: at.labelMap[c.name] ?? snakeCaseToLabel(c.name),
                   type: friendlyType(c.type),
                   required: !c.nullable,
                 };
-                if (distinctByCol[c.name]) {
-                  colMeta.possibleValues = distinctByCol[c.name];
-                } else if (sampleByCol[c.name]) {
-                  colMeta.sampleValues = sampleByCol[c.name];
-                }
+                if (distinctByCol[c.name]) colMeta.possibleValues = distinctByCol[c.name];
+                else if (sampleByCol[c.name]) colMeta.sampleValues = sampleByCol[c.name];
                 return colMeta;
               })
-            : visibleColumns.map(c => {
+            : at.visibleColumns.map(c => {
                 const stats = colStats[c.name];
                 const nullCount = stats?.nullCount;
                 const distinctCount = stats?.distinctCount;
-                const nullRatio = stats && rowCount > 0
-                  ? Math.round((nullCount! / rowCount) * 10000) / 10000
-                  : undefined;
+                const nullRatio = stats && rowCount > 0 ? Math.round((nullCount! / rowCount) * 10000) / 10000 : undefined;
                 const colMeta: Record<string, unknown> = {
                   name: c.name,
                   type: c.type,
@@ -1127,28 +1583,26 @@ function registerDescribeTool(
                 if (nullCount !== undefined) colMeta.null_count = nullCount;
                 if (nullRatio !== undefined) colMeta.null_ratio = nullRatio;
                 if (distinctCount !== undefined) colMeta.distinct_count = distinctCount;
-                if (distinctByCol[c.name]) {
-                  colMeta.distinct_values = distinctByCol[c.name];
-                } else if (sampleByCol[c.name]) {
-                  colMeta.sample_values = sampleByCol[c.name];
-                }
+                if (distinctByCol[c.name]) colMeta.distinct_values = distinctByCol[c.name];
+                else if (sampleByCol[c.name]) colMeta.sample_values = sampleByCol[c.name];
                 return colMeta;
               });
 
-          const relationsMetadata = tableRelations.map(r => ({
+          const relationsMetadata = at.relations.map(r => ({
             fromTable: friendly ? snakeCaseToLabel(r.fromTable) : r.fromTable,
             fromColumn: friendly ? snakeCaseToLabel(r.fromColumn) : r.fromColumn,
             toTable: friendly ? snakeCaseToLabel(r.toTable) : r.toTable,
             toColumn: friendly ? snakeCaseToLabel(r.toColumn) : r.toColumn,
           }));
 
+          const displayName = friendly ? snakeCaseToLabel(tableName) : tableName;
           const payload = friendly
             ? { table: displayName, columns: columnsMetadata, rowCount, relations: relationsMetadata }
             : { table: tableName, schema: schemaName, columns: columnsMetadata, rowCount, numericStats, textStats, relations: relationsMetadata };
 
           return {
             content: [{ type: 'text' as const, text: wrapResponse(JSON.stringify(payload, null, 2)) }],
-            resultSummary: `${rowCount} rows, ${visibleColumns.length} columns`,
+            resultSummary: `${rowCount} rows, ${at.visibleColumns.length} columns`,
           };
         },
       );
@@ -1157,536 +1611,48 @@ function registerDescribeTool(
 }
 
 // ---------------------------------------------------------------------------
-// aggregate_{tableName} tool
+// Generic `write` tool — proposes INSERT/UPDATE/DELETE for admin approval.
+// Nothing executes immediately; the request is queued via onWriteRequest.
 // ---------------------------------------------------------------------------
 
-function registerAggregateTool(
+function registerWriteGeneric(
   ctx: ToolContext,
-  table: TableInfo,
-  visibleColumns: TableInfo['columns'],
-  opts: TableToolOptions | undefined,
-  _maskingRules: Record<string, MaskingRule>,
-  excludedCols: Set<string>,
-  labelMap: Record<string, string>,
-  _reverseLabelMap: Record<string, string>,
-): void {
-  const { server, executeQuery, dialect, onAuditLog, profileName, responseMode, wrapResponse, scopeGuard } = ctx;
-  const friendly = responseMode === 'friendly';
-  const schemaName = table.schema || 'public';
-  const tableName = table.name;
-  const toolName = `aggregate_${tableName}`;
-  const maxLimit = opts?.maxLimit ?? 1000;
-
-  // Numeric columns (for aggregation target)
-  const numericCols = visibleColumns
-    .filter(c => isNumericType(c.type) && !excludedCols.has(c.name))
-    .map(c => c.name);
-
-  if (numericCols.length === 0) return; // No aggregate tool if no numeric cols
-
-  // Filterable columns
-  const allFilterable = visibleColumns
-    .filter(c => pgTypeToZod(c.type) !== null && !excludedCols.has(c.name));
-  const filterableCols = opts?.filterableColumns && opts.filterableColumns.length > 0
-    ? allFilterable.filter(c => opts.filterableColumns.includes(c.name))
-    : allFilterable;
-
-  // Groupable columns
-  const groupableColumns = (
-    opts?.groupableColumns && opts.groupableColumns.length > 0
-      ? opts.groupableColumns
-      : filterableCols.map(c => c.name)
-  ).filter(c => !excludedCols.has(c));
-
-  // All visible column names for order_by
-  const allColumnNames = visibleColumns
-    .filter(c => !excludedCols.has(c.name))
-    .map(c => c.name);
-
-  const allowedFilterColumns = filterableCols.map(c => c.name);
-  const qualifiedTable = dialect.quoteTable(schemaName, tableName);
-
-  // Build Zod schema for filters. We intentionally inline the {op, value}
-  // shape per column rather than sharing a meta-tagged instance: weaker
-  // LLMs and some MCP clients mis-handle the `allOf + $ref` pattern that
-  // Zod v4-mini emits when `meta()` meets `.describe().optional()`,
-  // sometimes sending `filters` as a stringified JSON instead of an
-  // object. The per-column duplication is paid for in 1a (no per-value
-  // describe text), which is enough to fit Qwen-class context windows.
-  //
-  // `value` is typed per column via `valueSchemaForColumn` (number / string /
-  // boolean) instead of the legacy `z.any()` so LLMs see the expected JSON
-  // type in the manifest and can't silently send a string for an integer
-  // column or vice versa.
-  const filterShape: Record<string, z.ZodTypeAny> = {};
-  for (const col of filterableCols) {
-    filterShape[col.name] = z.object({
-      op: z.enum(['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'between', 'in', 'is_null', 'is_not_null']),
-      value: valueSchemaForColumn(col),
-    }).optional();
-  }
-
-  const groupByEnum = zodEnum(groupableColumns);
-  const numericEnum = zodEnum(numericCols);
-  // Order-by accepts any visible column AND the alias 'result' so the LLM can
-  // request "top N by computed aggregation" (e.g. ORDER BY COUNT(*) DESC) in
-  // a single call instead of pulling all groups and sorting client-side.
-  const orderByEnum = zodEnum([...allColumnNames, 'result']);
-
-  if (!numericEnum) return; // Safety: should not happen since we checked above
-
-  const inputShape: Record<string, z.ZodTypeAny> = {
-    aggregation: z.enum(['count', 'sum', 'avg', 'min', 'max', 'ratio']).describe(
-      'Aggregation kind. Use "ratio" with `ratio_filter` to compute per-group ratios (e.g. failure rate per courier) in a single call instead of two aggregates plus client-side division.',
-    ),
-    aggregation_column: numericEnum.optional().describe('Required for sum, avg, min, max. Not needed for count or ratio.'),
-    filters: z.object(filterShape).optional().describe(
-      'WHERE filters applied to ALL rows (denominator for ratio). Each entry is { op, value }. ' +
-      'Operators: eq, neq, gt, gte, lt, lte, between (value=[min,max]), in (value=array or CSV), ' +
-      'is_null and is_not_null (omit value). Combine with `ratio_filter` for "subset / total" ratios.',
-    ),
-    ratio_filter: z.object(filterShape).optional().describe(
-      'Numerator filter for `aggregation: "ratio"`. Same shape as `filters`. Result = rows matching filters AND ratio_filter divided by rows matching filters only.',
-    ),
-    having_min_total: z.number().optional().describe(
-      'Minimum row count per group (denominator), evaluated as HAVING. Use to drop small-sample groups in ratio rankings (e.g. ignore couriers with fewer than 50 packages).',
-    ),
-    order_direction: z.enum(['asc', 'desc']).optional(),
-    limit: z.number().optional().default(20).describe(`Max rows, capped at ${maxLimit}`),
-  };
-  if (groupByEnum) inputShape.group_by = groupByEnum.optional();
-  if (orderByEnum) inputShape.order_by = orderByEnum.optional().describe(
-    'Column name to sort by. Pass "result" to sort by the aggregated value itself (count, sum, avg, ratio, etc.) — required for "top N by count", "top N by ratio", or "top N by total" queries.',
-  );
-
-  const displayName = friendly ? snakeCaseToLabel(tableName) : tableName;
-  const aggDesc = friendly
-    ? `Obtenir des statistiques sur ${displayName} (count, sum, avg, min, max)`
-    : `Aggregate data from the ${tableName} table with GROUP BY, SUM, AVG, etc.`;
-
-  server.tool(
-    toolName,
-    aggDesc,
-    inputShape as AnyToolArgs,
-    async (args: Record<string, unknown>) => {
-      const {
-        group_by,
-        aggregation,
-        aggregation_column,
-        filters,
-        ratio_filter,
-        having_min_total,
-        order_by,
-        order_direction,
-        limit,
-      } = args as {
-        group_by?: string;
-        aggregation: string;
-        aggregation_column?: string;
-        filters?: Record<string, FilterValue | undefined>;
-        ratio_filter?: Record<string, FilterValue | undefined>;
-        having_min_total?: number;
-        order_by?: string;
-        order_direction?: string;
-        limit?: number;
-      };
-
-      return executeWithAudit(
-        { executeQuery, dialect, onAuditLog, profileName, toolName, toolArgs: args },
-        async (exec) => {
-          const cappedLimit = Math.min(limit ?? 20, maxLimit);
-
-          // WHERE (scope-aware: scope filters are always injected first)
-          const { clause: whereClause, values, nextParamIndex } =
-            scopeGuard.buildWhereClause(tableName, filters, allowedFilterColumns, dialect);
-          let paramCursor = nextParamIndex;
-
-          // SELECT expression.
-          // - count: just COUNT(*).
-          // - sum/avg/min/max: AGG(col) + COUNT(*) + COUNT(col) so the LLM can
-          //   distinguish "AVG over all rows" vs "AVG over non-null rows"
-          //   (SQL AVG/SUM/MIN/MAX silently ignore NULLs).
-          // - ratio: AVG(CASE WHEN <ratio_filter> THEN 1 ELSE 0 END) on rows
-          //   matching `filters`. We also expose `numerator` and `denominator`
-          //   counts so the LLM can sanity-check sample size and combine with
-          //   `having_min_total` to drop small-sample groups.
-          let selectExpr: string;
-          if (aggregation === 'ratio') {
-            if (!ratio_filter || Object.keys(ratio_filter).length === 0) {
-              return {
-                content: [{ type: 'text' as const, text: 'ratio_filter is required for aggregation: "ratio".' }],
-                isError: true,
-              };
-            }
-            // The CASE WHEN expression appears twice in the SELECT (once for
-            // `result`, once for `numerator`). Each occurrence has its own
-            // positional placeholders, so we build the conditions twice with
-            // independent paramIndex windows and push the values twice. This
-            // keeps SQLite (`?`) and Postgres (`$N`) consistent: each `?` /
-            // `$N` resolves to one value at its own offset.
-            const first = buildPlainConditions(ratio_filter, allowedFilterColumns, dialect, paramCursor);
-            if (first.conditions.length === 0) {
-              return {
-                content: [{ type: 'text' as const, text: 'ratio_filter has no usable conditions (unknown columns?).' }],
-                isError: true,
-              };
-            }
-            values.push(...first.values);
-            paramCursor = first.nextParamIndex;
-            const second = buildPlainConditions(ratio_filter, allowedFilterColumns, dialect, paramCursor);
-            values.push(...second.values);
-            paramCursor = second.nextParamIndex;
-
-            const caseFirst = `CASE WHEN ${first.conditions.join(' AND ')} THEN 1 ELSE 0 END`;
-            const caseSecond = `CASE WHEN ${second.conditions.join(' AND ')} THEN 1 ELSE 0 END`;
-            // 1.0 multiplier promotes integer counts to float so SQLite does
-            // not return zero on integer division.
-            selectExpr =
-              `AVG(1.0 * (${caseFirst})) as result,` +
-              ` SUM(${caseSecond}) as numerator,` +
-              ` COUNT(*) as denominator`;
-          } else if (aggregation === 'count' && !aggregation_column) {
-            selectExpr = 'COUNT(*) as result';
-          } else if (!aggregation_column) {
-            return {
-              content: [{ type: 'text' as const, text: 'aggregation_column is required for sum, avg, min, max' }],
-              isError: true,
-            };
-          } else {
-            // Validate column name
-            if (!numericCols.includes(aggregation_column)) {
-              return {
-                content: [{ type: 'text' as const, text: `Invalid aggregation column: ${aggregation_column}` }],
-                isError: true,
-              };
-            }
-            const qiCol = dialect.quoteIdent(aggregation_column);
-            selectExpr =
-              `${aggregation.toUpperCase()}(${qiCol}) as result,` +
-              ` COUNT(*) as count_total,` +
-              ` COUNT(${qiCol}) as count_non_null`;
-          }
-
-          // GROUP BY
-          let groupByClause = '';
-          let selectPrefix = '';
-          if (group_by) {
-            if (!groupableColumns.includes(group_by)) {
-              return {
-                content: [{ type: 'text' as const, text: `Invalid group_by column: ${group_by}` }],
-                isError: true,
-              };
-            }
-            selectPrefix = `${dialect.quoteIdent(group_by)}, `;
-            groupByClause = `GROUP BY ${dialect.quoteIdent(group_by)}`;
-          }
-
-          // HAVING — drops small-sample groups (sample-size floor for ratios).
-          // Only meaningful with GROUP BY; silently ignored otherwise.
-          let havingClause = '';
-          if (group_by && typeof having_min_total === 'number' && having_min_total > 0) {
-            values.push(having_min_total);
-            havingClause = `HAVING COUNT(*) >= ${dialect.param(paramCursor++)}`;
-          }
-
-          // ORDER BY. The literal alias 'result' is special: it sorts on
-          // the aggregated SELECT expression alias (count/sum/avg/min/max/ratio).
-          // No identifier quoting because 'result' is a SQL alias, not a
-          // column. Other values are validated against the table's columns.
-          let orderByClause = '';
-          if (order_by) {
-            const isResultAlias = order_by === 'result';
-            if (!isResultAlias && !allColumnNames.includes(order_by)) {
-              return {
-                content: [{ type: 'text' as const, text: `Invalid order_by column: ${order_by}` }],
-                isError: true,
-              };
-            }
-            const dir = order_direction === 'desc' ? 'DESC' : 'ASC';
-            const target = isResultAlias ? 'result' : dialect.quoteIdent(order_by);
-            orderByClause = `ORDER BY ${target} ${dir}`;
-          }
-
-          // LIMIT
-          values.push(cappedLimit);
-          const limitParam = dialect.param(paramCursor);
-
-          const sql = `SELECT ${selectPrefix}${selectExpr} FROM ${qualifiedTable} ${whereClause} ${groupByClause} ${havingClause} ${orderByClause} LIMIT ${limitParam}`;
-          const result = await exec(sql, values);
-
-          const formattedRows = formatResponseRows(result.rows, labelMap, responseMode);
-          return {
-            content: [{ type: 'text' as const, text: wrapResponse(JSON.stringify(formattedRows, null, 2)) }],
-            resultSummary: `${result.rows.length} rows`,
-          };
-        },
-      );
-    },
-  );
-}
-
-// ---------------------------------------------------------------------------
-// query_{tableName} tool
-// ---------------------------------------------------------------------------
-
-function registerQueryTool(
-  ctx: ToolContext,
-  table: TableInfo,
-  visibleColumns: TableInfo['columns'],
-  opts: TableToolOptions | undefined,
-  maskingRules: Record<string, MaskingRule>,
-  excludedCols: Set<string>,
-  tableMasking: Record<string, ColumnMasking> | undefined,
-  labelMap: Record<string, string>,
-  _reverseLabelMap: Record<string, string>,
-): void {
-  const { server, executeQuery, dialect, onAuditLog, profileName, responseMode, wrapResponse, maxOffset, scopeGuard } = ctx;
-  const friendly = responseMode === 'friendly';
-  const schemaName = table.schema || 'public';
-  const tableName = table.name;
-  const toolName = `query_${tableName}`;
-  const maxLimit = opts?.maxLimit ?? 1000;
-
-  // Columns excluded from query (exclude + aggregate_only)
-  const queryExcludedCols = new Set<string>(excludedCols);
-  if (tableMasking) {
-    for (const [colName, m] of Object.entries(tableMasking)) {
-      if (m.maskingMode === 'aggregate_only') {
-        queryExcludedCols.add(colName);
-      }
-    }
-  }
-
-  // All queryable column names
-  const allColumnNames = visibleColumns
-    .filter(c => !queryExcludedCols.has(c.name))
-    .map(c => c.name);
-
-  if (allColumnNames.length === 0) return;
-
-  // Filterable columns
-  const allFilterable = visibleColumns
-    .filter(c => pgTypeToZod(c.type) !== null && !queryExcludedCols.has(c.name));
-  const filterableCols = opts?.filterableColumns && opts.filterableColumns.length > 0
-    ? allFilterable.filter(c => opts.filterableColumns.includes(c.name))
-    : allFilterable;
-
-  const allowedFilterColumns = filterableCols.map(c => c.name);
-  const qualifiedTable = dialect.quoteTable(schemaName, tableName);
-
-  // Build Zod schema for filters (see comment on the aggregate tool —
-  // we intentionally inline the per-column shape rather than sharing
-  // a meta-tagged instance, to keep the JSON Schema canonical for
-  // weaker LLMs; `value` is typed per column via `valueSchemaForColumn`).
-  const filterShape: Record<string, z.ZodTypeAny> = {};
-  for (const col of filterableCols) {
-    filterShape[col.name] = z.object({
-      op: z.enum(['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'between', 'in', 'is_null', 'is_not_null']),
-      value: valueSchemaForColumn(col),
-    }).optional();
-  }
-
-  const columnsEnum = zodEnum(allColumnNames);
-  const orderByEnum = zodEnum(allColumnNames);
-
-  const inputShape: Record<string, z.ZodTypeAny> = {
-    filters: z.object(filterShape).optional().describe(
-      'WHERE filters by column. Each entry is { op, value }. ' +
-      'Operators: eq, neq, gt, gte, lt, lte, between (value=[min,max]), in (value=array or CSV), ' +
-      'is_null and is_not_null (omit value).',
-    ),
-    order_direction: z.enum(['asc', 'desc']).optional(),
-    limit: z.number().optional().default(20).describe(`Max rows, capped at ${maxLimit}`),
-    offset: z.number().optional().default(0),
-    sample: z.boolean().optional().describe('If true, return random rows'),
-  };
-  if (columnsEnum) inputShape.columns = z.array(columnsEnum).optional().describe('Columns to return, defaults to all');
-  if (orderByEnum) inputShape.order_by = orderByEnum.optional();
-
-  // Build query masking rules (exclude already removed from column list; only hash/truncate/replace apply)
-  const queryMaskingRules: Record<string, MaskingRule> = {};
-  for (const [col, rule] of Object.entries(maskingRules)) {
-    if (rule.mode === 'hash' || rule.mode === 'truncate' || rule.mode === 'replace') {
-      queryMaskingRules[col] = rule;
-    }
-  }
-  const needsMasking = Object.keys(queryMaskingRules).length > 0;
-
-  const displayName = friendly ? snakeCaseToLabel(tableName) : tableName;
-  const queryDesc = friendly
-    ? `Rechercher des informations dans ${displayName}`
-    : `Query rows from the ${tableName} table with filters, ordering, and pagination.`;
-
-  server.tool(
-    toolName,
-    queryDesc,
-    inputShape as AnyToolArgs,
-    async (args: Record<string, unknown>) => {
-      const { columns, filters, order_by, order_direction, limit, offset, sample } = args as {
-        columns?: string[];
-        filters?: Record<string, FilterValue | undefined>;
-        order_by?: string;
-        order_direction?: string;
-        limit?: number;
-        offset?: number;
-        sample?: boolean;
-      };
-
-      return executeWithAudit(
-        { executeQuery, dialect, onAuditLog, profileName, toolName, toolArgs: args },
-        async (exec) => {
-          const cappedLimit = Math.min(limit ?? 20, maxLimit);
-          const cappedOffset = Math.min(offset ?? 0, maxOffset);
-
-          // WHERE (scope-aware: scope filters are always injected first)
-          const { clause: whereClause, values, nextParamIndex } =
-            scopeGuard.buildWhereClause(tableName, filters, allowedFilterColumns, dialect);
-
-          let paramIdx = nextParamIndex;
-
-          // SELECT columns — validate each requested column
-          let selectExpr: string;
-          if (columns && columns.length > 0) {
-            for (const c of columns) {
-              if (!allColumnNames.includes(c)) {
-                const available = friendly
-                  ? allColumnNames.map(n => labelMap[n] ?? snakeCaseToLabel(n)).join(', ')
-                  : allColumnNames.join(', ');
-                return {
-                  content: [{ type: 'text' as const, text: friendly ? `Ce champ n'est pas disponible. Champs disponibles : ${available}` : `Invalid column: ${c}. Available: ${available}` }],
-                  isError: true,
-                };
-              }
-            }
-            selectExpr = columns.map(c => dialect.quoteIdent(c)).join(', ');
-          } else {
-            // Select only visible columns, not *
-            selectExpr = allColumnNames.map(c => dialect.quoteIdent(c)).join(', ');
-          }
-
-          // ORDER BY
-          let orderByClause = '';
-          if (sample) {
-            orderByClause = `ORDER BY ${dialect.random}`;
-          } else if (order_by) {
-            if (!allColumnNames.includes(order_by)) {
-              return {
-                content: [{ type: 'text' as const, text: `Invalid order_by column: ${order_by}` }],
-                isError: true,
-              };
-            }
-            const dir = order_direction === 'desc' ? 'DESC' : 'ASC';
-            orderByClause = `ORDER BY ${dialect.quoteIdent(order_by)} ${dir}`;
-          }
-
-          // LIMIT and OFFSET
-          values.push(cappedLimit);
-          const limitParam = dialect.param(paramIdx++);
-          values.push(cappedOffset);
-          const offsetParam = dialect.param(paramIdx);
-
-          const sql = `SELECT ${selectExpr} FROM ${qualifiedTable} ${whereClause} ${orderByClause} LIMIT ${limitParam} OFFSET ${offsetParam}`;
-          const result = await exec(sql, values);
-
-          const maskedRows = needsMasking ? applyMasking(result.rows, queryMaskingRules) : result.rows;
-          const formattedRows = formatResponseRows(maskedRows, labelMap, responseMode);
-
-          // Auto-hint on 0 results with filters (scope-aware)
-          let zeroResultHint = '';
-          if (formattedRows.length === 0 && filters && Object.keys(filters).length > 0) {
-            try {
-              const filteredColNames = Object.keys(filters).filter(k => filters[k] !== undefined);
-              const textFilteredCols = filteredColNames.filter(col => {
-                const colInfo = visibleColumns.find(c => c.name === col);
-                return colInfo && isTextType(colInfo.type);
-              });
-              const hints: string[] = [];
-              // Build scope WHERE for hint queries
-              const { clause: hintScopeWhere, values: hintScopeValues } =
-                scopeGuard.buildScopeOnlyWhereClause(tableName, dialect);
-              for (const col of textFilteredCols.slice(0, 5)) {
-                const qi = dialect.quoteIdent(col);
-                const notNullCond = `${qi} IS NOT NULL`;
-                let hintWhere: string;
-                let hintParams: unknown[];
-                if (hintScopeWhere) {
-                  hintWhere = `${hintScopeWhere} AND ${notNullCond}`;
-                  hintParams = [...hintScopeValues];
-                } else {
-                  hintWhere = `WHERE ${notNullCond}`;
-                  hintParams = [];
-                }
-                const vSql = `SELECT DISTINCT ${qi} AS val FROM ${qualifiedTable} ${hintWhere} ORDER BY val LIMIT 30`;
-                const vRes = await exec(vSql, hintParams);
-                const vals = vRes.rows.map(r => String((r as Record<string, unknown>).val));
-                if (vals.length > 0) {
-                  hints.push(`Possible values for '${col}': ${vals.join(', ')}`);
-                }
-              }
-              if (hints.length > 0) {
-                zeroResultHint = '\n\nNo results found. ' + hints.join('. ') + '. Retry with one of these exact values.';
-              }
-            } catch {
-              // Non-critical
-            }
-          }
-
-          return {
-            content: [{ type: 'text' as const, text: wrapResponse(JSON.stringify(formattedRows, null, 2)) + zeroResultHint }],
-            resultSummary: `${formattedRows.length} rows`,
-          };
-        },
-      );
-    },
-  );
-}
-
-// ---------------------------------------------------------------------------
-// write_{tableName} tool
-// ---------------------------------------------------------------------------
-
-function registerWriteTool(
-  server: McpServer,
-  table: TableInfo,
-  visibleColumns: TableInfo['columns'],
+  accessible: AccessibleTable[],
   onWriteRequest: (query: Omit<PendingWriteQuery, 'id' | 'timestamp' | 'status'>) => string,
-  onAuditLog: DynamicToolsOptions['onAuditLog'],
-  profileName: string,
-  dialect: Dialect,
-  scopeGuard: ScopeGuard,
+  catalogue: string,
 ): void {
-  const schemaName = table.schema || 'public';
-  const tableName = table.name;
-  const toolName = `write_${tableName}`;
-  const qualifiedTable = dialect.quoteTable(schemaName, tableName);
+  const { server, dialect, onAuditLog, profileName, scopeGuard } = ctx;
 
-  // Build the set of valid column names for validation
-  const validColumnNames = new Set(visibleColumns.map(c => c.name));
-
-  // Build filter shape for update/delete (same as query, inline; `value`
-  // is typed per column via `valueSchemaForColumn`).
-  const filterableCols = visibleColumns.filter(c => pgTypeToZod(c.type) !== null);
-  const filterShape: Record<string, z.ZodTypeAny> = {};
-  for (const col of filterableCols) {
-    filterShape[col.name] = z.object({
-      op: z.enum(['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'between', 'in', 'is_null', 'is_not_null']),
-      value: valueSchemaForColumn(col),
-    }).optional();
-  }
-  const allowedFilterColumns = filterableCols.map(c => c.name);
+  const eligible = accessible.filter(at => at.enabledTools.includes('write'));
+  if (eligible.length === 0) return;
+  const tableEnum = zodEnum(eligible.map(at => at.table.name));
+  if (!tableEnum) return;
 
   const inputShape: Record<string, z.ZodTypeAny> = {
-    operation: z.enum(['insert', 'update', 'delete']).describe('The write operation to perform'),
-    description: z.string().describe('Human-readable description of what this write does and why'),
-    values: z.record(z.string(), z.any()).optional().describe('Column-value pairs for INSERT or SET clause of UPDATE'),
-    filters: z.object(filterShape).optional().describe('Filters for UPDATE/DELETE (same format as query filters). Required for UPDATE and DELETE.'),
+    table: tableEnum.describe('Target table.'),
+    operation: z.enum(['insert', 'update', 'delete']).describe('Write operation kind.'),
+    description: z.string().describe('Human-readable description of what this write does and why.'),
+    values: z.record(z.string(), z.any()).optional().describe('Column-value pairs for INSERT or UPDATE SET.'),
+    filters: makeFilterMapSchema().describe('Filters for UPDATE / DELETE. Required for those.'),
   };
 
+  const desc = `Propose a write (INSERT/UPDATE/DELETE) on a table. The query is queued for admin approval; nothing is executed immediately.\n\n${catalogue}`;
+
   server.tool(
-    toolName,
-    `Propose a write operation (INSERT/UPDATE/DELETE) on the ${tableName} table. The query will NOT be executed immediately — it will be queued for admin approval.`,
+    'write',
+    desc,
     inputShape as AnyToolArgs,
     async (args: Record<string, unknown>) => {
+      const resolved = resolveTable(args.table, accessible, 'write');
+      if (!resolved.ok) return structuredError(resolved.payload);
+      const at = resolved.at;
+
+      const tableName = at.table.name;
+      const schemaName = at.table.schema || 'public';
+      const qualifiedTable = dialect.quoteTable(schemaName, tableName);
+      const validColumnNames = new Set(at.visibleColumns.map(c => c.name));
+      const allowedFilterColumns = at.filterableCols.map(c => c.name);
+
       const start = Date.now();
       const { operation, description, values, filters } = args as {
         operation: 'insert' | 'update' | 'delete';
@@ -1696,57 +1662,41 @@ function registerWriteTool(
       };
 
       try {
-        // Validate: INSERT and UPDATE require values
         if ((operation === 'insert' || operation === 'update') && (!values || Object.keys(values).length === 0)) {
-          return {
-            content: [{ type: 'text' as const, text: `Error: "${operation}" operation requires "values" (column-value pairs).` }],
-            isError: true,
-          };
+          return structuredError({ error: `'${operation}' requires 'values' (column-value pairs)` });
         }
-
-        // Validate: UPDATE and DELETE require filters
         if ((operation === 'update' || operation === 'delete') && (!filters || Object.keys(filters).length === 0)) {
-          return {
-            content: [{ type: 'text' as const, text: `Error: "${operation}" operation requires "filters" to identify target rows.` }],
-            isError: true,
-          };
+          return structuredError({ error: `'${operation}' requires 'filters' to identify target rows` });
         }
-
-        // Validate column names in values
         if (values) {
           for (const colName of Object.keys(values)) {
             if (!validColumnNames.has(colName)) {
-              return {
-                content: [{ type: 'text' as const, text: `Error: Invalid column "${colName}". Available columns: ${[...validColumnNames].join(', ')}` }],
-                isError: true,
-              };
+              return structuredError({
+                error: `Invalid column '${colName}' for table '${tableName}'`,
+                valid_columns: [...validColumnNames],
+                did_you_mean: didYouMean(colName, [...validColumnNames]),
+              });
             }
           }
         }
 
-        // Build parameterized SQL
         let sql: string;
         const params: unknown[] = [];
         let paramIndex = 1;
 
         switch (operation) {
           case 'insert': {
-            // Enforce scope column on INSERT: user cannot insert rows for other users
             if (scopeGuard.active) {
               const scopeInfo = scopeGuard.getScopeInfo();
               const scopeFilter = scopeInfo.filters.find(f => f.tableName === tableName);
               if (scopeFilter) {
                 const currentVal = values![scopeFilter.column];
                 if (currentVal !== undefined && currentVal !== scopeFilter.value) {
-                  return {
-                    content: [{ type: 'text' as const, text: `Error: Cannot insert rows for another user. Column "${scopeFilter.column}" must match your identity.` }],
-                    isError: true,
-                  };
+                  return structuredError({
+                    error: `Cannot insert rows for another user. Column '${scopeFilter.column}' must match your identity.`,
+                  });
                 }
-                // Auto-inject scope column if not provided
-                if (currentVal === undefined) {
-                  values![scopeFilter.column] = scopeFilter.value;
-                }
+                if (currentVal === undefined) values![scopeFilter.column] = scopeFilter.value;
               }
             }
             const cols = Object.keys(values!);
@@ -1773,10 +1723,7 @@ function registerWriteTool(
             );
             params.push(...whereValues);
             if (!whereClause) {
-              return {
-                content: [{ type: 'text' as const, text: 'Error: UPDATE requires at least one valid filter condition.' }],
-                isError: true,
-              };
+              return structuredError({ error: 'UPDATE requires at least one valid filter condition' });
             }
             sql = `UPDATE ${qualifiedTable} SET ${setClause} ${whereClause}`;
             break;
@@ -1791,17 +1738,13 @@ function registerWriteTool(
             );
             params.push(...whereValues);
             if (!whereClause) {
-              return {
-                content: [{ type: 'text' as const, text: 'Error: DELETE requires at least one valid filter condition.' }],
-                isError: true,
-              };
+              return structuredError({ error: 'DELETE requires at least one valid filter condition' });
             }
             sql = `DELETE FROM ${qualifiedTable} ${whereClause}`;
             break;
           }
         }
 
-        // Submit to the write queue
         const id = onWriteRequest({
           profileName,
           sql,
@@ -1810,41 +1753,38 @@ function registerWriteTool(
           operation,
           description,
         });
-
         const durationMs = Date.now() - start;
         if (onAuditLog) {
           onAuditLog({
             profileName,
-            toolName,
+            toolName: 'write',
             toolArgs: args,
             result: 'success',
             resultSummary: `Write request queued (ID: ${id})`,
             durationMs,
           });
         }
-
         return {
-          content: [{
-            type: 'text' as const,
-            text: `Write request submitted for approval (ID: ${id}). An admin will review it.\n\nOperation: ${operation.toUpperCase()}\nTable: ${tableName}\nSQL: ${sql}\nParams: ${JSON.stringify(params)}`,
-          }],
+          content: [
+            {
+              type: 'text' as const,
+              text: `Write request submitted for approval (ID: ${id}). An admin will review it.\n\nOperation: ${operation.toUpperCase()}\nTable: ${tableName}\nSQL: ${sql}\nParams: ${JSON.stringify(params)}`,
+            },
+          ],
         };
       } catch (err) {
         const durationMs = Date.now() - start;
         if (onAuditLog) {
           onAuditLog({
             profileName,
-            toolName,
+            toolName: 'write',
             toolArgs: args,
             result: 'error',
             resultSummary: (err as Error).message,
             durationMs,
           });
         }
-        return {
-          content: [{ type: 'text' as const, text: `Error: ${(err as Error).message}` }],
-          isError: true,
-        };
+        return structuredError({ error: (err as Error).message });
       }
     },
   );

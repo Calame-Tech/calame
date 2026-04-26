@@ -58,4 +58,32 @@ export function runMigrations(db: CalameDatabase): void {
     addColumnIfMissing(db, 'users', 'custom_attributes', 'TEXT');
     db.setSchemaVersion(5);
   }
+
+  if (currentVersion < 6) {
+    // Version 6: multiple named AI settings. Copy the legacy single ai_config row
+    // (if any) into ai_settings as a 'default' entry so existing installs keep working.
+    db.raw.exec(`CREATE TABLE IF NOT EXISTS ai_settings (
+      name TEXT PRIMARY KEY,
+      label TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      api_key TEXT NOT NULL,
+      model TEXT,
+      base_url TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`);
+    const existing = db.raw
+      .prepare(`SELECT provider, api_key, model, base_url FROM ai_config WHERE key='main'`)
+      .get() as
+      | { provider: string; api_key: string; model: string | null; base_url: string | null }
+      | undefined;
+    if (existing) {
+      db.raw
+        .prepare(
+          `INSERT OR IGNORE INTO ai_settings (name, label, provider, api_key, model, base_url)
+           VALUES ('default', 'Default', ?, ?, ?, ?)`,
+        )
+        .run(existing.provider, existing.api_key, existing.model, existing.base_url);
+    }
+    db.setSchemaVersion(6);
+  }
 }

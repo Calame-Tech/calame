@@ -12,6 +12,7 @@ import UserDashboard from './components/UserDashboard.js';
 import UserManagement from './components/UserManagement.js';
 import WelcomePage from './components/WelcomePage.js';
 import AiSettings from './components/AiSettings.js';
+import AiSettingsAssignment from './components/AiSettingsAssignment.js';
 import SmtpSettings from './components/SmtpSettings.js';
 import OidcSettings from './components/OidcSettings.js';
 import ProfilePreview from './components/ProfilePreview.js';
@@ -44,7 +45,7 @@ type View =
   | { page: 'mcp-list' }
   | { page: 'mcp-detail'; profileName: string; activeSection?: string }
   | { page: 'users'; selectedUserId?: string; backTo?: View }
-  | { page: 'settings' }
+  | { page: 'settings'; backTo?: View; initialTab?: 'ai' | 'email' | 'sso' }
   | { page: 'metrics' };
 
 function createDefaultProfile(): Profile {
@@ -261,6 +262,7 @@ export default function App() {
             responseMode: p.responseMode,
             dataScopeRules: p.dataScopeRules,
             sharedTables: p.sharedTables,
+            aiSettingNames: p.aiSettingNames,
           }));
           if (loadedProfiles.length > 0) {
             setProfiles(loadedProfiles);
@@ -468,6 +470,7 @@ export default function App() {
           oauthConfig: p.oauthConfig,
           externalAuthConfig: p.externalAuthConfig,
           responseMode: p.responseMode,
+          aiSettingNames: p.aiSettingNames,
         };
       }
       try {
@@ -1133,6 +1136,13 @@ export default function App() {
                   onProfilesChange={setProfiles}
                   activeProfileIndex={activeProfileIndex}
                   onActiveProfileIndexChange={setActiveProfileIndex}
+                  onNavigateToAiSettings={() =>
+                    setView({
+                      page: 'settings',
+                      initialTab: 'ai',
+                      backTo: { page: 'mcp-detail', profileName: view.profileName },
+                    })
+                  }
                   onNavigateToConfig={(configName) => {
                     if (!configName) {
                       const slug = `config-${Date.now()}`;
@@ -1178,6 +1188,17 @@ export default function App() {
               <SettingsPage
                 allProfileNames={Array.from(allProfileNames)}
                 onNavigateDashboard={() => setView({ page: 'dashboard' })}
+                initialTab={view.initialTab}
+                backTo={
+                  view.backTo?.page === 'mcp-detail'
+                    ? {
+                        label: profiles.find((p) => p.name === view.backTo?.profileName)?.label ??
+                          view.backTo.profileName,
+                        view: view.backTo,
+                      }
+                    : undefined
+                }
+                onNavigate={(v) => setView(v)}
               />
             )}
 
@@ -1237,6 +1258,7 @@ interface McpDetailViewProps {
   onDeleteProfile: (index: number) => void;
   onNavigateBack: () => void;
   onNavigateToUser: (userId: string) => void;
+  onNavigateToAiSettings: () => void;
   initialActiveSection?: string;
 }
 
@@ -1250,6 +1272,7 @@ function McpDetailView({
   onActiveProfileIndexChange,
   configurations,
   onNavigateToConfig,
+  onNavigateToAiSettings,
   onDeleteProfile,
   onNavigateBack,
   onNavigateToUser,
@@ -1296,6 +1319,7 @@ function McpDetailView({
           responseMode: prof.responseMode,
           dataScopeRules: prof.dataScopeRules,
           sharedTables: prof.sharedTables,
+          aiSettingNames: prof.aiSettingNames,
         };
       }
       persistProfiles(profilesData).catch(() => {});
@@ -1332,6 +1356,7 @@ function McpDetailView({
           responseMode: prof.responseMode,
           dataScopeRules: prof.dataScopeRules,
           sharedTables: prof.sharedTables,
+          aiSettingNames: prof.aiSettingNames,
         };
       }
       persistProfiles(profilesData).catch(() => {});
@@ -1366,6 +1391,35 @@ function McpDetailView({
           responseMode: prof.responseMode,
           dataScopeRules: prof.dataScopeRules,
           sharedTables: prof.sharedTables,
+          aiSettingNames: prof.aiSettingNames,
+        };
+      }
+      persistProfiles(profilesData).catch(() => {});
+      return updated;
+    });
+  };
+
+  const handleAiSettingNamesChange = (aiSettingNames: string[]) => {
+    if (profileIndex < 0) return;
+    onProfilesChange((prev) => {
+      const updated = [...prev];
+      updated[profileIndex] = { ...updated[profileIndex], aiSettingNames };
+      const profilesData: Record<string, Record<string, unknown>> = {};
+      for (const prof of updated) {
+        profilesData[prof.name] = {
+          label: prof.label,
+          configurations: prof.configurations,
+          connections: prof.connections,
+          selectedTables: prof.selectedTables,
+          tableOptions: prof.tableOptions,
+          columnMasking: prof.columnMasking,
+          authMode: prof.authMode,
+          oauthConfig: prof.oauthConfig,
+          externalAuthConfig: prof.externalAuthConfig,
+          responseMode: prof.responseMode,
+          dataScopeRules: prof.dataScopeRules,
+          sharedTables: prof.sharedTables,
+          aiSettingNames: prof.aiSettingNames,
         };
       }
       persistProfiles(profilesData).catch(() => {});
@@ -1393,6 +1447,7 @@ function McpDetailView({
           responseMode: prof.responseMode,
           dataScopeRules: prof.dataScopeRules,
           sharedTables: prof.sharedTables,
+          aiSettingNames: prof.aiSettingNames,
         };
       }
       persistProfiles(profilesData).catch(() => {});
@@ -1546,6 +1601,7 @@ function McpDetailView({
           responseMode: prof.responseMode,
           dataScopeRules: prof.dataScopeRules,
           sharedTables: prof.sharedTables,
+          aiSettingNames: prof.aiSettingNames,
         };
       }
       persistProfiles(profilesData)
@@ -2279,6 +2335,13 @@ function McpDetailView({
       {/* Section content */}
       {activeSection === 'tables' && (
         <div className="space-y-4">
+          {/* AI settings assignment */}
+          <AiSettingsAssignment
+            selected={profile.aiSettingNames ?? []}
+            onChange={handleAiSettingNamesChange}
+            onManageSettings={onNavigateToAiSettings}
+          />
+
           {/* Configurations selection */}
           <div className="card-primary p-4">
             <div className="flex items-center justify-between mb-3">
@@ -3106,15 +3169,33 @@ const SETTINGS_TABS: SettingsTabItem[] = [
 interface SettingsPageProps {
   allProfileNames: string[];
   onNavigateDashboard: () => void;
+  initialTab?: SettingsTab;
+  /** Optional intermediate breadcrumb crumb — used when the page is opened from an MCP detail. */
+  backTo?: { label: string; view: View };
+  onNavigate?: (view: View) => void;
 }
 
-function SettingsPage({ allProfileNames, onNavigateDashboard }: SettingsPageProps) {
-  const [activeTab, setActiveTab] = useState<SettingsTab>('ai');
+function SettingsPage({
+  allProfileNames,
+  onNavigateDashboard,
+  initialTab,
+  backTo,
+  onNavigate,
+}: SettingsPageProps) {
+  const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab ?? 'ai');
+
+  const breadcrumb: { label: string; onClick?: () => void }[] = [
+    { label: 'Dashboard', onClick: onNavigateDashboard },
+  ];
+  if (backTo && onNavigate) {
+    breadcrumb.push({ label: backTo.label, onClick: () => onNavigate(backTo.view) });
+  }
+  breadcrumb.push({ label: 'Settings' });
 
   return (
     <div className="space-y-4">
       <PageHeader
-        breadcrumb={[{ label: 'Dashboard', onClick: onNavigateDashboard }, { label: 'Settings' }]}
+        breadcrumb={breadcrumb}
         title="Settings"
         description="Configure AI providers, email delivery, and single sign-on for your Calame instance."
       />

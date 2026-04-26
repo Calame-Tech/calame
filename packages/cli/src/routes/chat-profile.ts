@@ -21,6 +21,8 @@ interface ChatProfileInfo {
   authMode: 'open' | 'token' | 'calame' | 'sso' | 'oauth' | 'external';
   active: boolean;
   oauthProvider?: 'github' | 'google' | 'gitlab' | 'custom';
+  /** AI settings the client may pick from. First entry is the default. */
+  aiSettings?: Array<{ name: string; label: string }>;
 }
 
 /**
@@ -53,6 +55,7 @@ async function loadProfileFromDb(
       name: profileName,
       label: (p.label as string) ?? profileName,
       configurations: p.configurations as string[] | undefined,
+      aiSettingNames: p.aiSettingNames as string[] | undefined,
       selectedTables: (p.selectedTables as Record<string, string[]>) ?? {},
       tableOptions: p.tableOptions,
       columnMasking: p.columnMasking,
@@ -114,6 +117,23 @@ export function registerChatProfileRoute(app: Express, state: AppState): void {
       // Only expose the OAuth provider name — never expose client_id or client_secret
       if (authMode === 'oauth' && profile.oauthConfig?.provider) {
         info.oauthProvider = profile.oauthConfig.provider;
+      }
+
+      // Resolve the AI settings the client may pick from (label only — no API key, no provider).
+      const mgr = state.aiSettingsManager;
+      if (mgr) {
+        const allowed = (profile.aiSettingNames ?? []).filter(Boolean);
+        if (allowed.length > 0) {
+          const resolved = allowed
+            .map((name) => mgr.getSetting(name))
+            .filter((s): s is NonNullable<typeof s> => s !== null)
+            .map((s) => ({ name: s.name, label: s.label }));
+          if (resolved.length > 0) info.aiSettings = resolved;
+        } else {
+          // No explicit list → expose the global fallback (first one) so the client knows what is used.
+          const fallback = mgr.listSettings()[0];
+          if (fallback) info.aiSettings = [{ name: fallback.name, label: fallback.label }];
+        }
       }
 
       res.json({ success: true, profile: info });

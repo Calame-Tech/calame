@@ -5,6 +5,7 @@ import { createMcpChatTools, executeChatTurn, getDefaultSystemPrompt } from '../
 import { validateSession } from '../session.js';
 import { TokenRateLimiter } from '../rate-limiter.js';
 import { parseCookies } from '../utils/cookies.js';
+import { resolveAiSetting } from '../ai-resolver.js';
 
 const chatLimiter = new TokenRateLimiter();
 const CHAT_RPM = 30;
@@ -12,6 +13,7 @@ const CHAT_RPM = 30;
 const chatSchema = z.object({
   message: z.string().min(1, 'message must not be empty').max(32_000, 'message too long'),
   profileName: z.string().min(1).optional(),
+  aiSettingName: z.string().min(1).optional(),
   history: z
     .array(
       z.object({
@@ -35,7 +37,7 @@ export function registerChatRoute(app: Express, state: AppState): void {
         });
         return;
       }
-      const { message, profileName: requestedProfileName, history } = parsed.data;
+      const { message, profileName: requestedProfileName, aiSettingName, history } = parsed.data;
 
       // Rate limit chat by session
       const cookies = parseCookies(req.headers.cookie ?? '');
@@ -43,16 +45,6 @@ export function registerChatRoute(app: Express, state: AppState): void {
       const rl = chatLimiter.check(sid, CHAT_RPM);
       if (!rl.allowed) {
         res.status(429).json({ success: false, message: 'Too many messages. Please wait a moment.' });
-        return;
-      }
-
-      // Use admin AI config (set via AI Settings panel)
-      const aiConfig = state.aiConfigManager?.getConfig();
-      if (!aiConfig || !state.aiConfigManager?.isConfigured()) {
-        res.status(503).json({
-          success: false,
-          message: 'AI chat is not configured. Go to AI Settings to set up a provider.',
-        });
         return;
       }
 
@@ -82,6 +74,14 @@ export function registerChatRoute(app: Express, state: AppState): void {
         // Backward-compat: pick first active profile
         profileName = profileNames[0];
       }
+
+      // Resolve which AI setting to use for this turn (request param > profile default > global fallback).
+      const aiResolution = resolveAiSetting(state, profileName, aiSettingName);
+      if (!aiResolution.ok) {
+        res.status(aiResolution.status).json({ success: false, message: aiResolution.message });
+        return;
+      }
+      const aiConfig = aiResolution.setting;
 
       const responseMode = state.serveProfiles[profileName]?.responseMode ?? 'friendly';
 

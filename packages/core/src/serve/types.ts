@@ -81,6 +81,8 @@ export interface ServeProfile {
    */
   responseMode?: 'friendly' | 'raw';
   configurations?: string[]; // References to ServeConfiguration names
+  /** Names of AI settings (from ai_settings table) usable by clients of this MCP. First = default. */
+  aiSettingNames?: string[];
   /** @deprecated Use configurations instead */
   connections?: string[]; // Named connection references
   /** @deprecated Use configurations instead */

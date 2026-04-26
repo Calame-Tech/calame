@@ -164,13 +164,24 @@ export class CalameDatabase {
         column_masking TEXT
       );
 
-      -- AI config (single row)
+      -- AI config (single row, deprecated — kept for migration v6 read)
       CREATE TABLE IF NOT EXISTS ai_config (
         key TEXT PRIMARY KEY DEFAULT 'main',
         provider TEXT NOT NULL,
         api_key TEXT NOT NULL,
         model TEXT,
         base_url TEXT
+      );
+
+      -- AI settings (multiple named configs, each MCP can reference several)
+      CREATE TABLE IF NOT EXISTS ai_settings (
+        name TEXT PRIMARY KEY,
+        label TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        api_key TEXT NOT NULL,
+        model TEXT,
+        base_url TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
     `);
   }

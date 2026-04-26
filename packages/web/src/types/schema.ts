@@ -141,6 +141,8 @@ export interface Profile {
   name: string;
   label: string;
   configurations?: string[]; // References to Configuration names
+  /** Names of AI settings (from ai_settings table) usable by clients of this MCP. First = default. */
+  aiSettingNames?: string[];
   authMode?: AuthMode;
   oauthConfig?: OAuthConfig;
   externalAuthConfig?: ExternalAuthConfig;

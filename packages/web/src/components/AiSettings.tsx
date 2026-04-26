@@ -1,9 +1,18 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import HelpTip from './HelpTip.js';
 
 type Provider = 'anthropic' | 'openrouter' | 'custom';
-
 type ClassifierProvider = 'anthropic' | 'openrouter' | 'custom';
+
+interface MaskedAiSetting {
+  name: string;
+  label: string;
+  provider: Provider;
+  apiKey: string;
+  model?: string;
+  baseUrl?: string;
+  configured: boolean;
+}
 
 interface AiConfigDisplay {
   provider: Provider;
@@ -11,13 +20,13 @@ interface AiConfigDisplay {
   model?: string;
   baseUrl?: string;
   configured: boolean;
-  // LLM Router fields
+  // LLM Router fields (still attached to the legacy single-config payload)
   routerEnabled?: boolean;
   classifierProvider?: ClassifierProvider;
   classifierModel?: string;
   classifierApiKey?: string;
   classifierEndpoint?: string;
-  injectionThreshold?: number; // stored as 0-1 on backend
+  injectionThreshold?: number;
 }
 
 interface PerProviderFields {
@@ -27,34 +36,52 @@ interface PerProviderFields {
 }
 
 const emptyFields: PerProviderFields = { apiKey: '', model: '', baseUrl: '' };
+const emptyPerProvider = (): Record<Provider, PerProviderFields> => ({
+  anthropic: { ...emptyFields },
+  openrouter: { ...emptyFields },
+  custom: { ...emptyFields },
+});
+
+/** Sentinel value for `editingName` meaning "create a new setting". */
+const NEW_SENTINEL = '__new__';
+
+/** Slug-style validation (must match the backend NAME_RE). */
+const SLUG_RE = /^[a-z0-9_-]{1,64}$/;
 
 export default function AiSettings() {
-  const [provider, setProvider] = useState<Provider>('anthropic');
-  const [perProvider, setPerProvider] = useState<Record<Provider, PerProviderFields>>({
-    anthropic: { ...emptyFields },
-    openrouter: { ...emptyFields },
-    custom: { ...emptyFields },
-  });
-  const [showApiKey, setShowApiKey] = useState(false);
+  // List of all AI settings (refreshed after each mutation)
+  const [settings, setSettings] = useState<MaskedAiSetting[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Currently-edited row: a setting name, NEW_SENTINEL for creation, or null for nothing.
+  const [editingName, setEditingName] = useState<string | null>(null);
+
+  // Form state
+  const [formName, setFormName] = useState('');
+  const [formLabel, setFormLabel] = useState('');
+  const [provider, setProvider] = useState<Provider>('anthropic');
+  const [perProvider, setPerProvider] = useState<Record<Provider, PerProviderFields>>(emptyPerProvider());
+  const [showApiKey, setShowApiKey] = useState(false);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [testingName, setTestingName] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [saveResult, setSaveResult] = useState<string | null>(null);
-  const [configured, setConfigured] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
-  // LLM Router state
+  // LLM Router state — global, independent of individual AI settings
   const [routerEnabled, setRouterEnabled] = useState(false);
   const [classifierProvider, setClassifierProvider] = useState<ClassifierProvider>('anthropic');
   const [classifierModel, setClassifierModel] = useState('');
   const [classifierApiKey, setClassifierApiKey] = useState('');
   const [classifierEndpoint, setClassifierEndpoint] = useState('');
-  const [injectionThreshold, setInjectionThreshold] = useState(80); // percentage (50–100)
+  const [injectionThreshold, setInjectionThreshold] = useState(80); // percentage
 
-  // Accessors for current provider fields
   const apiKey = perProvider[provider].apiKey;
   const model = perProvider[provider].model;
   const baseUrl = perProvider[provider].baseUrl;
+
+  const isCreating = editingName === NEW_SENTINEL;
 
   const updateField = (field: keyof PerProviderFields, value: string) => {
     setPerProvider((prev) => ({
@@ -63,91 +90,253 @@ export default function AiSettings() {
     }));
   };
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch('/api/ai-settings', { credentials: 'include' });
-        const data = await res.json();
-        if (data.success && data.config) {
-          const cfg = data.config as AiConfigDisplay;
-          setProvider(cfg.provider);
-          setPerProvider((prev) => ({
-            ...prev,
-            [cfg.provider]: {
-              apiKey: cfg.apiKey ?? '',
-              model: cfg.model ?? '',
-              baseUrl: cfg.baseUrl ?? '',
-            },
-          }));
-          setConfigured(cfg.configured);
-          // Restore LLM Router fields if present
+  const refresh = useCallback(async () => {
+    try {
+      const res = await fetch('/api/ai-settings', { credentials: 'include' });
+      const data = await res.json();
+      if (data.success) {
+        setSettings((data.settings ?? []) as MaskedAiSetting[]);
+
+        // Restore LLM Router fields from the legacy `config` payload
+        const cfg = data.config as AiConfigDisplay | null;
+        if (cfg) {
           if (cfg.routerEnabled !== undefined) setRouterEnabled(cfg.routerEnabled);
           if (cfg.classifierProvider) setClassifierProvider(cfg.classifierProvider);
           if (cfg.classifierModel !== undefined) setClassifierModel(cfg.classifierModel);
           if (cfg.classifierApiKey !== undefined) setClassifierApiKey(cfg.classifierApiKey);
           if (cfg.classifierEndpoint !== undefined) setClassifierEndpoint(cfg.classifierEndpoint);
-          if (cfg.injectionThreshold !== undefined)
-            setInjectionThreshold(Math.round(cfg.injectionThreshold * 100));
+          if (cfg.injectionThreshold !== undefined) setInjectionThreshold(Math.round(cfg.injectionThreshold * 100));
         }
-      } catch {
-        // Not configured yet
-      } finally {
-        setLoading(false);
       }
-    })();
+    } catch {
+      // Ignore — UI shows empty state.
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const handleSave = async () => {
-    setSaving(true);
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const resetForm = () => {
+    setFormError(null);
     setSaveResult(null);
+    setTestResult(null);
+  };
+
+  const startCreate = () => {
+    if (isCreating) {
+      setEditingName(null);
+      return;
+    }
+    setEditingName(NEW_SENTINEL);
+    setFormName('');
+    setFormLabel('');
+    setProvider('anthropic');
+    setPerProvider(emptyPerProvider());
+    resetForm();
+  };
+
+  const startEdit = (s: MaskedAiSetting) => {
+    if (editingName === s.name) {
+      // Toggle: clicking Edit on the open row closes it.
+      setEditingName(null);
+      return;
+    }
+    setEditingName(s.name);
+    setFormName(s.name);
+    setFormLabel(s.label);
+    setProvider(s.provider);
+    setPerProvider({
+      ...emptyPerProvider(),
+      [s.provider]: {
+        apiKey: s.apiKey ?? '',
+        model: s.model ?? '',
+        baseUrl: s.baseUrl ?? '',
+      },
+    });
+    resetForm();
+  };
+
+  const cancelEdit = () => {
+    setEditingName(null);
+    resetForm();
+  };
+
+  const handleSave = async () => {
+    setFormError(null);
+    setSaveResult(null);
+
+    if (isCreating) {
+      if (!SLUG_RE.test(formName)) {
+        setFormError('Name must be 1-64 chars: lowercase letters, digits, dash, underscore.');
+        return;
+      }
+      if (!formLabel.trim()) {
+        setFormError('Label is required.');
+        return;
+      }
+    }
+    if (provider !== 'custom' && !apiKey) {
+      setFormError('API key is required for this provider.');
+      return;
+    }
+    if (provider === 'custom' && !baseUrl) {
+      setFormError('Base URL is required for the custom provider.');
+      return;
+    }
+
+    setSaving(true);
     try {
-      const res = await fetch('/api/ai-settings', {
-        method: 'POST',
+      const body = {
+        name: formName,
+        label: formLabel,
+        provider,
+        apiKey,
+        model: model || undefined,
+        baseUrl: baseUrl || undefined,
+        // LLM Router fields are global but still transported here for backward-compat
+        routerEnabled,
+        classifierProvider: routerEnabled ? classifierProvider : undefined,
+        classifierModel: routerEnabled ? classifierModel || undefined : undefined,
+        classifierApiKey: routerEnabled ? classifierApiKey || undefined : undefined,
+        classifierEndpoint: routerEnabled ? classifierEndpoint || undefined : undefined,
+        injectionThreshold: routerEnabled ? injectionThreshold / 100 : undefined,
+      };
+
+      const url = isCreating
+        ? '/api/ai-settings'
+        : `/api/ai-settings/${encodeURIComponent(editingName!)}`;
+      const method = isCreating ? 'POST' : 'PUT';
+      const res = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({
-          provider,
-          apiKey,
-          model: model || undefined,
-          baseUrl: baseUrl || undefined,
-          // Router fields
-          routerEnabled,
-          classifierProvider: routerEnabled ? classifierProvider : undefined,
-          classifierModel: routerEnabled ? classifierModel || undefined : undefined,
-          classifierApiKey: routerEnabled ? classifierApiKey || undefined : undefined,
-          classifierEndpoint: routerEnabled ? classifierEndpoint || undefined : undefined,
-          injectionThreshold: routerEnabled ? injectionThreshold / 100 : undefined,
-        }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (data.success) {
-        setSaveResult('Saved successfully.');
-        setConfigured(true);
+        setSaveResult('Saved.');
+        await refresh();
+        setEditingName(null);
       } else {
-        setSaveResult(data.message || 'Failed to save.');
+        setFormError(data.message || 'Failed to save.');
       }
     } catch {
-      setSaveResult('Connection error.');
+      setFormError('Connection error.');
     } finally {
       setSaving(false);
       setTimeout(() => setSaveResult(null), 3000);
     }
   };
 
-  const handleTest = async () => {
+  const handleTestForm = async () => {
     setTesting(true);
     setTestResult(null);
     try {
-      // Save first, then test
+      // For an existing setting, save first so the test uses the latest values.
+      if (!isCreating && editingName) {
+        await fetch(`/api/ai-settings/${encodeURIComponent(editingName)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            label: formLabel,
+            provider,
+            apiKey,
+            model: model || undefined,
+            baseUrl: baseUrl || undefined,
+          }),
+        });
+        const res = await fetch(`/api/ai-settings/${encodeURIComponent(editingName)}/test`, {
+          method: 'POST',
+          credentials: 'include',
+        });
+        const data = await res.json();
+        setTestResult(
+          data.success
+            ? { success: true, message: `Connection OK: "${data.response}"` }
+            : { success: false, message: data.message || 'Test failed.' },
+        );
+        await refresh();
+      } else {
+        // No `name` yet → fall back to the legacy single-config endpoint, which writes to 'default'.
+        await fetch('/api/ai-settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            provider,
+            apiKey,
+            model: model || undefined,
+            baseUrl: baseUrl || undefined,
+          }),
+        });
+        const res = await fetch('/api/ai-settings/test', { method: 'POST', credentials: 'include' });
+        const data = await res.json();
+        setTestResult(
+          data.success
+            ? { success: true, message: `Connection OK: "${data.response}"` }
+            : { success: false, message: data.message || 'Test failed.' },
+        );
+        await refresh();
+      }
+    } catch {
+      setTestResult({ success: false, message: 'Connection error.' });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const handleQuickTest = async (s: MaskedAiSetting) => {
+    setTestingName(s.name);
+    setTestResult(null);
+    try {
+      const res = await fetch(`/api/ai-settings/${encodeURIComponent(s.name)}/test`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      const data = await res.json();
+      setTestResult(
+        data.success
+          ? { success: true, message: `${s.label}: OK — "${data.response}"` }
+          : { success: false, message: `${s.label}: ${data.message || 'Test failed.'}` },
+      );
+    } catch {
+      setTestResult({ success: false, message: `${s.label}: connection error.` });
+    } finally {
+      setTestingName(null);
+    }
+  };
+
+  const handleDelete = async (s: MaskedAiSetting) => {
+    if (!window.confirm(`Delete AI setting "${s.label}"?`)) return;
+    try {
+      await fetch(`/api/ai-settings/${encodeURIComponent(s.name)}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      if (editingName === s.name) setEditingName(null);
+      await refresh();
+    } catch {
+      // ignore
+    }
+  };
+
+  const saveRouterOnly = async () => {
+    setSaving(true);
+    try {
+      const fallback = settings[0];
       await fetch('/api/ai-settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
-          provider,
-          apiKey,
-          model: model || undefined,
-          baseUrl: baseUrl || undefined,
+          provider: fallback?.provider ?? 'anthropic',
+          apiKey: fallback?.apiKey ?? '',
+          model: fallback?.model,
+          baseUrl: fallback?.baseUrl,
           routerEnabled,
           classifierProvider: routerEnabled ? classifierProvider : undefined,
           classifierModel: routerEnabled ? classifierModel || undefined : undefined,
@@ -156,22 +345,12 @@ export default function AiSettings() {
           injectionThreshold: routerEnabled ? injectionThreshold / 100 : undefined,
         }),
       });
-
-      const res = await fetch('/api/ai-settings/test', {
-        method: 'POST',
-        credentials: 'include',
-      });
-      const data = await res.json();
-      if (data.success) {
-        setTestResult({ success: true, message: `Connection OK: "${data.response}"` });
-        setConfigured(true);
-      } else {
-        setTestResult({ success: false, message: data.message || 'Test failed.' });
-      }
+      setSaveResult('Router settings saved.');
     } catch {
-      setTestResult({ success: false, message: 'Connection error.' });
+      setSaveResult('Failed to save router.');
     } finally {
-      setTesting(false);
+      setSaving(false);
+      setTimeout(() => setSaveResult(null), 3000);
     }
   };
 
@@ -185,31 +364,44 @@ export default function AiSettings() {
     { value: 'custom', label: 'Custom', desc: 'OpenAI-compatible (Ollama, vLLM...)' },
   ];
 
-  return (
-    <div className="space-y-4">
+  const renderEditForm = () => (
+    <div className="space-y-4 p-4 rounded-lg border border-os-600/40 bg-os-700/5 mt-2">
       <div className="flex items-center justify-between">
+        <h3 className="eyebrow">{isCreating ? 'New AI Setting' : `Edit "${editingName}"`}</h3>
+        <button onClick={cancelEdit} className="text-xs text-gray-400 hover:text-gray-200">
+          Close
+        </button>
+      </div>
+
+      {/* Identity */}
+      <div className="grid grid-cols-2 gap-3">
         <div>
-          <div className="flex items-center gap-2">
-            <h2 className="heading-md">AI Settings</h2>
-            <HelpTip
-              content="Configure the LLM provider used by the Calame chat. All users share this configuration — their API key is never exposed. The model selects available MCP tools based on each user's connection profile."
-              position="right"
-              maxWidth={320}
-            />
-          </div>
-          <p className="text-sm text-gray-500 mt-1">
-            Configure the AI provider for user chat. Users will use this configuration.
+          <label className="text-sm text-gray-400">
+            Name <span className="text-red-400">*</span>
+          </label>
+          <input
+            type="text"
+            value={formName}
+            onChange={(e) => setFormName(e.target.value)}
+            disabled={!isCreating}
+            placeholder="prod-claude"
+            className="input-editorial w-full text-sm mt-1 disabled:opacity-60"
+          />
+          <p className="text-xs text-gray-600 mt-1">
+            Unique slug (lowercase, dash, underscore). Cannot be changed later.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <div
-            className={`w-2 h-2 rounded-full ${
-              configured ? 'bg-green-500 shadow-lg shadow-green-500/30' : 'bg-gray-600'
-            }`}
+        <div>
+          <label className="text-sm text-gray-400">
+            Label <span className="text-red-400">*</span>
+          </label>
+          <input
+            type="text"
+            value={formLabel}
+            onChange={(e) => setFormLabel(e.target.value)}
+            placeholder="Production Claude"
+            className="input-editorial w-full text-sm mt-1"
           />
-          <span className="text-sm text-gray-400">
-            {configured ? 'Configured' : 'Not configured'}
-          </span>
         </div>
       </div>
 
@@ -218,7 +410,7 @@ export default function AiSettings() {
         <div className="flex items-center gap-1.5 mb-2">
           <label className="text-sm text-gray-400">Provider</label>
           <HelpTip
-            content="LLM provider used for chat. Anthropic provides direct access to Claude models. OpenRouter is a multi-model gateway (Claude, GPT, Gemini, etc.). Custom lets you use a local OpenAI-compatible server such as Ollama or vLLM."
+            content="LLM provider used for chat. Anthropic provides direct access to Claude models. OpenRouter is a multi-model gateway. Custom lets you use a local OpenAI-compatible server such as Ollama or vLLM."
             position="right"
             maxWidth={320}
           />
@@ -243,25 +435,28 @@ export default function AiSettings() {
         </div>
       </div>
 
-      {/* API Key — for anthropic and openrouter */}
+      {/* Model — shown above the API key */}
+      {(provider === 'openrouter' || provider === 'custom') && (
+        <div>
+          <label className="text-sm text-gray-400">Model</label>
+          <input
+            type="text"
+            value={model}
+            onChange={(e) => updateField('model', e.target.value)}
+            placeholder={provider === 'openrouter' ? 'anthropic/claude-sonnet-4' : 'llama3, mistral, etc.'}
+            className="input-editorial w-full text-sm mt-1"
+          />
+        </div>
+      )}
+
+      {/* API Key */}
       {provider !== 'custom' && (
         <div>
-          <div className="flex items-center gap-1.5 mb-1">
-            <label className="text-sm text-gray-400">
-              {provider === 'openrouter' ? 'OpenRouter API Key' : 'Anthropic API Key'}{' '}
-              <span className="text-red-400">*</span>
-            </label>
-            <HelpTip
-              content={
-                provider === 'openrouter'
-                  ? "OpenRouter API key — get it at openrouter.ai/keys. Starts with \"sk-or-\". Stored encrypted on the server and never exposed to chat users."
-                  : "Anthropic API key — get it at console.anthropic.com. Starts with \"sk-ant-\". Stored encrypted on the server. Make sure your account has access to the desired Claude models."
-              }
-              position="right"
-              maxWidth={320}
-            />
-          </div>
-          <div className="relative">
+          <label className="text-sm text-gray-400">
+            {provider === 'openrouter' ? 'OpenRouter API Key' : 'Anthropic API Key'}{' '}
+            <span className="text-red-400">*</span>
+          </label>
+          <div className="relative mt-1">
             <input
               type={showApiKey ? 'text' : 'password'}
               value={apiKey}
@@ -279,77 +474,35 @@ export default function AiSettings() {
         </div>
       )}
 
-      {/* API Key — optional for custom */}
       {provider === 'custom' && (
         <div>
-          <div className="flex items-center gap-1.5 mb-1">
-            <label className="text-sm text-gray-400">API Key (optional)</label>
-            <HelpTip
-              content="API key for your custom endpoint. Leave empty if your local server (Ollama, LM Studio) does not require authentication. Required for some vLLM deployments or OpenAI-compatible cloud services."
-              position="right"
-              maxWidth={320}
-            />
-          </div>
+          <label className="text-sm text-gray-400">API Key (optional)</label>
           <input
             type={showApiKey ? 'text' : 'password'}
             value={apiKey}
             onChange={(e) => updateField('apiKey', e.target.value)}
             placeholder="Leave empty if not required"
-            className="input-editorial w-full text-sm"
+            className="input-editorial w-full text-sm mt-1"
           />
         </div>
       )}
 
-      {/* Model — for openrouter and custom */}
-      {(provider === 'openrouter' || provider === 'custom') && (
-        <div>
-          <div className="flex items-center gap-1.5 mb-1">
-            <label className="text-sm text-gray-400">Model</label>
-            <HelpTip
-              content={
-                provider === 'openrouter'
-                  ? "OpenRouter model identifier in the format \"provider/model\" (e.g. anthropic/claude-sonnet-4, openai/gpt-4o, google/gemini-pro). See openrouter.ai/models for the full list and pricing."
-                  : "Model name as exposed by your local server (e.g. llama3, mistral, phi3). Must exactly match the name returned by /v1/models on your endpoint."
-              }
-              position="right"
-              maxWidth={340}
-            />
-          </div>
-          <input
-            type="text"
-            value={model}
-            onChange={(e) => updateField('model', e.target.value)}
-            placeholder={
-              provider === 'openrouter'
-                ? 'anthropic/claude-sonnet-4'
-                : 'llama3, mistral, etc.'
-            }
-            className="input-editorial w-full text-sm"
-          />
-        </div>
-      )}
-
-      {/* Base URL — for custom */}
       {provider === 'custom' && (
         <div>
-          <div className="flex items-center gap-1.5 mb-1">
-            <label className="text-sm text-gray-400">Base URL</label>
-            <HelpTip
-              content="Base URL of your OpenAI-compatible endpoint. The /v1 path is typically included. Examples: http://localhost:11434/v1 (Ollama), http://localhost:1234/v1 (LM Studio), http://localhost:8000/v1 (vLLM). Must be reachable from the Node.js server, not from the browser."
-              position="right"
-              maxWidth={340}
-            />
-          </div>
+          <label className="text-sm text-gray-400">Base URL</label>
           <input
             type="text"
             value={baseUrl}
             onChange={(e) => updateField('baseUrl', e.target.value)}
             placeholder="http://localhost:11434/v1"
-            className="input-editorial w-full text-sm"
+            className="input-editorial w-full text-sm mt-1"
           />
-          <p className="text-xs text-gray-600 mt-1">
-            OpenAI-compatible API URL (Ollama, vLLM, LM Studio, etc.)
-          </p>
+        </div>
+      )}
+
+      {formError && (
+        <div className="p-2.5 rounded-lg text-sm bg-red-950/30 border border-red-800/50 text-red-400">
+          {formError}
         </div>
       )}
 
@@ -358,26 +511,20 @@ export default function AiSettings() {
         <button
           onClick={handleSave}
           disabled={saving}
-          title="Enregistre la configuration IA sur le serveur. Tous les chats utilisateurs utiliseront ces paramètres immédiatement."
           className="px-4 py-2 rounded-lg bg-os-700 hover:bg-os-600 text-white text-sm font-medium transition-all duration-200 disabled:opacity-50 shadow-md shadow-os-900/20"
         >
-          {saving ? 'Saving...' : 'Save'}
+          {saving ? 'Saving...' : isCreating ? 'Create setting' : 'Save changes'}
         </button>
         <button
-          onClick={handleTest}
+          onClick={handleTestForm}
           disabled={testing}
-          title="Enregistre puis envoie un message de test « Bonjour » au fournisseur pour vérifier que la clé API et le modèle sont valides."
           className="px-4 py-2 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-300 text-sm font-medium transition-all duration-200 disabled:opacity-50"
         >
-          {testing ? 'Testing...' : 'Test Connection'}
+          {testing ? 'Testing...' : 'Test connection'}
         </button>
-
-        {saveResult && (
-          <span className="text-sm text-green-400">{saveResult}</span>
-        )}
+        {saveResult && <span className="text-sm text-green-400">{saveResult}</span>}
       </div>
 
-      {/* Test result */}
       {testResult && (
         <div
           className={`p-3 rounded-lg text-sm ${
@@ -389,11 +536,137 @@ export default function AiSettings() {
           {testResult.message}
         </div>
       )}
+    </div>
+  );
 
-      {/* Divider */}
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <h2 className="heading-md">AI Settings</h2>
+            <HelpTip
+              content="Configure one or more LLM providers. Each MCP server can be linked to several settings, and the chat user picks which one to use."
+              position="right"
+              maxWidth={340}
+            />
+          </div>
+          <p className="text-sm text-gray-500 mt-1">
+            Define the AI providers your MCP servers can use. Associate them per-MCP in the profile editor.
+          </p>
+        </div>
+        <button
+          onClick={startCreate}
+          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 shadow-md shadow-os-900/20 ${
+            isCreating
+              ? 'bg-gray-700/40 hover:bg-gray-700/60 text-gray-300'
+              : 'bg-os-700 hover:bg-os-600 text-white'
+          }`}
+        >
+          {isCreating ? 'Cancel' : '+ New AI Setting'}
+        </button>
+      </div>
+
+      {/* List with inline editing — selected row expands an edit panel just below itself. */}
+      <div className="space-y-2">
+        {settings.length === 0 && !isCreating && (
+          <div className="text-sm text-gray-500 italic px-3 py-6 text-center border border-dashed border-white/5 rounded-lg">
+            No AI setting yet. Click <span className="text-os-400">+ New AI Setting</span> to create one.
+          </div>
+        )}
+
+        {settings.map((s) => {
+          const isOpen = editingName === s.name;
+          return (
+            <div key={s.name}>
+              <div
+                role="button"
+                tabIndex={0}
+                aria-expanded={isOpen}
+                onClick={() => startEdit(s)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    startEdit(s);
+                  }
+                }}
+                className={`flex items-center justify-between p-3 rounded-lg border bg-gray-900/40 transition-colors cursor-pointer hover:border-white/10 focus:outline-none focus:ring-2 focus:ring-os-500/40 ${
+                  isOpen ? 'border-os-600/40' : 'border-white/5'
+                }`}
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-gray-200 truncate">{s.label}</span>
+                    <span className="text-xs text-gray-500">·</span>
+                    <span className="text-xs text-gray-500 truncate">{s.name}</span>
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ml-1 ${
+                        s.configured ? 'bg-green-500 shadow-md shadow-green-500/30' : 'bg-gray-600'
+                      }`}
+                      title={s.configured ? 'Configured' : 'Not configured'}
+                    />
+                  </div>
+                  <div className="text-xs text-gray-500 mt-0.5">
+                    {s.provider}
+                    {s.model ? ` · ${s.model}` : ''}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleQuickTest(s);
+                    }}
+                    disabled={testingName === s.name}
+                    className="px-2 py-1 rounded text-xs text-gray-300 hover:bg-gray-700/40 disabled:opacity-50"
+                  >
+                    {testingName === s.name ? 'Testing…' : 'Test'}
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDelete(s);
+                    }}
+                    className="px-2 py-1 rounded text-xs text-red-400 hover:bg-red-950/40"
+                  >
+                    Delete
+                  </button>
+                  <span
+                    aria-hidden="true"
+                    className={`text-xs text-gray-500 ml-1 transition-transform duration-200 ${
+                      isOpen ? 'rotate-180 text-os-400' : ''
+                    }`}
+                  >
+                    ▾
+                  </span>
+                </div>
+              </div>
+
+              {/* Inline edit panel — opens just below the selected row */}
+              {isOpen && renderEditForm()}
+            </div>
+          );
+        })}
+
+        {/* Create panel — shown at the bottom of the list when "+ New" is active */}
+        {isCreating && renderEditForm()}
+
+        {testResult && !editingName && (
+          <div
+            className={`p-3 rounded-lg text-sm ${
+              testResult.success
+                ? 'bg-green-950/30 border border-green-800/50 text-green-400'
+                : 'bg-red-950/30 border border-red-800/50 text-red-400'
+            }`}
+          >
+            {testResult.message}
+          </div>
+        )}
+      </div>
+
+      {/* ------------------------- LLM Router section ------------------------- */}
       <div className="border-t border-white/5 my-4"></div>
 
-      {/* LLM Router / Classifier */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div>
@@ -406,8 +679,8 @@ export default function AiSettings() {
               />
             </div>
             <p className="text-xs text-gray-500 mt-0.5">
-              Two-stage pipeline: lightweight classifier detects intent and blocks injection attempts
-              before the main LLM processes the query.
+              Two-stage pipeline: lightweight classifier detects intent and blocks injection attempts before
+              the main LLM processes the query.
             </p>
           </div>
           <label className="flex items-center gap-2 cursor-pointer">
@@ -423,110 +696,57 @@ export default function AiSettings() {
 
         {routerEnabled && (
           <div className="space-y-4 pl-2 border-l-2 border-white/10">
-            {/* Classifier Provider */}
             <div>
-              <div className="flex items-center gap-1.5 mb-1">
-                <label className="text-sm text-gray-400">Classifier Provider</label>
-                <HelpTip
-                  content="Provider for the classifier model. To optimize costs, choose a cheaper model than the main LLM (e.g. Claude Haiku when the main is Claude Sonnet). Custom/Ollama lets you run a completely free local model."
-                  position="right"
-                  maxWidth={340}
-                />
-              </div>
+              <label className="text-sm text-gray-400">Classifier Provider</label>
               <select
                 value={classifierProvider}
                 onChange={(e) => setClassifierProvider(e.target.value as ClassifierProvider)}
-                className="input-editorial w-full text-sm"
+                className="input-editorial w-full text-sm mt-1"
               >
                 <option value="anthropic">Anthropic (Claude)</option>
                 <option value="openrouter">OpenRouter</option>
                 <option value="custom">Custom / Ollama</option>
               </select>
-              <p className="text-xs text-gray-600 mt-1">
-                Use a lightweight model (Haiku, GPT-4o-mini) for cost efficiency.
-              </p>
             </div>
-
-            {/* Classifier Model */}
             <div>
-              <div className="flex items-center gap-1.5 mb-1">
-                <label className="text-sm text-gray-400">
-                  Classifier Model <span className="text-red-400">*</span>
-                </label>
-                <HelpTip
-                  content="Lightweight model used for classification. Prefer fast, cost-effective models: claude-haiku-4-5 (Anthropic), gpt-4o-mini (OpenAI via OpenRouter), llama3:8b (local Ollama). Classification quality does not require a large model."
-                  position="right"
-                  maxWidth={340}
-                />
-              </div>
+              <label className="text-sm text-gray-400">
+                Classifier Model <span className="text-red-400">*</span>
+              </label>
               <input
                 type="text"
                 value={classifierModel}
                 onChange={(e) => setClassifierModel(e.target.value)}
-                placeholder={
-                  classifierProvider === 'anthropic'
-                    ? 'claude-haiku-4-5-20251001'
-                    : 'gpt-4o-mini'
-                }
-                className="input-editorial w-full text-sm"
+                placeholder={classifierProvider === 'anthropic' ? 'claude-haiku-4-5-20251001' : 'gpt-4o-mini'}
+                className="input-editorial w-full text-sm mt-1"
               />
             </div>
-
-            {/* Classifier API Key */}
             <div>
-              <div className="flex items-center gap-1.5 mb-1">
-                <label className="text-sm text-gray-400">Classifier API Key</label>
-                <HelpTip
-                  content="Dedicated API key for the classifier. Leave empty to reuse the main provider's key. Useful when the classifier uses a different provider or a separate account for cost tracking."
-                  position="right"
-                  maxWidth={320}
-                />
-              </div>
+              <label className="text-sm text-gray-400">Classifier API Key</label>
               <input
                 type="password"
                 value={classifierApiKey}
                 onChange={(e) => setClassifierApiKey(e.target.value)}
                 placeholder="sk-..."
-                className="input-editorial w-full text-sm"
+                className="input-editorial w-full text-sm mt-1"
               />
-              <p className="text-xs text-gray-600 mt-1">
-                Leave empty to use the same key as the main provider.
-              </p>
+              <p className="text-xs text-gray-600 mt-1">Leave empty to use the same key as the main provider.</p>
             </div>
-
-            {/* Classifier Endpoint — only for custom/Ollama */}
             {classifierProvider === 'custom' && (
               <div>
-                <div className="flex items-center gap-1.5 mb-1">
-                  <label className="text-sm text-gray-400">Classifier Endpoint</label>
-                  <HelpTip
-                    content="Base URL of the OpenAI-compatible endpoint for the classifier. Can differ from the main endpoint (e.g. local Ollama classifier + main LLM on a separate vLLM server)."
-                    position="right"
-                    maxWidth={320}
-                  />
-                </div>
+                <label className="text-sm text-gray-400">Classifier Endpoint</label>
                 <input
                   type="text"
                   value={classifierEndpoint}
                   onChange={(e) => setClassifierEndpoint(e.target.value)}
                   placeholder="http://localhost:11434/v1"
-                  className="input-editorial w-full text-sm"
+                  className="input-editorial w-full text-sm mt-1"
                 />
               </div>
             )}
-
-            {/* Injection Detection Threshold */}
             <div>
-              <div className="flex items-center gap-1.5 mb-1">
-                <label className="text-sm text-gray-400">
-                  Injection Detection Threshold: {injectionThreshold}%
-                </label>
-                <HelpTip
-                  content="Confidence threshold above which the classifier blocks a message as an injection attempt. Low value (50-65%): very strict, may block ambiguous legitimate queries. High value (85-100%): permissive, passes more requests but less secure. Recommended value: 75-80%."
-                  position="left"
-                  maxWidth={340}
-                />
-              </div>
+              <label className="text-sm text-gray-400">
+                Injection Detection Threshold: {injectionThreshold}%
+              </label>
               <input
                 type="range"
                 min={50}
@@ -542,6 +762,14 @@ export default function AiSettings() {
             </div>
           </div>
         )}
+
+        <button
+          onClick={saveRouterOnly}
+          disabled={saving}
+          className="px-3 py-1.5 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-300 text-sm font-medium transition-all duration-200 disabled:opacity-50"
+        >
+          Save router settings
+        </button>
       </div>
     </div>
   );

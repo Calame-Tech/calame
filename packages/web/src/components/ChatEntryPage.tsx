@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import type { AuthMode } from '../types/schema.js';
+import DarkSelect from './ui/DarkSelect.js';
 
 interface ChatEntryPageProps {
   profileName: string;
@@ -11,6 +12,8 @@ interface ChatProfile {
   authMode: AuthMode;
   oauthProvider?: string;
   active: boolean;
+  /** AI settings the user can pick from. First entry is the default. */
+  aiSettings?: Array<{ name: string; label: string }>;
 }
 
 interface ChatMessage {
@@ -28,10 +31,17 @@ type PageState =
 // ---------------------------------------------------------------------------
 // Inline chat panel — same design as UserChatPanel but bound to one profile
 // ---------------------------------------------------------------------------
-function InlineChatPanel({ profileName }: { profileName: string }) {
+function InlineChatPanel({
+  profileName,
+  aiSettings,
+}: {
+  profileName: string;
+  aiSettings?: Array<{ name: string; label: string }>;
+}) {
   const [chatInput, setChatInput] = useState('');
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatLoading, setChatLoading] = useState(false);
+  const [selectedAi, setSelectedAi] = useState<string | undefined>(aiSettings?.[0]?.name);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -58,6 +68,7 @@ function InlineChatPanel({ profileName }: { profileName: string }) {
           message: userMessage,
           history: chatMessages,
           profileName,
+          aiSettingName: selectedAi,
         }),
       });
       const data = await res.json();
@@ -125,6 +136,21 @@ function InlineChatPanel({ profileName }: { profileName: string }) {
           </div>
         )}
       </div>
+
+      {/* AI selector — shown only when multiple settings are available for this MCP */}
+      {aiSettings && aiSettings.length > 1 && (
+        <div className="border-t border-white/5 px-3 py-2 flex items-center gap-2">
+          <span className="text-xs text-gray-500">AI:</span>
+          <DarkSelect
+            ariaLabel="AI provider"
+            size="xs"
+            value={selectedAi ?? ''}
+            options={aiSettings.map((s) => ({ value: s.name, label: s.label }))}
+            onChange={(v) => setSelectedAi(v || undefined)}
+            disabled={chatLoading}
+          />
+        </div>
+      )}
 
       {/* Input */}
       <div className="border-t border-white/5 p-3 flex gap-2">
@@ -543,7 +569,7 @@ function ChatView({ profile, onLogout }: { profile: ChatProfile; onLogout: () =>
 
       {/* Chat panel — fills remaining height */}
       <main className="flex-1 flex flex-col min-h-0 p-4 sm:p-6 max-w-4xl mx-auto w-full">
-        <InlineChatPanel profileName={profile.name} />
+        <InlineChatPanel profileName={profile.name} aiSettings={profile.aiSettings} />
       </main>
     </div>
   );

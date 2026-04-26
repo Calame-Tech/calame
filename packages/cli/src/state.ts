@@ -5,7 +5,7 @@ import type { TokenManager } from './token.js';
 import type { UserManager } from './user.js';
 import type { AuditLog } from './audit.js';
 import type { WriteQueue } from './write-queue.js';
-import type { AiConfigManager } from './ai-config.js';
+import type { AiSettingsManager } from './ai-config.js';
 import type { SmtpConfigManager } from './smtp-config.js';
 import type { OidcConfigManager } from './oidc-config.js';
 import type { AppConfig } from './config.js';
@@ -28,7 +28,7 @@ export class AppState {
   private _userManager: UserManager | null = null;
   private _auditLog: AuditLog | null = null;
   private _writeQueue: WriteQueue | null = null;
-  private _aiConfigManager: AiConfigManager | null = null;
+  private _aiSettingsManager: AiSettingsManager | null = null;
   private _smtpConfigManager: SmtpConfigManager | null = null;
   private _oidcConfigManager: OidcConfigManager | null = null;
   private _rateLimiter: TokenRateLimiter | null = null;
@@ -196,12 +196,22 @@ export class AppState {
     this._writeQueue = value;
   }
 
-  get aiConfigManager(): AiConfigManager | null {
-    return this._aiConfigManager;
+  get aiSettingsManager(): AiSettingsManager | null {
+    return this._aiSettingsManager;
   }
 
-  set aiConfigManager(value: AiConfigManager | null) {
-    this._aiConfigManager = value;
+  set aiSettingsManager(value: AiSettingsManager | null) {
+    this._aiSettingsManager = value;
+  }
+
+  /** @deprecated Use aiSettingsManager. Kept for transitional callers. */
+  get aiConfigManager(): AiSettingsManager | null {
+    return this._aiSettingsManager;
+  }
+
+  /** @deprecated Use aiSettingsManager. Kept for transitional callers. */
+  set aiConfigManager(value: AiSettingsManager | null) {
+    this._aiSettingsManager = value;
   }
 
   get smtpConfigManager(): SmtpConfigManager | null {

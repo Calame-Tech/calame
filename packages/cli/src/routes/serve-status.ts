@@ -36,6 +36,7 @@ export function registerServeStatusRoute(app: Express, state: AppState): void {
           responseMode: p.responseMode as ServeProfile['responseMode'],
           dataScopeRules: p.dataScopeRules as ServeProfile['dataScopeRules'],
           sharedTables: p.sharedTables as ServeProfile['sharedTables'],
+          aiSettingNames: p.aiSettingNames as string[] | undefined,
         } as ServeProfile;
       }
       // Backward compat: set default connections on profiles that lack the field
@@ -140,6 +141,7 @@ export function registerServeStatusRoute(app: Express, state: AppState): void {
           responseMode: p.responseMode as ServeProfile['responseMode'],
           dataScopeRules: p.dataScopeRules as ServeProfile['dataScopeRules'],
           sharedTables: p.sharedTables as ServeProfile['sharedTables'],
+          aiSettingNames: p.aiSettingNames as string[] | undefined,
         } as ServeProfile;
       }
 
@@ -297,6 +299,9 @@ export function registerServeStatusRoute(app: Express, state: AppState): void {
           oauthConfig: profileRaw.oauthConfig as ServeProfile['oauthConfig'],
           externalAuthConfig: profileRaw.externalAuthConfig as ServeProfile['externalAuthConfig'],
           responseMode: profileRaw.responseMode as ServeProfile['responseMode'],
+          dataScopeRules: profileRaw.dataScopeRules as ServeProfile['dataScopeRules'],
+          sharedTables: profileRaw.sharedTables as ServeProfile['sharedTables'],
+          aiSettingNames: profileRaw.aiSettingNames as string[] | undefined,
         } as ServeProfile;
 
         // If profile uses configurations, resolve them to get the latest selectedTables

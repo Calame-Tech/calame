@@ -22,6 +22,7 @@ const loginSchema = z.object({
 const userChatSchema = z.object({
   message: z.string().min(1, 'Message is required'),
   profileName: z.string().min(1, 'Profile name is required'),
+  aiSettingName: z.string().min(1).optional(),
   history: z
     .array(z.object({ role: z.string(), content: z.string() }))
     .optional(),
@@ -49,6 +50,7 @@ import {
   validateUserSession,
 } from '../session.js';
 import { createMcpChatTools, executeChatTurn, getDefaultSystemPrompt } from '../chat-engine.js';
+import { resolveAiSetting } from '../ai-resolver.js';
 
 export function registerAuthRoute(app: Express, state: AppState): void {
   /**
@@ -543,14 +545,15 @@ export function registerAuthRoute(app: Express, state: AppState): void {
       return;
     }
 
-    const { message, history, profileName } = chatParsed.data;
+    const { message, history, profileName, aiSettingName } = chatParsed.data;
 
-    // Check AI config — required regardless of authMode
-    const aiConfig = state.aiConfigManager?.getConfig();
-    if (!aiConfig || !state.aiConfigManager?.isConfigured()) {
-      res.status(503).json({ success: false, message: 'AI chat is not configured by the administrator.' });
+    // Resolve which AI setting to use (request param > profile default > global fallback).
+    const aiResolution = resolveAiSetting(state, profileName, aiSettingName);
+    if (!aiResolution.ok) {
+      res.status(aiResolution.status).json({ success: false, message: aiResolution.message });
       return;
     }
+    const aiConfig = aiResolution.setting;
 
     // --- Open mode: bypass user session entirely ---
     const serveProfile = state.serveProfiles[profileName];

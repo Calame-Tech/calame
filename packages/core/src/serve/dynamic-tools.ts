@@ -46,6 +46,21 @@ interface DynamicToolsOptions {
    * just appear as their friendly type label (no enum hint).
    */
   distinctValuesByTable?: Record<string, Record<string, unknown[]>>;
+  /**
+   * When the number of visible tables exceeds this threshold, the catalogue
+   * baked into the description of `aggregate` / `query` / `join_aggregate`
+   * collapses to a one-line-per-table summary (name, column count, FK
+   * targets) instead of listing every column inline. The LLM uses
+   * `describe(table=<name>)` to recover the full column metadata when it
+   * needs it.
+   *
+   * Without this fallback, profiles with ~100+ visible tables blow past
+   * the 32k context window of small models (the per-table verbose entry
+   * costs ~280 tokens; 200 tables = 56k tokens of catalogue alone).
+   *
+   * Default: 100. Set to a very large number to force the verbose form.
+   */
+  catalogueCompactThreshold?: number;
 }
 
 /** Shared context passed to register* helpers to avoid long parameter lists. */
@@ -244,12 +259,19 @@ interface AccessibleTable {
 }
 
 // Build the catalogue text baked in `aggregate` and `query` tool descriptions.
-// Mentions every visible column with a 1-letter type tag, low-cardinality
-// enums when available, and FK arrows so the LLM can plan multi-hop queries.
+// Verbose form mentions every visible column with its type tag, low-cardinality
+// enum values when available, and FK arrows so the LLM can plan multi-hop
+// queries. Switches to a compact one-line-per-table summary when the visible
+// tables exceed `compactThreshold` so very large schemas don't blow the
+// manifest past small-model context windows.
 function buildCatalogue(
   accessible: AccessibleTable[],
   distinctValuesByTable: Record<string, Record<string, unknown[]>>,
+  compactThreshold = 100,
 ): string {
+  const useCompact = accessible.length > compactThreshold;
+  if (useCompact) return buildCompactCatalogue(accessible);
+
   const lines: string[] = ['TABLES & COLUMNS:'];
   for (const at of accessible) {
     const cols: string[] = [];
@@ -267,6 +289,31 @@ function buildCatalogue(
       cols.push(`${col.name}(${typeLabel})${fkSuffix}`);
     }
     lines.push(`  ${at.table.name}: ${cols.join(', ')}`);
+  }
+  lines.push('');
+  lines.push('OPS: eq, neq, gt, gte, lt, lte (single value), between (value=[min,max]),');
+  lines.push('     in (value=array), is_null, is_not_null (omit value)');
+  return lines.join('\n');
+}
+
+// Compact catalogue used when the schema has too many tables to list every
+// column inline. Each row is one table with its visible-column count and the
+// names of the tables it references through outbound FKs. The LLM uses
+// `describe(table=<name>)` when it needs the full column metadata.
+function buildCompactCatalogue(accessible: AccessibleTable[]): string {
+  const lines: string[] = [
+    `TABLES (compact mode — ${accessible.length} tables; call describe(table=<name>) for full column metadata):`,
+  ];
+  for (const at of accessible) {
+    const fkTargets = Array.from(
+      new Set(
+        at.relations
+          .filter(r => r.fromTable === at.table.name)
+          .map(r => r.toTable),
+      ),
+    );
+    const fkSuffix = fkTargets.length > 0 ? ` → ${fkTargets.join(', ')}` : '';
+    lines.push(`  ${at.table.name}: ${at.visibleColumns.length} cols${fkSuffix}`);
   }
   lines.push('');
   lines.push('OPS: eq, neq, gt, gte, lt, lte (single value), between (value=[min,max]),');
@@ -464,7 +511,11 @@ export function registerDynamicTools(options: DynamicToolsOptions): void {
   if (accessible.length === 0) return;
 
   const distinctValuesByTable = options.distinctValuesByTable ?? {};
-  const catalogue = buildCatalogue(accessible, distinctValuesByTable);
+  const catalogue = buildCatalogue(
+    accessible,
+    distinctValuesByTable,
+    options.catalogueCompactThreshold,
+  );
 
   registerListTablesGeneric(ctx, accessible);
   registerAggregateGeneric(ctx, accessible, catalogue);

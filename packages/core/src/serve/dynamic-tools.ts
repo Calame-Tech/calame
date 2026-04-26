@@ -390,6 +390,14 @@ export function registerDynamicTools(options: DynamicToolsOptions): void {
   // table had no numeric columns or no visible columns).
   const registeredToolsByTable = new Map<string, string[]>();
 
+  // -----------------------------------------------------------------------
+  // join_aggregate (global multi-table tool)
+  // -----------------------------------------------------------------------
+  registerJoinAggregateTool(ctx, visibleTables, relations, selectedTables, tableOptions, columnMasking);
+
+  // -----------------------------------------------------------------------
+  // Per-table tools
+  // -----------------------------------------------------------------------
   for (const table of visibleTables) {
     const selectedCols = selectedTables[table.name];
     if (!selectedCols || selectedCols.length === 0) continue;
@@ -470,6 +478,375 @@ export function registerDynamicTools(options: DynamicToolsOptions): void {
   // list_tables — reflects the actual manifest, not aspirational settings
   // -----------------------------------------------------------------------
   registerListTables(ctx, visibleTables, selectedTables, columnMasking, registeredToolsByTable);
+}
+
+// ---------------------------------------------------------------------------
+// join_aggregate tool — global, multi-table
+// ---------------------------------------------------------------------------
+//
+// One-shot SQL aggregate over a JOIN of two tables. Lets a chat client answer
+// cross-table analytic questions ("top livreurs par nombre de colis livrés")
+// without paginating per-table tools.
+//
+// Reuses every existing security mechanism:
+//   - selectedTables / excluded columns (via columnMasking)
+//   - PII masking (post-query, applied to the GROUP BY column only — aggregates
+//     are computed numbers and don't carry PII)
+//   - Row-level scoping (filters from scopeGuard injected for BOTH tables)
+//   - LIMIT cap (default 1000)
+//   - Audit logging via executeWithAudit()
+//
+// Joins are restricted to declared foreign keys (relations introspected from
+// the source DB) to keep the surface tight.
+
+function registerJoinAggregateTool(
+  ctx: ToolContext,
+  visibleTables: TableInfo[],
+  relations: Relation[],
+  selectedTables: Record<string, string[]>,
+  tableOptions: Record<string, TableToolOptions> | undefined,
+  columnMasking: Record<string, Record<string, ColumnMasking>> | undefined,
+): void {
+  const { server, executeQuery, dialect, onAuditLog, profileName, responseMode, wrapResponse, scopeGuard } = ctx;
+  const friendly = responseMode === 'friendly';
+
+  // Only consider tables where the per-table 'aggregate' tool is enabled —
+  // disabling aggregate on a table must also disable join_aggregate against it.
+  // Default enabledTools (when tableOptions is missing) already include 'aggregate'.
+  const aggregateEnabled = (tableName: string): boolean => {
+    const enabled = tableOptions?.[tableName]?.enabledTools ?? ['describe', 'aggregate', 'query'];
+    return enabled.includes('aggregate');
+  };
+
+  // Filter out tables blocked by scope rules — same logic as per-table tools.
+  const accessibleTables = visibleTables.filter((t) => {
+    if (!aggregateEnabled(t.name)) return false;
+    if (scopeGuard.active) {
+      try { scopeGuard.checkTableAccess(t.name); }
+      catch { return false; }
+    }
+    return true;
+  });
+
+  if (accessibleTables.length < 2) return; // Nothing to join.
+
+  // Per-table column metadata (columns visible after selectedTables + masking).
+  interface TableMeta {
+    info: TableInfo;
+    schema: string;
+    numeric: string[];
+    filterable: string[];
+    groupable: string[];
+    maskingRules: Record<string, MaskingRule>;
+    labelMap: Record<string, string>;
+  }
+  const meta: Record<string, TableMeta> = {};
+
+  for (const t of accessibleTables) {
+    const selectedCols = selectedTables[t.name];
+    if (!selectedCols || selectedCols.length === 0) continue;
+
+    const tableMasking = columnMasking?.[t.name];
+    const maskingRules = tableMasking ? buildMaskingRules(tableMasking) : {};
+    const excludedCols = new Set<string>();
+    if (tableMasking) {
+      for (const [colName, m] of Object.entries(tableMasking)) {
+        if (m.maskingMode === 'exclude') excludedCols.add(colName);
+      }
+    }
+
+    const visibleColumns = t.columns.filter(
+      (c) => selectedCols.includes(c.name) && !excludedCols.has(c.name),
+    );
+
+    const opts = tableOptions?.[t.name];
+    const allFilterable = visibleColumns.filter((c) => pgTypeToZod(c.type) !== null);
+    const filterableCols = opts?.filterableColumns && opts.filterableColumns.length > 0
+      ? allFilterable.filter((c) => opts.filterableColumns.includes(c.name))
+      : allFilterable;
+    const groupable = (
+      opts?.groupableColumns && opts.groupableColumns.length > 0
+        ? opts.groupableColumns
+        : filterableCols.map((c) => c.name)
+    ).filter((c) => !excludedCols.has(c));
+
+    meta[t.name] = {
+      info: t,
+      schema: t.schema || 'public',
+      numeric: visibleColumns.filter((c) => isNumericType(c.type)).map((c) => c.name),
+      filterable: filterableCols.map((c) => c.name),
+      groupable,
+      maskingRules,
+      labelMap: buildLabelMap(visibleColumns.map((c) => ({ name: c.name }))),
+    };
+  }
+
+  const tableNames = Object.keys(meta);
+  if (tableNames.length < 2) return;
+
+  // Restrict to pairs that have at least one declared relation (FK).
+  const joinable = new Set<string>();
+  for (const r of relations) {
+    if (meta[r.fromTable] && meta[r.toTable]) {
+      joinable.add(r.fromTable);
+      joinable.add(r.toTable);
+    }
+  }
+  if (joinable.size < 2) return; // No FK between any of the visible tables.
+
+  const tableEnum = zodEnum(tableNames);
+  if (!tableEnum) return;
+
+  /** Find a foreign-key path between two tables (in either direction). */
+  function findRelation(a: string, b: string): { aColumn: string; bColumn: string } | null {
+    for (const r of relations) {
+      if (r.fromTable === a && r.toTable === b) return { aColumn: r.fromColumn, bColumn: r.toColumn };
+      if (r.fromTable === b && r.toTable === a) return { aColumn: r.toColumn, bColumn: r.fromColumn };
+    }
+    return null;
+  }
+
+  const filterSchema = z.object({
+    op: z.enum(['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'between', 'in']),
+    value: z.any(),
+  });
+
+  const inputShape: Record<string, z.ZodTypeAny> = {
+    primary_table: tableEnum,
+    join_table: tableEnum,
+    aggregation: z.enum(['count', 'sum', 'avg', 'min', 'max']),
+    aggregation_column: z.string().optional().describe('Required for sum/avg/min/max. Column from the table given by aggregation_column_table.'),
+    aggregation_column_table: z.enum(['primary', 'join']).optional().default('primary').describe('Which side of the join the aggregation_column belongs to.'),
+    filters: z.record(z.string(), filterSchema).optional().describe('Filters applied to primary_table.'),
+    join_filters: z.record(z.string(), filterSchema).optional().describe('Filters applied to join_table.'),
+    group_by_column: z.string().optional().describe('Optional column to GROUP BY.'),
+    group_by_table: z.enum(['primary', 'join']).optional().default('primary').describe('Which side of the join the group_by_column belongs to.'),
+    order_direction: z.enum(['asc', 'desc']).optional().describe('Sort by the aggregate result. Useful for top-N questions.'),
+    limit: z.number().optional().default(20).describe('Max rows, capped at 1000.'),
+  };
+
+  const desc = friendly
+    ? 'Effectue un JOIN entre deux tables liées par clé étrangère et retourne un agrégat (count/sum/avg/min/max) avec GROUP BY optionnel. À utiliser pour les questions analytiques croisées (ex. "top livreurs par nombre de colis livrés") sans paginer 20 000 lignes via les outils par-table.'
+    : 'Aggregate over a JOIN of two FK-linked tables (count/sum/avg/min/max with optional GROUP BY). Use this for cross-table analytics instead of paginating per-table tools.';
+
+  server.tool(
+    'join_aggregate',
+    desc,
+    inputShape as AnyToolArgs,
+    async (args: Record<string, unknown>) => {
+      const {
+        primary_table,
+        join_table,
+        aggregation,
+        aggregation_column,
+        aggregation_column_table = 'primary',
+        filters,
+        join_filters,
+        group_by_column,
+        group_by_table = 'primary',
+        order_direction,
+        limit,
+      } = args as {
+        primary_table: string;
+        join_table: string;
+        aggregation: 'count' | 'sum' | 'avg' | 'min' | 'max';
+        aggregation_column?: string;
+        aggregation_column_table?: 'primary' | 'join';
+        filters?: Record<string, FilterValue | undefined>;
+        join_filters?: Record<string, FilterValue | undefined>;
+        group_by_column?: string;
+        group_by_table?: 'primary' | 'join';
+        order_direction?: 'asc' | 'desc';
+        limit?: number;
+      };
+
+      return executeWithAudit(
+        { executeQuery, dialect, onAuditLog, profileName, toolName: 'join_aggregate', toolArgs: args },
+        async (exec) => {
+          if (primary_table === join_table) {
+            return {
+              content: [{ type: 'text' as const, text: 'primary_table and join_table must be different.' }],
+              isError: true,
+            };
+          }
+          const pMeta = meta[primary_table];
+          const jMeta = meta[join_table];
+          if (!pMeta || !jMeta) {
+            return {
+              content: [{ type: 'text' as const, text: 'One of the tables is not accessible in this profile.' }],
+              isError: true,
+            };
+          }
+
+          // Resolve the JOIN path via declared foreign keys.
+          const rel = findRelation(primary_table, join_table);
+          if (!rel) {
+            return {
+              content: [{
+                type: 'text' as const,
+                text: `No declared foreign-key relation between "${primary_table}" and "${join_table}". join_aggregate only joins tables linked by an FK.`,
+              }],
+              isError: true,
+            };
+          }
+
+          const pAlias = 'p';
+          const jAlias = 'j';
+
+          // Resolve aggregation target.
+          const aggMeta = aggregation_column_table === 'join' ? jMeta : pMeta;
+          const aggAlias = aggregation_column_table === 'join' ? jAlias : pAlias;
+          const aggTableName = aggregation_column_table === 'join' ? join_table : primary_table;
+
+          let selectExpr: string;
+          if (aggregation === 'count' && !aggregation_column) {
+            selectExpr = 'COUNT(*) as result';
+          } else if (!aggregation_column) {
+            return {
+              content: [{ type: 'text' as const, text: 'aggregation_column is required for sum, avg, min, max.' }],
+              isError: true,
+            };
+          } else {
+            if (!aggMeta.numeric.includes(aggregation_column)) {
+              return {
+                content: [{ type: 'text' as const, text: `Invalid aggregation column "${aggregation_column}" for table "${aggTableName}".` }],
+                isError: true,
+              };
+            }
+            selectExpr = `${aggregation.toUpperCase()}(${aggAlias}.${dialect.quoteIdent(aggregation_column)}) as result`;
+          }
+
+          // Resolve GROUP BY target.
+          let selectPrefix = '';
+          let groupByClause = '';
+          let groupByOriginal: { table: string; column: string } | null = null;
+          if (group_by_column) {
+            const gbMeta = group_by_table === 'join' ? jMeta : pMeta;
+            const gbAlias = group_by_table === 'join' ? jAlias : pAlias;
+            const gbTableName = group_by_table === 'join' ? join_table : primary_table;
+            if (!gbMeta.groupable.includes(group_by_column)) {
+              return {
+                content: [{ type: 'text' as const, text: `Invalid group_by_column "${group_by_column}" for table "${gbTableName}".` }],
+                isError: true,
+              };
+            }
+            const qualified = `${gbAlias}.${dialect.quoteIdent(group_by_column)}`;
+            // Alias the group-by column so the result key stays stable even if
+            // the same name exists on the other side.
+            selectPrefix = `${qualified} as ${dialect.quoteIdent(group_by_column)}, `;
+            groupByClause = `GROUP BY ${qualified}`;
+            groupByOriginal = { table: gbTableName, column: group_by_column };
+          }
+
+          // Build WHERE — prefix every column with its alias so the JOIN is
+          // unambiguous. Scope filters first (mandatory), then user filters.
+          let paramIndex = 1;
+          const conditions: string[] = [];
+          const values: unknown[] = [];
+          const scopeInfo = scopeGuard.getScopeInfo();
+
+          const buildPrefixedFilters = (
+            tableName: string,
+            alias: string,
+            userFilters: Record<string, FilterValue | undefined> | undefined,
+            allowed: string[],
+          ): { ok: true } | { ok: false; message: string } => {
+            // Scope filters
+            for (const sf of scopeInfo.filters.filter((f) => f.tableName === tableName)) {
+              conditions.push(`${alias}.${dialect.quoteIdent(sf.column)} = ${dialect.param(paramIndex++)}`);
+              values.push(sf.value);
+            }
+            // User filters
+            if (!userFilters) return { ok: true };
+            const allowedSet = new Set(allowed);
+            for (const [col, filter] of Object.entries(userFilters)) {
+              if (!filter) continue;
+              if (!allowedSet.has(col)) {
+                return { ok: false, message: `Column "${col}" is not filterable for table "${tableName}".` };
+              }
+              const qi = `${alias}.${dialect.quoteIdent(col)}`;
+              switch (filter.op) {
+                case 'eq': conditions.push(`${qi} = ${dialect.param(paramIndex++)}`); values.push(filter.value); break;
+                case 'neq': conditions.push(`${qi} != ${dialect.param(paramIndex++)}`); values.push(filter.value); break;
+                case 'gt': conditions.push(`${qi} > ${dialect.param(paramIndex++)}`); values.push(filter.value); break;
+                case 'gte': conditions.push(`${qi} >= ${dialect.param(paramIndex++)}`); values.push(filter.value); break;
+                case 'lt': conditions.push(`${qi} < ${dialect.param(paramIndex++)}`); values.push(filter.value); break;
+                case 'lte': conditions.push(`${qi} <= ${dialect.param(paramIndex++)}`); values.push(filter.value); break;
+                case 'between': {
+                  const [min, max] = filter.value as [unknown, unknown];
+                  conditions.push(`${qi} >= ${dialect.param(paramIndex++)} AND ${qi} <= ${dialect.param(paramIndex++)}`);
+                  values.push(min, max);
+                  break;
+                }
+                case 'in':
+                  if (dialect.isPostgres) {
+                    conditions.push(`${qi} = ANY(${dialect.param(paramIndex++)})`);
+                    values.push(filter.value);
+                  } else {
+                    const arr = Array.isArray(filter.value) ? filter.value : [filter.value];
+                    const placeholders = arr.map(() => dialect.param(paramIndex++));
+                    conditions.push(`${qi} IN (${placeholders.join(', ')})`);
+                    values.push(...arr);
+                  }
+                  break;
+              }
+            }
+            return { ok: true };
+          };
+
+          const r1 = buildPrefixedFilters(primary_table, pAlias, filters, pMeta.filterable);
+          if (!r1.ok) return { content: [{ type: 'text' as const, text: r1.message }], isError: true };
+          const r2 = buildPrefixedFilters(join_table, jAlias, join_filters, jMeta.filterable);
+          if (!r2.ok) return { content: [{ type: 'text' as const, text: r2.message }], isError: true };
+
+          const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+          // ORDER BY — only by the aggregate result (top-N pattern).
+          const orderByClause = order_direction
+            ? `ORDER BY result ${order_direction === 'desc' ? 'DESC' : 'ASC'}`
+            : '';
+
+          // LIMIT
+          const cappedLimit = Math.min(limit ?? 20, 1000);
+          values.push(cappedLimit);
+          const limitParam = dialect.param(paramIndex);
+
+          const fromClause =
+            `FROM ${dialect.quoteTable(pMeta.schema, primary_table)} ${pAlias} ` +
+            `INNER JOIN ${dialect.quoteTable(jMeta.schema, join_table)} ${jAlias} ` +
+            `ON ${pAlias}.${dialect.quoteIdent(rel.aColumn)} = ${jAlias}.${dialect.quoteIdent(rel.bColumn)}`;
+
+          const sql = `SELECT ${selectPrefix}${selectExpr} ${fromClause} ${whereClause} ${groupByClause} ${orderByClause} LIMIT ${limitParam}`;
+
+          const result = await exec(sql, values);
+
+          // Apply masking ONLY on the GROUP BY column (aggregates are computed
+          // numbers — they don't carry PII).
+          let rows = result.rows;
+          if (groupByOriginal) {
+            const rules = meta[groupByOriginal.table].maskingRules;
+            const colRule = rules[groupByOriginal.column];
+            if (colRule) rows = applyMasking(rows, { [groupByOriginal.column]: colRule });
+          }
+
+          // Friendly mode: surface human labels for the group-by column.
+          const labelMap: Record<string, string> = {};
+          if (groupByOriginal) {
+            const tlMap = meta[groupByOriginal.table].labelMap;
+            if (tlMap[groupByOriginal.column]) {
+              labelMap[groupByOriginal.column] = tlMap[groupByOriginal.column];
+            }
+          }
+          const formattedRows = formatResponseRows(rows, labelMap, responseMode);
+
+          return {
+            content: [{ type: 'text' as const, text: wrapResponse(JSON.stringify(formattedRows, null, 2)) }],
+            resultSummary: `${rows.length} rows`,
+          };
+        },
+      );
+    },
+  );
 }
 
 // ---------------------------------------------------------------------------

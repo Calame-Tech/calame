@@ -8,9 +8,34 @@ import {
   registerDynamicTools,
   resolveUserScope,
   createScopeGuard,
+  computeDistinctValues,
 } from '@calame/core';
 import { readConfigurationsFile } from './configurations.js';
 import { INTERNAL_CHAT_SECRET } from '../chat-engine.js';
+
+// Distinct-values cache. Keyed by `profile|connection|selectedTables-hash|masking-hash`.
+// Built lazily on first MCP request per (profile, config) tuple; reused across
+// requests so we don't run ~50 SELECT DISTINCT queries on every tools/list call.
+// Flushed when the user reconfigures (the cache key encodes the relevant inputs).
+const distinctValuesCache = new Map<string, Record<string, Record<string, unknown[]>>>();
+
+function distinctValuesCacheKey(
+  profileName: string,
+  connectionString: string,
+  selectedTables: Record<string, string[]>,
+  columnMasking: Record<string, Record<string, ColumnMasking>> | undefined,
+): string {
+  // Stable JSON: sort keys at the top level.
+  const stTable = Object.keys(selectedTables).sort()
+    .map((k) => `${k}:${[...selectedTables[k]].sort().join(',')}`)
+    .join(';');
+  const cmTable = columnMasking
+    ? Object.keys(columnMasking).sort()
+        .map((k) => `${k}:${JSON.stringify(columnMasking[k])}`)
+        .join(';')
+    : '';
+  return `${profileName}|${connectionString}|${stTable}|${cmTable}`;
+}
 
 /** Masking mode restrictiveness order (lower index = less restrictive). */
 const MASKING_ORDER: readonly string[] = [
@@ -478,6 +503,31 @@ export function registerServeRoute(app: Express, state: AppState): void {
           const connector = getConnector(connState.connection.databaseType);
           const connectionString = connState.connection.connectionString;
           const sslConfig = connState.connection.sslConfig;
+          const databaseType = connState.connection.databaseType;
+
+          // Lazily compute (and cache) the distinct values used to render
+          // categorical columns as `enum:a|b|c` in the tool catalogue.
+          const distinctCacheKey = distinctValuesCacheKey(
+            profileName,
+            connectionString,
+            group.selectedTables,
+            effectiveColumnMasking,
+          );
+          let distinctValuesByTable = distinctValuesCache.get(distinctCacheKey);
+          if (!distinctValuesByTable) {
+            distinctValuesByTable = await computeDistinctValues({
+              tables: group.tables,
+              selectedTables: group.selectedTables,
+              columnMasking: effectiveColumnMasking,
+              executeQuery: async (sql: string, params: unknown[]) => {
+                const result = await connector.query(connectionString, sql, { timeoutMs: getQueryTimeoutMs(), ssl: sslConfig, params });
+                return { rows: result.rows as Record<string, unknown>[], fields: Object.keys(result.rows[0] ?? {}).map(name => ({ name })) };
+              },
+              databaseType,
+              perQueryTimeoutMs: 2000,
+            });
+            distinctValuesCache.set(distinctCacheKey, distinctValuesByTable);
+          }
 
           registerDynamicTools({
             server: mcpServer,
@@ -486,6 +536,7 @@ export function registerServeRoute(app: Express, state: AppState): void {
             selectedTables: group.selectedTables,
             tableOptions: effectiveTableOptions,
             columnMasking: effectiveColumnMasking,
+            distinctValuesByTable,
             executeQuery: async (sql: string, params: unknown[]) => {
               // Route query through the correct connector with timeout
               const result = await connector.query(connectionString, sql, { timeoutMs: getQueryTimeoutMs(), ssl: sslConfig, params });
@@ -498,7 +549,7 @@ export function registerServeRoute(app: Express, state: AppState): void {
               }
             },
             profileName,
-            databaseType: connState.connection.databaseType,
+            databaseType,
             responseMode,
             wrapResponse,
             maxOffset: 10000,

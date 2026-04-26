@@ -12,7 +12,7 @@
 import Database from 'better-sqlite3';
 import { z } from 'zod';
 import { toJSONSchema } from 'zod/v4-mini';
-import { registerDynamicTools, createScopeGuard } from '@calame/core';
+import { registerDynamicTools, createScopeGuard, computeDistinctValues } from '@calame/core';
 import type { TableInfo, Relation } from '@calame/core';
 
 // The MCP SDK uses Zod v4-mini's toJSONSchema for v4 schemas (see
@@ -117,7 +117,7 @@ function categorizeBlock(json: string): {
   };
 }
 
-function main(): void {
+async function main(): Promise<void> {
   const adminDb = new Database('calame.db', { readonly: true });
   const row = adminDb.prepare(`SELECT data FROM profiles WHERE key = 'main'`).get() as { data: string } | undefined;
   if (!row) throw new Error('no profile main row');
@@ -140,6 +140,21 @@ function main(): void {
   const { tables, relations } = introspectSqliteSchema('demo-logistique-v2.db');
   const visibleTables = tables.filter((t) => selectedTables[t.name]);
 
+  // Phase 2.5: pre-compute distinct values so the catalogue baked into the
+  // tool descriptions shows `enum:a|b|c` for low-cardinality columns.
+  const dataDb = new Database('demo-logistique-v2.db', { readonly: true });
+  const exec = async (sql: string, params: unknown[]) => {
+    const rows = dataDb.prepare(sql).all(...params) as Record<string, unknown>[];
+    return { rows, fields: Object.keys(rows[0] ?? {}).map((name) => ({ name })) };
+  };
+  const distinctValuesByTable = await computeDistinctValues({
+    tables: visibleTables,
+    selectedTables,
+    columnMasking,
+    executeQuery: exec,
+    databaseType: 'sqlite',
+  });
+
   const server = new CaptureServer();
   registerDynamicTools({
     server: server as unknown as Parameters<typeof registerDynamicTools>[0]['server'],
@@ -148,7 +163,8 @@ function main(): void {
     selectedTables,
     tableOptions,
     columnMasking,
-    executeQuery: async () => ({ rows: [], fields: [] }),
+    distinctValuesByTable,
+    executeQuery: exec,
     profileName: 'test-logistique',
     databaseType: 'sqlite',
     responseMode: 'friendly',
@@ -197,4 +213,4 @@ function main(): void {
   console.log(`Approx tokens / tool: ${Math.round(totalTokens / Math.max(server.tools.length, 1))}`);
 }
 
-main();
+main().catch((e) => { console.error(e); process.exit(1); });

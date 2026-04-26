@@ -150,6 +150,31 @@ function isTextType(pgType: string): boolean {
   return pgTypeToZod(pgType) === 'string';
 }
 
+// Build a Zod schema for the `value` of a {op, value} filter entry, typed
+// per the column's SQL kind. Replaces the legacy `z.any()` shape that left
+// weaker LLMs (Gemini Flash, Qwen 7B) guessing the expected JSON type and
+// silently producing zero-row results when they got it wrong.
+//
+// Single value (eq/neq/gt/gte/lt/lte) and multi-value forms (in, between)
+// are merged into a small union so a single Zod field covers every operator
+// without the JSON-Schema explosion of a discriminated union per op.
+//
+// Numeric columns also accept arrays of strings as a fallback so an LLM
+// that emits `["1","2"]` (or the runtime CSV path) still parses; the
+// runtime layer (scoped-executor) does the actual coercion before binding.
+function valueSchemaForColumn(col: { type: string }): z.ZodTypeAny {
+  const kind = pgTypeToZod(col.type);
+  switch (kind) {
+    case 'number':
+      return z.union([z.number(), z.array(z.number())]).optional();
+    case 'boolean':
+      return z.boolean().optional();
+    case 'string':
+    default:
+      return z.union([z.string(), z.array(z.string())]).optional();
+  }
+}
+
 // ---------------------------------------------------------------------------
 // WHERE clause builder (runtime version, multi-dialect)
 // ---------------------------------------------------------------------------
@@ -811,11 +836,16 @@ function registerAggregateTool(
   // sometimes sending `filters` as a stringified JSON instead of an
   // object. The per-column duplication is paid for in 1a (no per-value
   // describe text), which is enough to fit Qwen-class context windows.
+  //
+  // `value` is typed per column via `valueSchemaForColumn` (number / string /
+  // boolean) instead of the legacy `z.any()` so LLMs see the expected JSON
+  // type in the manifest and can't silently send a string for an integer
+  // column or vice versa.
   const filterShape: Record<string, z.ZodTypeAny> = {};
   for (const col of filterableCols) {
     filterShape[col.name] = z.object({
       op: z.enum(['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'between', 'in', 'is_null', 'is_not_null']),
-      value: z.any().optional(),
+      value: valueSchemaForColumn(col),
     }).optional();
   }
 
@@ -1070,12 +1100,12 @@ function registerQueryTool(
   // Build Zod schema for filters (see comment on the aggregate tool —
   // we intentionally inline the per-column shape rather than sharing
   // a meta-tagged instance, to keep the JSON Schema canonical for
-  // weaker LLMs).
+  // weaker LLMs; `value` is typed per column via `valueSchemaForColumn`).
   const filterShape: Record<string, z.ZodTypeAny> = {};
   for (const col of filterableCols) {
     filterShape[col.name] = z.object({
       op: z.enum(['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'between', 'in', 'is_null', 'is_not_null']),
-      value: z.any().optional(),
+      value: valueSchemaForColumn(col),
     }).optional();
   }
 
@@ -1256,13 +1286,14 @@ function registerWriteTool(
   // Build the set of valid column names for validation
   const validColumnNames = new Set(visibleColumns.map(c => c.name));
 
-  // Build filter shape for update/delete (same as query, inline).
+  // Build filter shape for update/delete (same as query, inline; `value`
+  // is typed per column via `valueSchemaForColumn`).
   const filterableCols = visibleColumns.filter(c => pgTypeToZod(c.type) !== null);
   const filterShape: Record<string, z.ZodTypeAny> = {};
   for (const col of filterableCols) {
     filterShape[col.name] = z.object({
       op: z.enum(['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'between', 'in', 'is_null', 'is_not_null']),
-      value: z.any().optional(),
+      value: valueSchemaForColumn(col),
     }).optional();
   }
   const allowedFilterColumns = filterableCols.map(c => c.name);

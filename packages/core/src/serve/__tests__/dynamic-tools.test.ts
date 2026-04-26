@@ -106,7 +106,7 @@ describe('registerDynamicTools', () => {
     expect(tools.has('list_tables')).toBe(true);
   });
 
-  it('registers describe, aggregate, query tools for a table', () => {
+  it('registers the generic describe, aggregate, query tools when a table is visible', () => {
     registerDynamicTools({
       server: server as unknown as Parameters<typeof registerDynamicTools>[0]['server'],
       tables: [usersTable],
@@ -118,9 +118,9 @@ describe('registerDynamicTools', () => {
     });
 
     const tools = server.getRegisteredTools();
-    expect(tools.has('describe_users')).toBe(true);
-    expect(tools.has('aggregate_users')).toBe(true);
-    expect(tools.has('query_users')).toBe(true);
+    expect(tools.has('describe')).toBe(true);
+    expect(tools.has('aggregate')).toBe(true);
+    expect(tools.has('query')).toBe(true);
   });
 
   it('respects enabledTools option (only describe)', () => {
@@ -143,12 +143,13 @@ describe('registerDynamicTools', () => {
     });
 
     const tools = server.getRegisteredTools();
-    expect(tools.has('describe_users')).toBe(true);
-    expect(tools.has('aggregate_users')).toBe(false);
-    expect(tools.has('query_users')).toBe(false);
+    expect(tools.has('describe')).toBe(true);
+    // No aggregate / query because no table enables them.
+    expect(tools.has('aggregate')).toBe(false);
+    expect(tools.has('query')).toBe(false);
   });
 
-  it('does not expose tables not in selectedTables', () => {
+  it('does not expose tables not in selectedTables', async () => {
     registerDynamicTools({
       server: server as unknown as Parameters<typeof registerDynamicTools>[0]['server'],
       tables: [usersTable, ordersTable, tagsTable],
@@ -160,11 +161,17 @@ describe('registerDynamicTools', () => {
     });
 
     const tools = server.getRegisteredTools();
-    expect(tools.has('describe_users')).toBe(true);
-    expect(tools.has('describe_orders')).toBe(false);
-    expect(tools.has('query_orders')).toBe(false);
-    expect(tools.has('aggregate_orders')).toBe(false);
-    expect(tools.has('describe_tags')).toBe(false);
+    // Generic tools share a single registration; table arg drives access.
+    expect(tools.has('list_tables')).toBe(true);
+    expect(tools.has('describe')).toBe(true);
+    // list_tables payload reflects what's actually accessible.
+    const listHandler = tools.get('list_tables')!.handler;
+    const listResult = await listHandler({});
+    const tableInfo = JSON.parse(listResult.content[0].text);
+    const names = tableInfo.map((t: { name: string }) => t.name);
+    expect(names).toContain('users');
+    expect(names).not.toContain('orders');
+    expect(names).not.toContain('tags');
   });
 
   it('filters out columns not in selectedTables', async () => {
@@ -192,7 +199,7 @@ describe('registerDynamicTools', () => {
     expect(content[0].columns).not.toContain('age');
   });
 
-  it('does not register aggregate tool for tables without numeric columns', () => {
+  it('does not register aggregate when no visible table has numeric columns', () => {
     registerDynamicTools({
       server: server as unknown as Parameters<typeof registerDynamicTools>[0]['server'],
       tables: [noNumericTable],
@@ -204,9 +211,10 @@ describe('registerDynamicTools', () => {
     });
 
     const tools = server.getRegisteredTools();
-    expect(tools.has('describe_settings')).toBe(true);
-    expect(tools.has('query_settings')).toBe(true);
-    expect(tools.has('aggregate_settings')).toBe(false);
+    expect(tools.has('describe')).toBe(true);
+    expect(tools.has('query')).toBe(true);
+    // The settings table has only text + boolean columns -> no aggregate target.
+    expect(tools.has('aggregate')).toBe(false);
   });
 
   it('column masking exclude mode removes column from results', async () => {

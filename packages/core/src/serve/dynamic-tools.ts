@@ -804,17 +804,18 @@ function registerAggregateTool(
   const allowedFilterColumns = filterableCols.map(c => c.name);
   const qualifiedTable = dialect.quoteTable(schemaName, tableName);
 
-  // Build Zod schema for filters
+  // Build Zod schema for filters. We intentionally inline the {op, value}
+  // shape per column rather than sharing a meta-tagged instance: weaker
+  // LLMs and some MCP clients mis-handle the `allOf + $ref` pattern that
+  // Zod v4-mini emits when `meta()` meets `.describe().optional()`,
+  // sometimes sending `filters` as a stringified JSON instead of an
+  // object. The per-column duplication is paid for in 1a (no per-value
+  // describe text), which is enough to fit Qwen-class context windows.
   const filterShape: Record<string, z.ZodTypeAny> = {};
   for (const col of filterableCols) {
     filterShape[col.name] = z.object({
       op: z.enum(['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'between', 'in', 'is_null', 'is_not_null']),
-      value: z
-        .any()
-        .optional()
-        .describe(
-          'Filter value. For `in` operator: prefer an array like ["a","b"] — a comma-separated string like "a,b,c" is also accepted and will be split automatically. For `between`: pass a two-element array [min, max]. For `is_null` and `is_not_null`: no value needed (ignored).',
-        ),
+      value: z.any().optional(),
     }).optional();
   }
 
@@ -833,10 +834,12 @@ function registerAggregateTool(
     ),
     aggregation_column: numericEnum.optional().describe('Required for sum, avg, min, max. Not needed for count or ratio.'),
     filters: z.object(filterShape).optional().describe(
-      'WHERE filters applied to ALL rows (denominator for ratio). Combine with `ratio_filter` for "subset / total" computations.',
+      'WHERE filters applied to ALL rows (denominator for ratio). Each entry is { op, value }. ' +
+      'Operators: eq, neq, gt, gte, lt, lte, between (value=[min,max]), in (value=array or CSV), ' +
+      'is_null and is_not_null (omit value). Combine with `ratio_filter` for "subset / total" ratios.',
     ),
     ratio_filter: z.object(filterShape).optional().describe(
-      'Numerator filter for `aggregation: "ratio"`. Result = rows matching `filters` AND `ratio_filter` divided by rows matching `filters` only. Ignored for non-ratio aggregations.',
+      'Numerator filter for `aggregation: "ratio"`. Same shape as `filters`. Result = rows matching filters AND ratio_filter divided by rows matching filters only.',
     ),
     having_min_total: z.number().optional().describe(
       'Minimum row count per group (denominator), evaluated as HAVING. Use to drop small-sample groups in ratio rankings (e.g. ignore couriers with fewer than 50 packages).',
@@ -908,23 +911,32 @@ function registerAggregateTool(
                 isError: true,
               };
             }
-            const { conditions: ratioConds, values: ratioValues, nextParamIndex: ratioNext } =
-              buildPlainConditions(ratio_filter, allowedFilterColumns, dialect, paramCursor);
-            if (ratioConds.length === 0) {
+            // The CASE WHEN expression appears twice in the SELECT (once for
+            // `result`, once for `numerator`). Each occurrence has its own
+            // positional placeholders, so we build the conditions twice with
+            // independent paramIndex windows and push the values twice. This
+            // keeps SQLite (`?`) and Postgres (`$N`) consistent: each `?` /
+            // `$N` resolves to one value at its own offset.
+            const first = buildPlainConditions(ratio_filter, allowedFilterColumns, dialect, paramCursor);
+            if (first.conditions.length === 0) {
               return {
                 content: [{ type: 'text' as const, text: 'ratio_filter has no usable conditions (unknown columns?).' }],
                 isError: true,
               };
             }
-            values.push(...ratioValues);
-            paramCursor = ratioNext;
-            const caseExpr = `CASE WHEN ${ratioConds.join(' AND ')} THEN 1 ELSE 0 END`;
-            // 1.0 multiplier promotes integer counts to float on SQLite, where
-            // SUM/COUNT are otherwise integer-typed and AVG of a CASE alone
-            // can already give a float — this is belt-and-suspenders.
+            values.push(...first.values);
+            paramCursor = first.nextParamIndex;
+            const second = buildPlainConditions(ratio_filter, allowedFilterColumns, dialect, paramCursor);
+            values.push(...second.values);
+            paramCursor = second.nextParamIndex;
+
+            const caseFirst = `CASE WHEN ${first.conditions.join(' AND ')} THEN 1 ELSE 0 END`;
+            const caseSecond = `CASE WHEN ${second.conditions.join(' AND ')} THEN 1 ELSE 0 END`;
+            // 1.0 multiplier promotes integer counts to float so SQLite does
+            // not return zero on integer division.
             selectExpr =
-              `AVG(1.0 * (${caseExpr})) as result,` +
-              ` SUM(${caseExpr}) as numerator,` +
+              `AVG(1.0 * (${caseFirst})) as result,` +
+              ` SUM(${caseSecond}) as numerator,` +
               ` COUNT(*) as denominator`;
           } else if (aggregation === 'count' && !aggregation_column) {
             selectExpr = 'COUNT(*) as result';
@@ -1055,17 +1067,15 @@ function registerQueryTool(
   const allowedFilterColumns = filterableCols.map(c => c.name);
   const qualifiedTable = dialect.quoteTable(schemaName, tableName);
 
-  // Build Zod schema for filters
+  // Build Zod schema for filters (see comment on the aggregate tool —
+  // we intentionally inline the per-column shape rather than sharing
+  // a meta-tagged instance, to keep the JSON Schema canonical for
+  // weaker LLMs).
   const filterShape: Record<string, z.ZodTypeAny> = {};
   for (const col of filterableCols) {
     filterShape[col.name] = z.object({
       op: z.enum(['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'between', 'in', 'is_null', 'is_not_null']),
-      value: z
-        .any()
-        .optional()
-        .describe(
-          'Filter value. For `in` operator: prefer an array like ["a","b"] — a comma-separated string like "a,b,c" is also accepted and will be split automatically. For `between`: pass a two-element array [min, max]. For `is_null` and `is_not_null`: no value needed (ignored).',
-        ),
+      value: z.any().optional(),
     }).optional();
   }
 
@@ -1073,7 +1083,11 @@ function registerQueryTool(
   const orderByEnum = zodEnum(allColumnNames);
 
   const inputShape: Record<string, z.ZodTypeAny> = {
-    filters: z.object(filterShape).optional(),
+    filters: z.object(filterShape).optional().describe(
+      'WHERE filters by column. Each entry is { op, value }. ' +
+      'Operators: eq, neq, gt, gte, lt, lte, between (value=[min,max]), in (value=array or CSV), ' +
+      'is_null and is_not_null (omit value).',
+    ),
     order_direction: z.enum(['asc', 'desc']).optional(),
     limit: z.number().optional().default(20).describe(`Max rows, capped at ${maxLimit}`),
     offset: z.number().optional().default(0),
@@ -1242,18 +1256,13 @@ function registerWriteTool(
   // Build the set of valid column names for validation
   const validColumnNames = new Set(visibleColumns.map(c => c.name));
 
-  // Build filter shape for update/delete (same as query)
+  // Build filter shape for update/delete (same as query, inline).
   const filterableCols = visibleColumns.filter(c => pgTypeToZod(c.type) !== null);
   const filterShape: Record<string, z.ZodTypeAny> = {};
   for (const col of filterableCols) {
     filterShape[col.name] = z.object({
       op: z.enum(['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'between', 'in', 'is_null', 'is_not_null']),
-      value: z
-        .any()
-        .optional()
-        .describe(
-          'Filter value. For `in` operator: prefer an array like ["a","b"] — a comma-separated string like "a,b,c" is also accepted and will be split automatically. For `between`: pass a two-element array [min, max]. For `is_null` and `is_not_null`: no value needed (ignored).',
-        ),
+      value: z.any().optional(),
     }).optional();
   }
   const allowedFilterColumns = filterableCols.map(c => c.name);

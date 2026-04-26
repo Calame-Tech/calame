@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
-import { Button, Card, PageHeader, Eyebrow, KpiCard, EmptyState } from './components/ui/index.js';
+import { Button, Card, PageHeader, Eyebrow, KpiCard, EmptyState, Breadcrumb } from './components/ui/index.js';
 import Sidebar from './components/Sidebar.js';
 import HelpTip from './components/HelpTip.js';
 import ConnectionManager from './components/ConnectionManager.js';
@@ -704,6 +704,7 @@ export default function App() {
                   {/* MCP Servers */}
                   <KpiCard
                     accent="indigo"
+                    onClick={() => setView({ page: 'mcp-list' })}
                     eyebrow={
                       <Eyebrow dotColor={hasActiveMcp ? 'bg-emerald-400' : 'bg-gray-600'}>
                         MCP SERVERS
@@ -756,6 +757,7 @@ export default function App() {
                   {/* Data Profiles */}
                   <KpiCard
                     accent="blue"
+                    onClick={() => setView({ page: 'configurations' })}
                     eyebrow={
                       <Eyebrow dotColor={configurations.length > 0 ? 'bg-blue-400' : 'bg-gray-600'}>
                         DATA PROFILES
@@ -797,6 +799,7 @@ export default function App() {
                   {/* Databases */}
                   <KpiCard
                     accent="emerald"
+                    onClick={() => setView({ page: 'connections' })}
                     eyebrow={
                       <Eyebrow dotColor={hasConnections ? 'bg-emerald-400' : 'bg-gray-600'}>
                         DATABASES
@@ -979,16 +982,13 @@ export default function App() {
 
             {view.page === 'configurations' && (
               <div className="max-w-7xl mx-auto">
-                <nav className="flex items-center gap-2 text-sm mb-4">
-                  <button
-                    onClick={() => setView({ page: 'dashboard' })}
-                    className="text-os-400 hover:text-os-300 transition-colors"
-                  >
-                    Dashboard
-                  </button>
-                  <span className="text-gray-600">/</span>
-                  <span className="text-gray-400">Data Profiles</span>
-                </nav>
+                <Breadcrumb
+                  className="mb-4"
+                  items={[
+                    { label: 'Dashboard', onClick: () => setView({ page: 'dashboard' }) },
+                    { label: 'Data Profiles' },
+                  ]}
+                />
                 <ConfigurationListView
                   configurations={configurations}
                   onSelect={(name) => setView({ page: 'config-detail', configName: name })}
@@ -1011,47 +1011,25 @@ export default function App() {
 
             {view.page === 'config-detail' && (
               <div className="max-w-7xl mx-auto">
-                <nav className="flex items-center gap-2 text-sm mb-4">
-                  <button
-                    onClick={() => setView({ page: 'dashboard' })}
-                    className="text-os-400 hover:text-os-300 transition-colors"
-                  >
-                    Dashboard
-                  </button>
-                  <span className="text-gray-600">/</span>
-                  {view.backTo?.page === 'mcp-detail' ? (
-                    <>
-                      <button
-                        onClick={() => setView({ page: 'mcp-list' })}
-                        className="text-os-400 hover:text-os-300 transition-colors"
-                      >
-                        MCP Servers
-                      </button>
-                      <span className="text-gray-600">/</span>
-                      <button
-                        onClick={() => setView(view.backTo!)}
-                        className="text-os-400 hover:text-os-300 transition-colors"
-                      >
-                        Server
-                      </button>
-                      <span className="text-gray-600">/</span>
-                    </>
-                  ) : (
-                    <>
-                      <button
-                        onClick={() => setView({ page: 'configurations' })}
-                        className="text-os-400 hover:text-os-300 transition-colors"
-                      >
-                        Data Profiles
-                      </button>
-                      <span className="text-gray-600">/</span>
-                    </>
-                  )}
-                  <span className="text-gray-400">
-                    {configurations.find((c) => c.name === view.configName)?.label ??
-                      view.configName}
-                  </span>
-                </nav>
+                <Breadcrumb
+                  className="mb-4"
+                  items={[
+                    { label: 'Dashboard', onClick: () => setView({ page: 'dashboard' }) },
+                    ...(view.backTo?.page === 'mcp-detail'
+                      ? [
+                          { label: 'MCP Servers', onClick: () => setView({ page: 'mcp-list' }) },
+                          { label: 'Server', onClick: () => setView(view.backTo!) },
+                        ]
+                      : [
+                          { label: 'Data Profiles', onClick: () => setView({ page: 'configurations' }) },
+                        ]),
+                    {
+                      label:
+                        configurations.find((c) => c.name === view.configName)?.label ??
+                        view.configName,
+                    },
+                  ]}
+                />
                 <ConfigurationDetailView
                   configName={view.configName}
                   configurations={configurations}
@@ -1107,25 +1085,17 @@ export default function App() {
 
             {view.page === 'mcp-detail' && (
               <div className="max-w-7xl mx-auto">
-                <nav className="flex items-center gap-2 text-sm mb-4">
-                  <button
-                    onClick={() => setView({ page: 'dashboard' })}
-                    className="text-os-400 hover:text-os-300 transition-colors"
-                  >
-                    Dashboard
-                  </button>
-                  <span className="text-gray-600">/</span>
-                  <button
-                    onClick={() => setView({ page: 'mcp-list' })}
-                    className="text-os-400 hover:text-os-300 transition-colors"
-                  >
-                    MCP Servers
-                  </button>
-                  <span className="text-gray-600">/</span>
-                  <span className="text-gray-400">
-                    {profiles.find((p) => p.name === view.profileName)?.label ?? view.profileName}
-                  </span>
-                </nav>
+                <Breadcrumb
+                  className="mb-4"
+                  items={[
+                    { label: 'Dashboard', onClick: () => setView({ page: 'dashboard' }) },
+                    { label: 'MCP Servers', onClick: () => setView({ page: 'mcp-list' }) },
+                    {
+                      label:
+                        profiles.find((p) => p.name === view.profileName)?.label ?? view.profileName,
+                    },
+                  ]}
+                />
                 <McpDetailView
                   profileName={view.profileName}
                   profiles={profiles}

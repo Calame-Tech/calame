@@ -34,6 +34,11 @@ vi.mock('@calame/core', () => ({
     getScopeInfo: vi.fn().mockReturnValue({ filters: [] }),
     applyToQuery: vi.fn((sql: string) => ({ sql, params: [] })),
   }),
+  // Phase 2.5 — distinct-values pre-computation. Stubbed here because the
+  // serve route now awaits it on the per-connection path; the real impl
+  // would issue SELECT DISTINCT against the mocked connector and is out of
+  // scope for this unit test.
+  computeDistinctValues: vi.fn().mockResolvedValue({}),
 }));
 
 vi.mock('@calame/connectors', () => ({

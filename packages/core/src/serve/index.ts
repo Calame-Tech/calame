@@ -1,4 +1,6 @@
 export { registerDynamicTools } from './dynamic-tools.js';
+export { computeDistinctValues } from './distinct-values.js';
+export type { ComputeDistinctValuesOptions } from './distinct-values.js';
 export type {
   ServeConfig,
   ServeProfile,

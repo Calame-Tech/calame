@@ -21,6 +21,13 @@ export interface ComputeDistinctValuesOptions {
   maxValues?: number;
   /** Per-column timeout (ms). Skipped silently on overrun. */
   perQueryTimeoutMs?: number;
+  /**
+   * Max concurrent SELECT DISTINCT queries. Higher = faster boot on remote
+   * databases (Postgres) at the cost of holding more connections from the
+   * pool. Default 10 — comfortable for the common pg pool size of 10-20.
+   * Set to 1 to keep the legacy serial behaviour.
+   */
+  concurrency?: number;
 }
 
 /**
@@ -36,12 +43,23 @@ export interface ComputeDistinctValuesOptions {
  * Errors on individual columns are swallowed — a single permission glitch on
  * one column shouldn't blow up the whole MCP handshake.
  */
+interface DistinctJob {
+  table: string;
+  column: string;
+  sql: string;
+}
+
 export async function computeDistinctValues(
   opts: ComputeDistinctValuesOptions,
 ): Promise<Record<string, Record<string, unknown[]>>> {
   const maxValues = opts.maxValues ?? 20;
+  const concurrency = Math.max(1, opts.concurrency ?? 10);
   const result: Record<string, Record<string, unknown[]>> = {};
 
+  // 1) Flatten the work into a single job list so a slow column on table A
+  //    can't block a fast column on table B. The legacy serial loop walked
+  //    table-by-table and was bound by the slowest column of each table.
+  const jobs: DistinctJob[] = [];
   for (const table of opts.tables) {
     const selectedCols = opts.selectedTables[table.name];
     if (!selectedCols || selectedCols.length === 0) continue;
@@ -59,16 +77,29 @@ export async function computeDistinctValues(
     );
     if (visibleColumns.length === 0) continue;
 
-    const tableValues: Record<string, unknown[]> = {};
     const qualifiedTable = quoteTable(table.schema, table.name, opts.databaseType);
-
     for (const col of visibleColumns) {
       const qi = quoteIdent(col.name, opts.databaseType);
       const sql =
         `SELECT DISTINCT ${qi} AS val FROM ${qualifiedTable} ` +
         `WHERE ${qi} IS NOT NULL ORDER BY val LIMIT ${maxValues + 1}`;
+      jobs.push({ table: table.name, column: col.name, sql });
+    }
+  }
+
+  if (jobs.length === 0) return result;
+
+  // 2) Drain the job queue with a fixed pool of worker promises. The queue is
+  //    a shared cursor, so each worker grabs the next job as soon as the
+  //    previous one resolves — natural load-balancing without a heavy lib.
+  let cursor = 0;
+  const worker = async (): Promise<void> => {
+    for (;;) {
+      const idx = cursor++;
+      if (idx >= jobs.length) return;
+      const job = jobs[idx];
       try {
-        const queryPromise = opts.executeQuery(sql, []);
+        const queryPromise = opts.executeQuery(job.sql, []);
         const r = opts.perQueryTimeoutMs
           ? await Promise.race([
               queryPromise,
@@ -78,19 +109,20 @@ export async function computeDistinctValues(
             ])
           : await queryPromise;
         const vals = r.rows.map((row) => (row as Record<string, unknown>).val);
-        // Skip columns with too many distinct values — they're not enum-like.
         if (vals.length > 0 && vals.length <= maxValues) {
-          tableValues[col.name] = vals;
+          if (!result[job.table]) result[job.table] = {};
+          result[job.table][job.column] = vals;
         }
       } catch {
         // Per-column failure: skip silently. Catalogue falls back to type label.
       }
     }
+  };
 
-    if (Object.keys(tableValues).length > 0) {
-      result[table.name] = tableValues;
-    }
-  }
+  const workers: Promise<void>[] = [];
+  for (let i = 0; i < Math.min(concurrency, jobs.length); i++) workers.push(worker());
+  await Promise.all(workers);
+
   return result;
 }
 

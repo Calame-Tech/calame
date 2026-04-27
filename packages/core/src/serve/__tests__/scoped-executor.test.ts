@@ -5,6 +5,7 @@ import type { ResolvedScopeFilter } from '../types.js';
 
 // PostgreSQL dialect for testing
 const pgDialect: Dialect = {
+  databaseType: 'postgresql',
   isPostgres: true,
   quoteIdent: (n) => `"${n}"`,
   quoteTable: (s, t) => `"${s}"."${t}"`,
@@ -14,6 +15,7 @@ const pgDialect: Dialect = {
 
 // SQLite dialect for testing
 const sqliteDialect: Dialect = {
+  databaseType: 'sqlite',
   isPostgres: false,
   quoteIdent: (n) => `"${n}"`,
   quoteTable: (_s, t) => `"${t}"`,

@@ -23,6 +23,9 @@ export interface FilterValue {
 }
 
 export interface Dialect {
+  /** Backend type. Lets call sites pick exact syntax (e.g. SQLite strftime
+   *  vs MySQL DATE_FORMAT) when a uniform SQL function is missing. */
+  databaseType: 'postgresql' | 'mysql' | 'sqlite';
   /** True for PostgreSQL (affects IN clause: uses ANY($n) vs IN (?, ?...)) */
   isPostgres: boolean;
   /** Quote an identifier (table or column name) */

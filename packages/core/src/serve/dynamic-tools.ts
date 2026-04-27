@@ -88,6 +88,7 @@ function makeDialect(dbType: 'postgresql' | 'mysql' | 'sqlite'): Dialect {
   switch (dbType) {
     case 'postgresql':
       return {
+        databaseType: 'postgresql',
         isPostgres: true,
         quoteIdent: (n) => `"${n}"`,
         quoteTable: (s, t) => `"${s}"."${t}"`,
@@ -96,6 +97,7 @@ function makeDialect(dbType: 'postgresql' | 'mysql' | 'sqlite'): Dialect {
       };
     case 'mysql':
       return {
+        databaseType: 'mysql',
         isPostgres: false,
         quoteIdent: (n) => `\`${n}\``,
         quoteTable: (_s, t) => `\`${t}\``,
@@ -104,6 +106,7 @@ function makeDialect(dbType: 'postgresql' | 'mysql' | 'sqlite'): Dialect {
       };
     case 'sqlite':
       return {
+        databaseType: 'sqlite',
         isPostgres: false,
         quoteIdent: (n) => `"${n}"`,
         quoteTable: (_s, t) => `"${t}"`,
@@ -171,6 +174,50 @@ function isNumericType(pgType: string): boolean {
 
 function isTextType(pgType: string): boolean {
   return pgTypeToZod(pgType) === 'string';
+}
+
+// Date bucketing granularities supported by `group_by_bucket` on aggregate /
+// join_aggregate. Translates to DATE_TRUNC (Postgres), DATE_FORMAT (MySQL),
+// or strftime (SQLite) so the LLM can ask for "monthly", "weekly", "daily"
+// trendlines without inventing dialect-specific SQL.
+type DateBucket = 'day' | 'week' | 'month' | 'quarter' | 'year';
+
+function dateBucketExpr(dialect: Dialect, granularity: DateBucket, columnExpr: string): string {
+  // Postgres has a native DATE_TRUNC for every granularity we expose.
+  if (dialect.databaseType === 'postgresql') {
+    return `DATE_TRUNC('${granularity}', ${columnExpr})`;
+  }
+
+  // MySQL and SQLite don't have DATE_TRUNC. We render a canonical formatted
+  // string per period so GROUP BY collapses identically and ORDER BY sorts
+  // chronologically. The formats below assume the column already holds a
+  // valid date / datetime / ISO-8601 string; non-date inputs return NULL,
+  // matching how Calame handles malformed SQL today.
+  const fmt = (() => {
+    switch (granularity) {
+      case 'day': return '%Y-%m-%d';
+      case 'week': return '%Y-W%W';
+      case 'month': return '%Y-%m-01';
+      case 'quarter': return null; // synthesised below
+      case 'year': return '%Y-01-01';
+    }
+  })();
+
+  // Quarter has no single format string — synthesise YYYY-Q# from year + month.
+  if (granularity === 'quarter') {
+    if (dialect.databaseType === 'mysql') {
+      return `CONCAT(YEAR(${columnExpr}), '-Q', QUARTER(${columnExpr}))`;
+    }
+    // sqlite
+    return `(strftime('%Y', ${columnExpr}) || '-Q' || ((CAST(strftime('%m', ${columnExpr}) AS INTEGER) - 1) / 3 + 1))`;
+  }
+
+  if (!fmt) return columnExpr; // unreachable, narrowing safety
+  if (dialect.databaseType === 'mysql') {
+    return `DATE_FORMAT(${columnExpr}, '${fmt}')`;
+  }
+  // sqlite
+  return `strftime('${fmt}', ${columnExpr})`;
 }
 
 // Friendly column-type label baked into the Phase-2 catalogue (string in tool
@@ -734,6 +781,15 @@ function registerAggregateGeneric(
       .optional()
       .describe('Minimum row count per group, evaluated as HAVING. Drops small-sample groups in ratio rankings.'),
     group_by: z.string().optional().describe('Column to group by.'),
+    group_by_bucket: z
+      .enum(['day', 'week', 'month', 'quarter', 'year'])
+      .optional()
+      .describe(
+        'When set together with `group_by` on a date / timestamp column, ' +
+          'truncates the value to the start of the period (DATE_TRUNC). ' +
+          'Use this for time-series questions like "sales per month", ' +
+          '"errors per day", etc.',
+      ),
     order_by: z
       .string()
       .optional()
@@ -781,6 +837,7 @@ function registerAggregateGeneric(
         ratio_filter,
         having_min_total,
         group_by,
+        group_by_bucket,
         order_by,
         order_direction,
         limit,
@@ -791,6 +848,7 @@ function registerAggregateGeneric(
         ratio_filter?: Record<string, FilterValue | undefined>;
         having_min_total?: number;
         group_by?: string;
+        group_by_bucket?: DateBucket;
         order_by?: string;
         order_direction?: string;
         limit?: number;
@@ -869,8 +927,19 @@ function registerAggregateGeneric(
                 did_you_mean: didYouMean(group_by, at.groupableColumns),
               });
             }
-            selectPrefix = `${dialect.quoteIdent(group_by)}, `;
-            groupByClause = `GROUP BY ${dialect.quoteIdent(group_by)}`;
+            // group_by_bucket wraps the column in a date-truncation expression
+            // so the GROUP BY collapses on the start of each period (day/week/
+            // month/quarter/year). Emitted both in the SELECT prefix and the
+            // GROUP BY clause, aliased to the bare column name so the result
+            // shape stays identical regardless of bucketing.
+            const colExpr = group_by_bucket
+              ? dateBucketExpr(dialect, group_by_bucket, dialect.quoteIdent(group_by))
+              : dialect.quoteIdent(group_by);
+            const groupAlias = dialect.quoteIdent(group_by);
+            selectPrefix = group_by_bucket
+              ? `${colExpr} as ${groupAlias}, `
+              : `${colExpr}, `;
+            groupByClause = `GROUP BY ${colExpr}`;
           }
 
           let havingClause = '';
@@ -980,6 +1049,10 @@ function registerJoinAggregateGeneric(
       .optional()
       .default('primary')
       .describe('Which side of the JOIN the group_by_column belongs to.'),
+    group_by_bucket: z
+      .enum(['day', 'week', 'month', 'quarter', 'year'])
+      .optional()
+      .describe('When set with `group_by_column` on a date column, truncates to the start of the period (DATE_TRUNC).'),
     order_direction: z
       .enum(['asc', 'desc'])
       .optional()
@@ -1004,6 +1077,7 @@ function registerJoinAggregateGeneric(
         join_filters,
         group_by_column,
         group_by_table = 'primary',
+        group_by_bucket,
         order_direction,
         limit,
       } = args as {
@@ -1016,6 +1090,7 @@ function registerJoinAggregateGeneric(
         join_filters?: Record<string, FilterValue | undefined>;
         group_by_column?: string;
         group_by_table?: 'primary' | 'join';
+        group_by_bucket?: DateBucket;
         order_direction?: 'asc' | 'desc';
         limit?: number;
       };
@@ -1100,10 +1175,16 @@ function registerJoinAggregateGeneric(
               });
             }
             const qualified = `${gbAlias}.${dialect.quoteIdent(group_by_column)}`;
-            // Alias the group-by column so the result key stays stable even if
-            // the same name exists on the other side.
-            selectPrefix = `${qualified} as ${dialect.quoteIdent(group_by_column)}, `;
-            groupByClause = `GROUP BY ${qualified}`;
+            // group_by_bucket wraps the column in a date-truncation expression
+            // so the GROUP BY collapses on each period start. Aliased to the
+            // bare column name so the result key stays the same regardless of
+            // bucketing — also disambiguates from a same-named column on the
+            // other side of the JOIN.
+            const colExpr = group_by_bucket
+              ? dateBucketExpr(dialect, group_by_bucket, qualified)
+              : qualified;
+            selectPrefix = `${colExpr} as ${dialect.quoteIdent(group_by_column)}, `;
+            groupByClause = `GROUP BY ${colExpr}`;
             groupByOriginal = { table: gbTableName, column: group_by_column };
           }
 

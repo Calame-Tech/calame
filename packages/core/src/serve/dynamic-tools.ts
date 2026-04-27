@@ -339,7 +339,8 @@ function buildCatalogue(
   }
   lines.push('');
   lines.push('OPS: eq, neq, gt, gte, lt, lte (single value), between (value=[min,max]),');
-  lines.push('     in (value=array), is_null, is_not_null (omit value)');
+  lines.push('     in (value=array), is_null, is_not_null (omit value),');
+  lines.push('     contains, starts_with, ends_with (case-insensitive substring match on text)');
   return lines.join('\n');
 }
 
@@ -364,7 +365,8 @@ function buildCompactCatalogue(accessible: AccessibleTable[]): string {
   }
   lines.push('');
   lines.push('OPS: eq, neq, gt, gte, lt, lte (single value), between (value=[min,max]),');
-  lines.push('     in (value=array), is_null, is_not_null (omit value)');
+  lines.push('     in (value=array), is_null, is_not_null (omit value),');
+  lines.push('     contains, starts_with, ends_with (case-insensitive substring match on text)');
   return lines.join('\n');
 }
 
@@ -382,7 +384,10 @@ type FilterOperator =
   | 'between'
   | 'in'
   | 'is_null'
-  | 'is_not_null';
+  | 'is_not_null'
+  | 'contains'
+  | 'starts_with'
+  | 'ends_with';
 
 interface FilterValue {
   op: FilterOperator;
@@ -737,7 +742,12 @@ function makeFilterMapSchema(): z.ZodTypeAny {
     .record(
       z.string(),
       z.object({
-        op: z.enum(['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'between', 'in', 'is_null', 'is_not_null']),
+        op: z.enum([
+          'eq', 'neq', 'gt', 'gte', 'lt', 'lte',
+          'between', 'in',
+          'is_null', 'is_not_null',
+          'contains', 'starts_with', 'ends_with',
+        ]),
         value: z.any().optional(),
       }),
     )
@@ -787,7 +797,7 @@ function registerAggregateGeneric(
       .describe('Denominator column for `aggregation: "weighted_ratio"`. Must be numeric.'),
     filters: makeFilterMapSchema().describe(
       'WHERE filters (denominator for ratio). Each entry is { op, value }. ' +
-        'OPS: eq, neq, gt, gte, lt, lte (single value), between (value=[min,max]), in (value=array), is_null, is_not_null (omit value).',
+        'OPS: eq, neq, gt, gte, lt, lte (single value), between (value=[min,max]), in (value=array), is_null, is_not_null (omit value), contains / starts_with / ends_with (case-insensitive text search, value=substring).',
     ),
     ratio_filter: makeFilterMapSchema().describe(
       'Numerator filter for `aggregation: "ratio"`. Same shape as `filters`.',

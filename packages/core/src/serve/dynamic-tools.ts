@@ -763,12 +763,28 @@ function registerAggregateGeneric(
   const inputShape: Record<string, z.ZodTypeAny> = {
     table: tableEnum.describe('Target table. See TABLES & COLUMNS.'),
     aggregation: z
-      .enum(['count', 'sum', 'avg', 'min', 'max', 'ratio'])
-      .describe('Aggregation kind. Use "ratio" with `ratio_filter` for per-group ratios in one call.'),
+      .enum(['count', 'sum', 'avg', 'min', 'max', 'ratio', 'count_distinct', 'weighted_ratio'])
+      .describe(
+        'Aggregation kind. ' +
+          '"count" / "sum" / "avg" / "min" / "max" are the standard SQL aggregates. ' +
+          '"ratio" computes (rows matching `ratio_filter`) / (rows matching `filters`) — count-based. ' +
+          '"count_distinct" returns COUNT(DISTINCT `aggregation_column`). ' +
+          '"weighted_ratio" returns SUM(`numerator_column`) / SUM(`denominator_column`) — useful for fulfillment %, conversion rate, weighted averages.',
+      ),
     aggregation_column: z
       .string()
       .optional()
-      .describe('Required for sum / avg / min / max. Numeric column of `table`.'),
+      .describe(
+        'Required for sum / avg / min / max (numeric column) and for count_distinct (any column).',
+      ),
+    numerator_column: z
+      .string()
+      .optional()
+      .describe('Numerator column for `aggregation: "weighted_ratio"`. Must be numeric.'),
+    denominator_column: z
+      .string()
+      .optional()
+      .describe('Denominator column for `aggregation: "weighted_ratio"`. Must be numeric.'),
     filters: makeFilterMapSchema().describe(
       'WHERE filters (denominator for ratio). Each entry is { op, value }. ' +
         'OPS: eq, neq, gt, gte, lt, lte (single value), between (value=[min,max]), in (value=array), is_null, is_not_null (omit value).',
@@ -833,6 +849,8 @@ function registerAggregateGeneric(
       const {
         aggregation,
         aggregation_column,
+        numerator_column,
+        denominator_column,
         filters,
         ratio_filter,
         having_min_total,
@@ -844,6 +862,8 @@ function registerAggregateGeneric(
       } = args as {
         aggregation: string;
         aggregation_column?: string;
+        numerator_column?: string;
+        denominator_column?: string;
         filters?: Record<string, FilterValue | undefined>;
         ratio_filter?: Record<string, FilterValue | undefined>;
         having_min_total?: number;
@@ -895,6 +915,57 @@ function registerAggregateGeneric(
               `AVG(1.0 * (${caseFirst})) as result,` +
               ` SUM(${caseSecond}) as numerator,` +
               ` COUNT(*) as denominator`;
+          } else if (aggregation === 'weighted_ratio') {
+            // SUM(num) / SUM(den) — for fulfillment %, conversion rate,
+            // weighted averages. Validates both columns are numeric and emits
+            // (result, numerator, denominator) so the LLM can sanity-check
+            // sample size and combine with `having_min_total` for top-N
+            // rankings that filter out small denominators.
+            if (!numerator_column || !denominator_column) {
+              return structuredError({
+                error: 'weighted_ratio requires both `numerator_column` and `denominator_column`',
+                valid_columns: at.numericCols,
+              });
+            }
+            if (!at.numericCols.includes(numerator_column)) {
+              return structuredError({
+                error: `Invalid numerator_column '${numerator_column}' for table '${tableName}'`,
+                valid_columns: at.numericCols,
+                did_you_mean: didYouMean(numerator_column, at.numericCols),
+              });
+            }
+            if (!at.numericCols.includes(denominator_column)) {
+              return structuredError({
+                error: `Invalid denominator_column '${denominator_column}' for table '${tableName}'`,
+                valid_columns: at.numericCols,
+                did_you_mean: didYouMean(denominator_column, at.numericCols),
+              });
+            }
+            const qiNum = dialect.quoteIdent(numerator_column);
+            const qiDen = dialect.quoteIdent(denominator_column);
+            // 1.0 multiplier promotes integer SUMs to float so SQLite doesn't
+            // round to 0; NULLIF guards against divide-by-zero on empty groups.
+            selectExpr =
+              `(1.0 * SUM(${qiNum}) / NULLIF(SUM(${qiDen}), 0)) as result,` +
+              ` SUM(${qiNum}) as numerator,` +
+              ` SUM(${qiDen}) as denominator`;
+          } else if (aggregation === 'count_distinct') {
+            // COUNT(DISTINCT col) — works on any column type, not just numeric.
+            // Validate against the visible-but-not-excluded column list.
+            if (!aggregation_column) {
+              return structuredError({
+                error: 'aggregation_column is required for count_distinct',
+                valid_columns: at.allColumnNames,
+              });
+            }
+            if (!at.allColumnNames.includes(aggregation_column)) {
+              return structuredError({
+                error: `Invalid aggregation_column '${aggregation_column}' for count_distinct on table '${tableName}'`,
+                valid_columns: at.allColumnNames,
+                did_you_mean: didYouMean(aggregation_column, at.allColumnNames),
+              });
+            }
+            selectExpr = `COUNT(DISTINCT ${dialect.quoteIdent(aggregation_column)}) as result`;
           } else if (aggregation === 'count' && !aggregation_column) {
             selectExpr = 'COUNT(*) as result';
           } else if (!aggregation_column) {
@@ -1031,16 +1102,31 @@ function registerJoinAggregateGeneric(
   const inputShape: Record<string, z.ZodTypeAny> = {
     primary_table: tableEnum.describe('Left side of the JOIN.'),
     join_table: tableEnum.describe('Right side of the JOIN. Must be linked to primary_table by an FK.'),
-    aggregation: z.enum(['count', 'sum', 'avg', 'min', 'max']),
+    aggregation: z
+      .enum(['count', 'sum', 'avg', 'min', 'max', 'count_distinct', 'weighted_ratio'])
+      .describe(
+        'Aggregation kind. ' +
+          '"count" / "sum" / "avg" / "min" / "max" are standard SQL aggregates. ' +
+          '"count_distinct" returns COUNT(DISTINCT `aggregation_column`) on the side selected by `aggregation_column_table`. ' +
+          '"weighted_ratio" returns SUM(numerator_column) / SUM(denominator_column) — both columns are looked up on the same side as `aggregation_column_table` (default: primary).',
+      ),
     aggregation_column: z
       .string()
       .optional()
-      .describe('Required for sum / avg / min / max. Column from the table given by `aggregation_column_table`.'),
+      .describe('Required for sum / avg / min / max / count_distinct. Column from the table given by `aggregation_column_table`.'),
+    numerator_column: z
+      .string()
+      .optional()
+      .describe('Numerator column for `aggregation: "weighted_ratio"`. Must be numeric, looked up on `aggregation_column_table`.'),
+    denominator_column: z
+      .string()
+      .optional()
+      .describe('Denominator column for `aggregation: "weighted_ratio"`. Must be numeric, looked up on `aggregation_column_table`.'),
     aggregation_column_table: z
       .enum(['primary', 'join'])
       .optional()
       .default('primary')
-      .describe('Which side of the JOIN the aggregation_column belongs to.'),
+      .describe('Which side of the JOIN the aggregation column(s) belong to.'),
     filters: makeFilterMapSchema().describe('Filters applied to primary_table.'),
     join_filters: makeFilterMapSchema().describe('Filters applied to join_table.'),
     group_by_column: z.string().optional().describe('Optional column to GROUP BY.'),
@@ -1072,6 +1158,8 @@ function registerJoinAggregateGeneric(
         join_table,
         aggregation,
         aggregation_column,
+        numerator_column,
+        denominator_column,
         aggregation_column_table = 'primary',
         filters,
         join_filters,
@@ -1083,8 +1171,10 @@ function registerJoinAggregateGeneric(
       } = args as {
         primary_table: string;
         join_table: string;
-        aggregation: 'count' | 'sum' | 'avg' | 'min' | 'max';
+        aggregation: 'count' | 'sum' | 'avg' | 'min' | 'max' | 'count_distinct' | 'weighted_ratio';
         aggregation_column?: string;
+        numerator_column?: string;
+        denominator_column?: string;
         aggregation_column_table?: 'primary' | 'join';
         filters?: Record<string, FilterValue | undefined>;
         join_filters?: Record<string, FilterValue | undefined>;
@@ -1141,7 +1231,52 @@ function registerJoinAggregateGeneric(
           const aggTableName = aggregation_column_table === 'join' ? join_table : primary_table;
 
           let selectExpr: string;
-          if (aggregation === 'count' && !aggregation_column) {
+          if (aggregation === 'weighted_ratio') {
+            // SUM(num)/SUM(den) on the same JOIN side. Both columns must
+            // belong to the table indicated by `aggregation_column_table`.
+            if (!numerator_column || !denominator_column) {
+              return structuredError({
+                error: 'weighted_ratio requires both `numerator_column` and `denominator_column`',
+                valid_columns: aggAt.numericCols,
+              });
+            }
+            if (!aggAt.numericCols.includes(numerator_column)) {
+              return structuredError({
+                error: `Invalid numerator_column '${numerator_column}' for table '${aggTableName}'`,
+                valid_columns: aggAt.numericCols,
+                did_you_mean: didYouMean(numerator_column, aggAt.numericCols),
+              });
+            }
+            if (!aggAt.numericCols.includes(denominator_column)) {
+              return structuredError({
+                error: `Invalid denominator_column '${denominator_column}' for table '${aggTableName}'`,
+                valid_columns: aggAt.numericCols,
+                did_you_mean: didYouMean(denominator_column, aggAt.numericCols),
+              });
+            }
+            const qiNum = `${aggAlias}.${dialect.quoteIdent(numerator_column)}`;
+            const qiDen = `${aggAlias}.${dialect.quoteIdent(denominator_column)}`;
+            selectExpr =
+              `(1.0 * SUM(${qiNum}) / NULLIF(SUM(${qiDen}), 0)) as result,` +
+              ` SUM(${qiNum}) as numerator,` +
+              ` SUM(${qiDen}) as denominator`;
+          } else if (aggregation === 'count_distinct') {
+            // COUNT(DISTINCT alias.col) — works on any column on the chosen side.
+            if (!aggregation_column) {
+              return structuredError({
+                error: 'aggregation_column is required for count_distinct',
+                valid_columns: aggAt.allColumnNames,
+              });
+            }
+            if (!aggAt.allColumnNames.includes(aggregation_column)) {
+              return structuredError({
+                error: `Invalid aggregation_column '${aggregation_column}' for count_distinct on table '${aggTableName}'`,
+                valid_columns: aggAt.allColumnNames,
+                did_you_mean: didYouMean(aggregation_column, aggAt.allColumnNames),
+              });
+            }
+            selectExpr = `COUNT(DISTINCT ${aggAlias}.${dialect.quoteIdent(aggregation_column)}) as result`;
+          } else if (aggregation === 'count' && !aggregation_column) {
             selectExpr = 'COUNT(*) as result';
           } else if (!aggregation_column) {
             return structuredError({

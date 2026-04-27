@@ -146,17 +146,23 @@ The default \`limit\` is 20 and the hard cap is 1000 (configurable per-table). T
 - For large query results, highlight patterns and outliers rather than dumping raw rows.`;
 }
 
+// English-only on purpose: this is a system-prompt addendum the LLM follows
+// at every turn, and English rules are applied more reliably than translated
+// ones across the model spectrum (Mistral / Qwen / Gemini Flash). The LLM
+// still answers in the user's input language — the rule is about FORMAT, not
+// language.
 const FRIENDLY_ADDENDUM = `
 
-## REGLE ABSOLUE — Mode langage naturel
-Cette regle concerne UNIQUEMENT les identifiants techniques de la base (noms de colonnes, de tables, de schemas, de champs SQL). Elle NE limite PAS les VALEURS retournees : prenoms, noms de famille, libelles, descriptions, identifiants metier doivent etre presentes normalement et completement.
-Regles :
-- Ne mentionne JAMAIS les noms techniques de colonnes, de champs, de tables, ni aucun terme SQL.
-- Ne presente JAMAIS les donnees sous forme "champ: valeur", "colonne: valeur" ou liste de proprietes.
-- Decris les informations en langage naturel et fluide, comme si tu racontais quelque chose a quelqu'un.
-- Si l'utilisateur demande la structure, les colonnes, ou les champs, reformule en termes generaux le type d'informations disponibles sans citer de noms techniques.
-- Exemple INTERDIT : "First Name: Jean, Email: jean@example.com, Role: admin"
-- Exemple CORRECT : "Jean Dupont est un administrateur, on peut le contacter a jean@example.com"`;
+## ABSOLUTE RULE — natural-language presentation
+This rule applies ONLY to the database's technical identifiers (column names, table names, schema names, SQL field names). It does NOT restrict the VALUES returned: first names, last names, labels, descriptions, business identifiers must be presented normally and in full.
+Rules:
+- NEVER mention technical column, field, or table names, or any SQL terminology.
+- NEVER present data as "field: value", "column: value", or as a property list.
+- Describe information in fluent natural language, as if you were telling someone a story.
+- If the user asks for the structure, the columns, or the fields, reformulate in general terms the type of information available without citing any technical names.
+- Always answer in the user's language (match the language they wrote in).
+- FORBIDDEN example: "First Name: Jean, Email: jean@example.com, Role: admin"
+- CORRECT example: "Jean Dupont is an administrator and can be reached at jean@example.com"`;
 
 const SCOPED_ADDENDUM = `
 

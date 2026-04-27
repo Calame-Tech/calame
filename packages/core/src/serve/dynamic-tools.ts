@@ -656,9 +656,12 @@ function registerListTablesGeneric(ctx: ToolContext, accessible: AccessibleTable
     };
   });
 
-  const desc = friendly
-    ? 'Lister les tables disponibles. Le catalogue détaillé (types, valeurs) est dans la description des outils `aggregate` et `query`.'
-    : 'List available tables. Detailed catalogue (types, enums) is in the description of `aggregate` / `query` tools.';
+  // Tool descriptions are always English. They form the contract the LLM
+  // reads on tools/list and English is both shorter (~30% fewer tokens than
+  // French here) and the default training language for tool calling. The
+  // `friendly` response mode still drives user-facing output (column labels,
+  // payload shape).
+  const desc = 'List available tables. Detailed catalogue (types, enums) is in the description of `aggregate` / `query` tools.';
 
   server.tool(
     'list_tables',
@@ -704,7 +707,6 @@ function registerAggregateGeneric(
   catalogue: string,
 ): void {
   const { server, executeQuery, dialect, onAuditLog, profileName, responseMode, wrapResponse, scopeGuard } = ctx;
-  const friendly = responseMode === 'friendly';
 
   const eligible = accessible.filter(at => at.enabledTools.includes('aggregate') && at.numericCols.length > 0);
   if (eligible.length === 0) return;
@@ -740,13 +742,14 @@ function registerAggregateGeneric(
     limit: z.number().optional().default(20).describe('Max rows.'),
   };
 
-  const examples = friendly
-    ? "EXEMPLES:\n  Compter par statut, top 5: {\"table\":\"<TABLE>\",\"aggregation\":\"count\",\"group_by\":\"<COL>\",\"order_by\":\"result\",\"order_direction\":\"desc\",\"limit\":5}\n  Taux d'échec par groupe (min 50): {\"table\":\"<TABLE>\",\"aggregation\":\"ratio\",\"group_by\":\"<GRP>\",\"ratio_filter\":{\"<COL>\":{\"op\":\"eq\",\"value\":\"<VAL>\"}},\"having_min_total\":50}"
-    : 'EXAMPLES:\n  Count by group, top 5:  {"table":"<TABLE>","aggregation":"count","group_by":"<COL>","order_by":"result","order_direction":"desc","limit":5}\n  Failure rate per group with sample-size floor:  {"table":"<TABLE>","aggregation":"ratio","group_by":"<GRP>","ratio_filter":{"<COL>":{"op":"eq","value":"<VAL>"}},"having_min_total":50}';
+  // Tool descriptions live in the manifest the LLM reads on tools/list — they
+  // stay English regardless of `responseMode` (English is shorter and the
+  // default training language for tool calling). User-facing output is still
+  // localized via the `friendly` response mode.
+  const examples =
+    'EXAMPLES:\n  Count by group, top 5:  {"table":"<TABLE>","aggregation":"count","group_by":"<COL>","order_by":"result","order_direction":"desc","limit":5}\n  Failure rate per group with sample-size floor:  {"table":"<TABLE>","aggregation":"ratio","group_by":"<GRP>","ratio_filter":{"<COL>":{"op":"eq","value":"<VAL>"}},"having_min_total":50}';
 
-  const desc = friendly
-    ? `Agréger les données d'une table (count / sum / avg / min / max / ratio).\n\n${catalogue}\n\n${examples}`
-    : `Aggregate any table with GROUP BY, SUM, AVG, ratio, etc.\n\n${catalogue}\n\n${examples}`;
+  const desc = `Aggregate any table with GROUP BY, SUM, AVG, ratio, etc.\n\n${catalogue}\n\n${examples}`;
 
   server.tool(
     'aggregate',
@@ -910,7 +913,7 @@ function registerAggregateGeneric(
 // ---------------------------------------------------------------------------
 // Generic `join_aggregate` tool — INNER JOIN of two FK-linked tables with
 // count/sum/avg/min/max + optional GROUP BY. Lets the LLM answer cross-table
-// analytical questions ("top livreurs par nombre de colis livrés") in a
+// analytical questions ("top couriers by delivered package count") in a
 // single call instead of paginating two per-table aggregates and merging
 // client-side. Restricted to tables linked by a declared FK so the SQL is
 // always sound.
@@ -923,7 +926,6 @@ function registerJoinAggregateGeneric(
   catalogue: string,
 ): void {
   const { server, executeQuery, dialect, onAuditLog, profileName, responseMode, wrapResponse, scopeGuard } = ctx;
-  const friendly = responseMode === 'friendly';
 
   // Only tables where aggregate is enabled. Disabling aggregate on a table
   // must also block joins against it.
@@ -985,9 +987,7 @@ function registerJoinAggregateGeneric(
     limit: z.number().optional().default(20).describe('Max rows, capped at 1000.'),
   };
 
-  const desc = friendly
-    ? `Effectue un JOIN entre deux tables liées par clé étrangère et retourne un agrégat (count/sum/avg/min/max) avec GROUP BY optionnel. Pour les questions analytiques croisées (ex. "top livreurs par nombre de colis livrés").\n\n${catalogue}`
-    : `Aggregate over an INNER JOIN of two FK-linked tables (count/sum/avg/min/max with optional GROUP BY). Use this for cross-table analytics instead of paginating per-table tools.\n\n${catalogue}`;
+  const desc = `Aggregate over an INNER JOIN of two FK-linked tables (count/sum/avg/min/max with optional GROUP BY). Use this for cross-table analytics instead of paginating per-table tools.\n\n${catalogue}`;
 
   server.tool(
     'join_aggregate',
@@ -1267,7 +1267,6 @@ function registerQueryGeneric(
   catalogue: string,
 ): void {
   const { server, executeQuery, dialect, onAuditLog, profileName, responseMode, wrapResponse, maxOffset, scopeGuard } = ctx;
-  const friendly = responseMode === 'friendly';
 
   const eligible = accessible.filter(at => at.enabledTools.includes('query') && at.allColumnNames.length > 0);
   if (eligible.length === 0) return;
@@ -1287,9 +1286,7 @@ function registerQueryGeneric(
     sample: z.boolean().optional().describe('If true, return random rows.'),
   };
 
-  const desc = friendly
-    ? `Rechercher des lignes dans une table.\n\n${catalogue}\n\nEXEMPLE:\n  Lister 10 colis livrés: {"table":"<TABLE>","filters":{"<COL>":{"op":"eq","value":"<VAL>"}},"limit":10}`
-    : `Query rows from any table with filters, ordering, and pagination.\n\n${catalogue}\n\nEXAMPLE:\n  Filter + limit:  {"table":"<TABLE>","filters":{"<COL>":{"op":"eq","value":"<VAL>"}},"limit":10}`;
+  const desc = `Query rows from any table with filters, ordering, and pagination.\n\n${catalogue}\n\nEXAMPLE:\n  Filter + limit:  {"table":"<TABLE>","filters":{"<COL>":{"op":"eq","value":"<VAL>"}},"limit":10}`;
 
   server.tool(
     'query',
@@ -1457,9 +1454,7 @@ function registerDescribeGeneric(
     table: tableEnum.describe('Table to describe.'),
   };
 
-  const desc = friendly
-    ? "Obtenir les statistiques runtime d'une table (row count, valeurs distinctes, FK)."
-    : 'Get runtime statistics for any visible table: row count, per-column null/distinct stats, low-cardinality enum values, text samples, numeric min/max/avg, FK relations.';
+  const desc = 'Get runtime statistics for any visible table: row count, per-column null/distinct stats, low-cardinality enum values, text samples, numeric min/max/avg, FK relations.';
 
   server.tool(
     'describe',

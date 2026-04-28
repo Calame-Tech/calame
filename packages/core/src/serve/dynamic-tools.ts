@@ -88,6 +88,7 @@ function makeDialect(dbType: 'postgresql' | 'mysql' | 'sqlite'): Dialect {
   switch (dbType) {
     case 'postgresql':
       return {
+        databaseType: 'postgresql',
         isPostgres: true,
         quoteIdent: (n) => `"${n}"`,
         quoteTable: (s, t) => `"${s}"."${t}"`,
@@ -96,6 +97,7 @@ function makeDialect(dbType: 'postgresql' | 'mysql' | 'sqlite'): Dialect {
       };
     case 'mysql':
       return {
+        databaseType: 'mysql',
         isPostgres: false,
         quoteIdent: (n) => `\`${n}\``,
         quoteTable: (_s, t) => `\`${t}\``,
@@ -104,6 +106,7 @@ function makeDialect(dbType: 'postgresql' | 'mysql' | 'sqlite'): Dialect {
       };
     case 'sqlite':
       return {
+        databaseType: 'sqlite',
         isPostgres: false,
         quoteIdent: (n) => `"${n}"`,
         quoteTable: (_s, t) => `"${t}"`,
@@ -171,6 +174,50 @@ function isNumericType(pgType: string): boolean {
 
 function isTextType(pgType: string): boolean {
   return pgTypeToZod(pgType) === 'string';
+}
+
+// Date bucketing granularities supported by `group_by_bucket` on aggregate /
+// join_aggregate. Translates to DATE_TRUNC (Postgres), DATE_FORMAT (MySQL),
+// or strftime (SQLite) so the LLM can ask for "monthly", "weekly", "daily"
+// trendlines without inventing dialect-specific SQL.
+type DateBucket = 'day' | 'week' | 'month' | 'quarter' | 'year';
+
+function dateBucketExpr(dialect: Dialect, granularity: DateBucket, columnExpr: string): string {
+  // Postgres has a native DATE_TRUNC for every granularity we expose.
+  if (dialect.databaseType === 'postgresql') {
+    return `DATE_TRUNC('${granularity}', ${columnExpr})`;
+  }
+
+  // MySQL and SQLite don't have DATE_TRUNC. We render a canonical formatted
+  // string per period so GROUP BY collapses identically and ORDER BY sorts
+  // chronologically. The formats below assume the column already holds a
+  // valid date / datetime / ISO-8601 string; non-date inputs return NULL,
+  // matching how Calame handles malformed SQL today.
+  const fmt = (() => {
+    switch (granularity) {
+      case 'day': return '%Y-%m-%d';
+      case 'week': return '%Y-W%W';
+      case 'month': return '%Y-%m-01';
+      case 'quarter': return null; // synthesised below
+      case 'year': return '%Y-01-01';
+    }
+  })();
+
+  // Quarter has no single format string — synthesise YYYY-Q# from year + month.
+  if (granularity === 'quarter') {
+    if (dialect.databaseType === 'mysql') {
+      return `CONCAT(YEAR(${columnExpr}), '-Q', QUARTER(${columnExpr}))`;
+    }
+    // sqlite
+    return `(strftime('%Y', ${columnExpr}) || '-Q' || ((CAST(strftime('%m', ${columnExpr}) AS INTEGER) - 1) / 3 + 1))`;
+  }
+
+  if (!fmt) return columnExpr; // unreachable, narrowing safety
+  if (dialect.databaseType === 'mysql') {
+    return `DATE_FORMAT(${columnExpr}, '${fmt}')`;
+  }
+  // sqlite
+  return `strftime('${fmt}', ${columnExpr})`;
 }
 
 // Friendly column-type label baked into the Phase-2 catalogue (string in tool
@@ -292,7 +339,8 @@ function buildCatalogue(
   }
   lines.push('');
   lines.push('OPS: eq, neq, gt, gte, lt, lte (single value), between (value=[min,max]),');
-  lines.push('     in (value=array), is_null, is_not_null (omit value)');
+  lines.push('     in (value=array), is_null, is_not_null (omit value),');
+  lines.push('     contains, starts_with, ends_with (case-insensitive substring match on text)');
   return lines.join('\n');
 }
 
@@ -317,7 +365,8 @@ function buildCompactCatalogue(accessible: AccessibleTable[]): string {
   }
   lines.push('');
   lines.push('OPS: eq, neq, gt, gte, lt, lte (single value), between (value=[min,max]),');
-  lines.push('     in (value=array), is_null, is_not_null (omit value)');
+  lines.push('     in (value=array), is_null, is_not_null (omit value),');
+  lines.push('     contains, starts_with, ends_with (case-insensitive substring match on text)');
   return lines.join('\n');
 }
 
@@ -335,7 +384,10 @@ type FilterOperator =
   | 'between'
   | 'in'
   | 'is_null'
-  | 'is_not_null';
+  | 'is_not_null'
+  | 'contains'
+  | 'starts_with'
+  | 'ends_with';
 
 interface FilterValue {
   op: FilterOperator;
@@ -656,9 +708,12 @@ function registerListTablesGeneric(ctx: ToolContext, accessible: AccessibleTable
     };
   });
 
-  const desc = friendly
-    ? 'Lister les tables disponibles. Le catalogue détaillé (types, valeurs) est dans la description des outils `aggregate` et `query`.'
-    : 'List available tables. Detailed catalogue (types, enums) is in the description of `aggregate` / `query` tools.';
+  // Tool descriptions are always English. They form the contract the LLM
+  // reads on tools/list and English is both shorter (~30% fewer tokens than
+  // French here) and the default training language for tool calling. The
+  // `friendly` response mode still drives user-facing output (column labels,
+  // payload shape).
+  const desc = 'List available tables. Detailed catalogue (types, enums) is in the description of `aggregate` / `query` tools.';
 
   server.tool(
     'list_tables',
@@ -687,7 +742,12 @@ function makeFilterMapSchema(): z.ZodTypeAny {
     .record(
       z.string(),
       z.object({
-        op: z.enum(['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'between', 'in', 'is_null', 'is_not_null']),
+        op: z.enum([
+          'eq', 'neq', 'gt', 'gte', 'lt', 'lte',
+          'between', 'in',
+          'is_null', 'is_not_null',
+          'contains', 'starts_with', 'ends_with',
+        ]),
         value: z.any().optional(),
       }),
     )
@@ -704,7 +764,6 @@ function registerAggregateGeneric(
   catalogue: string,
 ): void {
   const { server, executeQuery, dialect, onAuditLog, profileName, responseMode, wrapResponse, scopeGuard } = ctx;
-  const friendly = responseMode === 'friendly';
 
   const eligible = accessible.filter(at => at.enabledTools.includes('aggregate') && at.numericCols.length > 0);
   if (eligible.length === 0) return;
@@ -714,15 +773,31 @@ function registerAggregateGeneric(
   const inputShape: Record<string, z.ZodTypeAny> = {
     table: tableEnum.describe('Target table. See TABLES & COLUMNS.'),
     aggregation: z
-      .enum(['count', 'sum', 'avg', 'min', 'max', 'ratio'])
-      .describe('Aggregation kind. Use "ratio" with `ratio_filter` for per-group ratios in one call.'),
+      .enum(['count', 'sum', 'avg', 'min', 'max', 'ratio', 'count_distinct', 'weighted_ratio'])
+      .describe(
+        'Aggregation kind. ' +
+          '"count" / "sum" / "avg" / "min" / "max" are the standard SQL aggregates. ' +
+          '"ratio" computes (rows matching `ratio_filter`) / (rows matching `filters`) — count-based. ' +
+          '"count_distinct" returns COUNT(DISTINCT `aggregation_column`). ' +
+          '"weighted_ratio" returns SUM(`numerator_column`) / SUM(`denominator_column`) — useful for fulfillment %, conversion rate, weighted averages.',
+      ),
     aggregation_column: z
       .string()
       .optional()
-      .describe('Required for sum / avg / min / max. Numeric column of `table`.'),
+      .describe(
+        'Required for sum / avg / min / max (numeric column) and for count_distinct (any column).',
+      ),
+    numerator_column: z
+      .string()
+      .optional()
+      .describe('Numerator column for `aggregation: "weighted_ratio"`. Must be numeric.'),
+    denominator_column: z
+      .string()
+      .optional()
+      .describe('Denominator column for `aggregation: "weighted_ratio"`. Must be numeric.'),
     filters: makeFilterMapSchema().describe(
       'WHERE filters (denominator for ratio). Each entry is { op, value }. ' +
-        'OPS: eq, neq, gt, gte, lt, lte (single value), between (value=[min,max]), in (value=array), is_null, is_not_null (omit value).',
+        'OPS: eq, neq, gt, gte, lt, lte (single value), between (value=[min,max]), in (value=array), is_null, is_not_null (omit value), contains / starts_with / ends_with (case-insensitive text search, value=substring).',
     ),
     ratio_filter: makeFilterMapSchema().describe(
       'Numerator filter for `aggregation: "ratio"`. Same shape as `filters`.',
@@ -732,6 +807,15 @@ function registerAggregateGeneric(
       .optional()
       .describe('Minimum row count per group, evaluated as HAVING. Drops small-sample groups in ratio rankings.'),
     group_by: z.string().optional().describe('Column to group by.'),
+    group_by_bucket: z
+      .enum(['day', 'week', 'month', 'quarter', 'year'])
+      .optional()
+      .describe(
+        'When set together with `group_by` on a date / timestamp column, ' +
+          'truncates the value to the start of the period (DATE_TRUNC). ' +
+          'Use this for time-series questions like "sales per month", ' +
+          '"errors per day", etc.',
+      ),
     order_by: z
       .string()
       .optional()
@@ -740,13 +824,14 @@ function registerAggregateGeneric(
     limit: z.number().optional().default(20).describe('Max rows.'),
   };
 
-  const examples = friendly
-    ? "EXEMPLES:\n  Compter par statut, top 5: {\"table\":\"<TABLE>\",\"aggregation\":\"count\",\"group_by\":\"<COL>\",\"order_by\":\"result\",\"order_direction\":\"desc\",\"limit\":5}\n  Taux d'échec par groupe (min 50): {\"table\":\"<TABLE>\",\"aggregation\":\"ratio\",\"group_by\":\"<GRP>\",\"ratio_filter\":{\"<COL>\":{\"op\":\"eq\",\"value\":\"<VAL>\"}},\"having_min_total\":50}"
-    : 'EXAMPLES:\n  Count by group, top 5:  {"table":"<TABLE>","aggregation":"count","group_by":"<COL>","order_by":"result","order_direction":"desc","limit":5}\n  Failure rate per group with sample-size floor:  {"table":"<TABLE>","aggregation":"ratio","group_by":"<GRP>","ratio_filter":{"<COL>":{"op":"eq","value":"<VAL>"}},"having_min_total":50}';
+  // Tool descriptions live in the manifest the LLM reads on tools/list — they
+  // stay English regardless of `responseMode` (English is shorter and the
+  // default training language for tool calling). User-facing output is still
+  // localized via the `friendly` response mode.
+  const examples =
+    'EXAMPLES:\n  Count by group, top 5:  {"table":"<TABLE>","aggregation":"count","group_by":"<COL>","order_by":"result","order_direction":"desc","limit":5}\n  Failure rate per group with sample-size floor:  {"table":"<TABLE>","aggregation":"ratio","group_by":"<GRP>","ratio_filter":{"<COL>":{"op":"eq","value":"<VAL>"}},"having_min_total":50}';
 
-  const desc = friendly
-    ? `Agréger les données d'une table (count / sum / avg / min / max / ratio).\n\n${catalogue}\n\n${examples}`
-    : `Aggregate any table with GROUP BY, SUM, AVG, ratio, etc.\n\n${catalogue}\n\n${examples}`;
+  const desc = `Aggregate any table with GROUP BY, SUM, AVG, ratio, etc.\n\n${catalogue}\n\n${examples}`;
 
   server.tool(
     'aggregate',
@@ -774,20 +859,26 @@ function registerAggregateGeneric(
       const {
         aggregation,
         aggregation_column,
+        numerator_column,
+        denominator_column,
         filters,
         ratio_filter,
         having_min_total,
         group_by,
+        group_by_bucket,
         order_by,
         order_direction,
         limit,
       } = args as {
         aggregation: string;
         aggregation_column?: string;
+        numerator_column?: string;
+        denominator_column?: string;
         filters?: Record<string, FilterValue | undefined>;
         ratio_filter?: Record<string, FilterValue | undefined>;
         having_min_total?: number;
         group_by?: string;
+        group_by_bucket?: DateBucket;
         order_by?: string;
         order_direction?: string;
         limit?: number;
@@ -834,6 +925,57 @@ function registerAggregateGeneric(
               `AVG(1.0 * (${caseFirst})) as result,` +
               ` SUM(${caseSecond}) as numerator,` +
               ` COUNT(*) as denominator`;
+          } else if (aggregation === 'weighted_ratio') {
+            // SUM(num) / SUM(den) — for fulfillment %, conversion rate,
+            // weighted averages. Validates both columns are numeric and emits
+            // (result, numerator, denominator) so the LLM can sanity-check
+            // sample size and combine with `having_min_total` for top-N
+            // rankings that filter out small denominators.
+            if (!numerator_column || !denominator_column) {
+              return structuredError({
+                error: 'weighted_ratio requires both `numerator_column` and `denominator_column`',
+                valid_columns: at.numericCols,
+              });
+            }
+            if (!at.numericCols.includes(numerator_column)) {
+              return structuredError({
+                error: `Invalid numerator_column '${numerator_column}' for table '${tableName}'`,
+                valid_columns: at.numericCols,
+                did_you_mean: didYouMean(numerator_column, at.numericCols),
+              });
+            }
+            if (!at.numericCols.includes(denominator_column)) {
+              return structuredError({
+                error: `Invalid denominator_column '${denominator_column}' for table '${tableName}'`,
+                valid_columns: at.numericCols,
+                did_you_mean: didYouMean(denominator_column, at.numericCols),
+              });
+            }
+            const qiNum = dialect.quoteIdent(numerator_column);
+            const qiDen = dialect.quoteIdent(denominator_column);
+            // 1.0 multiplier promotes integer SUMs to float so SQLite doesn't
+            // round to 0; NULLIF guards against divide-by-zero on empty groups.
+            selectExpr =
+              `(1.0 * SUM(${qiNum}) / NULLIF(SUM(${qiDen}), 0)) as result,` +
+              ` SUM(${qiNum}) as numerator,` +
+              ` SUM(${qiDen}) as denominator`;
+          } else if (aggregation === 'count_distinct') {
+            // COUNT(DISTINCT col) — works on any column type, not just numeric.
+            // Validate against the visible-but-not-excluded column list.
+            if (!aggregation_column) {
+              return structuredError({
+                error: 'aggregation_column is required for count_distinct',
+                valid_columns: at.allColumnNames,
+              });
+            }
+            if (!at.allColumnNames.includes(aggregation_column)) {
+              return structuredError({
+                error: `Invalid aggregation_column '${aggregation_column}' for count_distinct on table '${tableName}'`,
+                valid_columns: at.allColumnNames,
+                did_you_mean: didYouMean(aggregation_column, at.allColumnNames),
+              });
+            }
+            selectExpr = `COUNT(DISTINCT ${dialect.quoteIdent(aggregation_column)}) as result`;
           } else if (aggregation === 'count' && !aggregation_column) {
             selectExpr = 'COUNT(*) as result';
           } else if (!aggregation_column) {
@@ -866,8 +1008,19 @@ function registerAggregateGeneric(
                 did_you_mean: didYouMean(group_by, at.groupableColumns),
               });
             }
-            selectPrefix = `${dialect.quoteIdent(group_by)}, `;
-            groupByClause = `GROUP BY ${dialect.quoteIdent(group_by)}`;
+            // group_by_bucket wraps the column in a date-truncation expression
+            // so the GROUP BY collapses on the start of each period (day/week/
+            // month/quarter/year). Emitted both in the SELECT prefix and the
+            // GROUP BY clause, aliased to the bare column name so the result
+            // shape stays identical regardless of bucketing.
+            const colExpr = group_by_bucket
+              ? dateBucketExpr(dialect, group_by_bucket, dialect.quoteIdent(group_by))
+              : dialect.quoteIdent(group_by);
+            const groupAlias = dialect.quoteIdent(group_by);
+            selectPrefix = group_by_bucket
+              ? `${colExpr} as ${groupAlias}, `
+              : `${colExpr}, `;
+            groupByClause = `GROUP BY ${colExpr}`;
           }
 
           let havingClause = '';
@@ -910,7 +1063,7 @@ function registerAggregateGeneric(
 // ---------------------------------------------------------------------------
 // Generic `join_aggregate` tool — INNER JOIN of two FK-linked tables with
 // count/sum/avg/min/max + optional GROUP BY. Lets the LLM answer cross-table
-// analytical questions ("top livreurs par nombre de colis livrés") in a
+// analytical questions ("top couriers by delivered package count") in a
 // single call instead of paginating two per-table aggregates and merging
 // client-side. Restricted to tables linked by a declared FK so the SQL is
 // always sound.
@@ -923,7 +1076,6 @@ function registerJoinAggregateGeneric(
   catalogue: string,
 ): void {
   const { server, executeQuery, dialect, onAuditLog, profileName, responseMode, wrapResponse, scopeGuard } = ctx;
-  const friendly = responseMode === 'friendly';
 
   // Only tables where aggregate is enabled. Disabling aggregate on a table
   // must also block joins against it.
@@ -960,16 +1112,31 @@ function registerJoinAggregateGeneric(
   const inputShape: Record<string, z.ZodTypeAny> = {
     primary_table: tableEnum.describe('Left side of the JOIN.'),
     join_table: tableEnum.describe('Right side of the JOIN. Must be linked to primary_table by an FK.'),
-    aggregation: z.enum(['count', 'sum', 'avg', 'min', 'max']),
+    aggregation: z
+      .enum(['count', 'sum', 'avg', 'min', 'max', 'count_distinct', 'weighted_ratio'])
+      .describe(
+        'Aggregation kind. ' +
+          '"count" / "sum" / "avg" / "min" / "max" are standard SQL aggregates. ' +
+          '"count_distinct" returns COUNT(DISTINCT `aggregation_column`) on the side selected by `aggregation_column_table`. ' +
+          '"weighted_ratio" returns SUM(numerator_column) / SUM(denominator_column) — both columns are looked up on the same side as `aggregation_column_table` (default: primary).',
+      ),
     aggregation_column: z
       .string()
       .optional()
-      .describe('Required for sum / avg / min / max. Column from the table given by `aggregation_column_table`.'),
+      .describe('Required for sum / avg / min / max / count_distinct. Column from the table given by `aggregation_column_table`.'),
+    numerator_column: z
+      .string()
+      .optional()
+      .describe('Numerator column for `aggregation: "weighted_ratio"`. Must be numeric, looked up on `aggregation_column_table`.'),
+    denominator_column: z
+      .string()
+      .optional()
+      .describe('Denominator column for `aggregation: "weighted_ratio"`. Must be numeric, looked up on `aggregation_column_table`.'),
     aggregation_column_table: z
       .enum(['primary', 'join'])
       .optional()
       .default('primary')
-      .describe('Which side of the JOIN the aggregation_column belongs to.'),
+      .describe('Which side of the JOIN the aggregation column(s) belong to.'),
     filters: makeFilterMapSchema().describe('Filters applied to primary_table.'),
     join_filters: makeFilterMapSchema().describe('Filters applied to join_table.'),
     group_by_column: z.string().optional().describe('Optional column to GROUP BY.'),
@@ -978,6 +1145,10 @@ function registerJoinAggregateGeneric(
       .optional()
       .default('primary')
       .describe('Which side of the JOIN the group_by_column belongs to.'),
+    group_by_bucket: z
+      .enum(['day', 'week', 'month', 'quarter', 'year'])
+      .optional()
+      .describe('When set with `group_by_column` on a date column, truncates to the start of the period (DATE_TRUNC).'),
     order_direction: z
       .enum(['asc', 'desc'])
       .optional()
@@ -985,9 +1156,7 @@ function registerJoinAggregateGeneric(
     limit: z.number().optional().default(20).describe('Max rows, capped at 1000.'),
   };
 
-  const desc = friendly
-    ? `Effectue un JOIN entre deux tables liées par clé étrangère et retourne un agrégat (count/sum/avg/min/max) avec GROUP BY optionnel. Pour les questions analytiques croisées (ex. "top livreurs par nombre de colis livrés").\n\n${catalogue}`
-    : `Aggregate over an INNER JOIN of two FK-linked tables (count/sum/avg/min/max with optional GROUP BY). Use this for cross-table analytics instead of paginating per-table tools.\n\n${catalogue}`;
+  const desc = `Aggregate over an INNER JOIN of two FK-linked tables (count/sum/avg/min/max with optional GROUP BY). Use this for cross-table analytics instead of paginating per-table tools.\n\n${catalogue}`;
 
   server.tool(
     'join_aggregate',
@@ -999,23 +1168,29 @@ function registerJoinAggregateGeneric(
         join_table,
         aggregation,
         aggregation_column,
+        numerator_column,
+        denominator_column,
         aggregation_column_table = 'primary',
         filters,
         join_filters,
         group_by_column,
         group_by_table = 'primary',
+        group_by_bucket,
         order_direction,
         limit,
       } = args as {
         primary_table: string;
         join_table: string;
-        aggregation: 'count' | 'sum' | 'avg' | 'min' | 'max';
+        aggregation: 'count' | 'sum' | 'avg' | 'min' | 'max' | 'count_distinct' | 'weighted_ratio';
         aggregation_column?: string;
+        numerator_column?: string;
+        denominator_column?: string;
         aggregation_column_table?: 'primary' | 'join';
         filters?: Record<string, FilterValue | undefined>;
         join_filters?: Record<string, FilterValue | undefined>;
         group_by_column?: string;
         group_by_table?: 'primary' | 'join';
+        group_by_bucket?: DateBucket;
         order_direction?: 'asc' | 'desc';
         limit?: number;
       };
@@ -1066,7 +1241,52 @@ function registerJoinAggregateGeneric(
           const aggTableName = aggregation_column_table === 'join' ? join_table : primary_table;
 
           let selectExpr: string;
-          if (aggregation === 'count' && !aggregation_column) {
+          if (aggregation === 'weighted_ratio') {
+            // SUM(num)/SUM(den) on the same JOIN side. Both columns must
+            // belong to the table indicated by `aggregation_column_table`.
+            if (!numerator_column || !denominator_column) {
+              return structuredError({
+                error: 'weighted_ratio requires both `numerator_column` and `denominator_column`',
+                valid_columns: aggAt.numericCols,
+              });
+            }
+            if (!aggAt.numericCols.includes(numerator_column)) {
+              return structuredError({
+                error: `Invalid numerator_column '${numerator_column}' for table '${aggTableName}'`,
+                valid_columns: aggAt.numericCols,
+                did_you_mean: didYouMean(numerator_column, aggAt.numericCols),
+              });
+            }
+            if (!aggAt.numericCols.includes(denominator_column)) {
+              return structuredError({
+                error: `Invalid denominator_column '${denominator_column}' for table '${aggTableName}'`,
+                valid_columns: aggAt.numericCols,
+                did_you_mean: didYouMean(denominator_column, aggAt.numericCols),
+              });
+            }
+            const qiNum = `${aggAlias}.${dialect.quoteIdent(numerator_column)}`;
+            const qiDen = `${aggAlias}.${dialect.quoteIdent(denominator_column)}`;
+            selectExpr =
+              `(1.0 * SUM(${qiNum}) / NULLIF(SUM(${qiDen}), 0)) as result,` +
+              ` SUM(${qiNum}) as numerator,` +
+              ` SUM(${qiDen}) as denominator`;
+          } else if (aggregation === 'count_distinct') {
+            // COUNT(DISTINCT alias.col) — works on any column on the chosen side.
+            if (!aggregation_column) {
+              return structuredError({
+                error: 'aggregation_column is required for count_distinct',
+                valid_columns: aggAt.allColumnNames,
+              });
+            }
+            if (!aggAt.allColumnNames.includes(aggregation_column)) {
+              return structuredError({
+                error: `Invalid aggregation_column '${aggregation_column}' for count_distinct on table '${aggTableName}'`,
+                valid_columns: aggAt.allColumnNames,
+                did_you_mean: didYouMean(aggregation_column, aggAt.allColumnNames),
+              });
+            }
+            selectExpr = `COUNT(DISTINCT ${aggAlias}.${dialect.quoteIdent(aggregation_column)}) as result`;
+          } else if (aggregation === 'count' && !aggregation_column) {
             selectExpr = 'COUNT(*) as result';
           } else if (!aggregation_column) {
             return structuredError({
@@ -1100,10 +1320,16 @@ function registerJoinAggregateGeneric(
               });
             }
             const qualified = `${gbAlias}.${dialect.quoteIdent(group_by_column)}`;
-            // Alias the group-by column so the result key stays stable even if
-            // the same name exists on the other side.
-            selectPrefix = `${qualified} as ${dialect.quoteIdent(group_by_column)}, `;
-            groupByClause = `GROUP BY ${qualified}`;
+            // group_by_bucket wraps the column in a date-truncation expression
+            // so the GROUP BY collapses on each period start. Aliased to the
+            // bare column name so the result key stays the same regardless of
+            // bucketing — also disambiguates from a same-named column on the
+            // other side of the JOIN.
+            const colExpr = group_by_bucket
+              ? dateBucketExpr(dialect, group_by_bucket, qualified)
+              : qualified;
+            selectPrefix = `${colExpr} as ${dialect.quoteIdent(group_by_column)}, `;
+            groupByClause = `GROUP BY ${colExpr}`;
             groupByOriginal = { table: gbTableName, column: group_by_column };
           }
 
@@ -1267,7 +1493,6 @@ function registerQueryGeneric(
   catalogue: string,
 ): void {
   const { server, executeQuery, dialect, onAuditLog, profileName, responseMode, wrapResponse, maxOffset, scopeGuard } = ctx;
-  const friendly = responseMode === 'friendly';
 
   const eligible = accessible.filter(at => at.enabledTools.includes('query') && at.allColumnNames.length > 0);
   if (eligible.length === 0) return;
@@ -1287,9 +1512,7 @@ function registerQueryGeneric(
     sample: z.boolean().optional().describe('If true, return random rows.'),
   };
 
-  const desc = friendly
-    ? `Rechercher des lignes dans une table.\n\n${catalogue}\n\nEXEMPLE:\n  Lister 10 colis livrés: {"table":"<TABLE>","filters":{"<COL>":{"op":"eq","value":"<VAL>"}},"limit":10}`
-    : `Query rows from any table with filters, ordering, and pagination.\n\n${catalogue}\n\nEXAMPLE:\n  Filter + limit:  {"table":"<TABLE>","filters":{"<COL>":{"op":"eq","value":"<VAL>"}},"limit":10}`;
+  const desc = `Query rows from any table with filters, ordering, and pagination.\n\n${catalogue}\n\nEXAMPLE:\n  Filter + limit:  {"table":"<TABLE>","filters":{"<COL>":{"op":"eq","value":"<VAL>"}},"limit":10}`;
 
   server.tool(
     'query',
@@ -1457,9 +1680,7 @@ function registerDescribeGeneric(
     table: tableEnum.describe('Table to describe.'),
   };
 
-  const desc = friendly
-    ? "Obtenir les statistiques runtime d'une table (row count, valeurs distinctes, FK)."
-    : 'Get runtime statistics for any visible table: row count, per-column null/distinct stats, low-cardinality enum values, text samples, numeric min/max/avg, FK relations.';
+  const desc = 'Get runtime statistics for any visible table: row count, per-column null/distinct stats, low-cardinality enum values, text samples, numeric min/max/avg, FK relations.';
 
   server.tool(
     'describe',

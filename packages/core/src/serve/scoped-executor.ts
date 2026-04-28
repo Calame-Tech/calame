@@ -15,7 +15,10 @@ type FilterOperator =
   | 'between'
   | 'in'
   | 'is_null'
-  | 'is_not_null';
+  | 'is_not_null'
+  | 'contains'
+  | 'starts_with'
+  | 'ends_with';
 
 export interface FilterValue {
   op: FilterOperator;
@@ -23,6 +26,9 @@ export interface FilterValue {
 }
 
 export interface Dialect {
+  /** Backend type. Lets call sites pick exact syntax (e.g. SQLite strftime
+   *  vs MySQL DATE_FORMAT) when a uniform SQL function is missing. */
+  databaseType: 'postgresql' | 'mysql' | 'sqlite';
   /** True for PostgreSQL (affects IN clause: uses ANY($n) vs IN (?, ?...)) */
   isPostgres: boolean;
   /** Quote an identifier (table or column name) */
@@ -214,6 +220,43 @@ function buildWhereConditions(
       case 'is_not_null':
         conditions.push(`${qi} IS NOT NULL`);
         break;
+      // String-pattern matching. We render case-insensitive `ILIKE` on
+      // Postgres and `LIKE LOWER(...)` on MySQL / SQLite. The user value is
+      // bound parameterized — the wildcards (`%`) are added in SQL, never in
+      // the bound value, so this stays free of injection risk.
+      case 'contains': {
+        const v = String(filter.value ?? '');
+        if (dialect.isPostgres) {
+          conditions.push(`${qi} ILIKE '%' || ${dialect.param(paramIndex++)} || '%'`);
+          values.push(v);
+        } else {
+          conditions.push(`LOWER(${qi}) LIKE '%' || LOWER(${dialect.param(paramIndex++)}) || '%'`);
+          values.push(v);
+        }
+        break;
+      }
+      case 'starts_with': {
+        const v = String(filter.value ?? '');
+        if (dialect.isPostgres) {
+          conditions.push(`${qi} ILIKE ${dialect.param(paramIndex++)} || '%'`);
+          values.push(v);
+        } else {
+          conditions.push(`LOWER(${qi}) LIKE LOWER(${dialect.param(paramIndex++)}) || '%'`);
+          values.push(v);
+        }
+        break;
+      }
+      case 'ends_with': {
+        const v = String(filter.value ?? '');
+        if (dialect.isPostgres) {
+          conditions.push(`${qi} ILIKE '%' || ${dialect.param(paramIndex++)}`);
+          values.push(v);
+        } else {
+          conditions.push(`LOWER(${qi}) LIKE '%' || LOWER(${dialect.param(paramIndex++)})`);
+          values.push(v);
+        }
+        break;
+      }
     }
   }
 

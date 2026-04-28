@@ -33,11 +33,51 @@ importers:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@25.4.0)
 
+  ee/sso:
+    dependencies:
+      jose:
+        specifier: ^6.2.2
+        version: 6.2.2
+      react-dom:
+        specifier: ^18.3.0
+        version: 18.3.1(react@18.3.1)
+    devDependencies:
+      '@types/better-sqlite3':
+        specifier: ^7.6.12
+        version: 7.6.13
+      '@types/express':
+        specifier: ^5.0.0
+        version: 5.0.6
+      '@types/react':
+        specifier: ^18.3.0
+        version: 18.3.28
+      '@types/react-dom':
+        specifier: ^18.3.0
+        version: 18.3.7(@types/react@18.3.28)
+      better-sqlite3:
+        specifier: ^12.8.0
+        version: 12.8.0
+      express:
+        specifier: ^4.22.1
+        version: 4.22.1
+      react:
+        specifier: ^18.3.0
+        version: 18.3.1
+      typescript:
+        specifier: ~5.7.0
+        version: 5.7.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@25.4.0)
+
   packages/cli:
     dependencies:
       '@anthropic-ai/sdk':
         specifier: ^0.39.0
         version: 0.39.0
+      '@calame-ee/sso':
+        specifier: workspace:*
+        version: link:../../ee/sso
       '@calame/connectors':
         specifier: workspace:*
         version: link:../connectors
@@ -173,6 +213,9 @@ importers:
 
   packages/web:
     dependencies:
+      '@calame-ee/sso':
+        specifier: workspace:*
+        version: link:../../ee/sso
       react:
         specifier: ^18.3.0
         version: 18.3.1

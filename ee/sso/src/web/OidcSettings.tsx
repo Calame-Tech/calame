@@ -1,5 +1,9 @@
+// SPDX-License-Identifier: BUSL-1.1
+// Copyright (c) 2026 Calame Tech. Licensed under the Business Source License 1.1.
+// See ee/LICENSE.BUSL at the root of the ee/ directory for terms.
+
 import { useState, useEffect, useRef } from 'react';
-import HelpTip from './HelpTip.js';
+import HelpTip from '../../../../packages/web/src/components/HelpTip.js';
 
 interface OidcConfig {
   enabled: boolean;
@@ -89,12 +93,10 @@ export default function OidcSettings({ availableProfiles = [] }: OidcSettingsPro
     })();
   }, []);
 
-  // Convert Record<string, string> → GroupMapping[]
   function recordToMappings(record: Record<string, string>): GroupMapping[] {
     return Object.entries(record).map(([group, profile]) => ({ group, profile }));
   }
 
-  // Convert GroupMapping[] → Record<string, string>
   function mappingsToRecord(list: GroupMapping[]): Record<string, string> {
     return list.reduce<Record<string, string>>((acc, { group, profile }) => {
       if (group.trim()) acc[group.trim()] = profile.trim();
@@ -152,8 +154,6 @@ export default function OidcSettings({ availableProfiles = [] }: OidcSettingsPro
   });
 
   const handleSave = async () => {
-    // Warn the admin when the config looks complete but OIDC is still disabled —
-    // this is the most common source of "SSO doesn't work" confusion.
     if (!enabled && issuerUrl.trim() !== '' && clientId.trim() !== '') {
       const confirmed = window.confirm(
         'OIDC is configured but the Enabled toggle is OFF — users will not be able to sign in via SSO.\n\nSave anyway?',
@@ -239,7 +239,6 @@ export default function OidcSettings({ availableProfiles = [] }: OidcSettingsPro
             type="checkbox"
             checked={enabled}
             onChange={(e) => {
-              // Mark as manually toggled so auto-tick never overrides this choice.
               hasAutoEnabled.current = true;
               setEnabled(e.target.checked);
             }}
@@ -269,7 +268,6 @@ export default function OidcSettings({ availableProfiles = [] }: OidcSettingsPro
           onChange={(e) => {
             const newValue = e.target.value;
             setIssuerUrl(newValue);
-            // Auto-enable when both required fields are filled for the first time.
             if (newValue.trim() !== '' && clientId.trim() !== '' && !hasAutoEnabled.current && !enabled) {
               hasAutoEnabled.current = true;
               setEnabled(true);
@@ -299,7 +297,6 @@ export default function OidcSettings({ availableProfiles = [] }: OidcSettingsPro
           onChange={(e) => {
             const newValue = e.target.value;
             setClientId(newValue);
-            // Auto-enable when both required fields are filled for the first time.
             if (newValue.trim() !== '' && issuerUrl.trim() !== '' && !hasAutoEnabled.current && !enabled) {
               hasAutoEnabled.current = true;
               setEnabled(true);

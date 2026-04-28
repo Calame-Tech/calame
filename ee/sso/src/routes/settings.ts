@@ -1,13 +1,18 @@
-import type { Express } from 'express';
-import type { AppState } from '../state.js';
-import { verifyPassword } from '../crypto.js';
-import { validateSession } from '../session.js';
-import { parseCookies } from '../utils/cookies.js';
+// SPDX-License-Identifier: BUSL-1.1
+// Copyright (c) 2026 Calame Tech. Licensed under the Business Source License 1.1.
+// See ee/LICENSE.BUSL at the root of the ee/ directory for terms.
 
-export function registerOidcSettingsRoute(app: Express, state: AppState): void {
+import type { Express } from 'express';
+import type { OidcAppContext, OidcSessionDeps } from '../types.js';
+
+export function registerOidcSettingsRoute(
+  app: Express,
+  ctx: OidcAppContext,
+  deps: OidcSessionDeps,
+): void {
   /** GET /api/oidc-settings — Return the current OIDC config (clientSecret masked). */
   app.get('/api/oidc-settings', (_req, res) => {
-    const mgr = state.oidcConfigManager;
+    const mgr = ctx.oidcConfigManager;
     if (!mgr) {
       res.json({ success: true, config: null });
       return;
@@ -17,7 +22,7 @@ export function registerOidcSettingsRoute(app: Express, state: AppState): void {
 
   /** POST /api/oidc-settings — Save OIDC config. */
   app.post('/api/oidc-settings', (req, res) => {
-    const mgr = state.oidcConfigManager;
+    const mgr = ctx.oidcConfigManager;
     if (!mgr) {
       res.status(500).json({ success: false, message: 'OIDC config manager not initialized.' });
       return;
@@ -55,7 +60,6 @@ export function registerOidcSettingsRoute(app: Express, state: AppState): void {
       return;
     }
 
-    // Validate groupToProfile is a plain object of string -> string if provided
     let resolvedGroupToProfile: Record<string, string> = {};
     if (groupToProfile !== undefined && groupToProfile !== null) {
       if (
@@ -100,19 +104,19 @@ export function registerOidcSettingsRoute(app: Express, state: AppState): void {
       return;
     }
 
-    const cookies = parseCookies(req.headers.cookie);
-    const sessionId = cookies.calame_session;
+    const cookies = deps.parseCookies(req.headers.cookie);
+    const sessionId = cookies[deps.adminSessionCookieName];
     if (!sessionId) {
       res.status(401).json({ success: false, message: 'Authentication required.' });
       return;
     }
-    const session = validateSession(sessionId);
+    const session = deps.validateSession(sessionId);
     if (!session?.userId) {
       res.status(401).json({ success: false, message: 'Authentication required.' });
       return;
     }
 
-    const userManager = state.userManager;
+    const userManager = ctx.userManager;
     if (!userManager) {
       res.status(500).json({ success: false, message: 'User manager not initialized.' });
       return;
@@ -124,16 +128,13 @@ export function registerOidcSettingsRoute(app: Express, state: AppState): void {
       return;
     }
 
-    const userRow = state.db?.raw
-      .prepare('SELECT password_hash FROM users WHERE id = ?')
-      .get(session.userId) as { password_hash: string | null } | undefined;
-
-    if (!userRow?.password_hash || !verifyPassword(password, userRow.password_hash)) {
+    const passwordHash = deps.getUserPasswordHash(session.userId);
+    if (!passwordHash || !deps.verifyPassword(password, passwordHash)) {
       res.status(403).json({ success: false, message: 'Incorrect password.' });
       return;
     }
 
-    const mgr = state.oidcConfigManager;
+    const mgr = ctx.oidcConfigManager;
     if (!mgr) {
       res.status(500).json({ success: false, message: 'OIDC config manager not initialized.' });
       return;

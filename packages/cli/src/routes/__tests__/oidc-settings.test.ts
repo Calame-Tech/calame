@@ -1,9 +1,25 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import { registerOidcSettingsRoute } from '../oidc-settings.js';
+import {
+  registerOidcSettingsRoute,
+  type OidcConfigManager,
+  type OidcSessionDeps,
+  type OidcSettingsConfig,
+} from '@calame-ee/sso';
 import { AppState } from '../../state.js';
-import type { OidcConfigManager, OidcSettingsConfig } from '../../oidc-config.js';
+
+/** Stub OidcSessionDeps — the GET/POST /api/oidc-settings tests don't reach session logic. */
+const STUB_DEPS: OidcSessionDeps = {
+  createSession: () => 'stub-session',
+  setSessionCookie: () => {},
+  setUserSessionCookie: () => {},
+  validateSession: () => null,
+  parseCookies: () => ({}),
+  verifyPassword: () => false,
+  adminSessionCookieName: 'calame_session',
+  getUserPasswordHash: () => null,
+};
 
 /** Build a minimal OidcConfigManager mock. */
 function makeMockManager(storedConfig: OidcSettingsConfig | null = null): OidcConfigManager {
@@ -52,7 +68,7 @@ describe('oidc-settings routes', () => {
     state = new AppState();
     app = express();
     app.use(express.json());
-    registerOidcSettingsRoute(app, state);
+    registerOidcSettingsRoute(app, state, STUB_DEPS);
   });
 
   // ─── GET /api/oidc-settings ────────────────────────────────────────────────

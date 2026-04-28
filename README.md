@@ -109,4 +109,9 @@ discussion.
 
 ## License
 
-Apache 2.0 — see [LICENSE](./LICENSE).
+Calame is **dual-licensed**:
+
+- **Apache 2.0** — root, [`packages/*`](./packages), `scripts/`, and everything else outside `ee/`. See [`LICENSE`](./LICENSE).
+- **Business Source License 1.1 (BUSL-1.1)** — the entire [`ee/`](./ee) directory (currently `ee/sso`, the SSO/OIDC implementation). See [`ee/LICENSE.BUSL`](./ee/LICENSE.BUSL) and [`ee/README.md`](./ee/README.md).
+
+In short: you can self-host, fork, and modify Calame freely; the BUSL on `ee/*` only restricts repackaging it as a paid competing product. Each BUSL-licensed version automatically converts to Apache 2.0 four years after its publication.

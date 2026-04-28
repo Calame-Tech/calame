@@ -1,8 +1,12 @@
-import { describe, it, expect } from 'vitest';
-import { OidcProvider } from '../oidc.js';
-import type { OidcConfig } from '../oidc.js';
+// SPDX-License-Identifier: BUSL-1.1
+// Copyright (c) 2026 Calame Tech. Licensed under the Business Source License 1.1.
+// See ee/LICENSE.BUSL at the root of the ee/ directory for terms.
 
-const baseConfig: OidcConfig = {
+import { describe, it, expect } from 'vitest';
+import { OidcProvider } from '../provider.js';
+import type { OidcProviderConfig } from '../provider.js';
+
+const baseConfig: OidcProviderConfig = {
   issuerUrl: 'https://sso.example.com',
   clientId: 'test-client-id',
   clientSecret: 'test-secret',
@@ -23,7 +27,7 @@ describe('OidcProvider', () => {
     });
 
     it('should construct with minimal config (no clientSecret)', () => {
-      const cfg: OidcConfig = { ...baseConfig, clientSecret: undefined };
+      const cfg: OidcProviderConfig = { ...baseConfig, clientSecret: undefined };
       expect(() => new OidcProvider(cfg)).not.toThrow();
     });
   });
@@ -39,7 +43,6 @@ describe('OidcProvider', () => {
     it('should return a base64url-encoded string (no padding, no +/)', () => {
       const provider = new OidcProvider(baseConfig);
       const verifier = provider.generateCodeVerifier();
-      // base64url must not contain +, /, or =
       expect(verifier).not.toMatch(/[+/=]/);
     });
 
@@ -53,7 +56,6 @@ describe('OidcProvider', () => {
     it('should return a verifier of sufficient length (>= 40 chars)', () => {
       const provider = new OidcProvider(baseConfig);
       const verifier = provider.generateCodeVerifier();
-      // 32 random bytes -> base64url ~= 43 chars
       expect(verifier.length).toBeGreaterThanOrEqual(40);
     });
   });

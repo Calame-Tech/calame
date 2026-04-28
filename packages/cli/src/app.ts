@@ -1,14 +1,28 @@
 import express from 'express';
 import cors from 'cors';
 import { AppState } from './state.js';
-import { createAdminSessionMiddleware, getAdminPassword } from './session.js';
+import {
+  createAdminSessionMiddleware,
+  getAdminPassword,
+  createSession,
+  setSessionCookie,
+  setUserSessionCookie,
+  validateSession,
+} from './session.js';
+import { parseCookies } from './utils/cookies.js';
+import { verifyPassword } from './crypto.js';
 import { TokenManager } from './token.js';
 import { UserManager } from './user.js';
 import { AuditLog } from './audit.js';
 import { CalameDatabase } from './database.js';
 import { AiSettingsManager } from './ai-config.js';
 import { SmtpConfigManager } from './smtp-config.js';
-import { OidcConfigManager } from './oidc-config.js';
+import {
+  OidcConfigManager,
+  registerOidcAuthRoutes,
+  registerOidcSettingsRoute,
+  type OidcSessionDeps,
+} from '@calame-ee/sso';
 import { EmailService, isSmtpConfigured } from './email.js';
 import { loadYamlConfig } from './yaml-config.js';
 import type { AppConfig } from './config.js';
@@ -27,7 +41,6 @@ import { registerServeStatusRoute } from './routes/serve-status.js';
 import { WriteQueue } from './write-queue.js';
 import { registerWriteQueueRoute } from './routes/write-queue.js';
 import { registerOAuthRoutes } from './routes/oauth.js';
-import { registerOidcAuthRoutes } from './routes/oidc-auth.js';
 import { registerProfileOAuthRoutes } from './routes/profile-oauth.js';
 import { OAUTH_PROVIDERS } from './oauth-providers.js';
 import { registerProfilePreviewRoute } from './routes/profile-preview.js';
@@ -39,7 +52,6 @@ import { registerChatProfileRoute } from './routes/chat-profile.js';
 import { registerChatAuthRoute } from './routes/chat-auth.js';
 import { registerAiSettingsRoute } from './routes/ai-settings.js';
 import { registerSmtpSettingsRoute } from './routes/smtp-settings.js';
-import { registerOidcSettingsRoute } from './routes/oidc-settings.js';
 import { registerHealthRoute } from './routes/health.js';
 import { registerMetricsRoute } from './routes/metrics.js';
 import { TokenRateLimiter } from './rate-limiter.js';
@@ -192,7 +204,22 @@ export function createApp(
   // OIDC auth routes — always registered before admin session middleware (callback is public).
   // Each handler calls buildOidcProvider() at request time and returns 503 when not configured,
   // so routes are safe to expose unconditionally — no restart needed after OIDC is enabled via UI.
-  registerOidcAuthRoutes(app, appState);
+  const ssoDeps: OidcSessionDeps = {
+    createSession,
+    setSessionCookie,
+    setUserSessionCookie,
+    validateSession,
+    parseCookies,
+    verifyPassword,
+    adminSessionCookieName: 'calame_session',
+    getUserPasswordHash: (userId: string) => {
+      const row = appState.db?.raw
+        .prepare('SELECT password_hash FROM users WHERE id = ?')
+        .get(userId) as { password_hash: string | null } | undefined;
+      return row?.password_hash ?? null;
+    },
+  };
+  registerOidcAuthRoutes(app, appState, ssoDeps);
 
   // Per-profile OAuth routes — registered before admin session middleware (callbacks are public).
   registerProfileOAuthRoutes(app, appState);
@@ -225,7 +252,7 @@ export function createApp(
   registerUsersRoute(app, appState);
   registerAiSettingsRoute(app, appState);
   registerSmtpSettingsRoute(app, appState);
-  registerOidcSettingsRoute(app, appState);
+  registerOidcSettingsRoute(app, appState, ssoDeps);
   registerMetricsRoute(app, appState);
   registerProfilePreviewRoute(app, appState);
 

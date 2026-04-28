@@ -17,6 +17,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
     "@modelcontextprotocol/sdk": "^1.27.1",
+    "@calame-ee/sso": "workspace:*",
     "@calame/connectors": "workspace:*",
     "@calame/core": "workspace:*",
     "better-sqlite3": "^12.8.0",

@@ -2,8 +2,7 @@ import type { Express, Request, Response } from 'express';
 import crypto from 'crypto';
 import type { AppState } from '../state.js';
 import { getOAuthProvider } from '../oauth-providers.js';
-import { OidcProvider } from '../oidc.js';
-import type { OidcSettingsConfig } from '../oidc-config.js';
+import { OidcProvider, type OidcSettingsConfig } from '@calame-ee/sso';
 
 /**
  * Minimal OAuth 2.1 implementation for MCP auth (claude.ai compatibility).

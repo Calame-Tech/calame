@@ -88,6 +88,77 @@ export async function createMcpChatTools(
 }
 
 // ---------------------------------------------------------------------------
+// Native calc tool
+// ---------------------------------------------------------------------------
+
+/**
+ * Create a native server-side arithmetic tool.
+ * The LLM MUST use this tool for any arithmetic over numbers already cited in the conversation,
+ * instead of computing mentally (which produces errors on large result sets).
+ */
+export function createCalcTool(): ToolDef {
+  return {
+    name: 'calc',
+    description:
+      'Perform arithmetic on a list of numbers. ' +
+      'Use this tool for EVERY sum, average, min, max, count, or product over numbers already cited in the conversation. ' +
+      'Do NOT compute totals mentally — always call this tool instead.',
+    parameters: {
+      type: 'object',
+      properties: {
+        op: {
+          type: 'string',
+          enum: ['sum', 'avg', 'min', 'max', 'count', 'product'],
+        },
+        values: {
+          type: 'array',
+          items: { type: 'number' },
+        },
+      },
+      required: ['op', 'values'],
+    },
+    handler: async (args: Record<string, unknown>): Promise<string> => {
+      const op = args['op'] as string;
+      const raw = args['values'];
+
+      if (!Array.isArray(raw) || raw.some((v) => typeof v !== 'number')) {
+        throw new Error('calc: values must be an array of numbers');
+      }
+      const values = raw as number[];
+
+      let result: number;
+      switch (op) {
+        case 'sum':
+          result = values.reduce((acc, v) => acc + v, 0);
+          break;
+        case 'avg':
+          if (values.length === 0) throw new Error('calc: cannot compute average of an empty array');
+          result = values.reduce((acc, v) => acc + v, 0) / values.length;
+          break;
+        case 'min':
+          if (values.length === 0) throw new Error('calc: cannot compute min of an empty array');
+          result = Math.min(...values);
+          break;
+        case 'max':
+          if (values.length === 0) throw new Error('calc: cannot compute max of an empty array');
+          result = Math.max(...values);
+          break;
+        case 'count':
+          result = values.length;
+          break;
+        case 'product':
+          result = values.reduce((acc, v) => acc * v, 1);
+          break;
+        default:
+          throw new Error(`calc: unknown operation "${op}"`);
+      }
+
+      return JSON.stringify({ result });
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // System prompt & chat turn execution
 // ---------------------------------------------------------------------------
 
@@ -127,6 +198,12 @@ The default \`limit\` is 20 and the hard cap is 1000 (configurable per-table). T
 - NEVER refuse a question because "the table has too many rows". Use \`aggregate_<table>\` or \`join_aggregate\` and the database does the work for you.
 - Reach for \`query_<table>\` only when the user genuinely wants individual rows listed. For counts, sums, averages, top-N, distributions → always aggregate.
 - If you truly need more than 1000 grouped result rows (very rare), tell the user and suggest narrower filters; do not loop with \`offset\` for analytic questions when an aggregate would answer in one call.
+
+## CRITICAL: arithmetic
+- You MUST NOT compute sums, averages, totals, min/max, products mentally.
+- For totals over DB rows: prefer aggregate_<table> (SUM/AVG/COUNT in SQL).
+- For totals over numbers already in the conversation (cited rows, user-provided lists): ALWAYS call the \`calc\` tool.
+- Never write "Total: X", "Sum: X", "Average: X" unless X comes from an aggregate_* tool result OR a calc tool result.
 
 ## When the user asks about data
 - Always use your tools to fetch real data. Never guess, invent rows, or use placeholder values.

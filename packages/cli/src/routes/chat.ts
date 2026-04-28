@@ -1,7 +1,7 @@
 import type { Express } from 'express';
 import { z } from 'zod';
 import type { AppState } from '../state.js';
-import { createMcpChatTools, executeChatTurn, getDefaultSystemPrompt } from '../chat-engine.js';
+import { createMcpChatTools, createCalcTool, executeChatTurn, getDefaultSystemPrompt } from '../chat-engine.js';
 import { validateSession } from '../session.js';
 import { TokenRateLimiter } from '../rate-limiter.js';
 import { parseCookies } from '../utils/cookies.js';
@@ -115,7 +115,8 @@ export function registerChatRoute(app: Express, state: AppState): void {
       const mcpUrl = `${protocol}://${host}/mcp/${profileName}`;
 
       // Connect as MCP client — all security rules are inherited from the MCP server
-      const { tools, close } = await createMcpChatTools(mcpUrl, adminToken);
+      const { tools: mcpTools, close } = await createMcpChatTools(mcpUrl, adminToken);
+      const tools = [...mcpTools, createCalcTool()];
 
       try {
         // LLM Router: classify the message before sending to the main LLM

@@ -853,6 +853,31 @@ function registerAggregateGeneric(
       .describe('Column to sort by. Pass "result" to sort by the aggregated value (count/sum/avg/ratio).'),
     order_direction: z.enum(['asc', 'desc']).optional(),
     limit: z.number().optional().default(20).describe('Max rows.'),
+    compare_to: z
+      .object({
+        period: z
+          .enum(['previous_period', 'previous_year'])
+          .describe(
+            '"previous_period": shift by the same duration as the current window. ' +
+              '"previous_year": shift by exactly one year (calendar year-over-year).',
+          ),
+        date_column: z
+          .string()
+          .describe(
+            'The date / timestamp column whose `between` filter window will be ' +
+              'shifted to compute the comparison period. The same column must already ' +
+              'appear in `filters` with op=between and a [start, end] value.',
+          ),
+      })
+      .optional()
+      .describe(
+        'Period-over-period comparison. Runs the aggregate twice — for the ' +
+          'current window and for the shifted previous window — and returns ' +
+          'rows annotated with current `result`, `previous` value, `delta_abs`, ' +
+          'and `delta_pct`. The server does the math; the LLM does not have to ' +
+          'add or divide anything. Not compatible with `group_by_bucket` or ' +
+          '`top_n_per_group` in v1 (alignment is ambiguous; defer to v2).',
+      ),
   };
 
   // Tool descriptions live in the manifest the LLM reads on tools/list — they
@@ -902,6 +927,7 @@ function registerAggregateGeneric(
         order_by,
         order_direction,
         limit,
+        compare_to,
       } = args as {
         aggregation: string;
         aggregation_column?: string;
@@ -912,6 +938,7 @@ function registerAggregateGeneric(
         having_min_total?: number;
         group_by?: string;
         group_by_bucket?: DateBucket;
+        compare_to?: { period: 'previous_period' | 'previous_year'; date_column: string };
         group_by_secondary?: string;
         top_n_per_group?: { partition_by: string; order_by: string; n: number };
         order_by?: string;
@@ -930,6 +957,12 @@ function registerAggregateGeneric(
             allowedFilterColumns,
             dialect,
           );
+          // Capture the count of WHERE values so compare_to can splice in a
+          // shifted-date version later. All subsequent pushes (ratio_filter
+          // doubled values, having_min_total, top_n.n, cappedLimit) appear
+          // after this offset; for compare_to we swap [0..whereValueCount]
+          // with the prev-window values and reuse `sql` unchanged.
+          const whereValueCount = values.length;
           let paramCursor = nextParamIndex;
 
           let selectExpr: string;
@@ -1149,6 +1182,126 @@ function registerAggregateGeneric(
             const limitParam = dialect.param(paramCursor);
             sql = `SELECT ${selectPrefix}${selectExpr} FROM ${qualifiedTable} ${whereClause} ${groupByClause} ${havingClause} ${orderByClause} LIMIT ${limitParam}`;
           }
+          // Period-over-period: validate, run current + previous in parallel,
+          // then merge per group key and compute server-side deltas. Validated
+          // upfront so we never run a doomed current query.
+          if (compare_to) {
+            if (group_by_bucket) {
+              return structuredError({
+                error: 'compare_to is not compatible with group_by_bucket in v1 (alignment is ambiguous; use plain group_by + same bucket on date_column filter instead)',
+              });
+            }
+            if (top_n_per_group) {
+              return structuredError({
+                error: 'compare_to is not compatible with top_n_per_group in v1',
+              });
+            }
+            const dateFilter = filters?.[compare_to.date_column];
+            if (
+              !dateFilter ||
+              dateFilter.op !== 'between' ||
+              !Array.isArray(dateFilter.value) ||
+              (dateFilter.value as unknown[]).length !== 2
+            ) {
+              return structuredError({
+                error: `compare_to requires a 'between' filter on '${compare_to.date_column}' with exactly 2 values`,
+              });
+            }
+            const [startStr, endStr] = (dateFilter.value as unknown[]).map(String);
+            const start = new Date(startStr);
+            const end = new Date(endStr);
+            if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+              return structuredError({
+                error: `compare_to: invalid date format in between filter [${startStr}, ${endStr}]`,
+              });
+            }
+            // Shift the window. previous_year = same day/month, year - 1.
+            // previous_period = same duration, ending 1ms before current start.
+            let prevStart: Date;
+            let prevEnd: Date;
+            if (compare_to.period === 'previous_year') {
+              prevStart = new Date(start);
+              prevStart.setUTCFullYear(prevStart.getUTCFullYear() - 1);
+              prevEnd = new Date(end);
+              prevEnd.setUTCFullYear(prevEnd.getUTCFullYear() - 1);
+            } else {
+              const durationMs = end.getTime() - start.getTime();
+              prevEnd = new Date(start.getTime() - 1);
+              prevStart = new Date(prevEnd.getTime() - durationMs);
+            }
+            // Format back to YYYY-MM-DD for consistency with typical date columns
+            // (date_creation, date_tournee, etc. are stored as ISO date strings).
+            const fmt = (d: Date): string => d.toISOString().slice(0, 10);
+            const prevStartStr = fmt(prevStart);
+            const prevEndStr = fmt(prevEnd);
+
+            // Build prev filters by cloning + replacing the date_column entry
+            const prevFilters: Record<string, FilterValue | undefined> = { ...(filters ?? {}) };
+            prevFilters[compare_to.date_column] = {
+              op: 'between',
+              value: [prevStartStr, prevEndStr],
+            };
+            const prevWhere = scopeGuard.buildWhereClause(
+              tableName,
+              prevFilters,
+              allowedFilterColumns,
+              dialect,
+            );
+            if (prevWhere.values.length !== whereValueCount) {
+              return structuredError({
+                error: 'compare_to: previous WHERE clause produced a different number of params than current — likely an internal bug',
+              });
+            }
+            const prevValues = [...prevWhere.values, ...values.slice(whereValueCount)];
+
+            // Run current + previous in parallel.
+            const [curResult, prevResult] = await Promise.all([
+              exec(sql, values),
+              exec(sql, prevValues),
+            ]);
+
+            // Merge: align by group keys, compute deltas.
+            const groupKeys = [group_by, group_by_secondary].filter(Boolean) as string[];
+            const keyOf = (row: Record<string, unknown>): string =>
+              groupKeys.length === 0
+                ? '__single__'
+                : groupKeys.map((k) => `${k}=${String(row[k] ?? '')}`).join('|');
+            const prevByKey = new Map<string, Record<string, unknown>>();
+            for (const r of prevResult.rows) prevByKey.set(keyOf(r), r);
+            const merged: Record<string, unknown>[] = [];
+            for (const r of curResult.rows) {
+              const k = keyOf(r);
+              const p = prevByKey.get(k);
+              const cur = typeof r.result === 'number' ? r.result : Number(r.result ?? 0);
+              const prev = p && typeof p.result === 'number' ? p.result : Number(p?.result ?? 0);
+              const deltaAbs = cur - prev;
+              const deltaPct = prev !== 0 ? deltaAbs / prev : null;
+              merged.push({
+                ...r,
+                previous: p?.result ?? 0,
+                delta_abs: deltaAbs,
+                delta_pct: deltaPct,
+              });
+              prevByKey.delete(k);
+            }
+            // Surface previous-only groups (had data in prev window, none in current)
+            for (const [, p] of prevByKey) {
+              const prev = typeof p.result === 'number' ? p.result : Number(p.result ?? 0);
+              merged.push({ ...p, result: 0, previous: prev, delta_abs: -prev, delta_pct: -1 });
+            }
+
+            const payload = {
+              current_window: [startStr, endStr],
+              previous_window: [prevStartStr, prevEndStr],
+              compare_to_period: compare_to.period,
+              rows: formatResponseRows(merged, at.labelMap, responseMode),
+            };
+            return {
+              content: [{ type: 'text' as const, text: wrapResponse(JSON.stringify(payload, null, 2)) }],
+              resultSummary: `${merged.length} rows (cur + prev merged)`,
+            };
+          }
+
           const result = await exec(sql, values);
 
           const formattedRows = formatResponseRows(result.rows, at.labelMap, responseMode);

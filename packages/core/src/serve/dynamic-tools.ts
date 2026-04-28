@@ -806,7 +806,7 @@ function registerAggregateGeneric(
       .number()
       .optional()
       .describe('Minimum row count per group, evaluated as HAVING. Drops small-sample groups in ratio rankings.'),
-    group_by: z.string().optional().describe('Column to group by.'),
+    group_by: z.string().optional().describe('Primary column to group by.'),
     group_by_bucket: z
       .enum(['day', 'week', 'month', 'quarter', 'year'])
       .optional()
@@ -815,6 +815,37 @@ function registerAggregateGeneric(
           'truncates the value to the start of the period (DATE_TRUNC). ' +
           'Use this for time-series questions like "sales per month", ' +
           '"errors per day", etc.',
+      ),
+    group_by_secondary: z
+      .string()
+      .optional()
+      .describe(
+        'Optional second GROUP BY column for two-dimensional pivots. ' +
+          'Example: group_by="region", group_by_secondary="product" returns ' +
+          'one row per (region, product) pair. ' +
+          'Combine with `top_n_per_group` to get "top N per primary group" rankings.',
+      ),
+    top_n_per_group: z
+      .object({
+        partition_by: z
+          .string()
+          .describe('Column to partition by. Must be the same as `group_by` or `group_by_secondary`.'),
+        order_by: z
+          .string()
+          .describe(
+            'Within each partition, sort by this column DESC and keep the top N. ' +
+              'Use "result" to sort by the aggregated value (count / sum / avg / ratio).',
+          ),
+        n: z.number().describe('How many rows to keep per partition (must be >= 1).'),
+      })
+      .optional()
+      .describe(
+        'Window-based "top N per group" filter. Wraps the aggregate in a ' +
+          'ROW_NUMBER() OVER (PARTITION BY ... ORDER BY ... DESC) subquery and ' +
+          'returns only rows with rank <= n. ' +
+          'Typical use: "top 3 products per region by sales" -> ' +
+          'group_by="region", group_by_secondary="product", aggregation="sum", ' +
+          'aggregation_column="sales", top_n_per_group={partition_by:"region",order_by:"result",n:3}.',
       ),
     order_by: z
       .string()
@@ -866,6 +897,8 @@ function registerAggregateGeneric(
         having_min_total,
         group_by,
         group_by_bucket,
+        group_by_secondary,
+        top_n_per_group,
         order_by,
         order_direction,
         limit,
@@ -879,6 +912,8 @@ function registerAggregateGeneric(
         having_min_total?: number;
         group_by?: string;
         group_by_bucket?: DateBucket;
+        group_by_secondary?: string;
+        top_n_per_group?: { partition_by: string; order_by: string; n: number };
         order_by?: string;
         order_direction?: string;
         limit?: number;
@@ -1023,6 +1058,27 @@ function registerAggregateGeneric(
             groupByClause = `GROUP BY ${colExpr}`;
           }
 
+          // Optional second GROUP BY column for two-dimensional pivots.
+          // Validated against the same allowlist as the primary; appended to
+          // the SELECT prefix and GROUP BY clause when both are present.
+          if (group_by_secondary) {
+            if (!group_by) {
+              return structuredError({
+                error: '`group_by_secondary` requires `group_by` to be set',
+              });
+            }
+            if (!at.groupableColumns.includes(group_by_secondary)) {
+              return structuredError({
+                error: `Invalid group_by_secondary '${group_by_secondary}' for table '${tableName}'`,
+                valid_columns: at.groupableColumns,
+                did_you_mean: didYouMean(group_by_secondary, at.groupableColumns),
+              });
+            }
+            const secCol = dialect.quoteIdent(group_by_secondary);
+            selectPrefix = selectPrefix + `${secCol}, `;
+            groupByClause = `${groupByClause}, ${secCol}`;
+          }
+
           let havingClause = '';
           if (group_by && typeof having_min_total === 'number' && having_min_total > 0) {
             values.push(having_min_total);
@@ -1044,9 +1100,55 @@ function registerAggregateGeneric(
             orderByClause = `ORDER BY ${target} ${dir}`;
           }
 
-          values.push(cappedLimit);
-          const limitParam = dialect.param(paramCursor);
-          const sql = `SELECT ${selectPrefix}${selectExpr} FROM ${qualifiedTable} ${whereClause} ${groupByClause} ${havingClause} ${orderByClause} LIMIT ${limitParam}`;
+          // Validate top_n_per_group, then either compose a window-wrapped
+          // query (when set) or use the plain GROUP BY query.
+          let sql: string;
+          if (top_n_per_group) {
+            const partitionCols = [group_by, group_by_secondary].filter(Boolean) as string[];
+            if (partitionCols.length === 0) {
+              return structuredError({
+                error: '`top_n_per_group` requires `group_by` (and optionally `group_by_secondary`) to be set',
+              });
+            }
+            if (!partitionCols.includes(top_n_per_group.partition_by)) {
+              return structuredError({
+                error: `top_n_per_group.partition_by '${top_n_per_group.partition_by}' must be one of group_by columns`,
+                valid_columns: partitionCols,
+                did_you_mean: didYouMean(top_n_per_group.partition_by, partitionCols),
+              });
+            }
+            const windowOrder = top_n_per_group.order_by;
+            const isResultOrder = windowOrder === 'result';
+            if (!isResultOrder && !at.allColumnNames.includes(windowOrder)) {
+              return structuredError({
+                error: `top_n_per_group.order_by '${windowOrder}' is not a valid column or 'result'`,
+                valid_columns: [...at.allColumnNames, 'result'],
+                did_you_mean: didYouMean(windowOrder, [...at.allColumnNames, 'result']),
+              });
+            }
+            if (typeof top_n_per_group.n !== 'number' || top_n_per_group.n < 1) {
+              return structuredError({ error: '`top_n_per_group.n` must be a positive integer' });
+            }
+            // SQL portability note: SQLite (and some MySQL versions) don't
+            // resolve a SELECT-list alias (`result`) inside that same SELECT's
+            // window ORDER BY clause. So we double-wrap: the innermost SELECT
+            // does the GROUP BY and produces `result`, the middle layer adds
+            // the ROW_NUMBER() referencing the now-stable alias, the outer
+            // layer filters rn <= ? and applies the optional ORDER BY / LIMIT.
+            const partitionExpr = dialect.quoteIdent(top_n_per_group.partition_by);
+            const windowOrderExpr = isResultOrder ? 'result' : dialect.quoteIdent(windowOrder);
+            const innerSql = `SELECT ${selectPrefix}${selectExpr} FROM ${qualifiedTable} ${whereClause} ${groupByClause} ${havingClause}`;
+            const middleSql = `SELECT *, ROW_NUMBER() OVER (PARTITION BY ${partitionExpr} ORDER BY ${windowOrderExpr} DESC) AS rn FROM (${innerSql}) AS inner_q`;
+            values.push(top_n_per_group.n);
+            const rnParam = dialect.param(paramCursor++);
+            values.push(cappedLimit);
+            const limitParam = dialect.param(paramCursor);
+            sql = `SELECT * FROM (${middleSql}) AS sub WHERE rn <= ${rnParam} ${orderByClause} LIMIT ${limitParam}`;
+          } else {
+            values.push(cappedLimit);
+            const limitParam = dialect.param(paramCursor);
+            sql = `SELECT ${selectPrefix}${selectExpr} FROM ${qualifiedTable} ${whereClause} ${groupByClause} ${havingClause} ${orderByClause} LIMIT ${limitParam}`;
+          }
           const result = await exec(sql, values);
 
           const formattedRows = formatResponseRows(result.rows, at.labelMap, responseMode);

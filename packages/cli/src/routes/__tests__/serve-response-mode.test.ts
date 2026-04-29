@@ -53,14 +53,14 @@ describe('serve response mode integration', () => {
       { name: 'role' },
     ]);
 
-    it('should rename keys in friendly mode', () => {
+    it('should preserve snake_case keys in friendly mode (no renaming for LLM chaining)', () => {
       const rows = [{ first_name: 'John', last_name: 'Doe', email: 'john@test.com', role: 'admin' }];
       const result = formatResponseRows(rows, labelMap, 'friendly');
       expect(result[0]).toEqual({
-        'First Name': 'John',
-        'Last Name': 'Doe',
-        Email: 'john@test.com',
-        Role: 'admin',
+        first_name: 'John',
+        last_name: 'Doe',
+        email: 'john@test.com',
+        role: 'admin',
       });
     });
 
@@ -78,8 +78,8 @@ describe('serve response mode integration', () => {
       ];
       const result = formatResponseRows(rows, labelMap, 'friendly');
       expect(result).toHaveLength(2);
-      expect(result[0]['First Name']).toBe('John');
-      expect(result[1]['First Name']).toBe('Jane');
+      expect(result[0]['first_name']).toBe('John');
+      expect(result[1]['first_name']).toBe('Jane');
     });
 
     it('should handle empty rows', () => {
@@ -90,7 +90,7 @@ describe('serve response mode integration', () => {
     it('should preserve keys not in the label map', () => {
       const rows = [{ first_name: 'John', unknown_col: 'value' }];
       const result = formatResponseRows(rows, labelMap, 'friendly');
-      expect(result[0]['First Name']).toBe('John');
+      expect(result[0]['first_name']).toBe('John');
       expect(result[0]['unknown_col']).toBe('value');
     });
   });

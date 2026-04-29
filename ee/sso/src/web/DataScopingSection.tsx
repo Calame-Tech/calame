@@ -1,5 +1,9 @@
+// SPDX-License-Identifier: BUSL-1.1
+// Copyright (c) 2026 Calame Tech. Licensed under the Business Source License 1.1.
+// See ee/LICENSE.BUSL at the root of the ee/ directory for terms.
+
 import { useState, useMemo } from 'react';
-import type { Profile, Configuration, DataScopeRule } from '../types/schema.js';
+import type { Profile, Configuration, DataScopeRule } from '../../../../packages/web/src/types/schema.js';
 
 interface DataScopingSectionProps {
   profile: Profile;
@@ -15,7 +19,6 @@ export default function DataScopingSection({
   const rules = profile.dataScopeRules ?? [];
   const shared = profile.sharedTables ?? [];
 
-  // Compute available table names from configurations or inline selectedTables
   const availableTables = useMemo(() => {
     const tables = new Set<string>();
     const cfgNames = profile.configurations ?? [];
@@ -32,7 +35,6 @@ export default function DataScopingSection({
     return [...tables].sort();
   }, [profile, configurations]);
 
-  // Compute available columns per table
   const columnsPerTable = useMemo(() => {
     const result: Record<string, string[]> = {};
     const cfgNames = profile.configurations ?? [];
@@ -53,7 +55,6 @@ export default function DataScopingSection({
     return result;
   }, [profile, configurations]);
 
-  // Tables not yet assigned to a rule or shared
   const unassignedTables = useMemo(() => {
     const assigned = new Set([
       ...rules.map((r) => r.tableName),
@@ -79,7 +80,6 @@ export default function DataScopingSection({
   const updateRule = (index: number, patch: Partial<DataScopeRule>) => {
     const updated = [...rules];
     updated[index] = { ...updated[index], ...patch };
-    // Clear customKey if switching away from 'custom'
     if (patch.identityField && patch.identityField !== 'custom') {
       delete updated[index].customKey;
     }
@@ -141,13 +141,11 @@ export default function DataScopingSection({
               const cols = columnsPerTable[rule.tableName] ?? [];
               return (
                 <div key={i} className="flex items-start gap-2 p-3 rounded-lg border border-white/5 bg-gray-900/30">
-                  {/* Table name (read-only) */}
                   <div className="flex-shrink-0 min-w-[120px]">
                     <label className="text-xs text-gray-500 block mb-1">Table</label>
                     <span className="text-sm text-blue-300 font-mono">{rule.tableName}</span>
                   </div>
 
-                  {/* Column */}
                   <div className="flex-1 min-w-[120px]">
                     <label className="text-xs text-gray-500 block mb-1">Column</label>
                     <select
@@ -162,7 +160,6 @@ export default function DataScopingSection({
                     </select>
                   </div>
 
-                  {/* Identity field */}
                   <div className="flex-1 min-w-[120px]">
                     <label className="text-xs text-gray-500 block mb-1">Match with</label>
                     <select
@@ -176,7 +173,6 @@ export default function DataScopingSection({
                     </select>
                   </div>
 
-                  {/* Custom key (only if identityField === 'custom') */}
                   {rule.identityField === 'custom' && (
                     <div className="flex-1 min-w-[100px]">
                       <label className="text-xs text-gray-500 block mb-1">Attribute key</label>
@@ -190,7 +186,6 @@ export default function DataScopingSection({
                     </div>
                   )}
 
-                  {/* Remove */}
                   <button
                     onClick={() => removeRule(i)}
                     className="mt-5 text-gray-500 hover:text-red-400 transition-colors"
@@ -206,7 +201,6 @@ export default function DataScopingSection({
           </div>
         )}
 
-        {/* Add rule */}
         {unassignedTables.length > 0 && (
           <div className="flex items-center gap-2">
             <select

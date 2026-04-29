@@ -14,9 +14,8 @@ import WelcomePage from './components/WelcomePage.js';
 import AiSettings from './components/AiSettings.js';
 import AiSettingsAssignment from './components/AiSettingsAssignment.js';
 import SmtpSettings from './components/SmtpSettings.js';
-import OidcSettings from './components/OidcSettings.js';
+import { OidcSettings, ProfileSsoNotice, DataScopingSection } from '@calame-ee/sso/web';
 import ProfilePreview from './components/ProfilePreview.js';
-import DataScopingSection from './components/DataScopingSection.js';
 import MetricsDashboard from './components/MetricsDashboard.js';
 import ChatEntryPage from './components/ChatEntryPage.js';
 import type {
@@ -2027,12 +2026,8 @@ function McpDetailView({
             </p>
           )}
 
-          {/* SSO info */}
-          {(profile.authMode ?? 'token') === 'sso' && (
-            <p className="mt-2 text-xs text-gray-500">
-              Uses the global OIDC/SSO configuration from Settings. Make sure OIDC is configured.
-            </p>
-          )}
+          {/* SSO info — rendered only when authMode is 'sso' */}
+          {(profile.authMode ?? 'token') === 'sso' && <ProfileSsoNotice />}
 
           {/* External auth config */}
           {(profile.authMode ?? 'token') === 'external' && (

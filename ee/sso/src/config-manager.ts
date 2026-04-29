@@ -1,29 +1,20 @@
+// SPDX-License-Identifier: BUSL-1.1
+// Copyright (c) 2026 Calame Tech. Licensed under the Business Source License 1.1.
+// See ee/LICENSE.BUSL at the root of the ee/ directory for terms.
+
 import type { Database, Statement } from 'better-sqlite3';
-import type { CalameDatabase } from './database.js';
+import type {
+  DatabaseLike,
+  OidcConfigManagerLike,
+  OidcMaskedConfig,
+  OidcSettingsConfig,
+} from './types.js';
 
-export interface OidcSettingsConfig {
-  enabled: boolean;
-  issuerUrl: string;
-  clientId: string;
-  clientSecret: string;
-  redirectUri: string;
-  scopes: string;
-  groupClaim: string;
-  groupToProfile: Record<string, string>;
-  autoCreateUsers: boolean;
-  /** Map SSO token claims to user customAttributes for data scoping.
-   *  Key = claim name in the OIDC token, Value = attribute key in customAttributes.
-   *  e.g. { "numero_client": "client_id" } copies token.numero_client → user.customAttributes.client_id */
-  claimsToAttributes?: Record<string, string>;
-}
-
-/** Row shape returned by better-sqlite3 for oidc_config queries. */
 interface OidcConfigRow {
   key: string;
   value: string;
 }
 
-/** Stored JSON shape inside oidc_config.value. */
 interface OidcConfigData {
   enabled: boolean;
   issuerUrl: string;
@@ -37,15 +28,14 @@ interface OidcConfigData {
   claimsToAttributes?: Record<string, string>;
 }
 
-export class OidcConfigManager {
+export class OidcConfigManager implements OidcConfigManagerLike {
   private db: Database;
   private stmtGet: Statement;
   private stmtUpsert: Statement;
 
-  constructor(database: CalameDatabase) {
+  constructor(database: DatabaseLike) {
     this.db = database.raw;
 
-    // Create the table if it doesn't exist
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS oidc_config (
         key TEXT PRIMARY KEY DEFAULT 'main',
@@ -84,8 +74,7 @@ export class OidcConfigManager {
     };
   }
 
-  /** Return config with clientSecret masked for safe display. */
-  getMaskedConfig(): (Omit<OidcSettingsConfig, 'clientSecret'> & { clientSecret: string }) | null {
+  getMaskedConfig(): OidcMaskedConfig | null {
     const config = this.getConfig();
     if (!config) return null;
 
@@ -101,7 +90,6 @@ export class OidcConfigManager {
   }
 
   setConfig(config: OidcSettingsConfig): void {
-    // If the clientSecret contains '***', it's the masked value from GET — keep the existing secret
     let finalClientSecret = config.clientSecret;
     if (finalClientSecret.includes('***')) {
       const existing = this.getConfig();

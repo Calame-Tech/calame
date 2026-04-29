@@ -1,12 +1,14 @@
+// SPDX-License-Identifier: BUSL-1.1
+// Copyright (c) 2026 Calame Tech. Licensed under the Business Source License 1.1.
+// See ee/LICENSE.BUSL at the root of the ee/ directory for terms.
+
 import { describe, it, expect, beforeEach } from 'vitest';
 import Database from 'better-sqlite3';
-import { OidcConfigManager } from '../oidc-config.js';
-import type { CalameDatabase } from '../database.js';
+import { OidcConfigManager } from '../config-manager.js';
+import type { DatabaseLike } from '../types.js';
 
-/** Create an in-memory SQLite database wrapped as a minimal CalameDatabase stub. */
-function makeInMemoryDb(): CalameDatabase {
-  const raw = new Database(':memory:');
-  return { raw } as unknown as CalameDatabase;
+function makeInMemoryDb(): DatabaseLike {
+  return { raw: new Database(':memory:') };
 }
 
 describe('OidcConfigManager', () => {
@@ -99,7 +101,6 @@ describe('OidcConfigManager', () => {
     expect(masked).not.toBeNull();
     expect(masked!.clientSecret).toContain('***');
     expect(masked!.clientSecret).not.toBe('super-secret');
-    // Starts with first 2 chars and ends with last 2
     expect(masked!.clientSecret.startsWith('su')).toBe(true);
     expect(masked!.clientSecret.endsWith('et')).toBe(true);
   });
@@ -138,12 +139,11 @@ describe('OidcConfigManager', () => {
       autoCreateUsers: true,
     });
 
-    // Simulate saving the masked value back (as happens when the frontend echoes GET data)
     mgr.setConfig({
       enabled: true,
       issuerUrl: 'https://accounts.example.com',
       clientId: 'my-client',
-      clientSecret: 'or***et', // masked form
+      clientSecret: 'or***et',
       redirectUri: '',
       scopes: 'openid profile email',
       groupClaim: 'groups',

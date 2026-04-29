@@ -1,6 +1,10 @@
+// SPDX-License-Identifier: BUSL-1.1
+// Copyright (c) 2026 Calame Tech. Licensed under the Business Source License 1.1.
+// See ee/LICENSE.BUSL at the root of the ee/ directory for terms.
+
 import * as jose from 'jose';
 
-export interface OidcConfig {
+export interface OidcProviderConfig {
   issuerUrl: string;
   clientId: string;
   clientSecret?: string;
@@ -22,15 +26,14 @@ interface OidcDiscovery {
 }
 
 export class OidcProvider {
-  private config: OidcConfig;
+  private config: OidcProviderConfig;
   private discovery: OidcDiscovery | null = null;
   private jwks: ReturnType<typeof jose.createRemoteJWKSet> | null = null;
 
-  constructor(config: OidcConfig) {
+  constructor(config: OidcProviderConfig) {
     this.config = config;
   }
 
-  /** Fetch OIDC discovery document from issuer */
   async discover(): Promise<OidcDiscovery> {
     if (this.discovery) return this.discovery;
     const url = `${this.config.issuerUrl}/.well-known/openid-configuration`;
@@ -40,7 +43,6 @@ export class OidcProvider {
     return this.discovery;
   }
 
-  /** Build the authorization URL with PKCE */
   async getAuthorizationUrl(state: string, codeVerifier: string): Promise<string> {
     const disc = await this.discover();
     const codeChallenge = await this.generateCodeChallenge(codeVerifier);
@@ -56,7 +58,6 @@ export class OidcProvider {
     return `${disc.authorization_endpoint}?${params.toString()}`;
   }
 
-  /** Exchange authorization code for tokens */
   async exchangeCode(
     code: string,
     codeVerifier: string,
@@ -82,7 +83,6 @@ export class OidcProvider {
     return { idToken: data.id_token, accessToken: data.access_token };
   }
 
-  /** Verify and decode the ID token */
   async verifyIdToken(idToken: string): Promise<jose.JWTPayload> {
     const disc = await this.discover();
     if (!this.jwks) {
@@ -95,7 +95,6 @@ export class OidcProvider {
     return payload;
   }
 
-  /** Extract groups from token claims */
   getGroups(payload: jose.JWTPayload): string[] {
     const groups = payload[this.config.groupClaim];
     if (Array.isArray(groups)) return groups as string[];
@@ -103,12 +102,10 @@ export class OidcProvider {
     return [];
   }
 
-  /** Return the group-to-profile mapping for IdP scope computation. */
   getGroupToProfile(): Record<string, string> {
     return this.config.groupToProfile;
   }
 
-  /** Map SSO groups to Calame profile names (case-insensitive key comparison) */
   mapGroupsToProfiles(groups: string[]): string[] {
     const lowercaseMap = Object.entries(this.config.groupToProfile).reduce<Record<string, string>>(
       (acc, [k, v]) => {
@@ -122,10 +119,6 @@ export class OidcProvider {
       .filter((p): p is string => !!p);
   }
 
-  /**
-   * Extract custom attributes from token claims using the claimsToAttributes mapping.
-   * Returns null if no mapping is configured or no claims match.
-   */
   extractCustomAttributes(payload: jose.JWTPayload): Record<string, string> | null {
     if (!this.config.claimsToAttributes) return null;
     const attrs: Record<string, string> = {};
@@ -140,14 +133,12 @@ export class OidcProvider {
     return hasAny ? attrs : null;
   }
 
-  /** Generate PKCE code verifier (random string) */
   generateCodeVerifier(): string {
     const array = new Uint8Array(32);
     crypto.getRandomValues(array);
     return Buffer.from(array).toString('base64url');
   }
 
-  /** Generate S256 code challenge from verifier */
   private async generateCodeChallenge(verifier: string): Promise<string> {
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
     return Buffer.from(digest).toString('base64url');

@@ -7,7 +7,7 @@ import type { AuditLog } from './audit.js';
 import type { WriteQueue } from './write-queue.js';
 import type { AiSettingsManager } from './ai-config.js';
 import type { SmtpConfigManager } from './smtp-config.js';
-import type { OidcConfigManager } from './oidc-config.js';
+import type { OidcConfigManager } from '@calame-ee/sso';
 import type { AppConfig } from './config.js';
 import type { Logger } from './logger.js';
 import type { EmailService } from './email.js';

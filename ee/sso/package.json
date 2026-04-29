@@ -1,0 +1,50 @@
+{
+  "name": "@calame-ee/sso",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Calame Enterprise SSO (OIDC) — server (Node) + frontend (React). Licensed under BUSL 1.1.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./web": {
+      "types": "./src/web/index.ts",
+      "import": "./src/web/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "node ../../node_modules/typescript/bin/tsc",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "jose": "^6.2.2"
+  },
+  "peerDependencies": {
+    "better-sqlite3": "^12.8.0",
+    "express": "^4.22.1",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0"
+  },
+  "peerDependenciesMeta": {
+    "better-sqlite3": { "optional": true },
+    "express": { "optional": true },
+    "react": { "optional": true },
+    "react-dom": { "optional": true }
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/express": "^5.0.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "better-sqlite3": "^12.8.0",
+    "express": "^4.22.1",
+    "react": "^18.3.0",
+    "typescript": "~5.7.0",
+    "vitest": "^2.1.0"
+  },
+  "license": "BUSL-1.1"
+}

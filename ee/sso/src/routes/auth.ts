@@ -1,23 +1,33 @@
+// SPDX-License-Identifier: BUSL-1.1
+// Copyright (c) 2026 Calame Tech. Licensed under the Business Source License 1.1.
+// See ee/LICENSE.BUSL at the root of the ee/ directory for terms.
+
 import type { Express, Request, Response } from 'express';
-import type { AppState } from '../state.js';
-import { OidcProvider } from '../oidc.js';
-import { createSession, setSessionCookie, setUserSessionCookie } from '../session.js';
-import type { UserProfileAccess } from '../user.js';
 import crypto from 'crypto';
+import { OidcProvider, type OidcProviderConfig } from '../provider.js';
+import type {
+  OidcAppContext,
+  OidcSessionDeps,
+  OidcUserProfileAccess,
+} from '../types.js';
+
+/** Options for registerOidcAuthRoutes — allows tests to inject a mock OidcProvider. */
+export interface OidcAuthRouteOptions {
+  /** Override the OidcProvider constructor (used by tests). Defaults to `new OidcProvider(cfg)`. */
+  providerFactory?: (config: OidcProviderConfig) => OidcProvider;
+}
 
 /**
  * Temporary in-memory store for PKCE state: state -> { codeVerifier, expiresAt, redirect? }.
  *
- * NOTE: This is an in-memory store — PKCE state is lost on server restart and
- * not shared across instances. For multi-instance deployments behind a load
- * balancer, this should be replaced with Redis or DB-backed storage.
+ * NOTE: in-memory only — PKCE state is lost on server restart and not shared
+ * across instances. Multi-instance deployments need Redis or DB-backed storage.
  */
 const pendingOidcStates = new Map<
   string,
   { codeVerifier: string; expiresAt: number; redirect?: string }
 >();
 
-/** Clean up expired PKCE entries (entries older than 10 minutes) */
 function cleanupExpiredStates(): void {
   const now = Date.now();
   for (const [key, value] of pendingOidcStates.entries()) {
@@ -27,15 +37,16 @@ function cleanupExpiredStates(): void {
   }
 }
 
-/** Build an OidcProvider instance from app state config. Returns null if OIDC is not configured.
- *
- * Priority: DB config (via OidcConfigManager) > env vars (AppConfig).
+/** Build an OidcProvider instance from app context. Returns null if OIDC is not configured.
+ *  Priority: DB config (via OidcConfigManager) > env vars (OidcEnvConfig).
  */
-function buildOidcProvider(state: AppState): OidcProvider | null {
-  // DB config takes priority over env vars
-  const dbConfig = state.oidcConfigManager?.getConfig();
+function buildOidcProvider(
+  ctx: OidcAppContext,
+  factory: (config: OidcProviderConfig) => OidcProvider,
+): OidcProvider | null {
+  const dbConfig = ctx.oidcConfigManager?.getConfig();
   if (dbConfig?.enabled && dbConfig.issuerUrl && dbConfig.clientId) {
-    return new OidcProvider({
+    return factory({
       issuerUrl: dbConfig.issuerUrl,
       clientId: dbConfig.clientId,
       clientSecret: dbConfig.clientSecret || undefined,
@@ -48,8 +59,7 @@ function buildOidcProvider(state: AppState): OidcProvider | null {
     });
   }
 
-  // Fall back to env var config
-  const cfg = state.config;
+  const cfg = ctx.config;
   if (!cfg?.oidcEnabled) return null;
   if (!cfg.oidcIssuerUrl || !cfg.oidcClientId || !cfg.oidcRedirectUri) return null;
 
@@ -58,11 +68,11 @@ function buildOidcProvider(state: AppState): OidcProvider | null {
     try {
       groupToProfile = JSON.parse(cfg.oidcGroupMap) as Record<string, string>;
     } catch {
-      // Invalid JSON — ignore group mapping
+      // invalid JSON — ignore group mapping
     }
   }
 
-  return new OidcProvider({
+  return factory({
     issuerUrl: cfg.oidcIssuerUrl,
     clientId: cfg.oidcClientId,
     clientSecret: cfg.oidcClientSecret ?? undefined,
@@ -74,21 +84,27 @@ function buildOidcProvider(state: AppState): OidcProvider | null {
   });
 }
 
-export function registerOidcAuthRoutes(app: Express, state: AppState): void {
+export function registerOidcAuthRoutes(
+  app: Express,
+  ctx: OidcAppContext,
+  deps: OidcSessionDeps,
+  options?: OidcAuthRouteOptions,
+): void {
+  const providerFactory =
+    options?.providerFactory ?? ((cfg: OidcProviderConfig) => new OidcProvider(cfg));
   /**
    * GET /api/auth/oidc/config — Public.
    * Returns whether OIDC is enabled and provider details.
    * DB config takes priority over env vars.
    */
   app.get('/api/auth/oidc/config', (_req: Request, res: Response) => {
-    // Check DB config first
-    const dbConfig = state.oidcConfigManager?.getConfig();
+    const dbConfig = ctx.oidcConfigManager?.getConfig();
     if (dbConfig?.enabled && dbConfig.issuerUrl && dbConfig.clientId) {
       let providerName: string = dbConfig.issuerUrl;
       try {
         providerName = new URL(dbConfig.issuerUrl).hostname;
       } catch {
-        // Keep raw URL as name if parsing fails
+        // keep raw URL as name if parsing fails
       }
 
       res.json({
@@ -107,8 +123,7 @@ export function registerOidcAuthRoutes(app: Express, state: AppState): void {
       return;
     }
 
-    // Fall back to env var config
-    const cfg = state.config;
+    const cfg = ctx.config;
     if (!cfg?.oidcEnabled || !cfg.oidcIssuerUrl) {
       res.json({ enabled: false, providerName: null });
       return;
@@ -118,7 +133,7 @@ export function registerOidcAuthRoutes(app: Express, state: AppState): void {
     try {
       providerName = new URL(cfg.oidcIssuerUrl).hostname;
     } catch {
-      // Keep raw URL as name if parsing fails
+      // keep raw URL as name if parsing fails
     }
 
     let groupToProfile: Record<string, string> = {};
@@ -126,7 +141,7 @@ export function registerOidcAuthRoutes(app: Express, state: AppState): void {
       try {
         groupToProfile = JSON.parse(cfg.oidcGroupMap) as Record<string, string>;
       } catch {
-        // Invalid JSON — ignore
+        // invalid JSON — ignore
       }
     }
 
@@ -150,7 +165,7 @@ export function registerOidcAuthRoutes(app: Express, state: AppState): void {
    * Generates a code verifier, stores it in memory keyed by state param, then redirects to IdP.
    */
   app.get('/api/auth/oidc/login', async (req: Request, res: Response) => {
-    const provider = buildOidcProvider(state);
+    const provider = buildOidcProvider(ctx, providerFactory);
     if (!provider) {
       res.status(503).json({ error: 'OIDC is not configured.' });
       return;
@@ -160,11 +175,10 @@ export function registerOidcAuthRoutes(app: Express, state: AppState): void {
 
     // Validate the optional redirect param: must be a relative path starting
     // with '/' but NOT '//' (protocol-relative URL would be an open redirect).
-    const rawRedirect = typeof req.query['redirect'] === 'string' ? req.query['redirect'] : undefined;
+    const rawRedirect =
+      typeof req.query['redirect'] === 'string' ? req.query['redirect'] : undefined;
     const safeRedirect =
-      rawRedirect !== undefined &&
-      rawRedirect.startsWith('/') &&
-      !rawRedirect.startsWith('//')
+      rawRedirect !== undefined && rawRedirect.startsWith('/') && !rawRedirect.startsWith('//')
         ? rawRedirect
         : undefined;
 
@@ -174,7 +188,7 @@ export function registerOidcAuthRoutes(app: Express, state: AppState): void {
 
       pendingOidcStates.set(stateParam, {
         codeVerifier,
-        expiresAt: Date.now() + 10 * 60 * 1000, // 10 minutes
+        expiresAt: Date.now() + 10 * 60 * 1000,
         ...(safeRedirect !== undefined ? { redirect: safeRedirect } : {}),
       });
 
@@ -182,7 +196,7 @@ export function registerOidcAuthRoutes(app: Express, state: AppState): void {
       res.redirect(authUrl);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown error';
-      state.logger?.error('[OIDC] Login initiation failed', { error: message });
+      ctx.logger?.error('[OIDC] Login initiation failed', { error: message });
       res.status(500).json({ error: 'Failed to initiate OIDC login' });
     }
   });
@@ -192,7 +206,7 @@ export function registerOidcAuthRoutes(app: Express, state: AppState): void {
    * Validates state, exchanges code, verifies token, finds/creates user, creates session.
    */
   app.get('/api/auth/oidc/callback', async (req: Request, res: Response) => {
-    const provider = buildOidcProvider(state);
+    const provider = buildOidcProvider(ctx, providerFactory);
     if (!provider) {
       res.status(503).json({ error: 'OIDC is not configured.' });
       return;
@@ -204,7 +218,6 @@ export function registerOidcAuthRoutes(app: Express, state: AppState): void {
       error?: string;
     };
 
-    // Handle IdP errors
     if (oidcError) {
       res.status(400).json({ error: `IdP returned error: ${oidcError}` });
       return;
@@ -222,15 +235,12 @@ export function registerOidcAuthRoutes(app: Express, state: AppState): void {
       return;
     }
 
-    // Consume the state (one-time use)
     pendingOidcStates.delete(stateParam);
     const { codeVerifier, redirect: pendingRedirect } = pendingState;
 
     try {
-      // Exchange code for tokens
       const { idToken } = await provider.exchangeCode(code, codeVerifier);
 
-      // Verify and decode the ID token
       const payload = await provider.verifyIdToken(idToken);
 
       const subject = payload.sub;
@@ -250,10 +260,9 @@ export function registerOidcAuthRoutes(app: Express, state: AppState): void {
       const groups = provider.getGroups(payload);
       const mappedProfiles = provider.mapGroupsToProfiles(groups);
 
-      // Extract custom attributes from token claims (for data scoping)
       const claimsAttrs = provider.extractCustomAttributes(payload);
 
-      const userManager = state.userManager;
+      const userManager = ctx.userManager;
       if (!userManager) {
         res.status(500).json({ error: 'User manager not initialized.' });
         return;
@@ -262,32 +271,26 @@ export function registerOidcAuthRoutes(app: Express, state: AppState): void {
       // Determine whether the redirect targets a profile with authMode === 'sso'.
       // Only grant auto-access when the profile explicitly trusts the IdP as gatekeeper.
       const chatRedirectMatch =
-        pendingRedirect !== undefined
-          ? /^\/chat\/([a-zA-Z0-9_-]+)$/.exec(pendingRedirect)
-          : null;
+        pendingRedirect !== undefined ? /^\/chat\/([a-zA-Z0-9_-]+)$/.exec(pendingRedirect) : null;
       const ssoTargetProfileName = chatRedirectMatch ? chatRedirectMatch[1] : null;
       const ssoTargetProfile =
-        ssoTargetProfileName !== null ? (state.serveProfiles[ssoTargetProfileName] ?? null) : null;
+        ssoTargetProfileName !== null ? (ctx.serveProfiles[ssoTargetProfileName] ?? null) : null;
       const ssoAutoGrant =
         ssoTargetProfile !== null && ssoTargetProfile.authMode === 'sso'
           ? ssoTargetProfileName!
           : null;
 
       // Compute IdP scope: the set of profile names whose access is delegated to the IdP.
-      // These are exactly the values of the groupToProfile mapping — the admin opts in
-      // by adding a profile there. Profiles outside this set are admin-controlled.
+      // Profiles outside this set are admin-controlled.
       const idpScope = new Set<string>(Object.values(provider.getGroupToProfile()));
 
       // What the IdP currently grants based on JWT groups (no ssoAutoGrant here —
       // ssoAutoGrant is a one-off for new users only).
       const desiredFromIdp = new Set<string>(mappedProfiles);
 
-      // Find or create user by OIDC subject
       let userId: string | null = null;
       const existingBySubject = userManager.getUserByOidcSubject(subject);
 
-      // Capture the non-null userManager in a local const so the closure below
-      // can use it without TypeScript raising "possibly null" inside the function body.
       const um = userManager;
 
       /**
@@ -302,7 +305,6 @@ export function registerOidcAuthRoutes(app: Express, state: AppState): void {
       }): void => {
         const currentNames = new Set(existingUser.profiles.map((p) => p.profileName));
 
-        // Add newly granted profiles
         for (const profileName of desiredFromIdp) {
           if (!currentNames.has(profileName)) {
             um.addProfileAccess(existingUser.id, {
@@ -314,7 +316,6 @@ export function registerOidcAuthRoutes(app: Express, state: AppState): void {
           }
         }
 
-        // Remove revoked profiles within IdP scope
         for (const profileName of idpScope) {
           if (currentNames.has(profileName) && !desiredFromIdp.has(profileName)) {
             um.removeProfileAccess(existingUser.id, profileName);
@@ -323,8 +324,6 @@ export function registerOidcAuthRoutes(app: Express, state: AppState): void {
       };
 
       if (existingBySubject) {
-        // User already linked to this OIDC subject — apply destructive IdP-scope sync
-        // and refresh custom attributes from the latest SSO claims.
         userId = existingBySubject.id;
         applyIdpSync(existingBySubject);
         if (claimsAttrs) {
@@ -333,11 +332,8 @@ export function registerOidcAuthRoutes(app: Express, state: AppState): void {
         }
         await userManager.save();
       } else if (email) {
-        // Try to find by email
         const existingByEmail = userManager.getUserByEmail(email);
         if (existingByEmail) {
-          // Link OIDC subject to existing account, apply destructive IdP-scope sync,
-          // and refresh custom attributes from the latest SSO claims.
           userManager.setOidcSubject(existingByEmail.id, subject);
           userId = existingByEmail.id;
           applyIdpSync(existingByEmail);
@@ -350,10 +346,10 @@ export function registerOidcAuthRoutes(app: Express, state: AppState): void {
       }
 
       if (!userId) {
-        // No existing user — auto-create if allowed.
-        // DB config takes priority over env var config.
-        const dbCfg = state.oidcConfigManager?.getConfig();
-        const autoCreate = dbCfg?.enabled ? dbCfg.autoCreateUsers : (state.config?.oidcAutoCreateUsers ?? true);
+        const dbCfg = ctx.oidcConfigManager?.getConfig();
+        const autoCreate = dbCfg?.enabled
+          ? dbCfg.autoCreateUsers
+          : (ctx.config?.oidcAutoCreateUsers ?? true);
         if (!autoCreate) {
           res.status(403).json({ error: 'Account not found and auto-creation is disabled.' });
           return;
@@ -364,17 +360,13 @@ export function registerOidcAuthRoutes(app: Express, state: AppState): void {
           return;
         }
 
-        // Build profile access list from group mapping
-        const profileAccesses: UserProfileAccess[] = mappedProfiles.map((profileName) => ({
+        const profileAccesses: OidcUserProfileAccess[] = mappedProfiles.map((profileName) => ({
           profileName,
           allowedTables: null,
           allowedTools: null,
           accessMode: 'both' as const,
         }));
 
-        // If the login originated from an SSO-gated chat page, inject that profile
-        // so the user has access immediately after creation.  When a target SSO
-        // profile is resolved we use it instead of the generic 'default' fallback.
         if (ssoAutoGrant !== null && !profileAccesses.some((p) => p.profileName === ssoAutoGrant)) {
           profileAccesses.push({
             profileName: ssoAutoGrant,
@@ -385,7 +377,6 @@ export function registerOidcAuthRoutes(app: Express, state: AppState): void {
         }
 
         // OIDC users need at least one profile to be created.
-        // Use 'default' as last resort only when no group mapping AND no SSO target resolved.
         if (profileAccesses.length === 0) {
           profileAccesses.push({
             profileName: 'default',
@@ -403,30 +394,28 @@ export function registerOidcAuthRoutes(app: Express, state: AppState): void {
           customAttributes: claimsAttrs,
         });
 
-        // Activate the user immediately (no onboarding needed for SSO)
         userManager.consumeOnboardingCode(newUser.onboardingCode!);
         userManager.setOidcSubject(newUser.id, subject);
         await userManager.save();
         userId = newUser.id;
       }
 
-      // Create session for the user.
-      // Always set the user cookie so chat pages work.
-      // Additionally set the admin cookie when the user has admin role, so
-      // that admin SSO logins continue to reach the admin dashboard.
-      const sessionId = createSession(userId);
-      setUserSessionCookie(res, sessionId);
+      // Always set the user cookie so chat pages work; additionally set the
+      // admin cookie when the user has admin role.
+      const sessionId = deps.createSession(userId);
+      deps.setUserSessionCookie(res, sessionId);
       const resolvedUser = userManager.getUserById(userId);
       if (resolvedUser?.role === 'admin') {
-        setSessionCookie(res, sessionId);
+        deps.setSessionCookie(res, sessionId);
       }
 
-      // Redirect to the originally requested page, falling back to the root.
       res.redirect(pendingRedirect ?? '/');
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown error';
-      state.logger?.error('[OIDC] Callback failed', { error: message });
-      res.status(500).json({ error: 'OIDC authentication failed. Please try again or contact your administrator.' });
+      ctx.logger?.error('[OIDC] Callback failed', { error: message });
+      res.status(500).json({
+        error: 'OIDC authentication failed. Please try again or contact your administrator.',
+      });
     }
   });
 }

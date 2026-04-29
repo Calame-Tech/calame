@@ -7,6 +7,7 @@ import type { AuditLogEntry, PendingWriteQuery } from './types.js';
 import { snakeCaseToLabel, friendlyType, buildLabelMap, formatResponseRows } from './response-formatter.js';
 import type { ScopeGuard, Dialect } from './scoped-executor.js';
 import { ScopeBlockedError, createScopeGuard, buildPlainConditions } from './scoped-executor.js';
+import { findJoinPath, computeTransitiveClosure } from './join-path.js';
 
 // We use `as any` in server.tool() calls because the dynamic Zod schemas
 // (Record<string, z.ZodTypeAny>) cause TS2589 "excessively deep" errors with
@@ -94,6 +95,11 @@ function makeDialect(dbType: 'postgresql' | 'mysql' | 'sqlite'): Dialect {
         quoteTable: (s, t) => `"${s}"."${t}"`,
         param: (i) => `$${i}`,
         random: 'RANDOM()',
+        supportsPercentile: true,
+        medianExpr: (col) => `PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ${col})`,
+        percentileExpr: (col, p) => `PERCENTILE_CONT(${p}) WITHIN GROUP (ORDER BY ${col})`,
+        stddevExpr: (col) => `STDDEV_SAMP(${col})`,
+        varianceExpr: (col) => `VAR_SAMP(${col})`,
       };
     case 'mysql':
       return {
@@ -103,6 +109,11 @@ function makeDialect(dbType: 'postgresql' | 'mysql' | 'sqlite'): Dialect {
         quoteTable: (_s, t) => `\`${t}\``,
         param: () => '?',
         random: 'RAND()',
+        supportsPercentile: false,
+        medianExpr: () => null,
+        percentileExpr: () => null,
+        stddevExpr: (col) => `STDDEV_SAMP(${col})`,
+        varianceExpr: (col) => `VAR_SAMP(${col})`,
       };
     case 'sqlite':
       return {
@@ -112,6 +123,11 @@ function makeDialect(dbType: 'postgresql' | 'mysql' | 'sqlite'): Dialect {
         quoteTable: (_s, t) => `"${t}"`,
         param: () => '?',
         random: 'RANDOM()',
+        supportsPercentile: false,
+        medianExpr: () => null,
+        percentileExpr: () => null,
+        stddevExpr: () => null,
+        varianceExpr: () => null,
       };
   }
 }
@@ -218,6 +234,35 @@ function dateBucketExpr(dialect: Dialect, granularity: DateBucket, columnExpr: s
   }
   // sqlite
   return `strftime('${fmt}', ${columnExpr})`;
+}
+
+// ---------------------------------------------------------------------------
+// Date format detection for text/varchar columns that contain ISO dates.
+// Returns a format string if ≥ 80% of non-null sample values match a pattern.
+// ---------------------------------------------------------------------------
+
+/** Detects the ISO date format hidden in string-typed columns (TEXT, VARCHAR). */
+function detectDateFormat(sqlType: string, sampleValues: unknown[]): string | null {
+  if (!isTextType(sqlType)) return null;
+  const nonNull = sampleValues.filter(v => v !== null && v !== undefined && v !== '');
+  if (nonNull.length === 0) return null;
+
+  const threshold = 0.8;
+  const strs = nonNull.map(v => String(v));
+
+  const countMatch = (re: RegExp) => strs.filter(s => re.test(s)).length;
+
+  // Datetime first (more specific than date)
+  if (countMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/) / strs.length >= threshold) {
+    return 'YYYY-MM-DDTHH:mm:ss';
+  }
+  if (countMatch(/^\d{4}-\d{2}-\d{2}/) / strs.length >= threshold) {
+    return 'YYYY-MM-DD';
+  }
+  if (countMatch(/^\d{2}:\d{2}/) / strs.length >= threshold) {
+    return 'HH:mm';
+  }
+  return null;
 }
 
 // Friendly column-type label baked into the Phase-2 catalogue (string in tool
@@ -328,12 +373,42 @@ function buildCatalogue(
       const fk = at.relations.find(r => r.fromTable === at.table.name && r.fromColumn === col.name);
       const fkSuffix = fk ? `→${fk.toTable}.${fk.toColumn}` : '';
       let typeLabel: string;
-      if (Array.isArray(distinct) && distinct.length > 0 && distinct.length <= 20) {
-        typeLabel = `enum:${distinct.map(v => String(v)).join('|')}`;
+      // Determine whether to encode as enum. Rules:
+      // 1. At most 15 distinct values (down from 20 to reduce false-positives).
+      // 2. Numeric columns are never enums — unless exactly 2 values {0, 1}
+      //    (boolean-encoded integer).
+      // 3. Text columns with long values (avg > 30 chars or max > 100 chars)
+      //    are free-text, not enums.
+      const isNumeric = isNumericType(col.type);
+      const isBooleanInt =
+        isNumeric &&
+        Array.isArray(distinct) &&
+        distinct.length === 2 &&
+        distinct.every((v) => v === 0 || v === 1 || v === '0' || v === '1');
+      const shouldEncodeAsEnum = (() => {
+        if (!Array.isArray(distinct) || distinct.length === 0 || distinct.length > 15) return false;
+        if (isNumeric && !isBooleanInt) return false;
+        if (!isNumeric) {
+          // Check for free-text by inspecting the distinct values themselves.
+          const strValues = distinct.map((v) => String(v ?? ''));
+          const maxLen = Math.max(...strValues.map((s) => s.length));
+          const avgLen = strValues.reduce((sum, s) => sum + s.length, 0) / strValues.length;
+          if (maxLen > 100 || avgLen > 30) return false;
+        }
+        return true;
+      })();
+      if (shouldEncodeAsEnum) {
+        typeLabel = `enum:${distinct!.map(v => String(v)).join('|')}`;
       } else {
         typeLabel = friendly;
+        // Detect ISO date format for string-typed columns using available samples
+        const dateFormat = detectDateFormat(col.type, Array.isArray(distinct) ? distinct : []);
+        if (dateFormat) {
+          typeLabel = `${friendly}, format=${dateFormat}`;
+        }
       }
-      cols.push(`${col.name}(${typeLabel})${fkSuffix}`);
+      const nullableSuffix = col.nullable ? ', nullable' : '';
+      cols.push(`${col.name}(${typeLabel}${nullableSuffix})${fkSuffix}`);
     }
     lines.push(`  ${at.table.name}: ${cols.join(', ')}`);
   }
@@ -369,6 +444,19 @@ function buildCompactCatalogue(accessible: AccessibleTable[]): string {
   lines.push('     contains, starts_with, ends_with (case-insensitive substring match on text)');
   return lines.join('\n');
 }
+
+// ---------------------------------------------------------------------------
+// Shared constants — referenced in Zod .describe() calls to avoid repeating
+// verbose strings multiple times in the tool manifest.
+// ---------------------------------------------------------------------------
+
+const AGG_OPS = ['count', 'sum', 'avg', 'min', 'max', 'ratio', 'count_distinct', 'weighted_ratio', 'median', 'stddev', 'variance', 'percentile'] as const;
+const AGG_OPS_JOIN = ['count', 'sum', 'avg', 'min', 'max', 'ratio', 'count_distinct', 'weighted_ratio', 'median', 'stddev', 'variance', 'percentile'] as const;
+const DATE_BUCKETS = ['day', 'week', 'month', 'quarter', 'year'] as const;
+const ORDER_DIRS = ['asc', 'desc'] as const;
+
+const FILTER_OPS_DESC =
+  'Filters: eq|neq|gt|gte|lt|lte|between(value=[min,max])|in(value=[])|is_null|is_not_null|contains|starts_with|ends_with';
 
 // ---------------------------------------------------------------------------
 // WHERE clause builder runtime types (the build itself lives in scoped-executor)
@@ -571,11 +659,11 @@ export function registerDynamicTools(options: DynamicToolsOptions): void {
 
   registerListTablesGeneric(ctx, accessible);
   registerAggregateGeneric(ctx, accessible, catalogue);
-  registerJoinAggregateGeneric(ctx, accessible, options.relations, catalogue);
+  registerJoinAggregateGeneric(ctx, accessible, options.relations);
   registerQueryGeneric(ctx, accessible, catalogue);
   registerDescribeGeneric(ctx, accessible, distinctValuesByTable);
   if (options.onWriteRequest) {
-    registerWriteGeneric(ctx, accessible, options.onWriteRequest, catalogue);
+    registerWriteGeneric(ctx, accessible, options.onWriteRequest);
   }
 }
 
@@ -713,7 +801,7 @@ function registerListTablesGeneric(ctx: ToolContext, accessible: AccessibleTable
   // French here) and the default training language for tool calling. The
   // `friendly` response mode still drives user-facing output (column labels,
   // payload shape).
-  const desc = 'List available tables. Detailed catalogue (types, enums) is in the description of `aggregate` / `query` tools.';
+  const desc = 'List all tables you have access to. Call this first if you are unsure which tables exist. Detailed schema (column types, enums, FK relations) is available via describe or in the aggregate/query tool descriptions.';
 
   server.tool(
     'list_tables',
@@ -763,7 +851,7 @@ function registerAggregateGeneric(
   accessible: AccessibleTable[],
   catalogue: string,
 ): void {
-  const { server, executeQuery, dialect, onAuditLog, profileName, responseMode, wrapResponse, scopeGuard } = ctx;
+  const { server, executeQuery, dialect, onAuditLog, profileName, responseMode, wrapResponse, maxOffset, scopeGuard } = ctx;
 
   const eligible = accessible.filter(at => at.enabledTools.includes('aggregate') && at.numericCols.length > 0);
   if (eligible.length === 0) return;
@@ -773,110 +861,83 @@ function registerAggregateGeneric(
   const inputShape: Record<string, z.ZodTypeAny> = {
     table: tableEnum.describe('Target table. See TABLES & COLUMNS.'),
     aggregation: z
-      .enum(['count', 'sum', 'avg', 'min', 'max', 'ratio', 'count_distinct', 'weighted_ratio'])
+      .enum(AGG_OPS)
       .describe(
-        'Aggregation kind. ' +
-          '"count" / "sum" / "avg" / "min" / "max" are the standard SQL aggregates. ' +
-          '"ratio" computes (rows matching `ratio_filter`) / (rows matching `filters`) — count-based. ' +
-          '"count_distinct" returns COUNT(DISTINCT `aggregation_column`). ' +
-          '"weighted_ratio" returns SUM(`numerator_column`) / SUM(`denominator_column`) — useful for fulfillment %, conversion rate, weighted averages.',
+        'count|sum|avg|min|max: standard SQL. ' +
+          'ratio: (rows matching ratio_filter)/(rows matching filters). ' +
+          'count_distinct: COUNT(DISTINCT aggregation_column). ' +
+          'weighted_ratio: SUM(numerator_column)/SUM(denominator_column). ' +
+          'median|stddev|variance|percentile: statistical aggregations — require PostgreSQL.',
       ),
     aggregation_column: z
       .string()
       .optional()
-      .describe(
-        'Required for sum / avg / min / max (numeric column) and for count_distinct (any column).',
-      ),
-    numerator_column: z
-      .string()
+      .describe('Required for sum/avg/min/max (numeric), count_distinct (any col), median/stddev/variance/percentile (numeric).'),
+    numerator_column: z.string().optional().describe('Numeric numerator col for weighted_ratio.'),
+    denominator_column: z.string().optional().describe('Numeric denominator col for weighted_ratio.'),
+    percentile_p: z
+      .number()
+      .min(0.01)
+      .max(0.99)
       .optional()
-      .describe('Numerator column for `aggregation: "weighted_ratio"`. Must be numeric.'),
-    denominator_column: z
-      .string()
-      .optional()
-      .describe('Denominator column for `aggregation: "weighted_ratio"`. Must be numeric.'),
-    filters: makeFilterMapSchema().describe(
-      'WHERE filters (denominator for ratio). Each entry is { op, value }. ' +
-        'OPS: eq, neq, gt, gte, lt, lte (single value), between (value=[min,max]), in (value=array), is_null, is_not_null (omit value), contains / starts_with / ends_with (case-insensitive text search, value=substring).',
-    ),
-    ratio_filter: makeFilterMapSchema().describe(
-      'Numerator filter for `aggregation: "ratio"`. Same shape as `filters`.',
-    ),
+      .describe('Required when aggregation is "percentile". Value between 0.01 and 0.99 (e.g. 0.95 for p95).'),
+    filters: makeFilterMapSchema().describe(`WHERE filters (denominator for ratio). ${FILTER_OPS_DESC}`),
+    ratio_filter: makeFilterMapSchema().describe('Numerator filter for ratio. Same shape as filters.'),
     having_min_total: z
       .number()
       .optional()
-      .describe('Minimum row count per group, evaluated as HAVING. Drops small-sample groups in ratio rankings.'),
-    group_by: z.string().optional().describe('Primary column to group by.'),
+      .describe('Min row count per group (HAVING). Drops small-sample groups.'),
+    group_by: z.string().optional().describe('Primary GROUP BY column.'),
     group_by_bucket: z
-      .enum(['day', 'week', 'month', 'quarter', 'year'])
+      .enum(DATE_BUCKETS)
       .optional()
-      .describe(
-        'When set together with `group_by` on a date / timestamp column, ' +
-          'truncates the value to the start of the period (DATE_TRUNC). ' +
-          'Use this for time-series questions like "sales per month", ' +
-          '"errors per day", etc.',
-      ),
+      .describe('Date truncation granularity for group_by on a date/timestamp column (DATE_TRUNC).'),
     group_by_secondary: z
       .string()
       .optional()
-      .describe(
-        'Optional second GROUP BY column for two-dimensional pivots. ' +
-          'Example: group_by="region", group_by_secondary="product" returns ' +
-          'one row per (region, product) pair. ' +
-          'Combine with `top_n_per_group` to get "top N per primary group" rankings.',
-      ),
+      .describe('Second GROUP BY column for 2D pivots. Combine with top_n_per_group for top-N rankings.'),
     top_n_per_group: z
       .object({
-        partition_by: z
-          .string()
-          .describe('Column to partition by. Must be the same as `group_by` or `group_by_secondary`.'),
-        order_by: z
-          .string()
-          .describe(
-            'Within each partition, sort by this column DESC and keep the top N. ' +
-              'Use "result" to sort by the aggregated value (count / sum / avg / ratio).',
-          ),
-        n: z.number().describe('How many rows to keep per partition (must be >= 1).'),
+        partition_by: z.string().describe('Partition column — must match group_by or group_by_secondary.'),
+        order_by: z.string().describe('Sort column per partition (use "result" for aggregate value).'),
+        n: z.number().describe('Rows to keep per partition (>= 1).'),
       })
       .optional()
-      .describe(
-        'Window-based "top N per group" filter. Wraps the aggregate in a ' +
-          'ROW_NUMBER() OVER (PARTITION BY ... ORDER BY ... DESC) subquery and ' +
-          'returns only rows with rank <= n. ' +
-          'Typical use: "top 3 products per region by sales" -> ' +
-          'group_by="region", group_by_secondary="product", aggregation="sum", ' +
-          'aggregation_column="sales", top_n_per_group={partition_by:"region",order_by:"result",n:3}.',
-      ),
-    order_by: z
-      .string()
+      .describe('ROW_NUMBER() OVER (PARTITION BY ... ORDER BY ... DESC) — keeps top N per group.'),
+    order_by: z.string().optional().describe('Sort column. Use "result" for the aggregated value.'),
+    order_direction: z.enum(ORDER_DIRS).optional(),
+    limit: z.number().optional().default(20).describe('Max rows (≤1000).'),
+    offset: z
+      .number()
       .optional()
-      .describe('Column to sort by. Pass "result" to sort by the aggregated value (count/sum/avg/ratio).'),
-    order_direction: z.enum(['asc', 'desc']).optional(),
-    limit: z.number().optional().default(20).describe('Max rows.'),
+      .default(0)
+      .describe('Skip first N grouped rows. Use with limit for pagination beyond 1000 groups.'),
     compare_to: z
       .object({
         period: z
-          .enum(['previous_period', 'previous_year'])
+          .enum([
+            'previous_period',
+            'previous_year',
+            'previous_calendar_month',
+            'previous_calendar_quarter',
+            'previous_calendar_year',
+          ])
           .describe(
-            '"previous_period": shift by the same duration as the current window. ' +
-              '"previous_year": shift by exactly one year (calendar year-over-year).',
+            'previous_period: same duration shifted back (rolling window). ' +
+              'previous_year: shift by 1 year (same day/month). ' +
+              '"previous_calendar_month": full calendar month before the current range start (e.g. if range starts in April → March). ' +
+              '"previous_calendar_quarter": full calendar quarter before current (e.g. Q1 if range starts in Q2). ' +
+              '"previous_calendar_year": full calendar year before current (Jan 1 – Dec 31 of prior year). ' +
+              'Use calendar variants for business analytics (monthly reports, quarterly reviews). ' +
+              'Use previous_period/previous_year for rolling-window comparisons.',
           ),
         date_column: z
           .string()
-          .describe(
-            'The date / timestamp column whose `between` filter window will be ' +
-              'shifted to compute the comparison period. The same column must already ' +
-              'appear in `filters` with op=between and a [start, end] value.',
-          ),
+          .describe('Date column already in filters with op=between whose window is shifted.'),
       })
       .optional()
       .describe(
-        'Period-over-period comparison. Runs the aggregate twice — for the ' +
-          'current window and for the shifted previous window — and returns ' +
-          'rows annotated with current `result`, `previous` value, `delta_abs`, ' +
-          'and `delta_pct`. The server does the math; the LLM does not have to ' +
-          'add or divide anything. Not compatible with `group_by_bucket` or ' +
-          '`top_n_per_group` in v1 (alignment is ambiguous; defer to v2).',
+        'Period-over-period: runs aggregate twice (current + shifted window), returns result/previous/delta_abs/delta_pct. Not compatible with group_by_bucket or top_n_per_group.',
       ),
   };
 
@@ -884,10 +945,7 @@ function registerAggregateGeneric(
   // stay English regardless of `responseMode` (English is shorter and the
   // default training language for tool calling). User-facing output is still
   // localized via the `friendly` response mode.
-  const examples =
-    'EXAMPLES:\n  Count by group, top 5:  {"table":"<TABLE>","aggregation":"count","group_by":"<COL>","order_by":"result","order_direction":"desc","limit":5}\n  Failure rate per group with sample-size floor:  {"table":"<TABLE>","aggregation":"ratio","group_by":"<GRP>","ratio_filter":{"<COL>":{"op":"eq","value":"<VAL>"}},"having_min_total":50}';
-
-  const desc = `Aggregate any table with GROUP BY, SUM, AVG, ratio, etc.\n\n${catalogue}\n\n${examples}`;
+  const desc = `Single-table analytics: COUNT, SUM, AVG, MIN, MAX, ratio, conditional ratio (ratio_filter), period-over-period comparison (compare_to), top-N per group (top_n_per_group), HAVING filter (having_min_total), pagination (offset). Use this for any aggregation on ONE table — reach for join_aggregate only when you need columns from a second table. Statistical aggregations (median, stddev, variance, percentile) require PostgreSQL. When counting or ranking individuals (persons, drivers, customers...), group by their unique \`id\` column — name columns (nom, prenom, name) are rarely unique and will merge records with identical names.\n\nKey advanced params with examples:\n- compare_to: {"period": "previous_year", "date_column": "date_creation"} → rolling year-over-year\n- compare_to: {"period": "previous_calendar_month", "date_column": "date_creation"} → full calendar month comparison (e.g. April vs March)\n- top_n_per_group: {"n": 3, "partition_by": "id_depot", "order_by": "result"} → top 3 per group via window function\n- ratio_filter: {"statut": {"op": "eq", "value": "livre"}} → conditional ratio (numerator filter)\n- having_min_total: 100 → HAVING COUNT(*) >= 100\n- offset: 1000 → pagination beyond limit\n\n${catalogue}`;
 
   server.tool(
     'aggregate',
@@ -917,6 +975,7 @@ function registerAggregateGeneric(
         aggregation_column,
         numerator_column,
         denominator_column,
+        percentile_p,
         filters,
         ratio_filter,
         having_min_total,
@@ -927,29 +986,49 @@ function registerAggregateGeneric(
         order_by,
         order_direction,
         limit,
+        offset,
         compare_to,
       } = args as {
         aggregation: string;
         aggregation_column?: string;
         numerator_column?: string;
         denominator_column?: string;
+        percentile_p?: number;
         filters?: Record<string, FilterValue | undefined>;
         ratio_filter?: Record<string, FilterValue | undefined>;
         having_min_total?: number;
         group_by?: string;
         group_by_bucket?: DateBucket;
-        compare_to?: { period: 'previous_period' | 'previous_year'; date_column: string };
+        compare_to?: {
+          period:
+            | 'previous_period'
+            | 'previous_year'
+            | 'previous_calendar_month'
+            | 'previous_calendar_quarter'
+            | 'previous_calendar_year';
+          date_column: string;
+        };
         group_by_secondary?: string;
         top_n_per_group?: { partition_by: string; order_by: string; n: number };
         order_by?: string;
         order_direction?: string;
         limit?: number;
+        offset?: number;
       };
 
       return executeWithAudit(
         { executeQuery, dialect, onAuditLog, profileName, toolName: 'aggregate', toolArgs: args },
         async (exec) => {
           const cappedLimit = Math.min(limit ?? 20, maxLimit);
+          const cappedOffset = Math.min(offset ?? 0, maxOffset ?? 10_000);
+
+          // offset is not compatible with compare_to (pagination of period
+          // comparisons is ambiguous — both windows would need separate offsets).
+          if (compare_to && cappedOffset > 0) {
+            return structuredError({
+              error: 'offset is not compatible with compare_to — pagination of period comparisons is ambiguous',
+            });
+          }
 
           const { clause: whereClause, values, nextParamIndex } = scopeGuard.buildWhereClause(
             tableName,
@@ -1044,6 +1123,61 @@ function registerAggregateGeneric(
               });
             }
             selectExpr = `COUNT(DISTINCT ${dialect.quoteIdent(aggregation_column)}) as result`;
+          } else if (aggregation === 'median' || aggregation === 'percentile' || aggregation === 'stddev' || aggregation === 'variance') {
+            // Statistical aggregations — require aggregation_column (numeric).
+            if (!aggregation_column) {
+              return structuredError({
+                error: `aggregation_column is required for ${aggregation}`,
+                valid_columns: at.numericCols,
+              });
+            }
+            if (!at.numericCols.includes(aggregation_column)) {
+              return structuredError({
+                error: `Invalid aggregation_column '${aggregation_column}' for table '${tableName}'`,
+                valid_columns: at.numericCols,
+                did_you_mean: didYouMean(aggregation_column, at.numericCols),
+              });
+            }
+            const statCol = dialect.quoteIdent(aggregation_column);
+            if (aggregation === 'median') {
+              const expr = dialect.medianExpr(statCol);
+              if (!expr) {
+                return structuredError({
+                  error: `median is not supported on ${dialect.databaseType} — use PostgreSQL for advanced statistical aggregations`,
+                });
+              }
+              selectExpr = `${expr} as result`;
+            } else if (aggregation === 'percentile') {
+              if (percentile_p == null) {
+                return structuredError({
+                  error: 'percentile_p is required when aggregation is "percentile" (e.g. 0.95 for p95)',
+                });
+              }
+              const expr = dialect.percentileExpr(statCol, percentile_p);
+              if (!expr) {
+                return structuredError({
+                  error: `percentile is not supported on ${dialect.databaseType} — use PostgreSQL for advanced statistical aggregations`,
+                });
+              }
+              selectExpr = `${expr} as result`;
+            } else if (aggregation === 'stddev') {
+              const expr = dialect.stddevExpr(statCol);
+              if (!expr) {
+                return structuredError({
+                  error: `stddev is not supported on ${dialect.databaseType} — use PostgreSQL or MySQL for standard deviation`,
+                });
+              }
+              selectExpr = `${expr} as result`;
+            } else {
+              // variance
+              const expr = dialect.varianceExpr(statCol);
+              if (!expr) {
+                return structuredError({
+                  error: `variance is not supported on ${dialect.databaseType} — use PostgreSQL or MySQL for variance`,
+                });
+              }
+              selectExpr = `${expr} as result`;
+            }
           } else if (aggregation === 'count' && !aggregation_column) {
             selectExpr = 'COUNT(*) as result';
           } else if (!aggregation_column) {
@@ -1131,6 +1265,11 @@ function registerAggregateGeneric(
             const dir = order_direction === 'desc' ? 'DESC' : 'ASC';
             const target = isResultAlias ? 'result' : dialect.quoteIdent(order_by);
             orderByClause = `ORDER BY ${target} ${dir}`;
+          } else if (cappedOffset > 0) {
+            // Pagination without an explicit ORDER BY yields non-deterministic
+            // pages. Default to ORDER BY result DESC so successive pages are
+            // consistent and sorted by the aggregate value (most common intent).
+            orderByClause = 'ORDER BY result DESC';
           }
 
           // Validate top_n_per_group, then either compose a window-wrapped
@@ -1175,22 +1314,21 @@ function registerAggregateGeneric(
             values.push(top_n_per_group.n);
             const rnParam = dialect.param(paramCursor++);
             values.push(cappedLimit);
-            const limitParam = dialect.param(paramCursor);
-            sql = `SELECT * FROM (${middleSql}) AS sub WHERE rn <= ${rnParam} ${orderByClause} LIMIT ${limitParam}`;
+            const limitParam = dialect.param(paramCursor++);
+            values.push(cappedOffset);
+            const offsetParam = dialect.param(paramCursor);
+            sql = `SELECT * FROM (${middleSql}) AS sub WHERE rn <= ${rnParam} ${orderByClause} LIMIT ${limitParam} OFFSET ${offsetParam}`;
           } else {
             values.push(cappedLimit);
-            const limitParam = dialect.param(paramCursor);
-            sql = `SELECT ${selectPrefix}${selectExpr} FROM ${qualifiedTable} ${whereClause} ${groupByClause} ${havingClause} ${orderByClause} LIMIT ${limitParam}`;
+            const limitParam = dialect.param(paramCursor++);
+            values.push(cappedOffset);
+            const offsetParam = dialect.param(paramCursor);
+            sql = `SELECT ${selectPrefix}${selectExpr} FROM ${qualifiedTable} ${whereClause} ${groupByClause} ${havingClause} ${orderByClause} LIMIT ${limitParam} OFFSET ${offsetParam}`;
           }
           // Period-over-period: validate, run current + previous in parallel,
           // then merge per group key and compute server-side deltas. Validated
           // upfront so we never run a doomed current query.
           if (compare_to) {
-            if (group_by_bucket) {
-              return structuredError({
-                error: 'compare_to is not compatible with group_by_bucket in v1 (alignment is ambiguous; use plain group_by + same bucket on date_column filter instead)',
-              });
-            }
             if (top_n_per_group) {
               return structuredError({
                 error: 'compare_to is not compatible with top_n_per_group in v1',
@@ -1215,16 +1353,46 @@ function registerAggregateGeneric(
                 error: `compare_to: invalid date format in between filter [${startStr}, ${endStr}]`,
               });
             }
-            // Shift the window. previous_year = same day/month, year - 1.
-            // previous_period = same duration, ending 1ms before current start.
+            // Shift the window based on compare_to.period.
             let prevStart: Date;
             let prevEnd: Date;
             if (compare_to.period === 'previous_year') {
+              // Same day/month, year minus 1.
               prevStart = new Date(start);
               prevStart.setUTCFullYear(prevStart.getUTCFullYear() - 1);
               prevEnd = new Date(end);
               prevEnd.setUTCFullYear(prevEnd.getUTCFullYear() - 1);
+            } else if (compare_to.period === 'previous_calendar_month') {
+              // Full calendar month immediately before the month of startDate.
+              // e.g. startDate=2026-04-15 → prevStart=2026-03-01, prevEnd=2026-03-31
+              const y = start.getUTCFullYear();
+              const m = start.getUTCMonth(); // 0-indexed: 0=Jan … 11=Dec
+              // Month before: if m===0, wrap to December of prior year.
+              const prevMonth = m === 0 ? 11 : m - 1;
+              const prevYear = m === 0 ? y - 1 : y;
+              prevStart = new Date(Date.UTC(prevYear, prevMonth, 1));
+              // Last day of prevMonth: day 0 of the following month.
+              prevEnd = new Date(Date.UTC(prevYear, prevMonth + 1, 0));
+            } else if (compare_to.period === 'previous_calendar_quarter') {
+              // Full calendar quarter before the quarter that contains startDate.
+              // Quarters: Q1=Jan-Mar(0-2), Q2=Apr-Jun(3-5), Q3=Jul-Sep(6-8), Q4=Oct-Dec(9-11)
+              const y = start.getUTCFullYear();
+              const m = start.getUTCMonth(); // 0-indexed
+              const currentQuarter = Math.floor(m / 3); // 0=Q1,1=Q2,2=Q3,3=Q4
+              const prevQuarter = currentQuarter === 0 ? 3 : currentQuarter - 1;
+              const prevQYear = currentQuarter === 0 ? y - 1 : y;
+              const prevQStartMonth = prevQuarter * 3; // 0, 3, 6, or 9
+              const prevQEndMonth = prevQStartMonth + 2; // 2, 5, 8, or 11
+              prevStart = new Date(Date.UTC(prevQYear, prevQStartMonth, 1));
+              // Last day of prevQEndMonth.
+              prevEnd = new Date(Date.UTC(prevQYear, prevQEndMonth + 1, 0));
+            } else if (compare_to.period === 'previous_calendar_year') {
+              // Full calendar year before the year of startDate (Jan 1 – Dec 31).
+              const prevYear = start.getUTCFullYear() - 1;
+              prevStart = new Date(Date.UTC(prevYear, 0, 1));
+              prevEnd = new Date(Date.UTC(prevYear, 11, 31));
             } else {
+              // previous_period: same duration, ending 1ms before current start.
               const durationMs = end.getTime() - start.getTime();
               prevEnd = new Date(start.getTime() - 1);
               prevStart = new Date(prevEnd.getTime() - durationMs);
@@ -1260,6 +1428,52 @@ function registerAggregateGeneric(
               exec(sql, prevValues),
             ]);
 
+            // When group_by_bucket is active the previous rows carry bucket dates
+            // in the previous period (e.g. "2024-01" for January 2024 vs "2025-01"
+            // for January 2025). Shift them forward so they align with current
+            // bucket keys before the merge step.
+            function shiftBucketDate(
+              value: unknown,
+              period:
+                | 'previous_year'
+                | 'previous_period'
+                | 'previous_calendar_month'
+                | 'previous_calendar_quarter'
+                | 'previous_calendar_year',
+              durationMs: number,
+            ): unknown {
+              if (typeof value !== 'string') return value;
+              const d = new Date(value);
+              if (Number.isNaN(d.getTime())) return value;
+              if (period === 'previous_year' || period === 'previous_calendar_year') {
+                // Shift forward by 1 year so previous bucket aligns with current.
+                d.setUTCFullYear(d.getUTCFullYear() + 1);
+                return d.toISOString().slice(0, 10);
+              } else if (period === 'previous_calendar_quarter') {
+                // Shift forward by 3 months.
+                const shifted = new Date(d);
+                shifted.setUTCMonth(shifted.getUTCMonth() + 3);
+                return shifted.toISOString().slice(0, 10);
+              } else if (period === 'previous_calendar_month') {
+                // Shift forward by 1 month.
+                const shifted = new Date(d);
+                shifted.setUTCMonth(shifted.getUTCMonth() + 1);
+                return shifted.toISOString().slice(0, 10);
+              } else {
+                // previous_period: shift by exact duration.
+                return new Date(d.getTime() + durationMs).toISOString().slice(0, 10);
+              }
+            }
+
+            const durationMs = end.getTime() - start.getTime();
+            const normalizedPrevRows: Record<string, unknown>[] =
+              group_by_bucket && group_by
+                ? prevResult.rows.map((row) => ({
+                    ...row,
+                    [group_by]: shiftBucketDate(row[group_by], compare_to.period, durationMs),
+                  }))
+                : prevResult.rows;
+
             // Merge: align by group keys, compute deltas.
             const groupKeys = [group_by, group_by_secondary].filter(Boolean) as string[];
             const keyOf = (row: Record<string, unknown>): string =>
@@ -1267,7 +1481,7 @@ function registerAggregateGeneric(
                 ? '__single__'
                 : groupKeys.map((k) => `${k}=${String(row[k] ?? '')}`).join('|');
             const prevByKey = new Map<string, Record<string, unknown>>();
-            for (const r of prevResult.rows) prevByKey.set(keyOf(r), r);
+            for (const r of normalizedPrevRows) prevByKey.set(keyOf(r), r);
             const merged: Record<string, unknown>[] = [];
             for (const r of curResult.rows) {
               const k = keyOf(r);
@@ -1328,9 +1542,8 @@ function registerJoinAggregateGeneric(
   ctx: ToolContext,
   accessible: AccessibleTable[],
   allRelations: Relation[],
-  catalogue: string,
 ): void {
-  const { server, executeQuery, dialect, onAuditLog, profileName, responseMode, wrapResponse, scopeGuard } = ctx;
+  const { server, executeQuery, dialect, onAuditLog, profileName, responseMode, wrapResponse, maxOffset, scopeGuard } = ctx;
 
   // Only tables where aggregate is enabled. Disabling aggregate on a table
   // must also block joins against it.
@@ -1340,13 +1553,11 @@ function registerJoinAggregateGeneric(
   // Restrict the table enum to tables that have at least one FK pointing to
   // (or coming from) another eligible table. No FK -> no JOIN possible.
   const eligibleNames = new Set(eligible.map(at => at.table.name));
-  const joinable = new Set<string>();
-  for (const r of allRelations) {
-    if (eligibleNames.has(r.fromTable) && eligibleNames.has(r.toTable)) {
-      joinable.add(r.fromTable);
-      joinable.add(r.toTable);
-    }
-  }
+  // Relations restricted to eligible tables only
+  const eligibleRelations = allRelations.filter(
+    (r) => eligibleNames.has(r.fromTable) && eligibleNames.has(r.toTable),
+  );
+  const joinable = computeTransitiveClosure([...eligibleNames], eligibleRelations, 3);
   if (joinable.size < 2) return;
 
   const tableEnum = zodEnum([...joinable]);
@@ -1366,52 +1577,80 @@ function registerJoinAggregateGeneric(
 
   const inputShape: Record<string, z.ZodTypeAny> = {
     primary_table: tableEnum.describe('Left side of the JOIN.'),
-    join_table: tableEnum.describe('Right side of the JOIN. Must be linked to primary_table by an FK.'),
+    join_table: tableEnum.describe('Right side of the JOIN. Does NOT need to be directly FK-linked to primary_table — the system auto-resolves the FK path through intermediate tables (up to 3 hops). Example: primary=colis, join=zone works even if the FK chain is colis→livreur→zone.'),
     aggregation: z
-      .enum(['count', 'sum', 'avg', 'min', 'max', 'count_distinct', 'weighted_ratio'])
+      .enum(AGG_OPS_JOIN)
       .describe(
-        'Aggregation kind. ' +
-          '"count" / "sum" / "avg" / "min" / "max" are standard SQL aggregates. ' +
-          '"count_distinct" returns COUNT(DISTINCT `aggregation_column`) on the side selected by `aggregation_column_table`. ' +
-          '"weighted_ratio" returns SUM(numerator_column) / SUM(denominator_column) — both columns are looked up on the same side as `aggregation_column_table` (default: primary).',
+        'count|sum|avg|min|max: standard SQL. ' +
+          'ratio: conditional ratio across the JOIN — ratio_filter defines the numerator, filters/join_filters define the denominator population; ' +
+          'specify ratio_filter_table to indicate which JOIN side ratio_filter applies to (default: primary). ' +
+          'count_distinct: COUNT(DISTINCT aggregation_column) on the side given by aggregation_column_table. ' +
+          'weighted_ratio: SUM(numerator_column)/SUM(denominator_column) on that same side. ' +
+          'median|stddev|variance|percentile: statistical aggregations — require PostgreSQL.',
       ),
     aggregation_column: z
       .string()
       .optional()
-      .describe('Required for sum / avg / min / max / count_distinct. Column from the table given by `aggregation_column_table`.'),
-    numerator_column: z
-      .string()
+      .describe('Required for sum/avg/min/max/count_distinct/median/stddev/variance/percentile. Col from aggregation_column_table side.'),
+    numerator_column: z.string().optional().describe('Numeric numerator col for weighted_ratio.'),
+    denominator_column: z.string().optional().describe('Numeric denominator col for weighted_ratio.'),
+    ratio_filter: makeFilterMapSchema().describe('Numerator filter for ratio aggregation. Columns belong to ratio_filter_table side. Same shape as filters.'),
+    ratio_filter_table: z
+      .enum(['primary', 'join'])
       .optional()
-      .describe('Numerator column for `aggregation: "weighted_ratio"`. Must be numeric, looked up on `aggregation_column_table`.'),
-    denominator_column: z
-      .string()
+      .describe('Which JOIN side ratio_filter columns belong to (default: primary).'),
+    percentile_p: z
+      .number()
+      .min(0.01)
+      .max(0.99)
       .optional()
-      .describe('Denominator column for `aggregation: "weighted_ratio"`. Must be numeric, looked up on `aggregation_column_table`.'),
+      .describe('Required when aggregation is "percentile". Value between 0.01 and 0.99 (e.g. 0.95 for p95).'),
     aggregation_column_table: z
       .enum(['primary', 'join'])
       .optional()
       .default('primary')
-      .describe('Which side of the JOIN the aggregation column(s) belong to.'),
-    filters: makeFilterMapSchema().describe('Filters applied to primary_table.'),
-    join_filters: makeFilterMapSchema().describe('Filters applied to join_table.'),
-    group_by_column: z.string().optional().describe('Optional column to GROUP BY.'),
+      .describe('Which JOIN side the aggregation column(s) belong to.'),
+    filters: makeFilterMapSchema().describe('Filters on primary_table.'),
+    join_filters: makeFilterMapSchema().describe('Filters on join_table.'),
+    group_by_column: z.string().optional().describe('GROUP BY column.'),
     group_by_table: z
       .enum(['primary', 'join'])
       .optional()
       .default('primary')
-      .describe('Which side of the JOIN the group_by_column belongs to.'),
+      .describe('Which JOIN side group_by_column belongs to.'),
     group_by_bucket: z
-      .enum(['day', 'week', 'month', 'quarter', 'year'])
+      .enum(DATE_BUCKETS)
       .optional()
-      .describe('When set with `group_by_column` on a date column, truncates to the start of the period (DATE_TRUNC).'),
-    order_direction: z
-      .enum(['asc', 'desc'])
+      .describe('Date truncation granularity for group_by_column (DATE_TRUNC).'),
+    group_by_secondary_column: z
+      .string()
       .optional()
-      .describe('Sort by the aggregate result. Useful for top-N questions.'),
-    limit: z.number().optional().default(20).describe('Max rows, capped at 1000.'),
+      .describe('Second GROUP BY column for 2D cross-table pivots. Does not support date bucketing.'),
+    group_by_secondary_table: z
+      .enum(['primary', 'join'])
+      .optional()
+      .default('primary')
+      .describe('Which JOIN side group_by_secondary_column belongs to.'),
+    order_direction: z.enum(ORDER_DIRS).optional().describe('Sort by aggregate result.'),
+    limit: z.number().optional().default(20).describe('Max rows (≤1000).'),
+    offset: z
+      .number()
+      .optional()
+      .default(0)
+      .describe('Skip first N grouped rows. Use with limit for pagination beyond 1000 groups.'),
   };
 
-  const desc = `Aggregate over an INNER JOIN of two FK-linked tables (count/sum/avg/min/max with optional GROUP BY). Use this for cross-table analytics instead of paginating per-table tools.\n\n${catalogue}`;
+  const desc =
+    'Cross-table analytics: aggregate over a JOIN of two tables when you need columns from BOTH sides (e.g. count colis grouped by livreur.nom, or sum revenue grouped by zone.region). ' +
+    'Auto-resolves FK chains up to 3 hops — intermediate tables handled automatically. ' +
+    'Supports count/sum/avg/min/max/ratio + up to two GROUP BY dimensions (group_by_column + group_by_secondary_column) for 2D pivots. ' +
+    'Do NOT use this for single-table aggregations — use aggregate instead. ' +
+    'Statistical aggregations (median, stddev, variance, percentile) require PostgreSQL. ' +
+    'When counting or ranking individuals (persons, drivers, customers...), group by their unique `id` column — name columns (nom, prenom, name) are rarely unique and will merge records with identical names.\n\n' +
+    'Key advanced params with examples:\n' +
+    '- ratio + ratio_filter: {aggregation: "ratio", ratio_filter: {"statut": {"op": "eq", "value": "livre"}}, ratio_filter_table: "primary"} → delivery rate cross-table in one call\n' +
+    '- group_by_secondary_column: 2D pivot across both JOIN sides (e.g. livreur × zone)\n' +
+    '- weighted_ratio: SUM(numerator_column)/SUM(denominator_column) on same JOIN side';
 
   server.tool(
     'join_aggregate',
@@ -1425,29 +1664,41 @@ function registerJoinAggregateGeneric(
         aggregation_column,
         numerator_column,
         denominator_column,
+        percentile_p,
         aggregation_column_table = 'primary',
         filters,
         join_filters,
+        ratio_filter,
+        ratio_filter_table = 'primary',
         group_by_column,
         group_by_table = 'primary',
         group_by_bucket,
+        group_by_secondary_column,
+        group_by_secondary_table = 'primary',
         order_direction,
         limit,
+        offset,
       } = args as {
         primary_table: string;
         join_table: string;
-        aggregation: 'count' | 'sum' | 'avg' | 'min' | 'max' | 'count_distinct' | 'weighted_ratio';
+        aggregation: 'count' | 'sum' | 'avg' | 'min' | 'max' | 'ratio' | 'count_distinct' | 'weighted_ratio' | 'median' | 'stddev' | 'variance' | 'percentile';
         aggregation_column?: string;
         numerator_column?: string;
         denominator_column?: string;
+        percentile_p?: number;
         aggregation_column_table?: 'primary' | 'join';
         filters?: Record<string, FilterValue | undefined>;
         join_filters?: Record<string, FilterValue | undefined>;
+        ratio_filter?: Record<string, FilterValue | undefined>;
+        ratio_filter_table?: 'primary' | 'join';
         group_by_column?: string;
         group_by_table?: 'primary' | 'join';
         group_by_bucket?: DateBucket;
+        group_by_secondary_column?: string;
+        group_by_secondary_table?: 'primary' | 'join';
         order_direction?: 'asc' | 'desc';
         limit?: number;
+        offset?: number;
       };
 
       return executeWithAudit(
@@ -1479,24 +1730,138 @@ function registerJoinAggregateGeneric(
             });
           }
 
-          const rel = findRelation(primary_table, join_table);
-          if (!rel) {
+          const joinPath = findJoinPath(primary_table, join_table, eligibleRelations, 3);
+          if (!joinPath || joinPath.length === 0) {
             return structuredError({
-              error: `No declared foreign-key relation between '${primary_table}' and '${join_table}'`,
-              hint: 'join_aggregate only joins tables linked by an FK. Try chaining via an intermediate table.',
+              error: `No FK join path found between '${primary_table}' and '${join_table}' within 3 hops`,
+              hint: 'Ensure tables are linked by foreign keys. Use list_tables to see available tables.',
             });
           }
 
-          const pAlias = 'p';
-          const jAlias = 'j';
+          // Build alias map: primary_table = t0, intermediates = t1..tN-1, join_table = tN
+          const allTablesInPath = [
+            primary_table,
+            ...joinPath.slice(0, -1).map((h) => h.toTable),
+            join_table,
+          ];
+          // Deduplicate while preserving order
+          const uniqueTablesInPath = [
+            ...new Map(allTablesInPath.map((t, i) => [t, i] as [string, number])).entries(),
+          ]
+            .sort((a, b) => a[1] - b[1])
+            .map(([t]) => t);
+
+          const aliasOf = new Map<string, string>(uniqueTablesInPath.map((t, i) => [t, `t${i}`]));
+          const pAlias = aliasOf.get(primary_table)!; // t0
+          const jAlias = aliasOf.get(join_table)!; // tN
 
           // Resolve aggregation target.
           const aggAt = aggregation_column_table === 'join' ? jAt : pAt;
           const aggAlias = aggregation_column_table === 'join' ? jAlias : pAlias;
           const aggTableName = aggregation_column_table === 'join' ? join_table : primary_table;
 
+          // For ratio aggregation, we pre-build the CASE WHEN conditions before
+          // the WHERE clause so we can assign their parameter indices first.
+          // The ratio_filter values are pushed ahead of WHERE filter values so
+          // that buildPrefixedFilters (which starts at paramIndex=1) is offset
+          // by the number of pre-pushed ratio values.
+          const ratioPreValues: unknown[] = [];
+          let ratioSelectExpr: string | null = null;
+          if (aggregation === 'ratio') {
+            if (!ratio_filter || Object.keys(ratio_filter).length === 0) {
+              return structuredError({ error: 'ratio_filter is required for aggregation: "ratio"' });
+            }
+            const rfAt = ratio_filter_table === 'join' ? jAt : pAt;
+            const rfAlias = ratio_filter_table === 'join' ? jAlias : pAlias;
+            const rfTableName = ratio_filter_table === 'join' ? join_table : primary_table;
+            const rfAllowed = rfAt.filterableCols.map((c) => c.name);
+            // Build ratio conditions twice (two CASE WHEN occurrences, each with
+            // its own positional placeholders — mirrors the approach in aggregate).
+            let ratioParamCursor = 1;
+            const firstConditions: string[] = [];
+            for (const [col, filter] of Object.entries(ratio_filter)) {
+              if (!filter) continue;
+              if (!rfAllowed.includes(col)) {
+                return structuredError({
+                  error: `ratio_filter column '${col}' is not filterable for table '${rfTableName}'`,
+                  valid_columns: rfAllowed,
+                  did_you_mean: didYouMean(col, rfAllowed),
+                });
+              }
+              const qi = `${rfAlias}.${dialect.quoteIdent(col)}`;
+              if (filter.op === 'eq') {
+                firstConditions.push(`${qi} = ${dialect.param(ratioParamCursor++)}`);
+                ratioPreValues.push(filter.value);
+              } else if (filter.op === 'neq') {
+                firstConditions.push(`${qi} != ${dialect.param(ratioParamCursor++)}`);
+                ratioPreValues.push(filter.value);
+              } else if (filter.op === 'gt') {
+                firstConditions.push(`${qi} > ${dialect.param(ratioParamCursor++)}`);
+                ratioPreValues.push(filter.value);
+              } else if (filter.op === 'gte') {
+                firstConditions.push(`${qi} >= ${dialect.param(ratioParamCursor++)}`);
+                ratioPreValues.push(filter.value);
+              } else if (filter.op === 'lt') {
+                firstConditions.push(`${qi} < ${dialect.param(ratioParamCursor++)}`);
+                ratioPreValues.push(filter.value);
+              } else if (filter.op === 'lte') {
+                firstConditions.push(`${qi} <= ${dialect.param(ratioParamCursor++)}`);
+                ratioPreValues.push(filter.value);
+              } else if (filter.op === 'is_null') {
+                firstConditions.push(`${qi} IS NULL`);
+              } else if (filter.op === 'is_not_null') {
+                firstConditions.push(`${qi} IS NOT NULL`);
+              } else {
+                return structuredError({
+                  error: `ratio_filter op '${filter.op}' is not supported for ratio — use eq, neq, gt, gte, lt, lte, is_null, is_not_null`,
+                });
+              }
+            }
+            if (firstConditions.length === 0) {
+              return structuredError({ error: 'ratio_filter has no usable conditions' });
+            }
+            // Second occurrence — same conditions, new parameter indices.
+            const secondConditions: string[] = [];
+            for (const [col, filter] of Object.entries(ratio_filter)) {
+              if (!filter) continue;
+              const qi = `${rfAlias}.${dialect.quoteIdent(col)}`;
+              if (filter.op === 'eq') {
+                secondConditions.push(`${qi} = ${dialect.param(ratioParamCursor++)}`);
+                ratioPreValues.push(filter.value);
+              } else if (filter.op === 'neq') {
+                secondConditions.push(`${qi} != ${dialect.param(ratioParamCursor++)}`);
+                ratioPreValues.push(filter.value);
+              } else if (filter.op === 'gt') {
+                secondConditions.push(`${qi} > ${dialect.param(ratioParamCursor++)}`);
+                ratioPreValues.push(filter.value);
+              } else if (filter.op === 'gte') {
+                secondConditions.push(`${qi} >= ${dialect.param(ratioParamCursor++)}`);
+                ratioPreValues.push(filter.value);
+              } else if (filter.op === 'lt') {
+                secondConditions.push(`${qi} < ${dialect.param(ratioParamCursor++)}`);
+                ratioPreValues.push(filter.value);
+              } else if (filter.op === 'lte') {
+                secondConditions.push(`${qi} <= ${dialect.param(ratioParamCursor++)}`);
+                ratioPreValues.push(filter.value);
+              } else if (filter.op === 'is_null') {
+                secondConditions.push(`${qi} IS NULL`);
+              } else if (filter.op === 'is_not_null') {
+                secondConditions.push(`${qi} IS NOT NULL`);
+              }
+            }
+            const caseFirst = `CASE WHEN ${firstConditions.join(' AND ')} THEN 1 ELSE 0 END`;
+            const caseSecond = `CASE WHEN ${secondConditions.join(' AND ')} THEN 1 ELSE 0 END`;
+            ratioSelectExpr =
+              `AVG(1.0 * (${caseFirst})) as result,` +
+              ` SUM(${caseSecond}) as numerator,` +
+              ` COUNT(*) as denominator`;
+          }
+
           let selectExpr: string;
-          if (aggregation === 'weighted_ratio') {
+          if (aggregation === 'ratio') {
+            // ratioSelectExpr was built above; guaranteed non-null here.
+            selectExpr = ratioSelectExpr!;
+          } else if (aggregation === 'weighted_ratio') {
             // SUM(num)/SUM(den) on the same JOIN side. Both columns must
             // belong to the table indicated by `aggregation_column_table`.
             if (!numerator_column || !denominator_column) {
@@ -1541,6 +1906,61 @@ function registerJoinAggregateGeneric(
               });
             }
             selectExpr = `COUNT(DISTINCT ${aggAlias}.${dialect.quoteIdent(aggregation_column)}) as result`;
+          } else if (aggregation === 'median' || aggregation === 'percentile' || aggregation === 'stddev' || aggregation === 'variance') {
+            // Statistical aggregations — require aggregation_column (numeric).
+            if (!aggregation_column) {
+              return structuredError({
+                error: `aggregation_column is required for ${aggregation}`,
+                valid_columns: aggAt.numericCols,
+              });
+            }
+            if (!aggAt.numericCols.includes(aggregation_column)) {
+              return structuredError({
+                error: `Invalid aggregation_column '${aggregation_column}' for table '${aggTableName}'`,
+                valid_columns: aggAt.numericCols,
+                did_you_mean: didYouMean(aggregation_column, aggAt.numericCols),
+              });
+            }
+            const statCol = `${aggAlias}.${dialect.quoteIdent(aggregation_column)}`;
+            if (aggregation === 'median') {
+              const expr = dialect.medianExpr(statCol);
+              if (!expr) {
+                return structuredError({
+                  error: `median is not supported on ${dialect.databaseType} — use PostgreSQL for advanced statistical aggregations`,
+                });
+              }
+              selectExpr = `${expr} as result`;
+            } else if (aggregation === 'percentile') {
+              if (percentile_p == null) {
+                return structuredError({
+                  error: 'percentile_p is required when aggregation is "percentile" (e.g. 0.95 for p95)',
+                });
+              }
+              const expr = dialect.percentileExpr(statCol, percentile_p);
+              if (!expr) {
+                return structuredError({
+                  error: `percentile is not supported on ${dialect.databaseType} — use PostgreSQL for advanced statistical aggregations`,
+                });
+              }
+              selectExpr = `${expr} as result`;
+            } else if (aggregation === 'stddev') {
+              const expr = dialect.stddevExpr(statCol);
+              if (!expr) {
+                return structuredError({
+                  error: `stddev is not supported on ${dialect.databaseType} — use PostgreSQL or MySQL for standard deviation`,
+                });
+              }
+              selectExpr = `${expr} as result`;
+            } else {
+              // variance
+              const expr = dialect.varianceExpr(statCol);
+              if (!expr) {
+                return structuredError({
+                  error: `variance is not supported on ${dialect.databaseType} — use PostgreSQL or MySQL for variance`,
+                });
+              }
+              selectExpr = `${expr} as result`;
+            }
           } else if (aggregation === 'count' && !aggregation_column) {
             selectExpr = 'COUNT(*) as result';
           } else if (!aggregation_column) {
@@ -1563,6 +1983,7 @@ function registerJoinAggregateGeneric(
           let selectPrefix = '';
           let groupByClause = '';
           let groupByOriginal: { table: string; column: string } | null = null;
+          let groupBySecondaryOriginal: { table: string; column: string } | null = null;
           if (group_by_column) {
             const gbAt = group_by_table === 'join' ? jAt : pAt;
             const gbAlias = group_by_table === 'join' ? jAlias : pAlias;
@@ -1588,9 +2009,32 @@ function registerJoinAggregateGeneric(
             groupByOriginal = { table: gbTableName, column: group_by_column };
           }
 
+          // Resolve secondary GROUP BY target (no date bucketing supported).
+          if (group_by_secondary_column) {
+            const gbAt2 = group_by_secondary_table === 'join' ? jAt : pAt;
+            const gbAlias2 = group_by_secondary_table === 'join' ? jAlias : pAlias;
+            const gbTableName2 = group_by_secondary_table === 'join' ? join_table : primary_table;
+            if (!gbAt2.groupableColumns.includes(group_by_secondary_column)) {
+              return structuredError({
+                error: `Invalid group_by_secondary_column '${group_by_secondary_column}' for table '${gbTableName2}'`,
+                valid_columns: gbAt2.groupableColumns,
+                did_you_mean: didYouMean(group_by_secondary_column, gbAt2.groupableColumns),
+              });
+            }
+            const qualified2 = `${gbAlias2}.${dialect.quoteIdent(group_by_secondary_column)}`;
+            selectPrefix += `${qualified2} as ${dialect.quoteIdent(group_by_secondary_column)}, `;
+            groupByClause =
+              groupByClause.length > 0
+                ? `${groupByClause}, ${qualified2}`
+                : `GROUP BY ${qualified2}`;
+            groupBySecondaryOriginal = { table: gbTableName2, column: group_by_secondary_column };
+          }
+
           // Build WHERE — prefix every column with its alias so the JOIN is
           // unambiguous. Scope filters first (mandatory), then user filters.
-          let paramIndex = 1;
+          // When ratio aggregation is used, ratioPreValues are prepended so
+          // their positional parameters ($1..$N) come before WHERE params.
+          let paramIndex = 1 + ratioPreValues.length;
           const conditions: string[] = [];
           const values: unknown[] = [];
           const scopeInfo = scopeGuard.getScopeInfo();
@@ -1688,28 +2132,66 @@ function registerJoinAggregateGeneric(
           const r2 = buildPrefixedFilters(join_table, jAlias, join_filters, jAt.filterableCols.map(c => c.name));
           if (!r2.ok) return structuredError(r2.payload);
 
+          // Apply scope filters for intermediate tables in the join path
+          // (security: prevent scope bypass via multi-hop joins)
+          for (const hop of joinPath.slice(0, -1)) {
+            const intermediateTable = hop.toTable;
+            if (intermediateTable === primary_table || intermediateTable === join_table) continue;
+            const intermediateAlias = aliasOf.get(intermediateTable)!;
+            try {
+              scopeGuard.checkTableAccess(intermediateTable);
+            } catch {
+              return structuredError({
+                error: `Intermediate table '${intermediateTable}' in join path is blocked by access rules`,
+                join_path: uniqueTablesInPath,
+              });
+            }
+            for (const sf of scopeInfo.filters.filter((f) => f.tableName === intermediateTable)) {
+              conditions.push(`${intermediateAlias}.${dialect.quoteIdent(sf.column)} = ${dialect.param(paramIndex++)}`);
+              values.push(sf.value);
+            }
+          }
+
           const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
+          const cappedLimit = Math.min(limit ?? 20, 1000);
+          const cappedOffset = Math.min(offset ?? 0, maxOffset ?? 10_000);
+
+          // Pagination without ORDER BY yields non-deterministic pages. When
+          // offset > 0 and no explicit order is given, default to ORDER BY
+          // result DESC (most common intent: top groups first).
           const orderByClause = order_direction
             ? `ORDER BY result ${order_direction === 'desc' ? 'DESC' : 'ASC'}`
-            : '';
+            : cappedOffset > 0
+              ? 'ORDER BY result DESC'
+              : '';
 
-          const cappedLimit = Math.min(limit ?? 20, 1000);
           values.push(cappedLimit);
-          const limitParam = dialect.param(paramIndex);
+          const limitParam = dialect.param(paramIndex++);
+          values.push(cappedOffset);
+          const offsetParam = dialect.param(paramIndex);
 
           const pSchema = pAt.table.schema || 'public';
-          const jSchema = jAt.table.schema || 'public';
-          const fromClause =
-            `FROM ${dialect.quoteTable(pSchema, primary_table)} ${pAlias} ` +
-            `INNER JOIN ${dialect.quoteTable(jSchema, join_table)} ${jAlias} ` +
-            `ON ${pAlias}.${dialect.quoteIdent(rel.aColumn)} = ${jAlias}.${dialect.quoteIdent(rel.bColumn)}`;
+          // Build FROM + all INNER JOINs for the multi-hop path
+          let fromClause = `FROM ${dialect.quoteTable(pSchema, primary_table)} ${pAlias}`;
+          for (const hop of joinPath) {
+            const hopFromAlias = aliasOf.get(hop.fromTable)!;
+            const hopToAlias = aliasOf.get(hop.toTable)!;
+            const hopAt = byName.get(hop.toTable);
+            const hopSchema = hopAt?.table.schema || 'public';
+            fromClause +=
+              ` INNER JOIN ${dialect.quoteTable(hopSchema, hop.toTable)} ${hopToAlias}` +
+              ` ON ${hopFromAlias}.${dialect.quoteIdent(hop.fromColumn)} = ${hopToAlias}.${dialect.quoteIdent(hop.toColumn)}`;
+          }
 
-          const sql = `SELECT ${selectPrefix}${selectExpr} ${fromClause} ${whereClause} ${groupByClause} ${orderByClause} LIMIT ${limitParam}`;
+          const sql = `SELECT ${selectPrefix}${selectExpr} ${fromClause} ${whereClause} ${groupByClause} ${orderByClause} LIMIT ${limitParam} OFFSET ${offsetParam}`;
 
-          const result = await exec(sql, values);
+          // Prepend ratio pre-values so positional parameters align correctly:
+          // ratio CASE WHEN params ($1..$K) must appear before WHERE params.
+          const finalValues = ratioPreValues.length > 0 ? [...ratioPreValues, ...values] : values;
+          const result = await exec(sql, finalValues);
 
-          // Apply masking ONLY on the GROUP BY column (aggregates are computed
+          // Apply masking ONLY on the GROUP BY columns (aggregates are computed
           // numbers and don't carry PII).
           let rows = result.rows;
           if (groupByOriginal) {
@@ -1717,8 +2199,13 @@ function registerJoinAggregateGeneric(
             const colRule = at.maskingRules[groupByOriginal.column];
             if (colRule) rows = applyMasking(rows, { [groupByOriginal.column]: colRule });
           }
+          if (groupBySecondaryOriginal) {
+            const at2 = byName.get(groupBySecondaryOriginal.table)!;
+            const colRule2 = at2.maskingRules[groupBySecondaryOriginal.column];
+            if (colRule2) rows = applyMasking(rows, { [groupBySecondaryOriginal.column]: colRule2 });
+          }
 
-          // Friendly mode: surface human labels for the group-by column.
+          // Friendly mode: surface human labels for the group-by columns.
           const labelMap: Record<string, string> = {};
           if (groupByOriginal) {
             const at = byName.get(groupByOriginal.table)!;
@@ -1726,10 +2213,20 @@ function registerJoinAggregateGeneric(
               labelMap[groupByOriginal.column] = at.labelMap[groupByOriginal.column];
             }
           }
+          if (groupBySecondaryOriginal) {
+            const at2 = byName.get(groupBySecondaryOriginal.table)!;
+            if (at2.labelMap[groupBySecondaryOriginal.column]) {
+              labelMap[groupBySecondaryOriginal.column] = at2.labelMap[groupBySecondaryOriginal.column];
+            }
+          }
           const formattedRows = formatResponseRows(rows, labelMap, responseMode);
 
+          const responseObj = {
+            join_path: uniqueTablesInPath,
+            rows: formattedRows,
+          };
           return {
-            content: [{ type: 'text' as const, text: wrapResponse(JSON.stringify(formattedRows, null, 2)) }],
+            content: [{ type: 'text' as const, text: wrapResponse(JSON.stringify(responseObj, null, 2)) }],
             resultSummary: `${rows.length} rows`,
           };
         },
@@ -1756,18 +2253,16 @@ function registerQueryGeneric(
 
   const inputShape: Record<string, z.ZodTypeAny> = {
     table: tableEnum.describe('Target table. See TABLES & COLUMNS.'),
-    columns: z.array(z.string()).optional().describe('Columns to return. Defaults to all visible.'),
-    filters: makeFilterMapSchema().describe(
-      'WHERE filters by column. Each entry is { op, value }. OPS as in `aggregate`.',
-    ),
+    columns: z.array(z.string()).optional().describe('Columns to return (default: all visible).'),
+    filters: makeFilterMapSchema().describe(`WHERE filters. ${FILTER_OPS_DESC}`),
     order_by: z.string().optional(),
-    order_direction: z.enum(['asc', 'desc']).optional(),
-    limit: z.number().optional().default(20).describe('Max rows.'),
+    order_direction: z.enum(ORDER_DIRS).optional(),
+    limit: z.number().optional().default(20).describe('Max rows (≤1000).'),
     offset: z.number().optional().default(0),
-    sample: z.boolean().optional().describe('If true, return random rows.'),
+    sample: z.boolean().optional().describe('Return random rows.'),
   };
 
-  const desc = `Query rows from any table with filters, ordering, and pagination.\n\n${catalogue}\n\nEXAMPLE:\n  Filter + limit:  {"table":"<TABLE>","filters":{"<COL>":{"op":"eq","value":"<VAL>"}},"limit":10}`;
+  const desc = `Fetch individual rows from any table with filters, ordering, and pagination. Use this to LIST or SEARCH records (e.g. find all colis for a client, show recent incidents). For counts, sums, averages, or grouped analytics — use aggregate or join_aggregate instead.\n\n${catalogue}`;
 
   server.tool(
     'query',
@@ -1935,7 +2430,7 @@ function registerDescribeGeneric(
     table: tableEnum.describe('Table to describe.'),
   };
 
-  const desc = 'Get runtime statistics for any visible table: row count, per-column null/distinct stats, low-cardinality enum values, text samples, numeric min/max/avg, FK relations.';
+  const desc = 'Explore a table schema at runtime: row count, column types, null rates, distinct counts, low-cardinality enum values, text samples, numeric min/max/avg, and FK relations to other tables. Call this when unsure about column names, valid values, or how tables relate.';
 
   server.tool(
     'describe',
@@ -2089,11 +2584,23 @@ function registerDescribeGeneric(
             ? at.visibleColumns.map(c => {
                 const colMeta: Record<string, unknown> = {
                   name: at.labelMap[c.name] ?? snakeCaseToLabel(c.name),
+                  column_name: c.name,
                   type: friendlyType(c.type),
                   required: !c.nullable,
                 };
                 if (distinctByCol[c.name]) colMeta.possibleValues = distinctByCol[c.name];
                 else if (sampleByCol[c.name]) colMeta.sampleValues = sampleByCol[c.name];
+                const describeSamples = distinctByCol[c.name] ?? sampleByCol[c.name] ?? [];
+                const detectedFmt = detectDateFormat(c.type, describeSamples);
+                if (detectedFmt) colMeta.date_format = detectedFmt;
+                const stats = colStats[c.name];
+                if (stats?.distinctCount !== undefined && rowCount > 0) {
+                  colMeta.is_unique = stats.distinctCount === rowCount;
+                }
+                if (stats?.distinctCount === 1 && distinctByCol[c.name]?.length === 1) {
+                  colMeta.effectively_constant = true;
+                  colMeta.constant_value = distinctByCol[c.name]![0];
+                }
                 return colMeta;
               })
             : at.visibleColumns.map(c => {
@@ -2110,21 +2617,35 @@ function registerDescribeGeneric(
                 if (nullCount !== undefined) colMeta.null_count = nullCount;
                 if (nullRatio !== undefined) colMeta.null_ratio = nullRatio;
                 if (distinctCount !== undefined) colMeta.distinct_count = distinctCount;
+                if (distinctCount !== undefined && rowCount > 0) colMeta.is_unique = distinctCount === rowCount;
                 if (distinctByCol[c.name]) colMeta.distinct_values = distinctByCol[c.name];
                 else if (sampleByCol[c.name]) colMeta.sample_values = sampleByCol[c.name];
+                // Detect ISO date format for string-typed columns
+                const describeSamples = distinctByCol[c.name] ?? sampleByCol[c.name] ?? [];
+                const detectedFmt = detectDateFormat(c.type, describeSamples);
+                if (detectedFmt) colMeta.date_format = detectedFmt;
+                // Signal effectively-constant columns to avoid wasting filter / group-by attempts
+                if (distinctCount === 1 && distinctByCol[c.name]?.length === 1) {
+                  colMeta.effectively_constant = true;
+                  colMeta.constant_value = distinctByCol[c.name]![0];
+                }
                 return colMeta;
               });
 
           const relationsMetadata = at.relations.map(r => ({
-            fromTable: friendly ? snakeCaseToLabel(r.fromTable) : r.fromTable,
-            fromColumn: friendly ? snakeCaseToLabel(r.fromColumn) : r.fromColumn,
-            toTable: friendly ? snakeCaseToLabel(r.toTable) : r.toTable,
-            toColumn: friendly ? snakeCaseToLabel(r.toColumn) : r.toColumn,
+            from_table: friendly ? snakeCaseToLabel(r.fromTable) : r.fromTable,
+            from_table_name: r.fromTable,
+            from_column: friendly ? snakeCaseToLabel(r.fromColumn) : r.fromColumn,
+            from_column_name: r.fromColumn,
+            to_table: friendly ? snakeCaseToLabel(r.toTable) : r.toTable,
+            to_table_name: r.toTable,
+            to_column: friendly ? snakeCaseToLabel(r.toColumn) : r.toColumn,
+            to_column_name: r.toColumn,
           }));
 
           const displayName = friendly ? snakeCaseToLabel(tableName) : tableName;
           const payload = friendly
-            ? { table: displayName, columns: columnsMetadata, rowCount, relations: relationsMetadata }
+            ? { table: displayName, table_name: tableName, columns: columnsMetadata, rowCount, relations: relationsMetadata }
             : { table: tableName, schema: schemaName, columns: columnsMetadata, rowCount, numericStats, textStats, relations: relationsMetadata };
 
           return {
@@ -2146,7 +2667,6 @@ function registerWriteGeneric(
   ctx: ToolContext,
   accessible: AccessibleTable[],
   onWriteRequest: (query: Omit<PendingWriteQuery, 'id' | 'timestamp' | 'status'>) => string,
-  catalogue: string,
 ): void {
   const { server, dialect, onAuditLog, profileName, scopeGuard } = ctx;
 
@@ -2157,13 +2677,13 @@ function registerWriteGeneric(
 
   const inputShape: Record<string, z.ZodTypeAny> = {
     table: tableEnum.describe('Target table.'),
-    operation: z.enum(['insert', 'update', 'delete']).describe('Write operation kind.'),
-    description: z.string().describe('Human-readable description of what this write does and why.'),
-    values: z.record(z.string(), z.any()).optional().describe('Column-value pairs for INSERT or UPDATE SET.'),
-    filters: makeFilterMapSchema().describe('Filters for UPDATE / DELETE. Required for those.'),
+    operation: z.enum(['insert', 'update', 'delete']).describe('Write operation.'),
+    description: z.string().describe('What this write does and why.'),
+    values: z.record(z.string(), z.any()).optional().describe('Column-value pairs for INSERT or UPDATE.'),
+    filters: makeFilterMapSchema().describe('Filters for UPDATE/DELETE (required for those).'),
   };
 
-  const desc = `Propose a write (INSERT/UPDATE/DELETE) on a table. The query is queued for admin approval; nothing is executed immediately.\n\n${catalogue}`;
+  const desc = 'Propose a write (INSERT/UPDATE/DELETE). Queued for admin approval — nothing executes immediately.';
 
   server.tool(
     'write',

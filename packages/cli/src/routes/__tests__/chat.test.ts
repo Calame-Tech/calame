@@ -324,6 +324,7 @@ describe('POST /api/chat', () => {
       expect(vi.mocked(createMcpChatTools)).toHaveBeenCalledWith(
         expect.stringContaining('/mcp/beta'),
         expect.any(String),
+        'beta',
       );
     });
 
@@ -341,6 +342,7 @@ describe('POST /api/chat', () => {
       expect(vi.mocked(createMcpChatTools)).toHaveBeenCalledWith(
         expect.stringContaining('/mcp/first'),
         expect.any(String),
+        'first',
       );
     });
   });

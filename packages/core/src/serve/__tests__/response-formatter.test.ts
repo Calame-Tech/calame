@@ -247,22 +247,24 @@ describe('formatResponseRows', () => {
     expect(result).toBe(rows);
   });
 
-  it('renames keys in friendly mode', () => {
+  it('keeps snake_case keys unchanged in friendly mode (no Title Case renaming)', () => {
+    // Keys must stay snake_case in all modes so LLM chaining works:
+    // a column name read from a query result can be used verbatim as a filter key.
     const rows = [
       { user_id: 1, first_name: 'Alice', created_at: '2024-01-01' },
       { user_id: 2, first_name: 'Bob', created_at: '2024-01-02' },
     ];
     const result = formatResponseRows(rows, labelMap, 'friendly');
     expect(result).toEqual([
-      { 'User Id': 1, 'First Name': 'Alice', 'Created At': '2024-01-01' },
-      { 'User Id': 2, 'First Name': 'Bob', 'Created At': '2024-01-02' },
+      { user_id: 1, first_name: 'Alice', created_at: '2024-01-01' },
+      { user_id: 2, first_name: 'Bob', created_at: '2024-01-02' },
     ]);
   });
 
-  it('keeps keys not in the label map unchanged in friendly mode', () => {
+  it('keeps all keys (including unknown) unchanged in friendly mode', () => {
     const rows = [{ user_id: 1, unknown_col: 'x' }];
     const result = formatResponseRows(rows, labelMap, 'friendly');
-    expect(result[0]).toHaveProperty('User Id', 1);
+    expect(result[0]).toHaveProperty('user_id', 1);
     expect(result[0]).toHaveProperty('unknown_col', 'x');
   });
 
@@ -281,13 +283,13 @@ describe('formatResponseRows', () => {
   it('handles nested object values without modifying them', () => {
     const rows = [{ user_id: 1, first_name: { nested: true } }];
     const result = formatResponseRows(rows, labelMap, 'friendly');
-    expect(result[0]['First Name']).toEqual({ nested: true });
+    expect(result[0]['first_name']).toEqual({ nested: true });
   });
 
   it('handles null and undefined values without throwing', () => {
     const rows = [{ user_id: null, first_name: undefined }];
     const result = formatResponseRows(rows, labelMap, 'friendly');
-    expect(result[0]['User Id']).toBeNull();
-    expect(result[0]['First Name']).toBeUndefined();
+    expect(result[0]['user_id']).toBeNull();
+    expect(result[0]['first_name']).toBeUndefined();
   });
 });

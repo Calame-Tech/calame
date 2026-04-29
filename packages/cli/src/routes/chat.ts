@@ -115,7 +115,7 @@ export function registerChatRoute(app: Express, state: AppState): void {
       const mcpUrl = `${protocol}://${host}/mcp/${profileName}`;
 
       // Connect as MCP client — all security rules are inherited from the MCP server
-      const { tools: mcpTools, close } = await createMcpChatTools(mcpUrl, adminToken);
+      const { tools: mcpTools, close } = await createMcpChatTools(mcpUrl, adminToken, profileName);
       const tools = [...mcpTools, createCalcTool()];
 
       try {

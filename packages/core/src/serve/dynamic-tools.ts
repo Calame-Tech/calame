@@ -1432,7 +1432,7 @@ function registerAggregateGeneric(
             // in the previous period (e.g. "2024-01" for January 2024 vs "2025-01"
             // for January 2025). Shift them forward so they align with current
             // bucket keys before the merge step.
-            function shiftBucketDate(
+            const shiftBucketDate = (
               value: unknown,
               period:
                 | 'previous_year'
@@ -1441,29 +1441,25 @@ function registerAggregateGeneric(
                 | 'previous_calendar_quarter'
                 | 'previous_calendar_year',
               durationMs: number,
-            ): unknown {
+            ): unknown => {
               if (typeof value !== 'string') return value;
               const d = new Date(value);
               if (Number.isNaN(d.getTime())) return value;
               if (period === 'previous_year' || period === 'previous_calendar_year') {
-                // Shift forward by 1 year so previous bucket aligns with current.
                 d.setUTCFullYear(d.getUTCFullYear() + 1);
                 return d.toISOString().slice(0, 10);
               } else if (period === 'previous_calendar_quarter') {
-                // Shift forward by 3 months.
                 const shifted = new Date(d);
                 shifted.setUTCMonth(shifted.getUTCMonth() + 3);
                 return shifted.toISOString().slice(0, 10);
               } else if (period === 'previous_calendar_month') {
-                // Shift forward by 1 month.
                 const shifted = new Date(d);
                 shifted.setUTCMonth(shifted.getUTCMonth() + 1);
                 return shifted.toISOString().slice(0, 10);
               } else {
-                // previous_period: shift by exact duration.
                 return new Date(d.getTime() + durationMs).toISOString().slice(0, 10);
               }
-            }
+            };
 
             const durationMs = end.getTime() - start.getTime();
             const normalizedPrevRows: Record<string, unknown>[] =
@@ -1566,14 +1562,6 @@ function registerJoinAggregateGeneric(
   // Lookup helpers
   const byName = new Map<string, AccessibleTable>();
   for (const at of eligible) byName.set(at.table.name, at);
-
-  function findRelation(a: string, b: string): { aColumn: string; bColumn: string } | null {
-    for (const r of allRelations) {
-      if (r.fromTable === a && r.toTable === b) return { aColumn: r.fromColumn, bColumn: r.toColumn };
-      if (r.fromTable === b && r.toTable === a) return { aColumn: r.toColumn, bColumn: r.fromColumn };
-    }
-    return null;
-  }
 
   const inputShape: Record<string, z.ZodTypeAny> = {
     primary_table: tableEnum.describe('Left side of the JOIN.'),

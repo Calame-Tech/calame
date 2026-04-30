@@ -28,6 +28,7 @@ import type { ServeProfile } from '@calame/core';
 vi.mock('../../chat-engine.js', () => ({
   INTERNAL_CHAT_SECRET: 'test-secret',
   createMcpChatTools: vi.fn(),
+  createCalcTool: vi.fn().mockReturnValue({ name: 'calc', description: '', parameters: {}, handler: vi.fn() }),
   executeChatTurn: vi.fn(),
   getDefaultSystemPrompt: vi.fn().mockReturnValue('system prompt'),
 }));
@@ -323,6 +324,7 @@ describe('POST /api/chat', () => {
       expect(vi.mocked(createMcpChatTools)).toHaveBeenCalledWith(
         expect.stringContaining('/mcp/beta'),
         expect.any(String),
+        'beta',
       );
     });
 
@@ -340,6 +342,7 @@ describe('POST /api/chat', () => {
       expect(vi.mocked(createMcpChatTools)).toHaveBeenCalledWith(
         expect.stringContaining('/mcp/first'),
         expect.any(String),
+        'first',
       );
     });
   });

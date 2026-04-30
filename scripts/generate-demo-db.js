@@ -300,12 +300,27 @@ const colisIds = [];
 const TOTAL_COLIS = 20000;
 const EMMA_COLIS = 500;
 
+// Date de référence = aujourd'hui pour éviter les colis bloqués dans le passé
+const TODAY = new Date().toISOString().split('T')[0];
+
 for (let i = 0; i < TOTAL_COLIS; i++) {
   const statut = pick(STATUTS_COLIS);
-  const dateCreation = dateOffset('2024-01-01', rand(0, 830));
-  const livre = statut === 'livre';
-  // Les 500 premiers colis sont pour Emma, le reste distribué aléatoirement
   const clientId = i < EMMA_COLIS ? emmaClientId : pick(clients);
+
+  // Dates cohérentes avec le statut :
+  // - livre/echec/retour/perdu : créés il y a 10-400 jours (terminés)
+  // - en_cours/en_depot : créés il y a 1-20 jours (en transit récent)
+  // - en_attente : créés il y a 0-7 jours (très récent)
+  let dateCreation;
+  if (['livre','echec','retour','perdu'].includes(statut)) {
+    dateCreation = dateOffset(TODAY, -rand(10, 400));
+  } else if (['en_cours','en_depot'].includes(statut)) {
+    dateCreation = dateOffset(TODAY, -rand(1, 20));
+  } else {
+    dateCreation = dateOffset(TODAY, -rand(0, 7));
+  }
+
+  const livre = statut === 'livre';
   const r = stmtColis.run({
     reference: `COL-${2024 + Math.floor(i/8000)}-${String(i+1).padStart(5,'0')}`,
     id_client: clientId,
@@ -334,28 +349,57 @@ for (let i = 0; i < TOTAL_COLIS; i++) {
 }
 console.log(`✓ ${colisIds.length} colis`);
 
-// Tournées (300)
+// Tournées (300) + tournee_colis (liées aux vrais colis des livreurs)
 const stmtTournee = db.prepare('INSERT INTO tournee (id_livreur, id_depot, date_tournee, heure_debut, heure_fin, statut, nb_colis_prevu, nb_colis_livre, nb_colis_echec, km_parcourus, note_livreur) VALUES (@id_livreur, @id_depot, @date_tournee, @heure_debut, @heure_fin, @statut, @nb_colis_prevu, @nb_colis_livre, @nb_colis_echec, @km_parcourus, @note_livreur)');
+const stmtTourneeColis = db.prepare('INSERT OR IGNORE INTO tournee_colis (id_tournee, id_colis, ordre, statut) VALUES (@id_tournee, @id_colis, @ordre, @statut)');
 const tourneeIds = [];
 const STATUTS_TOURNEE = ['planifiee','planifiee','en_cours','terminee','terminee','terminee','annulee'];
+
+// Index colis par livreur pour peupler tournee_colis avec de vrais colis
+const colisByLivreur = new Map();
+const colisLivreurRows = db.prepare('SELECT id, id_livreur, statut FROM colis WHERE id_livreur IS NOT NULL').all();
+for (const c of colisLivreurRows) {
+  if (!colisByLivreur.has(c.id_livreur)) colisByLivreur.set(c.id_livreur, []);
+  colisByLivreur.get(c.id_livreur).push({ id: c.id, statut: c.statut });
+}
+
 for (let i = 0; i < 300; i++) {
   const statut = pick(STATUTS_TOURNEE);
-  const prevus = rand(5, 30);
-  const livres = statut === 'terminee' ? rand(Math.floor(prevus*0.7), prevus) : 0;
+  const livreurId = pick(livreurs);
+  const prevus = rand(5, 20);
+
   const r = stmtTournee.run({
-    id_livreur: pick(livreurs),
+    id_livreur: livreurId,
     id_depot: pick(depots),
-    date_tournee: dateOffset('2025-01-01', rand(0, 466)),
+    date_tournee: dateOffset(TODAY, -rand(0, 365)),
     heure_debut: statut !== 'planifiee' ? `0${rand(7,9)}:${rand(0,5)}0` : null,
     heure_fin: statut === 'terminee' ? `${rand(15,19)}:${rand(0,5)}0` : null,
     statut,
     nb_colis_prevu: prevus,
-    nb_colis_livre: livres,
-    nb_colis_echec: statut === 'terminee' ? prevus - livres : 0,
+    nb_colis_livre: 0,   // recalculé après insertion tournee_colis
+    nb_colis_echec: 0,
     km_parcourus: statut === 'terminee' ? Math.round(rand(20, 150) * 10) / 10 : null,
     note_livreur: statut === 'terminee' ? Math.round((3 + Math.random() * 2) * 10) / 10 : null,
   });
-  tourneeIds.push(r.lastInsertRowid);
+  const tourneeId = r.lastInsertRowid;
+  tourneeIds.push(tourneeId);
+
+  // Peupler tournee_colis avec de vrais colis de ce livreur
+  if (statut !== 'planifiee' && statut !== 'annulee') {
+    const disponibles = colisByLivreur.get(livreurId) ?? [];
+    const selection = pickN(disponibles, Math.min(prevus, disponibles.length));
+    let ordre = 1;
+    let nbLivre = 0, nbEchec = 0;
+    for (const c of selection) {
+      const tcStatut = c.statut === 'livre' ? 'livre' : c.statut === 'echec' ? 'echec' : 'prevu';
+      stmtTourneeColis.run({ id_tournee: tourneeId, id_colis: c.id, ordre: ordre++, statut: tcStatut });
+      if (tcStatut === 'livre') nbLivre++;
+      if (tcStatut === 'echec') nbEchec++;
+    }
+    // Mettre à jour les compteurs avec les vraies valeurs
+    db.prepare('UPDATE tournee SET nb_colis_prevu=?, nb_colis_livre=?, nb_colis_echec=? WHERE id=?')
+      .run(selection.length, nbLivre, nbEchec, tourneeId);
+  }
 }
 console.log(`✓ ${tourneeIds.length} tournées`);
 
@@ -466,6 +510,14 @@ for (let i = 0; i < TOTAL_NOTIFS; i++) {
   });
 }
 console.log(`✓ ${TOTAL_NOTIFS} notifications (dont ${EMMA_NOTIFS} pour Emma)`);
+
+// Recalculer nb_livraisons_total depuis les vrais colis livrés
+db.prepare(`
+  UPDATE livreur SET nb_livraisons_total = (
+    SELECT COUNT(*) FROM colis WHERE id_livreur = livreur.id AND statut = 'livre'
+  )
+`).run();
+console.log('✓ nb_livraisons_total recalculé');
 
 // Stats finales
 const total = db.prepare("SELECT SUM(cnt) as total FROM (SELECT COUNT(*) as cnt FROM client UNION ALL SELECT COUNT(*) FROM livreur UNION ALL SELECT COUNT(*) FROM colis UNION ALL SELECT COUNT(*) FROM tournee UNION ALL SELECT COUNT(*) FROM incident UNION ALL SELECT COUNT(*) FROM paiement UNION ALL SELECT COUNT(*) FROM historique_statut UNION ALL SELECT COUNT(*) FROM notification)").get();

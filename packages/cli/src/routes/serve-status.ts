@@ -207,6 +207,45 @@ export function registerServeStatusRoute(app: Express, state: AppState): void {
       state.logger?.info(`Started serving ${profileNames.length} profile(s): ${profileNames.join(', ')}`, { component: 'serve' });
       state.logger?.info('MCP endpoints available at POST /mcp/<profileName>', { component: 'serve' });
 
+      // Pre-warm local model KV cache in the background (custom provider only)
+      // so the first real user message doesn't pay the full cold-start penalty
+      void (async () => {
+        try {
+          const aiSetting = state.aiConfigManager?.getConfig?.();
+          if (aiSetting?.provider === 'custom' && aiSetting.baseUrl && aiSetting.model) {
+            const { warmupLlmCache, createMcpChatTools, getDefaultSystemPrompt } = await import('../chat-engine.js');
+            const firstProfile = profileNames[0];
+            const host = `localhost:${process.env.PORT ?? 4567}`;
+            const mcpUrl = `http://${host}/mcp/${firstProfile}`;
+            const adminToken = state.userManager
+              ? (() => {
+                  const admins = state.userManager.listUsers({ role: 'admin', status: 'active' });
+                  return admins[0] ? state.userManager.getUserToken(admins[0].id) : null;
+                })()
+              : null;
+            if (adminToken) {
+              const { tools, close } = await createMcpChatTools(mcpUrl, adminToken);
+              try {
+                const profile = state.serveProfiles[firstProfile];
+                const responseMode = profile?.responseMode ?? 'friendly';
+                await warmupLlmCache({
+                  apiKey: aiSetting.apiKey,
+                  model: aiSetting.model,
+                  baseUrl: aiSetting.baseUrl,
+                  systemPrompt: getDefaultSystemPrompt(responseMode),
+                  tools,
+                });
+                state.logger?.info('LLM cache pre-warmed for local model', { component: 'serve' });
+              } finally {
+                await close();
+              }
+            }
+          }
+        } catch {
+          // Warmup failure is non-blocking
+        }
+      })();
+
       res.json({
         success: true,
         message: `Now serving ${profileNames.length} profile(s).`,

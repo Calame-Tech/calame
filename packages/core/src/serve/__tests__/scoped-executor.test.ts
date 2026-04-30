@@ -11,6 +11,11 @@ const pgDialect: Dialect = {
   quoteTable: (s, t) => `"${s}"."${t}"`,
   param: (i) => `$${i}`,
   random: 'RANDOM()',
+  supportsPercentile: true,
+  medianExpr: (col) => `PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ${col})`,
+  percentileExpr: (col, p) => `PERCENTILE_CONT(${p}) WITHIN GROUP (ORDER BY ${col})`,
+  stddevExpr: (col) => `STDDEV_SAMP(${col})`,
+  varianceExpr: (col) => `VAR_SAMP(${col})`,
 };
 
 // SQLite dialect for testing
@@ -21,6 +26,11 @@ const sqliteDialect: Dialect = {
   quoteTable: (_s, t) => `"${t}"`,
   param: () => '?',
   random: 'RANDOM()',
+  supportsPercentile: false,
+  medianExpr: () => null,
+  percentileExpr: () => null,
+  stddevExpr: () => null,
+  varianceExpr: () => null,
 };
 
 const scopeFilters: ResolvedScopeFilter[] = [

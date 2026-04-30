@@ -46,10 +46,14 @@ export interface McpChatToolsResult {
  * Create an MCP client that connects to the internal MCP endpoint.
  * Lists available tools and returns ToolDef[] with handlers that call tools via the MCP protocol.
  * The caller MUST call `close()` when done.
+ *
+ * Tool schemas are cached for TOOL_SCHEMA_TTL_MS (30s) per profileName (or mcpUrl as fallback)
+ * to avoid redundant listTools() calls on every chat turn.
  */
 export async function createMcpChatTools(
   mcpUrl: string,
   bearerToken: string,
+  profileName?: string,
 ): Promise<McpChatToolsResult> {
   const transport = new StreamableHTTPClientTransport(new URL(mcpUrl), {
     requestInit: {
@@ -63,14 +67,30 @@ export async function createMcpChatTools(
   const client = new Client({ name: 'calame-chat', version: '2.0.0' });
   await client.connect(transport);
 
-  const { tools: mcpTools } = await client.listTools();
+  // Use cache key = profileName if provided, otherwise fall back to mcpUrl
+  const cacheKey = profileName ?? mcpUrl;
+  const now = Date.now();
+  const cached = toolSchemaCache.get(cacheKey);
+  let mcpSchemas: ToolSchemaEntry['schemas'];
 
-  const tools: ToolDef[] = mcpTools.map((mcpTool) => ({
-    name: mcpTool.name,
-    description: mcpTool.description ?? '',
-    parameters: mcpTool.inputSchema as Record<string, unknown>,
+  if (cached && now - cached.ts < TOOL_SCHEMA_TTL_MS) {
+    mcpSchemas = cached.schemas;
+  } else {
+    const { tools: mcpTools } = await client.listTools();
+    mcpSchemas = mcpTools.map((t) => ({
+      name: t.name,
+      description: t.description,
+      inputSchema: t.inputSchema as Record<string, unknown>,
+    }));
+    toolSchemaCache.set(cacheKey, { schemas: mcpSchemas, ts: now });
+  }
+
+  const tools: ToolDef[] = mcpSchemas.map((schema) => ({
+    name: schema.name,
+    description: schema.description ?? '',
+    parameters: schema.inputSchema,
     handler: async (args: Record<string, unknown>): Promise<string> => {
-      const result = await client.callTool({ name: mcpTool.name, arguments: args });
+      const result = await client.callTool({ name: schema.name, arguments: args });
       // Extract text content from MCP tool result
       const texts = (result.content as Array<{ type: string; text?: string }>)
         .filter((c) => c.type === 'text' && c.text)
@@ -88,19 +108,107 @@ export async function createMcpChatTools(
 }
 
 // ---------------------------------------------------------------------------
+// Native calc tool
+// ---------------------------------------------------------------------------
+
+/**
+ * Create a native server-side arithmetic tool.
+ * The LLM MUST use this tool for any arithmetic over numbers already cited in the conversation,
+ * instead of computing mentally (which produces errors on large result sets).
+ */
+export function createCalcTool(): ToolDef {
+  return {
+    name: 'calc',
+    description:
+      'Perform arithmetic on a list of numbers. ' +
+      'Use this tool for EVERY sum, average, min, max, count, or product over numbers already cited in the conversation. ' +
+      'Do NOT compute totals mentally — always call this tool instead.',
+    parameters: {
+      type: 'object',
+      properties: {
+        op: {
+          type: 'string',
+          enum: ['sum', 'avg', 'min', 'max', 'count', 'product'],
+        },
+        values: {
+          type: 'array',
+          items: { type: 'number' },
+        },
+      },
+      required: ['op', 'values'],
+    },
+    handler: async (args: Record<string, unknown>): Promise<string> => {
+      const op = args['op'] as string;
+      const raw = args['values'];
+
+      if (!Array.isArray(raw) || raw.some((v) => typeof v !== 'number')) {
+        throw new Error('calc: values must be an array of numbers');
+      }
+      const values = raw as number[];
+
+      let result: number;
+      switch (op) {
+        case 'sum':
+          result = values.reduce((acc, v) => acc + v, 0);
+          break;
+        case 'avg':
+          if (values.length === 0) throw new Error('calc: cannot compute average of an empty array');
+          result = values.reduce((acc, v) => acc + v, 0) / values.length;
+          break;
+        case 'min':
+          if (values.length === 0) throw new Error('calc: cannot compute min of an empty array');
+          result = Math.min(...values);
+          break;
+        case 'max':
+          if (values.length === 0) throw new Error('calc: cannot compute max of an empty array');
+          result = Math.max(...values);
+          break;
+        case 'count':
+          result = values.length;
+          break;
+        case 'product':
+          result = values.reduce((acc, v) => acc * v, 1);
+          break;
+        default:
+          throw new Error(`calc: unknown operation "${op}"`);
+      }
+
+      return JSON.stringify({ result });
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Tool schema cache (TTL 30s) — avoids redundant listTools() calls per turn
+// ---------------------------------------------------------------------------
+
+interface ToolSchemaEntry {
+  schemas: Array<{ name: string; description: string | undefined; inputSchema: Record<string, unknown> }>;
+  ts: number;
+}
+const toolSchemaCache = new Map<string, ToolSchemaEntry>();
+const TOOL_SCHEMA_TTL_MS = 30_000;
+
+export function invalidateToolSchemaCache(profileName?: string): void {
+  if (profileName) {
+    toolSchemaCache.delete(profileName);
+  } else {
+    toolSchemaCache.clear();
+  }
+}
+
+// ---------------------------------------------------------------------------
 // System prompt & chat turn execution
 // ---------------------------------------------------------------------------
 
 function buildSystemPrompt(): string {
-  const today = new Date().toISOString().split('T')[0];
   return `You are a versatile AI assistant with direct access to a database through MCP tools.
-Today's date is: ${today}
 
 ## GOLDEN RULE: Act first, ask later
 - When the user asks about data, IMMEDIATELY call your tools to find the answer. Do NOT ask clarifying questions if you can figure it out yourself by exploring the data.
 - If you need to find someone by name, search for them. If you need to understand the schema, call describe. If you need to cross-reference tables, chain multiple tool calls. Be resourceful and autonomous.
 - NEVER ask the user for an ID, a column name, a date format, or any technical detail. Figure it out yourself by querying the data.
-- "today" means ${today}. "this week" means the last 7 days. Always resolve dates yourself.
+- "today" means the date provided in the system context. "this week" means the last 7 days. Always resolve dates yourself.
 - Only ask the user a question if the data truly cannot resolve the ambiguity (e.g., two people with the exact same name).
 - When the user refers to a concept in natural language (e.g., "in progress", "delivered"), you MUST map it to the actual database value. Database values often use snake_case, abbreviations, or codes (e.g., "en_cours" for "in progress", "livre" for "delivered"). If a filter returns 0 results and you expected some, the response will include the possible values — use them to retry immediately.
 - The describe tool shows sample values for text columns. Call describe FIRST when you are unsure about the exact values to use in WHERE clauses.
@@ -118,6 +226,11 @@ Today's date is: ${today}
 ## Multi-step queries
 - Many questions require chaining multiple tool calls. For example, to find "how many orders did John deliver today", you should: (1) query the deliverers table to find John's ID, (2) query/aggregate the orders table using that ID and today's date. Do this automatically without asking the user for IDs or column names.
 - Always start by exploring: call \`describe_<table>\` or \`list_tables\` if you are unsure about the schema, then proceed with the actual query.
+- **2D cross-table pivot** ("by X and by Y" where X and Y are on different tables): use \`join_aggregate\` with \`group_by_column\` (one table) + \`group_by_secondary_column\` (the other). One call — never loop across dimensions.
+- **Multi-hop joins** (A → B → C): \`join_aggregate\` auto-resolves up to 3 FK hops. Use it even when there is no direct FK between primary and join tables — the response includes \`join_path\` for transparency.
+- **Temporal evolution** ("monthly vs last year"): combine \`compare_to: { period: "previous_year", date_column }\` with \`group_by_bucket: "month"\` in a single \`aggregate\` call.
+- **Pagination**: if a GROUP BY returns more than the limit, add \`offset\` to aggregate/join_aggregate to get the next page.
+- **Statistical distributions**: use \`aggregation: "median" | "stddev" | "variance" | "percentile"\` (with \`percentile_p\` for percentile, e.g. 0.95 for p95). PostgreSQL only.
 
 ## CRITICAL: row limits — what they actually mean
 The default \`limit\` is 20 and the hard cap is 1000 (configurable per-table). These limits apply ONLY to the rows RETURNED to you, NOT to the rows the database SCANS.
@@ -127,6 +240,17 @@ The default \`limit\` is 20 and the hard cap is 1000 (configurable per-table). T
 - NEVER refuse a question because "the table has too many rows". Use \`aggregate_<table>\` or \`join_aggregate\` and the database does the work for you.
 - Reach for \`query_<table>\` only when the user genuinely wants individual rows listed. For counts, sums, averages, top-N, distributions → always aggregate.
 - If you truly need more than 1000 grouped result rows (very rare), tell the user and suggest narrower filters; do not loop with \`offset\` for analytic questions when an aggregate would answer in one call.
+
+## CRITICAL: data integrity
+- NEVER invent, estimate, or approximate data. Every number in your response MUST come from a tool result received in this conversation.
+- If a tool returns an error or no data, say so explicitly: "I was unable to retrieve this information."
+- If you have not called a tool yet, do not answer data questions — call the tool first.
+
+## CRITICAL: arithmetic
+- You MUST NOT compute sums, averages, totals, min/max, products mentally.
+- For totals over DB rows: prefer aggregate_<table> (SUM/AVG/COUNT in SQL).
+- For totals over numbers already in the conversation (cited rows, user-provided lists): ALWAYS call the \`calc\` tool.
+- Never write "Total: X", "Sum: X", "Average: X" unless X comes from an aggregate_* tool result OR a calc tool result.
 
 ## When the user asks about data
 - Always use your tools to fetch real data. Never guess, invent rows, or use placeholder values.
@@ -208,6 +332,7 @@ export async function executeChatTurn(options: ChatTurnOptions): Promise<ChatTur
       provider === 'openrouter' ? 'https://openrouter.ai/api/v1' : baseUrl;
     const effectiveModel =
       model || (provider === 'openrouter' ? 'anthropic/claude-sonnet-4' : 'default');
+    const effectiveSystemPrompt = systemPrompt;
     return executeOpenAITurn(
       apiKey,
       effectiveModel,
@@ -215,7 +340,7 @@ export async function executeChatTurn(options: ChatTurnOptions): Promise<ChatTur
       message,
       history,
       tools,
-      systemPrompt,
+      effectiveSystemPrompt,
       callTool,
       toolResults,
     );
@@ -235,11 +360,19 @@ async function executeAnthropicTurn(
   const Anthropic = (await import('@anthropic-ai/sdk')).default;
   const anthropic = new Anthropic({ apiKey });
 
-  const anthropicTools = tools.map((t) => ({
+  const anthropicTools = tools.map((t, i) => ({
     name: t.name,
     description: t.description,
-    input_schema: t.parameters,
+    input_schema: t.parameters as never,
+    ...(i === tools.length - 1 ? { cache_control: { type: 'ephemeral' as const } } : {}),
   }));
+
+  // Build system blocks: static prompt is cache-eligible; dynamic date is a separate block
+  const today = new Date().toISOString().split('T')[0];
+  const systemBlocks = [
+    { type: 'text' as const, text: systemPrompt, cache_control: { type: 'ephemeral' as const } },
+    { type: 'text' as const, text: `Today's date is: ${today}` },
+  ];
 
   const messages: Array<{
     role: 'user' | 'assistant';
@@ -247,6 +380,9 @@ async function executeAnthropicTurn(
   }> = [];
   if (Array.isArray(history)) {
     for (const h of history) {
+      if (h.role === 'assistant' && typeof h.content === 'string' && h.content.startsWith('Error:')) {
+        continue;
+      }
       messages.push(h as { role: 'user' | 'assistant'; content: string | Array<Record<string, unknown>> });
     }
   }
@@ -255,7 +391,7 @@ async function executeAnthropicTurn(
   let response = await anthropic.messages.create({
     model: model || 'claude-sonnet-4-20250514',
     max_tokens: 4096,
-    system: systemPrompt,
+    system: systemBlocks as never,
     tools: anthropicTools as never,
     messages: messages as never,
   });
@@ -293,7 +429,7 @@ async function executeAnthropicTurn(
     response = await anthropic.messages.create({
       model: model || 'claude-sonnet-4-20250514',
       max_tokens: 4096,
-      system: systemPrompt,
+      system: systemBlocks as never,
       tools: anthropicTools as never,
       messages: messages as never,
     });
@@ -330,11 +466,19 @@ async function executeOpenAITurn(
     },
   }));
 
+  const today = new Date().toISOString().split('T')[0];
+  const effectiveSystem = `${systemPrompt}\n\nToday's date: ${today}`;
+
   const openaiMessages: Array<Record<string, unknown>> = [
-    { role: 'system', content: systemPrompt },
+    { role: 'system', content: effectiveSystem },
   ];
+
   if (Array.isArray(history)) {
     for (const h of history) {
+      // Skip assistant error messages — they pollute the model's context
+      if (h.role === 'assistant' && typeof h.content === 'string' && h.content.startsWith('Error:')) {
+        continue;
+      }
       openaiMessages.push({ role: h.role, content: h.content });
     }
   }
@@ -345,7 +489,7 @@ async function executeOpenAITurn(
     max_tokens: 4096,
     tools: openaiTools,
     messages: openaiMessages as never,
-  });
+  } as never);
 
   const MAX_TOOL_ROUNDS = 20;
   let toolRound = 0;
@@ -354,14 +498,20 @@ async function executeOpenAITurn(
       return { success: true, response: 'Tool use limit reached. Please simplify your request.', toolResults };
     }
     const assistantMsg = completion.choices[0].message;
-    openaiMessages.push(assistantMsg as unknown as Record<string, unknown>);
+
+    // Strip reasoning fields — they waste tokens and confuse subsequent rounds
+    const { reasoning_content: _rc, provider_specific_fields: _psf, ...cleanMsg } =
+      assistantMsg as typeof assistantMsg & { reasoning_content?: unknown; provider_specific_fields?: unknown };
+    openaiMessages.push(cleanMsg as unknown as Record<string, unknown>);
 
     const toolCalls = assistantMsg.tool_calls ?? [];
     for (const tc of toolCalls) {
       if (tc.type !== 'function') continue;
       const args = JSON.parse(tc.function.arguments || '{}');
-      const result = await callTool(tc.function.name, args);
-      toolResults.push({ tableName: tc.function.name, data: result });
+      // Strip namespace prefix added by some models (e.g. Gemini via OpenRouter: "default_api.query" → "query")
+      const toolName = tc.function.name.includes('.') ? tc.function.name.split('.').pop()! : tc.function.name;
+      const result = await callTool(toolName, args);
+      toolResults.push({ tableName: toolName, data: result });
       openaiMessages.push({
         role: 'tool',
         tool_call_id: tc.id,
@@ -374,9 +524,52 @@ async function executeOpenAITurn(
       max_tokens: 4096,
       tools: openaiTools,
       messages: openaiMessages as never,
-    });
+      enable_thinking: false,
+    } as never);
   }
 
   const assistantMessage = completion.choices[0]?.message?.content ?? '';
   return { success: true, response: assistantMessage, toolResults };
+}
+
+// ---------------------------------------------------------------------------
+// LLM cache pre-warmer (local models only)
+// ---------------------------------------------------------------------------
+
+export interface WarmupConfig {
+  apiKey: string;
+  model: string;
+  baseUrl: string;
+  systemPrompt: string;
+  tools: ToolDef[];
+}
+
+/**
+ * Send a single dummy completion request to pre-populate the local model's KV cache.
+ * This ensures the first real user message doesn't pay the full cold-start penalty
+ * (~23s for 10K tokens). Only meaningful for local/custom providers (Ollama, LM Studio).
+ * Fires and forgets — never throws.
+ */
+export async function warmupLlmCache(config: WarmupConfig): Promise<void> {
+  try {
+    const OpenAI = (await import('openai')).default;
+    const openai = new OpenAI({ apiKey: config.apiKey || 'warmup', baseURL: config.baseUrl });
+
+    const openaiTools = config.tools.map((t) => ({
+      type: 'function' as const,
+      function: { name: t.name, description: t.description, parameters: t.parameters },
+    }));
+
+    await openai.chat.completions.create({
+      model: config.model,
+      max_tokens: 1,
+      tools: openaiTools,
+      messages: [
+        { role: 'system', content: config.systemPrompt },
+        { role: 'user', content: 'ping' },
+      ],
+    });
+  } catch {
+    // Warmup failure is silent — it's best-effort
+  }
 }

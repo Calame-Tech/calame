@@ -219,6 +219,7 @@ export interface AuditLogEntry {
   toolArgs: Record<string, unknown>;
   result: 'success' | 'error';
   resultSummary?: string;
+  resultData?: string; // raw JSON string returned by the tool (for expandable display)
   durationMs: number;
 }
 

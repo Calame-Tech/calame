@@ -56,7 +56,7 @@ export function useChatStream(opts?: ChatStreamOptions) {
         let accumulated = '';
         let finalUsage: UsageInfo | null = null;
 
-        while (true) {
+        while (!controller.signal.aborted) {
           const { done, value } = await reader.read();
           if (done) break;
 
@@ -116,7 +116,6 @@ export function useChatStream(opts?: ChatStreamOptions) {
         setToolStatus(null);
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [opts?.url, opts?.headers],
   );
 

@@ -19,6 +19,7 @@ import { AppState } from '../../state.js';
 import { CalameDatabase } from '../../database.js';
 import { UserManager } from '../../user.js';
 import { registerChatRoute } from '../chat.js';
+import { registerChatStreamRoute } from '../chat-stream.js';
 import type { ServeProfile } from '@calame/core';
 
 // ---------------------------------------------------------------------------
@@ -30,14 +31,16 @@ vi.mock('../../chat-engine.js', () => ({
   createMcpChatTools: vi.fn(),
   createCalcTool: vi.fn().mockReturnValue({ name: 'calc', description: '', parameters: {}, handler: vi.fn() }),
   executeChatTurn: vi.fn(),
+  streamChatTurn: vi.fn(),
   getDefaultSystemPrompt: vi.fn().mockReturnValue('system prompt'),
+  trimHistory: vi.fn((m: unknown[]) => m),
 }));
 
 vi.mock('../../session.js', () => ({
   validateSession: vi.fn(),
 }));
 
-import { createMcpChatTools, executeChatTurn } from '../../chat-engine.js';
+import { createMcpChatTools, executeChatTurn, streamChatTurn } from '../../chat-engine.js';
 import { validateSession } from '../../session.js';
 
 // ---------------------------------------------------------------------------
@@ -401,5 +404,79 @@ describe('POST /api/chat', () => {
 
       expect(closeMock).toHaveBeenCalledOnce();
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/chat/stream
+// ---------------------------------------------------------------------------
+
+describe('POST /api/chat/stream', () => {
+  let app: express.Express;
+  let state: AppState;
+  let db: CalameDatabase;
+  let tmpDir: string;
+  let originalCwd: string;
+
+  function makeStreamApp(s: AppState): express.Express {
+    const a = express();
+    a.use(express.json());
+    registerChatStreamRoute(a, s);
+    return a;
+  }
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+
+    originalCwd = process.cwd();
+    tmpDir = path.join(os.tmpdir(), `calame-stream-test-${Date.now()}`);
+    await fs.mkdir(tmpDir, { recursive: true });
+    process.chdir(tmpDir);
+
+    state = new AppState();
+    db = new CalameDatabase(tmpDir);
+    state.db = db;
+    state.userManager = new UserManager(db);
+    app = makeStreamApp(state);
+  });
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    process.chdir(originalCwd);
+    db.close();
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+  });
+
+  it('returns 400 when message is missing (Zod validation)', async () => {
+    const res = await request(app).post('/api/chat/stream').send({}).expect(400);
+    expect(res.body.success).toBe(false);
+    expect(res.body.message).toBeDefined();
+  });
+
+  it('returns SSE headers and streams events when all guards pass', async () => {
+    seedProfiles(state, [makeProfile('demo')]);
+    mockAiConfig(state);
+    mockValidAdminSession(state.userManager!);
+
+    vi.mocked(createMcpChatTools).mockResolvedValue({
+      tools: [],
+      close: vi.fn().mockResolvedValue(undefined),
+    });
+
+    async function* fakeStream() {
+      yield { type: 'text_delta' as const, delta: 'hello' };
+      yield { type: 'done' as const, finalText: 'hello' };
+    }
+    vi.mocked(streamChatTurn).mockReturnValue(fakeStream());
+
+    const res = await request(app)
+      .post('/api/chat/stream')
+      .set('Cookie', ADMIN_SESSION_COOKIE)
+      .send({ message: 'hello', profileName: 'demo' })
+      .expect(200);
+
+    expect(res.headers['content-type']).toMatch(/text\/event-stream/);
+    expect(res.text).toContain('event: text_delta');
+    expect(res.text).toContain('event: done');
   });
 });

@@ -32,6 +32,7 @@ import { registerConnectRoute } from './routes/connect.js';
 import { registerSchemaRoute } from './routes/schema.js';
 import { registerQueryRoute } from './routes/query.js';
 import { registerChatRoute } from './routes/chat.js';
+import { registerChatStreamRoute } from './routes/chat-stream.js';
 import { registerProfilesRoute } from './routes/profiles.js';
 import { registerPiiRoute } from './routes/pii.js';
 import { registerTokensRoute } from './routes/tokens.js';
@@ -232,6 +233,10 @@ export function createApp(
 
   // Public token-based chat auth — must be before admin session middleware
   registerChatAuthRoute(app, appState);
+
+  // Chat stream route — has its own dual-auth (admin cookie OR user Bearer token)
+  // Must be registered before the admin session middleware
+  registerChatStreamRoute(app, appState);
 
   // Admin session middleware — protects all /api/* routes below
   app.use('/api', createAdminSessionMiddleware(appState.userManager!));

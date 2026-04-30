@@ -70,6 +70,7 @@ export class CalameDatabase {
         tool_args TEXT NOT NULL DEFAULT '{}',
         result TEXT NOT NULL CHECK (result IN ('success', 'error')),
         result_summary TEXT,
+        result_data TEXT,
         duration_ms INTEGER NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_audit_profile ON audit_log(profile_name);

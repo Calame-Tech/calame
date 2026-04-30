@@ -1,9 +1,14 @@
 import { useState, useRef, useEffect } from 'react';
 import type { AccessMode } from '../types/schema.js';
+import { useChatStream } from '../hooks/useChatStream.js';
+import type { UsageInfo } from '../hooks/useChatStream.js';
+import MarkdownMessage from './MarkdownMessage.js';
 
 interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
+  streaming?: boolean;
+  usage?: UsageInfo;
 }
 
 interface UserProfile {
@@ -23,15 +28,16 @@ export default function UserChatPanel({ profiles }: UserChatPanelProps) {
   const [selectedProfile, setSelectedProfile] = useState(chatProfiles[0]?.profileName ?? '');
   const [chatInput, setChatInput] = useState('');
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [chatLoading, setChatLoading] = useState(false);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+
+  const { isStreaming, currentText, toolStatus, error: streamError, send, abort } = useChatStream();
 
   useEffect(() => {
     const container = messagesContainerRef.current;
     if (container) {
       container.scrollTop = container.scrollHeight;
     }
-  }, [chatMessages]);
+  }, [chatMessages, currentText]);
 
   // Reset messages when profile changes
   useEffect(() => {
@@ -39,45 +45,46 @@ export default function UserChatPanel({ profiles }: UserChatPanelProps) {
   }, [selectedProfile]);
 
   const handleChatSend = async () => {
-    if (!chatInput.trim() || chatLoading || !selectedProfile) return;
+    if (!chatInput.trim() || isStreaming || !selectedProfile) return;
 
     const userMessage = chatInput.trim();
     setChatInput('');
-    setChatMessages((prev) => [...prev, { role: 'user', content: userMessage }]);
-    setChatLoading(true);
 
-    try {
-      const res = await fetch('/api/auth/user-chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          message: userMessage,
-          history: chatMessages,
-          profileName: selectedProfile,
-        }),
-      });
-      const data = await res.json();
+    // Push user message + assistant placeholder
+    setChatMessages((prev) => [
+      ...prev,
+      { role: 'user', content: userMessage },
+      { role: 'assistant', content: '', streaming: true },
+    ]);
 
-      if (data.success) {
-        setChatMessages((prev) => [
-          ...prev,
-          { role: 'assistant', content: data.response },
-        ]);
-      } else {
-        setChatMessages((prev) => [
-          ...prev,
-          { role: 'assistant', content: `Error: ${data.message}` },
-        ]);
-      }
-    } catch {
-      setChatMessages((prev) => [
-        ...prev,
-        { role: 'assistant', content: 'Error: could not reach the server.' },
-      ]);
-    } finally {
-      setChatLoading(false);
-    }
+    const body: Record<string, unknown> = {
+      message: userMessage,
+      history: chatMessages,
+      profileName: selectedProfile,
+    };
+
+    await send(
+      body,
+      (text) => {
+        setChatMessages((prev) => {
+          const copy = [...prev];
+          copy[copy.length - 1] = { ...copy[copy.length - 1], content: text };
+          return copy;
+        });
+      },
+      (finalText, usageInfo) => {
+        setChatMessages((prev) => {
+          const copy = [...prev];
+          copy[copy.length - 1] = {
+            role: 'assistant',
+            content: finalText || `Error: ${streamError ?? 'could not reach the server.'}`,
+            streaming: false,
+            usage: usageInfo ?? undefined,
+          };
+          return copy;
+        });
+      },
+    );
   };
 
   if (chatProfiles.length === 0) return null;
@@ -121,35 +128,41 @@ export default function UserChatPanel({ profiles }: UserChatPanelProps) {
               className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
               <div
-                className={`max-w-[80%] px-4 py-2 rounded-lg text-sm whitespace-pre-wrap ${
+                className={`max-w-[80%] px-4 py-2 rounded-lg text-sm ${
                   msg.role === 'user'
-                    ? 'bg-os-700 text-white rounded-br-sm'
+                    ? 'bg-os-700 text-white rounded-br-sm whitespace-pre-wrap'
                     : 'bg-gray-700/50 text-gray-200 rounded-bl-sm'
                 }`}
               >
-                {msg.content}
+                {msg.role === 'user' ? (
+                  msg.content
+                ) : (
+                  <>
+                    {msg.streaming && !msg.content && !currentText ? (
+                      <span className="inline-flex gap-1 items-center h-4">
+                        <span className="w-1 h-1 rounded-full bg-gray-400 animate-bounce [animation-delay:-0.3s]" />
+                        <span className="w-1 h-1 rounded-full bg-gray-400 animate-bounce [animation-delay:-0.15s]" />
+                        <span className="w-1 h-1 rounded-full bg-gray-400 animate-bounce" />
+                      </span>
+                    ) : (
+                      <MarkdownMessage content={msg.content || (msg.streaming ? currentText : '')} />
+                    )}
+                    {msg.streaming && toolStatus && (
+                      <p className="text-xs text-gray-500 mt-1 italic">{toolStatus}</p>
+                    )}
+                    {!msg.streaming && msg.usage && (
+                      <span className="text-xs text-zinc-500 mt-1 block">
+                        {(msg.usage.input + msg.usage.output).toLocaleString()} tokens
+                        {msg.usage.cacheRead
+                          ? ` · cache ${Math.round((msg.usage.cacheRead / msg.usage.input) * 100)}%`
+                          : ''}
+                      </span>
+                    )}
+                  </>
+                )}
               </div>
             </div>
           ))}
-
-          {chatLoading && (
-            <div className="flex justify-start">
-              <div className="bg-gray-700/50 text-gray-400 px-4 py-2 rounded-lg rounded-bl-sm text-sm">
-                <span className="inline-flex gap-1">
-                  <span className="animate-bounce" style={{ animationDelay: '0ms' }}>
-                    .
-                  </span>
-                  <span className="animate-bounce" style={{ animationDelay: '150ms' }}>
-                    .
-                  </span>
-                  <span className="animate-bounce" style={{ animationDelay: '300ms' }}>
-                    .
-                  </span>
-                </span>
-                {' '}Thinking...
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Input */}
@@ -165,16 +178,25 @@ export default function UserChatPanel({ profiles }: UserChatPanelProps) {
               }
             }}
             placeholder="Ask about your data..."
-            disabled={chatLoading}
+            disabled={isStreaming}
             className="input-editorial flex-1 text-sm disabled:opacity-50"
           />
-          <button
-            onClick={handleChatSend}
-            disabled={!chatInput.trim() || chatLoading}
-            className="px-4 py-2 bg-os-700 hover:bg-os-600 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
-          >
-            Send
-          </button>
+          {isStreaming ? (
+            <button
+              onClick={abort}
+              className="px-4 py-2 bg-red-700 hover:bg-red-600 rounded-lg text-sm font-medium transition-colors"
+            >
+              Stop
+            </button>
+          ) : (
+            <button
+              onClick={handleChatSend}
+              disabled={!chatInput.trim() || isStreaming}
+              className="px-4 py-2 bg-os-700 hover:bg-os-600 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
+            >
+              Send
+            </button>
+          )}
         </div>
       </div>
     </div>

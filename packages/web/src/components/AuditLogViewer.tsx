@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { Fragment, useState, useEffect, useCallback, useRef } from 'react';
 import type { Profile, AuditLogEntry } from '../types/schema.js';
 import HelpTip from './HelpTip.js';
 
@@ -214,6 +214,7 @@ export default function AuditLogViewer({ profiles }: AuditLogViewerProps) {
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-gray-400 border-b border-white/5">
+              <th className="w-8 px-2 py-3" />
               <th className="px-4 py-3 font-medium">
                 <span className="flex items-center gap-1">Time <HelpTip content="Timestamp of the tool call." position="bottom" size="xs" /></span>
               </th>
@@ -237,64 +238,100 @@ export default function AuditLogViewer({ profiles }: AuditLogViewerProps) {
           <tbody>
             {loading && entries.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
                   Loading audit log...
                 </td>
               </tr>
             ) : entries.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
                   No audit log entries found.
                 </td>
               </tr>
             ) : (
-              entries.map((entry) => (
-                <>
-                  <tr
-                    key={entry.id}
-                    className="border-b border-white/5 hover:bg-gray-800/40 cursor-pointer transition-colors"
-                    onClick={() => setExpandedId(expandedId === entry.id ? null : entry.id)}
-                  >
-                    <td className="px-4 py-3 text-gray-300 whitespace-nowrap">
-                      {formatTime(entry.timestamp)}
-                    </td>
-                    <td className="px-4 py-3 text-gray-300">
-                      <span className="font-mono text-xs">{entry.profileName}</span>
-                    </td>
-                    <td className="px-4 py-3 text-gray-200 font-mono text-xs">
-                      {entry.toolName}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span
-                        title={entry.result === 'success' ? "L'outil a été exécuté sans erreur." : "L'outil a échoué. Cliquez sur la ligne pour voir les détails."}
-                        className={`px-2 py-0.5 rounded-full text-xs ${
-                          entry.result === 'success'
-                            ? 'bg-green-500/20 text-green-400'
-                            : 'bg-red-500/20 text-red-400'
-                        }`}
-                      >
-                        {entry.result}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">
-                      {formatDuration(entry.durationMs)}
-                    </td>
-                    <td className="px-4 py-3 text-gray-400 text-xs max-w-xs truncate">
-                      {entry.resultSummary ?? '-'}
-                    </td>
-                  </tr>
-                  {expandedId === entry.id && (
-                    <tr key={`${entry.id}-expanded`} className="border-b border-white/5">
-                      <td colSpan={6} className="px-4 py-3 bg-gray-900/50">
-                        <div className="text-xs text-gray-400 mb-1">Tool Arguments:</div>
-                        <pre className="p-3 rounded bg-gray-900 border border-gray-700 text-xs text-gray-300 font-mono overflow-x-auto whitespace-pre-wrap">
-                          {JSON.stringify(entry.toolArgs, null, 2)}
-                        </pre>
+              entries.map((entry) => {
+                const isExpandable = Boolean(entry.resultData);
+                const isExpanded = expandedId === entry.id;
+
+                const prettyResultData = (() => {
+                  if (!entry.resultData) return null;
+                  try {
+                    return JSON.stringify(JSON.parse(entry.resultData), null, 2);
+                  } catch {
+                    return entry.resultData;
+                  }
+                })();
+
+                return (
+                  <Fragment key={entry.id}>
+                    <tr
+                      className={`border-b border-white/5 transition-colors ${
+                        isExpandable
+                          ? 'hover:bg-gray-800/40 cursor-pointer'
+                          : ''
+                      }`}
+                      onClick={isExpandable ? () => setExpandedId(isExpanded ? null : entry.id) : undefined}
+                    >
+                      <td className="w-8 px-2 py-3 text-center text-gray-500">
+                        {isExpandable && (
+                          <span className="text-xs select-none" aria-hidden="true">
+                            {isExpanded ? '▼' : '▶'}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-gray-300 whitespace-nowrap">
+                        {formatTime(entry.timestamp)}
+                      </td>
+                      <td className="px-4 py-3 text-gray-300">
+                        <span className="font-mono text-xs">{entry.profileName}</span>
+                      </td>
+                      <td className="px-4 py-3 text-gray-200 font-mono text-xs">
+                        {entry.toolName}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          title={entry.result === 'success' ? "L'outil a été exécuté sans erreur." : "L'outil a échoué. Cliquez sur la ligne pour voir les détails."}
+                          className={`px-2 py-0.5 rounded-full text-xs ${
+                            entry.result === 'success'
+                              ? 'bg-green-500/20 text-green-400'
+                              : 'bg-red-500/20 text-red-400'
+                          }`}
+                        >
+                          {entry.result}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">
+                        {formatDuration(entry.durationMs)}
+                      </td>
+                      <td className="px-4 py-3 text-gray-400 text-xs max-w-xs truncate">
+                        {entry.resultSummary ?? '-'}
                       </td>
                     </tr>
-                  )}
-                </>
-              ))
+                    {isExpanded && (
+                      <tr key={`${entry.id}-expanded`} className="border-b border-white/5">
+                        <td colSpan={7} className="px-4 py-3 bg-gray-900/50">
+                          <div className="space-y-3">
+                            <div>
+                              <div className="text-xs text-gray-400 mb-1">Tool Arguments:</div>
+                              <pre className="p-3 rounded bg-gray-900 border border-gray-700 text-xs text-gray-300 font-mono overflow-x-auto whitespace-pre">
+                                {JSON.stringify(entry.toolArgs, null, 2)}
+                              </pre>
+                            </div>
+                            {prettyResultData !== null && (
+                              <div>
+                                <div className="text-xs text-gray-400 mb-1">Raw Result:</div>
+                                <pre className="p-3 rounded bg-gray-900 border border-gray-700 text-xs text-gray-300 font-mono overflow-x-auto whitespace-pre">
+                                  {prettyResultData}
+                                </pre>
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })
             )}
           </tbody>
         </table>

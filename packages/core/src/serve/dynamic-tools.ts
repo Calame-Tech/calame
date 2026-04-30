@@ -580,6 +580,7 @@ async function executeWithAudit(
     content: { type: 'text'; text: string }[];
     isError?: boolean;
     resultSummary?: string;
+    resultData?: string;
   }>,
 ): Promise<{ content: { type: 'text'; text: string }[]; isError?: boolean }> {
   const start = Date.now();
@@ -595,6 +596,7 @@ async function executeWithAudit(
         toolArgs,
         result: result.isError ? 'error' : 'success',
         resultSummary: result.resultSummary,
+        resultData: result.resultData,
         durationMs: Date.now() - start,
       });
     }
@@ -632,6 +634,79 @@ async function executeWithAudit(
 //   catalogue baked in the tool descriptions.
 // ===========================================================================
 
+function registerCalcTool(
+  server: McpServer,
+  profileName: string,
+  onAuditLog?: DynamicToolsOptions['onAuditLog'],
+): void {
+  const inputShape = {
+    op: z
+      .enum(['sum', 'avg', 'min', 'max', 'count', 'product'])
+      .describe('Operation to perform on the values.'),
+    values: z
+      .array(z.number())
+      .describe('Numbers to operate on. Pass every individual value, no pre-aggregation.'),
+  };
+
+  const description =
+    'Perform arithmetic on a list of numbers. ' +
+    'MANDATORY before writing any TOTAL, SUM, AVERAGE, MIN, MAX or PRODUCT in your response — including TOTAL rows in Markdown tables. ' +
+    'Example: if rows show counts [120, 340, 501] and you need a total, call calc({op:"sum", values:[120,340,501]}) before writing "Total: 961". ' +
+    'Never compute these mentally.';
+
+  server.tool(
+    'calc',
+    description,
+    inputShape as AnyToolArgs,
+    async (args: Record<string, unknown>) => {
+      const start = Date.now();
+      const op = args['op'] as string;
+      const values = args['values'] as number[];
+
+      let result: number;
+      switch (op) {
+        case 'sum':
+          result = values.reduce((acc, v) => acc + v, 0);
+          break;
+        case 'avg':
+          if (values.length === 0) throw new Error('calc: cannot compute average of an empty array');
+          result = values.reduce((acc, v) => acc + v, 0) / values.length;
+          break;
+        case 'min':
+          if (values.length === 0) throw new Error('calc: cannot compute min of an empty array');
+          result = Math.min(...values);
+          break;
+        case 'max':
+          if (values.length === 0) throw new Error('calc: cannot compute max of an empty array');
+          result = Math.max(...values);
+          break;
+        case 'count':
+          result = values.length;
+          break;
+        case 'product':
+          result = values.reduce((acc, v) => acc * v, 1);
+          break;
+        default:
+          throw new Error(`calc: unknown operation "${op}"`);
+      }
+
+      if (onAuditLog) {
+        onAuditLog({
+          profileName,
+          toolName: 'calc',
+          toolArgs: { op, values },
+          result: 'success',
+          resultSummary: `${op}([${values.join(', ')}]) = ${result}`,
+          resultData: JSON.stringify({ result }),
+          durationMs: Date.now() - start,
+        });
+      }
+
+      return { content: [{ type: 'text' as const, text: JSON.stringify({ result }) }] };
+    },
+  );
+}
+
 export function registerDynamicTools(options: DynamicToolsOptions): void {
   const dialect = makeDialect(options.databaseType);
   const scopeGuard: ScopeGuard = options.scopeGuard ?? createScopeGuard([]);
@@ -646,6 +721,8 @@ export function registerDynamicTools(options: DynamicToolsOptions): void {
     maxOffset: options.maxOffset ?? 10000,
     scopeGuard,
   };
+
+  registerCalcTool(options.server, options.profileName, options.onAuditLog);
 
   const accessible = buildAccessibleTables(options, scopeGuard);
   if (accessible.length === 0) return;
@@ -810,10 +887,14 @@ function registerListTablesGeneric(ctx: ToolContext, accessible: AccessibleTable
     async () =>
       executeWithAudit(
         { executeQuery, dialect, onAuditLog, profileName, toolName: 'list_tables', toolArgs: {} },
-        async () => ({
-          content: [{ type: 'text' as const, text: wrapResponse(JSON.stringify(tableList, null, 2)) }],
-          resultSummary: `${tableList.length} tables`,
-        }),
+        async () => {
+          const text = wrapResponse(JSON.stringify(tableList, null, 2));
+          return {
+            content: [{ type: 'text' as const, text }],
+            resultSummary: `${tableList.length} tables`,
+            resultData: text,
+          };
+        },
       ),
   );
 }
@@ -1506,18 +1587,22 @@ function registerAggregateGeneric(
               compare_to_period: compare_to.period,
               rows: formatResponseRows(merged, at.labelMap, responseMode),
             };
+            const text = wrapResponse(JSON.stringify(payload, null, 2));
             return {
-              content: [{ type: 'text' as const, text: wrapResponse(JSON.stringify(payload, null, 2)) }],
+              content: [{ type: 'text' as const, text }],
               resultSummary: `${merged.length} rows (cur + prev merged)`,
+              resultData: text,
             };
           }
 
           const result = await exec(sql, values);
 
           const formattedRows = formatResponseRows(result.rows, at.labelMap, responseMode);
+          const text = wrapResponse(JSON.stringify(formattedRows, null, 2));
           return {
-            content: [{ type: 'text' as const, text: wrapResponse(JSON.stringify(formattedRows, null, 2)) }],
+            content: [{ type: 'text' as const, text }],
             resultSummary: `${result.rows.length} rows`,
+            resultData: text,
           };
         },
       );
@@ -2213,9 +2298,11 @@ function registerJoinAggregateGeneric(
             join_path: uniqueTablesInPath,
             rows: formattedRows,
           };
+          const text = wrapResponse(JSON.stringify(responseObj, null, 2));
           return {
-            content: [{ type: 'text' as const, text: wrapResponse(JSON.stringify(responseObj, null, 2)) }],
+            content: [{ type: 'text' as const, text }],
             resultSummary: `${rows.length} rows`,
+            resultData: text,
           };
         },
       );
@@ -2383,11 +2470,13 @@ function registerQueryGeneric(
             }
           }
 
+          const text = wrapResponse(JSON.stringify(formattedRows, null, 2)) + zeroResultHint;
           return {
             content: [
-              { type: 'text' as const, text: wrapResponse(JSON.stringify(formattedRows, null, 2)) + zeroResultHint },
+              { type: 'text' as const, text },
             ],
             resultSummary: `${formattedRows.length} rows`,
+            resultData: text,
           };
         },
       );
@@ -2636,9 +2725,11 @@ function registerDescribeGeneric(
             ? { table: displayName, table_name: tableName, columns: columnsMetadata, rowCount, relations: relationsMetadata }
             : { table: tableName, schema: schemaName, columns: columnsMetadata, rowCount, numericStats, textStats, relations: relationsMetadata };
 
+          const text = wrapResponse(JSON.stringify(payload, null, 2));
           return {
-            content: [{ type: 'text' as const, text: wrapResponse(JSON.stringify(payload, null, 2)) }],
+            content: [{ type: 'text' as const, text }],
             resultSummary: `${rowCount} rows, ${at.visibleColumns.length} columns`,
+            resultData: text,
           };
         },
       );
@@ -2789,6 +2880,7 @@ function registerWriteGeneric(
           description,
         });
         const durationMs = Date.now() - start;
+        const writeResultText = `Write request submitted for approval (ID: ${id}). An admin will review it.\n\nOperation: ${operation.toUpperCase()}\nTable: ${tableName}\nSQL: ${sql}\nParams: ${JSON.stringify(params)}`;
         if (onAuditLog) {
           onAuditLog({
             profileName,
@@ -2796,6 +2888,7 @@ function registerWriteGeneric(
             toolArgs: args,
             result: 'success',
             resultSummary: `Write request queued (ID: ${id})`,
+            resultData: JSON.stringify({ id, operation, tableName, sql, params }),
             durationMs,
           });
         }
@@ -2803,7 +2896,7 @@ function registerWriteGeneric(
           content: [
             {
               type: 'text' as const,
-              text: `Write request submitted for approval (ID: ${id}). An admin will review it.\n\nOperation: ${operation.toUpperCase()}\nTable: ${tableName}\nSQL: ${sql}\nParams: ${JSON.stringify(params)}`,
+              text: writeResultText,
             },
           ],
         };

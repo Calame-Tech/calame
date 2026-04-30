@@ -10,6 +10,7 @@ export interface AuditLogEntry {
   toolArgs: Record<string, unknown>;
   result: 'success' | 'error';
   resultSummary?: string;
+  resultData?: string;
   durationMs: number;
   /** Label of the token that triggered this entry (optional). */
   tokenLabel?: string;
@@ -24,6 +25,7 @@ interface AuditRow {
   tool_args: string;
   result: 'success' | 'error';
   result_summary: string | null;
+  result_data: string | null;
   duration_ms: number;
   token_label: string | null;
 }
@@ -37,6 +39,7 @@ function rowToEntry(row: AuditRow): AuditLogEntry {
     toolArgs: JSON.parse(row.tool_args) as Record<string, unknown>,
     result: row.result,
     resultSummary: row.result_summary ?? undefined,
+    resultData: row.result_data ?? undefined,
     durationMs: row.duration_ms,
     tokenLabel: row.token_label ?? undefined,
   };
@@ -58,9 +61,9 @@ export class AuditLog {
 
     this.stmtInsert = this.db.prepare(`
       INSERT INTO audit_log
-        (id, timestamp, profile_name, tool_name, tool_args, result, result_summary, duration_ms, token_label)
+        (id, timestamp, profile_name, tool_name, tool_args, result, result_summary, result_data, duration_ms, token_label)
       VALUES
-        (@id, @timestamp, @profile_name, @tool_name, @tool_args, @result, @result_summary, @duration_ms, @token_label)
+        (@id, @timestamp, @profile_name, @tool_name, @tool_args, @result, @result_summary, @result_data, @duration_ms, @token_label)
     `);
 
     this.stmtCount = this.db.prepare(`SELECT COUNT(*) AS cnt FROM audit_log`);
@@ -105,6 +108,7 @@ export class AuditLog {
       tool_args: JSON.stringify(full.toolArgs),
       result: full.result,
       result_summary: full.resultSummary ?? null,
+      result_data: full.resultData ?? null,
       duration_ms: full.durationMs,
       token_label: full.tokenLabel ?? null,
     });

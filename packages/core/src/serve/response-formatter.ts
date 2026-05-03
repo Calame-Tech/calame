@@ -148,26 +148,19 @@ export function buildReverseLabelMap(
 // ---------------------------------------------------------------------------
 
 /**
- * Rename the keys of every row in `rows` according to `labelMap`.
+ * Return rows with column keys preserved as-is (snake_case from the database).
  *
- * - If `mode === 'raw'`, the rows are returned as-is (zero allocation).
- * - If `mode === 'friendly'`, each key present in `labelMap` is replaced by
- *   its label.  Keys not found in the map are kept unchanged.
- * - Empty arrays are returned unchanged regardless of mode.
+ * Keys are NEVER renamed — neither in 'raw' nor in 'friendly' mode — so that
+ * LLM chaining works correctly: a field name read from a query result can be
+ * used verbatim as a filter key in the next tool call.
+ *
+ * The `labelMap` and `mode` parameters are kept for API compatibility but no
+ * longer drive key renaming.  Empty arrays are returned unchanged.
  */
 export function formatResponseRows(
   rows: Record<string, unknown>[],
-  labelMap: Record<string, string>,
-  mode: 'friendly' | 'raw',
+  _labelMap: Record<string, string>,
+  _mode: 'friendly' | 'raw',
 ): Record<string, unknown>[] {
-  if (mode === 'raw' || rows.length === 0) return rows;
-
-  return rows.map(row => {
-    const transformed: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(row)) {
-      const friendlyKey = labelMap[key] ?? key;
-      transformed[friendlyKey] = value;
-    }
-    return transformed;
-  });
+  return rows;
 }

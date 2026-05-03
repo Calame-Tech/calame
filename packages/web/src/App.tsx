@@ -1158,15 +1158,16 @@ export default function App() {
                 allProfileNames={Array.from(allProfileNames)}
                 onNavigateDashboard={() => setView({ page: 'dashboard' })}
                 initialTab={view.initialTab}
-                backTo={
-                  view.backTo?.page === 'mcp-detail'
-                    ? {
-                        label: profiles.find((p) => p.name === view.backTo?.profileName)?.label ??
-                          view.backTo.profileName,
-                        view: view.backTo,
-                      }
-                    : undefined
-                }
+                backTo={(() => {
+                  const bt = view.backTo;
+                  if (bt?.page === 'mcp-detail') {
+                    return {
+                      label: profiles.find((p) => p.name === bt.profileName)?.label ?? bt.profileName,
+                      view: bt,
+                    };
+                  }
+                  return undefined;
+                })()}
                 onNavigate={(v) => setView(v)}
               />
             )}

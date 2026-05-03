@@ -116,6 +116,12 @@ export function registerProfilesRoute(app: Express, state: AppState): void {
         .prepare("INSERT OR REPLACE INTO profiles (key, data) VALUES ('main', ?)")
         .run(JSON.stringify(data));
 
+      // Invalidate tool schema cache for all saved profiles so the next chat turn re-fetches tools
+      const { invalidateToolSchemaCache } = await import('../chat-engine.js');
+      for (const profileName of Object.keys(data.profiles as Record<string, unknown>)) {
+        invalidateToolSchemaCache(profileName);
+      }
+
       res.json({ success: true });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown error';

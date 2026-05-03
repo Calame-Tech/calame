@@ -39,6 +39,19 @@ export interface Dialect {
   param: (index: number) => string;
   /** RANDOM() function name */
   random: string;
+  /**
+   * Statistical aggregation support. True for PostgreSQL (ordered-set
+   * aggregate functions), false for MySQL and SQLite.
+   */
+  supportsPercentile: boolean;
+  /** PERCENTILE_CONT(0.5) or equivalent for median. Returns null if unsupported. */
+  medianExpr: (col: string) => string | null;
+  /** PERCENTILE_CONT(p) or equivalent. Returns null if unsupported. */
+  percentileExpr: (col: string, p: number) => string | null;
+  /** STDDEV_SAMP or equivalent. Returns null if unsupported. */
+  stddevExpr: (col: string) => string | null;
+  /** VAR_SAMP or equivalent. Returns null if unsupported. */
+  varianceExpr: (col: string) => string | null;
 }
 
 export type ExecuteQuery = (

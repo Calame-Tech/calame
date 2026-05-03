@@ -150,6 +150,7 @@ export interface AuditLogEntry {
   toolArgs: Record<string, unknown>;
   result: 'success' | 'error';
   resultSummary?: string; // e.g. "42 rows returned"
+  resultData?: string; // raw JSON string returned by the tool (for expandable display)
   durationMs: number;
 }
 

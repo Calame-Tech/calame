@@ -86,4 +86,10 @@ export function runMigrations(db: CalameDatabase): void {
     }
     db.setSchemaVersion(6);
   }
+
+  if (currentVersion < 7) {
+    // Version 7: store raw result payload in audit_log for expandable rows in the UI.
+    addColumnIfMissing(db, 'audit_log', 'result_data', 'TEXT');
+    db.setSchemaVersion(7);
+  }
 }

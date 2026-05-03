@@ -5,20 +5,34 @@ License text copyright (c) 2017 MariaDB Corporation Ab, All Rights Reserved.
 
 Parameters
 
-Licensor:             Calame Tech
-Licensed Work:        Calame Enterprise Edition (the "ee/" directory of the
-                      Calame project)
-                      The Licensed Work is (c) 2026 Calame Tech.
+Licensor:             Calame Tech inc.
+Licensed Work:        The contents of the "ee/" directory of the Calame
+                      project.
+                      The Licensed Work is (c) 2026 Calame Tech inc.
 
-Additional Use Grant: You may make use of the Licensed Work, provided that
-                      you do not use the Licensed Work for a Competing
-                      Offering. A "Competing Offering" is a product offered
-                      to third parties on a paid basis, including through
-                      paid support arrangements, that materially overlaps
-                      with the Licensed Work or any product offered by
-                      Licensor. A product is not a Competing Offering if it
-                      is offered for free, or if it is the Licensed Work
-                      itself.
+Additional Use Grant: None. The standard terms below grant only
+                      Non-Production Use of the Licensed Work.
+
+                      For the avoidance of doubt, Non-Production Use
+                      means use of the Licensed Work for development,
+                      testing, evaluation, demonstration, training,
+                      internal experimentation, continuous integration,
+                      and security research. Any other use, including
+                      running the Licensed Work to serve end-users,
+                      process production business data, or otherwise
+                      support live operations of you or any third party,
+                      is a Production Use and requires a separate
+                      commercial license from the Licensor.
+
+                      You may not use the Licensed Work, even for
+                      Non-Production Use, to develop or operate a
+                      Competing Offering. A "Competing Offering" is a
+                      product offered to third parties on a paid basis,
+                      including through paid support arrangements, that
+                      materially overlaps with the Licensed Work or any
+                      product offered by Licensor. A product is not a
+                      Competing Offering if it is offered for free, or
+                      if it is the Licensed Work itself.
 
 Change Date:          Four years from the date the Licensed Work is
                       published.

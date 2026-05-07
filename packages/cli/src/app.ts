@@ -261,6 +261,34 @@ export function createApp(
   registerMetricsRoute(app, appState);
   registerProfilePreviewRoute(app, appState);
 
+  // Optional RAG routes — only registered when the EE rag-core package is
+  // installed AND `initRagRuntime` has been called against this state. The
+  // helper lazy-imports `@calame-ee/rag-core` and stashes the module on
+  // `state.ragRuntime.ragCore` so we can register routes synchronously here.
+  if (appState.ragRuntime && appState.db) {
+    const rt = appState.ragRuntime;
+    const db = appState.db;
+    const ragDeps = {
+      db: db.raw,
+      pipeline: rt.pipeline,
+      vectorStore: rt.vectorStore,
+      resolveEmbeddingClient: rt.resolveEmbeddingClient,
+      resolveEmbeddingSetting: rt.resolveEmbeddingSetting,
+      resolveConnector: rt.resolveConnector,
+      encryptConfig: rt.encryptConfig,
+      decryptConfig: rt.decryptConfig,
+      onAudit: (entry: { type: string; payload: unknown; timestamp: string }) => {
+        log.info(`[rag-audit] ${entry.type} ${JSON.stringify(entry.payload)}`);
+      },
+    };
+    rt.ragCore.registerRagSourcesRoutes(app, ragDeps);
+    rt.ragCore.registerRagContentRoutes(app, ragDeps);
+    rt.ragCore.registerRagUploadRoutes(app, ragDeps);
+    rt.ragCore.registerRagIndexRoutes(app, ragDeps);
+    rt.ragCore.registerRagSearchRoutes(app, ragDeps);
+    log.info('RAG routes registered on /api/rag/*');
+  }
+
   // GET /api/oauth-providers — list available OAuth provider options for the UI
   app.get('/api/oauth-providers', (_req, res) => {
     const providers = [

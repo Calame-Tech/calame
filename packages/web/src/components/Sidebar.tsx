@@ -8,7 +8,8 @@ type NavigablePage =
   | 'connections'
   | 'users'
   | 'metrics'
-  | 'settings';
+  | 'settings'
+  | 'knowledge';
 
 interface SidebarUser {
   email?: string;
@@ -20,6 +21,8 @@ interface SidebarProps {
   onNavigate: (page: NavigablePage) => void;
   user?: SidebarUser;
   onLogout?: () => void;
+  /** When true, adds a "Bases de connaissance" entry to the nav. */
+  ragEnabled?: boolean;
 }
 
 interface NavItem {
@@ -163,6 +166,24 @@ const IconCog = (
   </svg>
 );
 
+const IconBookOpen = (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    fill="none"
+    viewBox="0 0 24 24"
+    strokeWidth={1.5}
+    stroke="currentColor"
+    className="w-4 h-4"
+    aria-hidden="true"
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25"
+    />
+  </svg>
+);
+
 // Chevron right — indicates the currently active nav item
 const IconChevronRight = (
   <svg
@@ -241,7 +262,7 @@ function getInitials(email?: string): string {
   return (parts[0][0] + parts[1][0]).toUpperCase();
 }
 
-export default function Sidebar({ currentPage, onNavigate, user, onLogout }: SidebarProps) {
+export default function Sidebar({ currentPage, onNavigate, user, onLogout, ragEnabled }: SidebarProps) {
   const [isOpen, setIsOpen] = useState(false);
 
   // Lock body scroll when the mobile drawer is open
@@ -385,6 +406,34 @@ export default function Sidebar({ currentPage, onNavigate, user, onLogout }: Sid
                     </li>
                   );
                 })}
+
+                {/* Conditional RAG entry — shown only when ragEnabled is true */}
+                {section.label === 'Admin' && ragEnabled && (() => {
+                  const page: NavigablePage = 'knowledge';
+                  const isActive = currentPage === page;
+                  return (
+                    <li key="knowledge" className="w-full flex-shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handleNavigate(page)}
+                        aria-current={isActive ? 'page' : undefined}
+                        className={[
+                          'w-full flex items-center gap-2.5 px-2.5 py-2 text-sm transition-colors rounded-lg',
+                          'whitespace-nowrap',
+                          isActive
+                            ? 'bg-os-500/15 text-os-300 ring-1 ring-os-500/30'
+                            : 'text-gray-400 hover:bg-white/5 hover:text-gray-200',
+                        ].join(' ')}
+                      >
+                        <span className={isActive ? 'text-os-400' : 'text-gray-500'}>
+                          {IconBookOpen}
+                        </span>
+                        <span>Bases de connaissance</span>
+                        {isActive && IconChevronRight}
+                      </button>
+                    </li>
+                  );
+                })()}
               </ul>
             </div>
           ))}

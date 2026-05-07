@@ -48,6 +48,11 @@ export function registerHealthRoute(app: Express, state: AppState): void {
       status,
       version: getVersion(),
       uptime_seconds: uptimeSeconds,
+      // Whether the RAG runtime was successfully loaded at boot.
+      // `false` means the ee/rag-core package is missing or sqlite-vec
+      // native bindings failed — the "Bases de connaissance" nav entry
+      // should be hidden in the frontend.
+      ragEnabled: state.ragRuntime !== undefined,
       databases: {
         connected: databases.filter((d) => d.connected).length,
         total: databases.length,

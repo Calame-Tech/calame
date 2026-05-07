@@ -13,6 +13,7 @@ import type { Logger } from './logger.js';
 import type { EmailService } from './email.js';
 import type { SecretsProvider } from './secrets.js';
 import type { LlmRouter } from './llm-router.js';
+import type { RagRuntime } from './rag-runtime.js';
 import { TokenRateLimiter } from './rate-limiter.js';
 
 export interface ConnectionState {
@@ -43,6 +44,7 @@ export class AppState {
   private _emailService: EmailService | null = null;
   private _secretsProvider: SecretsProvider | null = null;
   private _llmRouter: LlmRouter | null = null;
+  private _ragRuntime: RagRuntime | undefined = undefined;
 
   // --- Multi-connection API ---
 
@@ -336,5 +338,15 @@ export class AppState {
 
   set llmRouter(value: LlmRouter | null) {
     this._llmRouter = value;
+  }
+
+  // --- RAG runtime (optional, lazy-loaded from @calame-ee/rag-core) ---
+
+  get ragRuntime(): RagRuntime | undefined {
+    return this._ragRuntime;
+  }
+
+  set ragRuntime(value: RagRuntime | undefined) {
+    this._ragRuntime = value;
   }
 }

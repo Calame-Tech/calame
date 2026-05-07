@@ -3,6 +3,7 @@ import HelpTip from './HelpTip.js';
 
 type Provider = 'anthropic' | 'openrouter' | 'custom';
 type ClassifierProvider = 'anthropic' | 'openrouter' | 'custom';
+type AiCapability = 'chat' | 'embeddings';
 
 interface MaskedAiSetting {
   name: string;
@@ -12,6 +13,8 @@ interface MaskedAiSetting {
   model?: string;
   baseUrl?: string;
   configured: boolean;
+  capabilities?: AiCapability[];
+  embeddingModel?: string;
 }
 
 interface AiConfigDisplay {
@@ -69,6 +72,11 @@ export default function AiSettings() {
   const [saveResult, setSaveResult] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
 
+  // Capabilities form state (per-setting form — not global)
+  const [capChat, setCapChat] = useState(true);
+  const [capEmbeddings, setCapEmbeddings] = useState(false);
+  const [embeddingModel, setEmbeddingModel] = useState('');
+
   // LLM Router state — global, independent of individual AI settings
   const [routerEnabled, setRouterEnabled] = useState(false);
   const [classifierProvider, setClassifierProvider] = useState<ClassifierProvider>('anthropic');
@@ -125,6 +133,14 @@ export default function AiSettings() {
     setTestResult(null);
   };
 
+  /** Build the capabilities array from the two checkboxes. */
+  const buildCapabilities = (): AiCapability[] => {
+    const caps: AiCapability[] = [];
+    if (capChat) caps.push('chat');
+    if (capEmbeddings) caps.push('embeddings');
+    return caps;
+  };
+
   const startCreate = () => {
     if (isCreating) {
       setEditingName(null);
@@ -135,6 +151,9 @@ export default function AiSettings() {
     setFormLabel('');
     setProvider('anthropic');
     setPerProvider(emptyPerProvider());
+    setCapChat(true);
+    setCapEmbeddings(false);
+    setEmbeddingModel('');
     resetForm();
   };
 
@@ -156,6 +175,11 @@ export default function AiSettings() {
         baseUrl: s.baseUrl ?? '',
       },
     });
+    // Restore capabilities — default to ['chat'] if not set (legacy settings).
+    const caps = s.capabilities ?? ['chat'];
+    setCapChat(caps.includes('chat'));
+    setCapEmbeddings(caps.includes('embeddings'));
+    setEmbeddingModel(s.embeddingModel ?? '');
     resetForm();
   };
 
@@ -186,9 +210,18 @@ export default function AiSettings() {
       setFormError('Base URL is required for the custom provider.');
       return;
     }
+    if (!capChat && !capEmbeddings) {
+      setFormError('Au moins une capacité doit être sélectionnée (Chat ou Embeddings).');
+      return;
+    }
+    if (capEmbeddings && !embeddingModel.trim()) {
+      setFormError("Le modèle d'embeddings est requis lorsque la capacité Embeddings est activée.");
+      return;
+    }
 
     setSaving(true);
     try {
+      const capabilities = buildCapabilities();
       const body = {
         name: formName,
         label: formLabel,
@@ -196,6 +229,9 @@ export default function AiSettings() {
         apiKey,
         model: model || undefined,
         baseUrl: baseUrl || undefined,
+        // Capabilities — tells the backend which features this setting provides.
+        capabilities,
+        embeddingModel: capEmbeddings ? embeddingModel.trim() || undefined : undefined,
         // LLM Router fields are global but still transported here for backward-compat
         routerEnabled,
         classifierProvider: routerEnabled ? classifierProvider : undefined,
@@ -435,19 +471,103 @@ export default function AiSettings() {
         </div>
       </div>
 
-      {/* Model — shown above the API key */}
-      {(provider === 'openrouter' || provider === 'custom') && (
-        <div>
-          <label className="text-sm text-gray-400">Model</label>
-          <input
-            type="text"
-            value={model}
-            onChange={(e) => updateField('model', e.target.value)}
-            placeholder={provider === 'openrouter' ? 'anthropic/claude-sonnet-4' : 'llama3, mistral, etc.'}
-            className="input-editorial w-full text-sm mt-1"
+      {/* Capabilities section */}
+      <div>
+        <div className="flex items-center gap-1.5 mb-2">
+          <label className="text-sm text-gray-400">Capacités</label>
+          <HelpTip
+            content="Chat : ce setting peut être utilisé pour les conversations avec le LLM. Embeddings : ce setting peut générer des vecteurs pour le RAG (OpenAI/Ollama uniquement)."
+            position="right"
+            maxWidth={320}
           />
         </div>
-      )}
+        <div className="space-y-3 pl-1">
+          {/* Chat capability */}
+          <div className="flex items-start gap-3">
+            <input
+              id="cap-chat"
+              type="checkbox"
+              checked={capChat}
+              onChange={(e) => setCapChat(e.target.checked)}
+              className="mt-0.5 rounded border-gray-600 bg-gray-700 text-os-500 focus:ring-os-500/30"
+            />
+            <div className="flex-1">
+              <label htmlFor="cap-chat" className="text-sm text-gray-200 cursor-pointer">
+                Chat
+              </label>
+              {capChat && (
+                <div className="mt-1">
+                  <label className="text-xs text-gray-400">Modèle (Chat)</label>
+                  <input
+                    type="text"
+                    value={model}
+                    onChange={(e) => updateField('model', e.target.value)}
+                    placeholder={
+                      provider === 'anthropic'
+                        ? 'claude-sonnet-4-20250514'
+                        : provider === 'openrouter'
+                          ? 'anthropic/claude-sonnet-4'
+                          : 'llama3, mistral, etc.'
+                    }
+                    className="input-editorial w-full text-sm mt-1"
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Embeddings capability */}
+          <div className="flex items-start gap-3">
+            <div className="relative mt-0.5">
+              <input
+                id="cap-embeddings"
+                type="checkbox"
+                checked={capEmbeddings}
+                onChange={(e) => {
+                  setCapEmbeddings(e.target.checked);
+                  if (!e.target.checked) setEmbeddingModel('');
+                }}
+                disabled={provider === 'anthropic'}
+                className="rounded border-gray-600 bg-gray-700 text-os-500 focus:ring-os-500/30 disabled:opacity-40 disabled:cursor-not-allowed"
+              />
+            </div>
+            <div className="flex-1">
+              <div className="flex items-center gap-2">
+                <label
+                  htmlFor="cap-embeddings"
+                  className={`text-sm cursor-pointer ${provider === 'anthropic' ? 'text-gray-500' : 'text-gray-200'}`}
+                >
+                  Embeddings
+                </label>
+                {provider === 'anthropic' && (
+                  <span
+                    className="text-xs text-amber-400 cursor-default"
+                    title="Anthropic ne propose pas de modèles d'embeddings — utilisez OpenAI, Ollama ou un endpoint custom"
+                  >
+                    Non disponible
+                  </span>
+                )}
+              </div>
+              {capEmbeddings && provider !== 'anthropic' && (
+                <div className="mt-1">
+                  <label className="text-xs text-gray-400">
+                    Modèle d'embeddings <span className="text-red-400">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={embeddingModel}
+                    onChange={(e) => setEmbeddingModel(e.target.value)}
+                    placeholder="text-embedding-3-small, nomic-embed-text, etc."
+                    className="input-editorial w-full text-sm mt-1"
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* The model field is now embedded inside the Chat capability section above. */}
 
       {/* API Key */}
       {provider !== 'custom' && (
@@ -606,9 +726,28 @@ export default function AiSettings() {
                       title={s.configured ? 'Configured' : 'Not configured'}
                     />
                   </div>
-                  <div className="text-xs text-gray-500 mt-0.5">
-                    {s.provider}
-                    {s.model ? ` · ${s.model}` : ''}
+                  <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                    <span className="text-xs text-gray-500">
+                      {s.provider}
+                      {s.model ? ` · ${s.model}` : ''}
+                    </span>
+                    {/* Capability badges */}
+                    {(() => {
+                      const caps = s.capabilities ?? ['chat'];
+                      const hasChat = caps.includes('chat');
+                      const hasEmb = caps.includes('embeddings');
+                      const label =
+                        hasChat && hasEmb
+                          ? 'Chat + Embeddings'
+                          : hasEmb
+                            ? 'Embeddings'
+                            : 'Chat';
+                      return (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-os-500/10 text-os-300 ring-1 ring-os-500/20">
+                          {label}
+                        </span>
+                      );
+                    })()}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">

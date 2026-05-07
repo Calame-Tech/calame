@@ -92,4 +92,20 @@ export function runMigrations(db: CalameDatabase): void {
     addColumnIfMissing(db, 'audit_log', 'result_data', 'TEXT');
     db.setSchemaVersion(7);
   }
+
+  if (currentVersion < 8) {
+    // Version 8: AI settings can declare capabilities (chat / embeddings) and an embedding model.
+    // Used by the upcoming RAG feature to pick eligible AI settings for vectorization.
+    addColumnIfMissing(db, 'ai_settings', 'capabilities', 'TEXT');
+    addColumnIfMissing(db, 'ai_settings', 'embedding_model', 'TEXT');
+    db.setSchemaVersion(8);
+  }
+
+  if (currentVersion < 9) {
+    // Version 9: cache the discovered embedding vector dimension on each AI setting.
+    // Populated on POST/PUT /api/ai-settings when capabilities includes 'embeddings' via a
+    // probe call to /v1/embeddings. Replaces the previous hardcoded KNOWN_MODEL_DIMS map.
+    addColumnIfMissing(db, 'ai_settings', 'embedding_dimensions', 'INTEGER');
+    db.setSchemaVersion(9);
+  }
 }

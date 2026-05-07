@@ -1,0 +1,72 @@
+{
+  "name": "@calame-ee/rag-core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Calame Enterprise RAG core — types, indexing pipeline, MCP rag_* tools, React components. Licensed under BUSL 1.1.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./web": {
+      "types": "./src/web/index.ts",
+      "import": "./src/web/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "node ../../node_modules/typescript/bin/tsc",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "formidable": "^3.5.4",
+    "gpt-tokenizer": "^2.9.0",
+    "mammoth": "^1.8.0",
+    "mdast-util-to-string": "^4.0.0",
+    "nanoid": "^5.0.0",
+    "node-html-parser": "^6.1.13",
+    "papaparse": "^5.4.1",
+    "remark-parse": "^11.0.0",
+    "remark-stringify": "^11.0.0",
+    "sqlite-vec": "^0.1.6",
+    "unified": "^11.0.5",
+    "unpdf": "^0.12.1",
+    "zod": "^4.3.6"
+  },
+  "peerDependencies": {
+    "better-sqlite3": "^12.8.0",
+    "express": "^4.22.1",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0"
+  },
+  "peerDependenciesMeta": {
+    "better-sqlite3": {
+      "optional": true
+    },
+    "express": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    },
+    "react-dom": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/express": "^5.0.0",
+    "@types/formidable": "^3.5.1",
+    "@types/papaparse": "^5.3.15",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "better-sqlite3": "^12.8.0",
+    "express": "^4.22.1",
+    "react": "^18.3.0",
+    "typescript": "~5.7.0",
+    "vitest": "^2.1.0"
+  },
+  "license": "BUSL-1.1"
+}

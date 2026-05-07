@@ -122,3 +122,104 @@ export function verifyPassword(password: string, stored: string): boolean {
   if (storedHash.length !== incomingHash.length) return false;
   return crypto.timingSafeEqual(storedHash, incomingHash);
 }
+
+// ---------------------------------------------------------------------------
+// Symmetric AES-256-GCM with a caller-provided 32-byte key.
+//
+// Used by features that need to encrypt structured payloads (e.g. RAG source
+// configs) at rest, where the host already holds a derived key in memory and
+// passes it explicitly. Distinct from `encrypt()` / `decrypt()` above — those
+// take a string secret and derive a fresh key per call via PBKDF2, which is
+// expensive when called per row.
+// ---------------------------------------------------------------------------
+
+const GCM_ALGORITHM = 'aes-256-gcm';
+const GCM_KEY_LENGTH = 32; // 256 bits
+const GCM_IV_LENGTH = 12; // 96 bits — recommended for GCM
+const GCM_AUTH_TAG_LENGTH = 16; // 128 bits
+
+/**
+ * Encrypt a UTF-8 string with AES-256-GCM under the supplied 32-byte key.
+ *
+ * Output format: `<iv>:<tag>:<ciphertext>` — each segment is base64-encoded
+ * and concatenated with a colon separator. Each call uses a fresh random IV,
+ * so encrypting the same plaintext twice produces different ciphertexts.
+ */
+export function encryptString(plaintext: string, key: Buffer): string {
+  if (key.length !== GCM_KEY_LENGTH) {
+    throw new Error(`encryptString: key must be ${GCM_KEY_LENGTH} bytes, got ${key.length}`);
+  }
+  const iv = crypto.randomBytes(GCM_IV_LENGTH);
+  const cipher = crypto.createCipheriv(GCM_ALGORITHM, key, iv, {
+    authTagLength: GCM_AUTH_TAG_LENGTH,
+  });
+  const ciphertext = Buffer.concat([cipher.update(plaintext, 'utf-8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return [iv.toString('base64'), tag.toString('base64'), ciphertext.toString('base64')].join(':');
+}
+
+/**
+ * Decrypt a value produced by {@link encryptString}.
+ *
+ * Throws on malformed input, unknown encoding, or authentication tag mismatch
+ * (which indicates either a wrong key or tampering).
+ */
+export function decryptString(ciphertext: string, key: Buffer): string {
+  if (key.length !== GCM_KEY_LENGTH) {
+    throw new Error(`decryptString: key must be ${GCM_KEY_LENGTH} bytes, got ${key.length}`);
+  }
+  const parts = ciphertext.split(':');
+  if (parts.length !== 3) {
+    throw new Error('decryptString: invalid format — expected "iv:tag:ciphertext" in base64');
+  }
+  const [ivB64, tagB64, dataB64] = parts;
+  const iv = Buffer.from(ivB64!, 'base64');
+  const tag = Buffer.from(tagB64!, 'base64');
+  const data = Buffer.from(dataB64!, 'base64');
+  if (iv.length !== GCM_IV_LENGTH) {
+    throw new Error(`decryptString: invalid IV length ${iv.length}, expected ${GCM_IV_LENGTH}`);
+  }
+  if (tag.length !== GCM_AUTH_TAG_LENGTH) {
+    throw new Error(
+      `decryptString: invalid auth tag length ${tag.length}, expected ${GCM_AUTH_TAG_LENGTH}`,
+    );
+  }
+  const decipher = crypto.createDecipheriv(GCM_ALGORITHM, key, iv, {
+    authTagLength: GCM_AUTH_TAG_LENGTH,
+  });
+  decipher.setAuthTag(tag);
+  const plaintext = Buffer.concat([decipher.update(data), decipher.final()]);
+  return plaintext.toString('utf-8');
+}
+
+/**
+ * Derive a 32-byte AES key from `process.env.CALAME_ENCRYPTION_KEY`.
+ *
+ * Behavior:
+ *  - If the env var is set, returns SHA-256 of its UTF-8 bytes (stable, idempotent).
+ *  - If absent and `NODE_ENV === 'production'`, throws — the operator must set
+ *    the variable explicitly (preferably to 32 random bytes, hex- or
+ *    base64-encoded).
+ *  - If absent and not in production, falls back to a deterministic dev key
+ *    derived from a fixed sentinel and emits a `console.warn`. Calls in
+ *    tests or local development do NOT need to set the variable.
+ */
+export function deriveKeyFromEnv(): Buffer {
+  const raw = process.env.CALAME_ENCRYPTION_KEY;
+  if (raw && raw.length > 0) {
+    return crypto.createHash('sha256').update(raw, 'utf-8').digest();
+  }
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'CALAME_ENCRYPTION_KEY is not set. ' +
+        'Set it to a strong secret (32+ random bytes, e.g. `openssl rand -hex 32`) ' +
+        'before starting Calame in production.',
+    );
+  }
+  // Dev fallback — deterministic so encrypted blobs survive restarts in dev.
+  console.warn(
+    '[calame] CALAME_ENCRYPTION_KEY is not set — using a deterministic dev key. ' +
+      'Do NOT use this in production.',
+  );
+  return crypto.createHash('sha256').update('calame-dev-default-key', 'utf-8').digest();
+}

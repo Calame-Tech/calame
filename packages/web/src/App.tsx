@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect, lazy, Suspense } from 'react';
 import { Button, Card, PageHeader, Eyebrow, KpiCard, EmptyState, Breadcrumb } from './components/ui/index.js';
 import Sidebar from './components/Sidebar.js';
 import HelpTip from './components/HelpTip.js';
@@ -35,6 +35,25 @@ import type {
   DataScopeRule,
 } from './types/schema.js';
 
+/**
+ * Lazy-loaded KnowledgeBaseManager from the ee package. The import is deferred
+ * at runtime so the main bundle stays lean and the RAG chunk is only loaded when
+ * the user explicitly navigates to the "Bases de connaissance" view.
+ */
+const KnowledgeBaseManager = lazy(() =>
+  import('@calame-ee/rag-core/web')
+    .then((m) => ({ default: m.KnowledgeBaseManager }))
+    .catch(() => ({
+      default: function RagUnavailable() {
+        return (
+          <div className="p-6 text-sm text-gray-400 text-center">
+            Les fonctionnalités RAG ne sont pas disponibles sur cette instance.
+          </div>
+        );
+      },
+    })),
+);
+
 /** View-based navigation replacing the old step wizard */
 type View =
   | { page: 'dashboard' }
@@ -45,7 +64,8 @@ type View =
   | { page: 'mcp-detail'; profileName: string; activeSection?: string }
   | { page: 'users'; selectedUserId?: string; backTo?: View }
   | { page: 'settings'; backTo?: View; initialTab?: 'ai' | 'email' | 'sso' }
-  | { page: 'metrics' };
+  | { page: 'metrics' }
+  | { page: 'knowledge' };
 
 function createDefaultProfile(): Profile {
   return { name: 'default', label: 'Default', selectedTables: {}, tableOptions: {} };
@@ -98,6 +118,8 @@ export default function App() {
   // --- Auth state ---
   const [authChecked, setAuthChecked] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
+  // Whether the RAG runtime is available on this instance (from /health).
+  const [ragEnabled, setRagEnabled] = useState(false);
   const [authRequired, setAuthRequired] = useState(false);
   const [needsSetup, setNeedsSetup] = useState(false);
 
@@ -121,11 +143,21 @@ export default function App() {
     }
     (async () => {
       try {
-        // Always check both admin and user auth status
-        const [adminRes, userRes] = await Promise.all([
+        // Always check both admin and user auth status and health (for ragEnabled).
+        const [adminRes, userRes, healthRes] = await Promise.all([
           fetch('/api/auth/status', { credentials: 'include' }),
           fetch('/api/auth/user-status', { credentials: 'include' }),
+          fetch('/health').catch(() => null),
         ]);
+
+        if (healthRes?.ok) {
+          try {
+            const healthData = (await healthRes.json()) as { ragEnabled?: boolean };
+            setRagEnabled(healthData.ragEnabled === true);
+          } catch {
+            // Ignore parse errors — ragEnabled stays false.
+          }
+        }
         const adminData = await adminRes.json();
         const userData = await userRes.json();
 
@@ -640,6 +672,7 @@ export default function App() {
         onNavigate={(page) => setView({ page } as View)}
         user={currentUser ?? undefined}
         onLogout={handleLogout}
+        ragEnabled={ragEnabled}
       />
 
       {/* Main content column */}
@@ -1197,6 +1230,26 @@ export default function App() {
                   description="Request volume, tool usage, and performance over time."
                 />
                 <MetricsDashboard />
+              </div>
+            )}
+
+            {view.page === 'knowledge' && (
+              <div className="space-y-4">
+                <PageHeader
+                  breadcrumb={[
+                    { label: 'Dashboard', onClick: () => setView({ page: 'dashboard' }) },
+                    { label: 'Bases de connaissance' },
+                  ]}
+                  title="Bases de connaissance"
+                  description="Configurez les sources documentaires qui alimentent le RAG."
+                />
+                <Suspense
+                  fallback={
+                    <div className="text-sm text-gray-500 italic">Chargement…</div>
+                  }
+                >
+                  <KnowledgeBaseManager />
+                </Suspense>
               </div>
             )}
           </div>

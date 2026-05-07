@@ -11,10 +11,12 @@ import { fileURLToPath } from 'url';
 import { createApp } from './app.js';
 import { AppState } from './state.js';
 import { CalameDatabase } from './database.js';
+import { AiSettingsManager } from './ai-config.js';
 import { runMigrations } from './migration.js';
 import { loadConfig, validateConfig } from './config.js';
 import { createLogger } from './logger.js';
 import { gracefulShutdown } from './shutdown.js';
+import { initRagRuntime } from './rag-runtime.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -85,6 +87,18 @@ try {
 const appState = new AppState();
 appState.db = new CalameDatabase(config.dataDir);
 runMigrations(appState.db);
+
+// AiSettingsManager must exist before initRagRuntime so RAG can resolve
+// embedding settings. Pre-create it here; createApp will reuse the instance.
+appState.aiSettingsManager = new AiSettingsManager(appState.db);
+
+// Initialize the optional RAG runtime BEFORE createApp so the route layer can
+// register `/api/rag/*` synchronously. When @calame-ee/rag-core is missing
+// this is a no-op and createApp simply skips RAG route registration.
+await initRagRuntime(appState, appState.db, appState.aiSettingsManager, {
+  info: (msg: string) => logger.info(msg, { component: 'rag' }),
+  warn: (msg: string) => logger.warn(msg, { component: 'rag' }),
+});
 
 const app = createApp({ state: appState, config, logger });
 

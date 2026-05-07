@@ -6,7 +6,9 @@
   },
   "references": [
     { "path": "../core" },
-    { "path": "../connectors" }
+    { "path": "../connectors" },
+    { "path": "../../ee/rag-core" },
+    { "path": "../../ee/rag-connectors" }
   ],
   "include": ["src"]
 }

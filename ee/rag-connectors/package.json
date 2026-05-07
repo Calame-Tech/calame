@@ -1,0 +1,39 @@
+{
+  "name": "@calame-ee/rag-connectors",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Calame Enterprise RAG document source connectors (Local, S3, HTTP). Licensed under BUSL 1.1.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "node ../../node_modules/typescript/bin/tsc",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@calame-ee/rag-core": "workspace:*",
+    "mime-types": "^2.1.35",
+    "minimatch": "^10.0.1"
+  },
+  "peerDependencies": {
+    "better-sqlite3": "^12.8.0"
+  },
+  "peerDependenciesMeta": {
+    "better-sqlite3": { "optional": true }
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/mime-types": "^2.1.4",
+    "@types/minimatch": "^5.1.2",
+    "better-sqlite3": "^12.8.0",
+    "typescript": "~5.7.0",
+    "vitest": "^2.1.0"
+  },
+  "license": "BUSL-1.1"
+}

@@ -9,6 +9,7 @@ import {
   resolveUserScope,
   createScopeGuard,
   computeDistinctValues,
+  upgradeProfileShape,
 } from '@calame/core';
 import { readConfigurationsFile } from './configurations.js';
 import { INTERNAL_CHAT_SECRET } from '../chat-engine.js';
@@ -51,6 +52,13 @@ const MASKING_ORDER: readonly string[] = [
  * Merge multiple configurations into a single effective configuration.
  * Union permissive strategy: all tools enabled by any config are enabled,
  * max limits are taken, columns are unioned, least restrictive masking wins.
+ *
+ * Phase 2 decision: mergeConfigurations remains legacy-only (operates on
+ * `connections`/`selectedTables`/`tableOptions`/`columnMasking`). The inputs
+ * returned by `readConfigurationsFile` already carry both legacy and new shapes
+ * (via `upgradeConfigurationShape`), so the legacy reads here are still valid.
+ * Phase 3 will replace this function with a new-shape merge that iterates
+ * `scopes` per source kind via the adapter registry.
  */
 export function mergeConfigurations(
   configs: Array<{
@@ -313,11 +321,16 @@ export function registerServeRoute(app: Express, state: AppState): void {
         return;
       }
 
-      const profile = state.serveProfiles[profileName];
-      if (!profile) {
+      // Upgrade the profile to the new shape (sources + scopes) at the serve entry point.
+      // upgradeProfileShape is idempotent and preserves the legacy fields so that the
+      // tool-registration block below (which still reads .selectedTables etc.) keeps working
+      // unchanged until Phase 3 replaces it with adapter.registerMcpTools iteration.
+      const rawProfile = state.serveProfiles[profileName];
+      if (!rawProfile) {
         res.status(404).json({ success: false, message: `Profile "${profileName}" is not being served.` });
         return;
       }
+      const profile = upgradeProfileShape(rawProfile);
 
       // --- Resolve configurations if present ---
       let effectiveConnections: string[];

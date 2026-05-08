@@ -2,6 +2,7 @@ import type { Express } from 'express';
 import type { AppState } from '../state.js';
 import type { CalameDatabase } from '../database.js';
 import { z } from 'zod';
+import { upgradeProfileShape } from '@calame/core';
 
 export interface ProfileWarning {
   profile: string;
@@ -112,6 +113,21 @@ export function registerProfilesRoute(app: Express, state: AppState): void {
         }
       }
 
+      // Normalize every profile to the new shape (sources + scopes) at the write boundary.
+      // upgradeProfileShape is idempotent: profiles already in the new shape pass through unchanged.
+      // Legacy fields (connections / selectedTables / tableOptions / columnMasking) are preserved on
+      // the returned object so that Phase-3-unaware code paths keep working until Phase 3 removes them.
+      for (const [profileName, rawProfile] of Object.entries(data.profiles as Record<string, Record<string, unknown>>)) {
+        try {
+          data.profiles[profileName] = upgradeProfileShape(rawProfile) as unknown as Record<string, unknown>;
+        } catch {
+          // If migration fails (e.g. unexpected shape), log and keep the raw object as-is.
+          state.logger?.warn(`upgradeProfileShape failed for profile "${profileName}" — persisting as-is`, {
+            component: 'profiles',
+          });
+        }
+      }
+
       db.raw
         .prepare("INSERT OR REPLACE INTO profiles (key, data) VALUES ('main', ?)")
         .run(JSON.stringify(data));
@@ -151,6 +167,22 @@ export function registerProfilesRoute(app: Express, state: AppState): void {
         for (const profile of Object.values(data.profiles as Record<string, Record<string, unknown>>)) {
           if (!profile.connections || !Array.isArray(profile.connections) || profile.connections.length === 0) {
             profile.connections = ['default'];
+          }
+        }
+      }
+
+      // Upgrade every profile to the new shape (sources + scopes) on read.
+      // Idempotent — profiles already in the new shape pass through unchanged.
+      if (data.profiles && typeof data.profiles === 'object') {
+        const profiles = data.profiles as Record<string, Record<string, unknown>>;
+        for (const [name, rawProfile] of Object.entries(profiles)) {
+          try {
+            profiles[name] = upgradeProfileShape(rawProfile) as unknown as Record<string, unknown>;
+          } catch {
+            // Unexpected shape — leave unchanged rather than crashing the load.
+            state.logger?.warn(`upgradeProfileShape failed on load for profile "${name}"`, {
+              component: 'profiles',
+            });
           }
         }
       }
@@ -224,6 +256,11 @@ export function registerProfilesRoute(app: Express, state: AppState): void {
         res.status(404).json({ success: false, message: `Profile "${profileName}" not found.` });
         return;
       }
+
+      // Upgrade on read so that the persisted object is in the new shape.
+      try {
+        data.profiles[profileName] = upgradeProfileShape(data.profiles[profileName]) as unknown as Record<string, unknown>;
+      } catch { /* ignore — unexpected shape, keep as-is */ }
 
       data.profiles[profileName].responseMode = mode;
 

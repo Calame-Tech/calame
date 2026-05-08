@@ -98,6 +98,69 @@ describe('profiles routes', () => {
       expect(saved.profiles.v1).toBeUndefined();
     });
 
+    it('normalises legacy shape to sources/scopes on save', async () => {
+      const profilesData = {
+        profiles: {
+          legacy: {
+            name: 'legacy',
+            label: 'Legacy',
+            connections: ['prod'],
+            selectedTables: { orders: ['id', 'amount'] },
+            tableOptions: {},
+          },
+        },
+      };
+
+      await request(app)
+        .post('/api/profiles/save')
+        .set('Cookie', cookie)
+        .send(profilesData)
+        .expect(200);
+
+      const row = db.raw.prepare("SELECT data FROM profiles WHERE key = 'main'").get() as { data: string };
+      const saved = JSON.parse(row.data) as { profiles: Record<string, Record<string, unknown>> };
+
+      // upgradeProfileShape should have synthesised sources from connections
+      expect(Array.isArray(saved.profiles['legacy']['sources'])).toBe(true);
+      // scopes should be synthesised from selectedTables
+      expect(typeof saved.profiles['legacy']['scopes']).toBe('object');
+    });
+
+    it('accepts a new-shape POST body (sources + scopes) without modification', async () => {
+      const profilesData = {
+        profiles: {
+          modern: {
+            name: 'modern',
+            label: 'Modern',
+            sources: ['dw'],
+            scopes: {
+              dw: {
+                kind: 'relational',
+                selectedTables: { events: ['id', 'type'] },
+              },
+            },
+            // Provide minimal legacy fields so that the migrator stays idempotent
+            connections: ['dw'],
+            selectedTables: { events: ['id', 'type'] },
+          },
+        },
+      };
+
+      const res = await request(app)
+        .post('/api/profiles/save')
+        .set('Cookie', cookie)
+        .send(profilesData)
+        .expect(200);
+
+      expect(res.body.success).toBe(true);
+
+      const row = db.raw.prepare("SELECT data FROM profiles WHERE key = 'main'").get() as { data: string };
+      const saved = JSON.parse(row.data) as { profiles: Record<string, Record<string, unknown>> };
+      expect(saved.profiles['modern']['sources']).toEqual(['dw']);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((saved.profiles['modern']['scopes'] as any)['dw'].kind).toBe('relational');
+    });
+
     it('should save multiple profiles', async () => {
       const profilesData = {
         connection: { type: 'postgresql', envVar: 'DATABASE_URL' },
@@ -151,6 +214,66 @@ describe('profiles routes', () => {
       expect(res.body.found).toBe(true);
       expect(res.body.profiles.dev.label).toBe('Dev Team');
       expect(res.body.profiles.dev.selectedTables.users).toEqual(['id', 'name']);
+    });
+
+    it('upgrades legacy-shape profiles to new shape on load', async () => {
+      // Insert a raw legacy profile (no sources/scopes) directly into SQLite
+      const legacyData = {
+        profiles: {
+          old: {
+            name: 'old',
+            label: 'Old Profile',
+            connections: ['primary'],
+            selectedTables: { users: ['id', 'email'] },
+            tableOptions: {
+              users: { enabledTools: ['query'], maxLimit: 100, filterableColumns: [], groupableColumns: [] },
+            },
+          },
+        },
+      };
+      db.raw.prepare("INSERT OR REPLACE INTO profiles (key, data) VALUES ('main', ?)").run(JSON.stringify(legacyData));
+
+      const res = await request(app)
+        .get('/api/profiles/load')
+        .set('Cookie', cookie)
+        .expect(200);
+
+      expect(res.body.found).toBe(true);
+      // upgradeProfileShape must have synthesised sources from connections
+      expect(Array.isArray(res.body.profiles.old.sources)).toBe(true);
+      expect(res.body.profiles.old.sources).toContain('primary');
+      // scopes must be synthesised from selectedTables
+      expect(typeof res.body.profiles.old.scopes).toBe('object');
+    });
+
+    it('returns new-shape profiles unchanged on load (idempotent)', async () => {
+      const newShapeData = {
+        profiles: {
+          modern: {
+            name: 'modern',
+            label: 'Modern',
+            sources: ['dw'],
+            scopes: {
+              dw: {
+                kind: 'relational',
+                selectedTables: { events: ['id', 'type'] },
+              },
+            },
+            connections: ['dw'],
+            selectedTables: { events: ['id', 'type'] },
+          },
+        },
+      };
+      db.raw.prepare("INSERT OR REPLACE INTO profiles (key, data) VALUES ('main', ?)").run(JSON.stringify(newShapeData));
+
+      const res = await request(app)
+        .get('/api/profiles/load')
+        .set('Cookie', cookie)
+        .expect(200);
+
+      expect(res.body.found).toBe(true);
+      expect(res.body.profiles.modern.sources).toEqual(['dw']);
+      expect(res.body.profiles.modern.scopes['dw'].kind).toBe('relational');
     });
 
     it('should handle malformed JSON gracefully', async () => {

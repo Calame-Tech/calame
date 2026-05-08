@@ -1,18 +1,11 @@
 import type { Express } from 'express';
 import type { AppState } from '../state.js';
 import type { CalameDatabase } from '../database.js';
+import type { ServeConfiguration } from '@calame/core';
+import { upgradeConfigurationShape } from '@calame/core';
 
 interface ConfigurationsFileData {
-  configurations: Record<
-    string,
-    {
-      label: string;
-      connections: string[];
-      selectedTables: Record<string, string[]>;
-      tableOptions?: Record<string, unknown>;
-      columnMasking?: Record<string, Record<string, unknown>>;
-    }
-  >;
+  configurations: Record<string, ServeConfiguration>;
 }
 
 type ConfigRow = {
@@ -24,7 +17,11 @@ type ConfigRow = {
   column_masking: string | null;
 };
 
-/** Read all configurations from SQLite. Returns an empty structure if the table is empty. */
+/** Read all configurations from SQLite. Returns an empty structure if the table is empty.
+ *  Each row is passed through `upgradeConfigurationShape` on read so that callers always
+ *  receive the new `sources`/`scopes` shape. Legacy SQLite columns are preserved — the
+ *  migrator only synthesises the new fields in memory (plan §1.3, §2 Phase 2).
+ */
 function readConfigurationsFile(db: CalameDatabase): ConfigurationsFileData {
   const rows = db.raw
     .prepare('SELECT name, label, connections, selected_tables, table_options, column_masking FROM configurations')
@@ -32,7 +29,8 @@ function readConfigurationsFile(db: CalameDatabase): ConfigurationsFileData {
 
   const configurations: ConfigurationsFileData['configurations'] = {};
   for (const row of rows) {
-    configurations[row.name] = {
+    const legacyShape = {
+      name: row.name,
       label: row.label,
       connections: JSON.parse(row.connections) as string[],
       selectedTables: JSON.parse(row.selected_tables) as Record<string, string[]>,
@@ -41,6 +39,8 @@ function readConfigurationsFile(db: CalameDatabase): ConfigurationsFileData {
         ? (JSON.parse(row.column_masking) as Record<string, Record<string, unknown>>)
         : undefined,
     };
+    // Upgrade to new shape on read; idempotent for configurations already in new shape.
+    configurations[row.name] = upgradeConfigurationShape(legacyShape);
   }
   return { configurations };
 }
@@ -134,13 +134,18 @@ export function registerConfigurationsRoute(app: Express, state: AppState): void
       const existing = db.raw.prepare('SELECT name FROM configurations WHERE name = ?').get(name);
       const overwritten = !!existing;
 
-      writeConfigurationRow(db, name, {
+      // Normalise through the migrator so that sources/scopes are always populated.
+      // The legacy SQLite columns (selected_tables etc.) are kept for backward compat (plan §1.3).
+      const upgraded = upgradeConfigurationShape({
+        name,
         label: configLabel,
         connections: connections as string[],
         selectedTables: selectedTables as Record<string, string[]>,
         tableOptions: tableOptions as Record<string, unknown> | undefined,
         columnMasking: columnMasking as Record<string, Record<string, unknown>> | undefined,
       });
+
+      writeConfigurationRow(db, name, upgraded);
 
       res.json({ success: true, name, overwritten });
     } catch (error: unknown) {

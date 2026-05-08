@@ -36,3 +36,6 @@ export type {
   GlobalMaskingRule,
 } from './pii/types.js';
 export { detectColumnPii, detectTablePii } from './pii/detector.js';
+
+// Sources — abstract adapter system
+export * from './sources/index.js';

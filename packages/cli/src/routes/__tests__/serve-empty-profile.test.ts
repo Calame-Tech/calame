@@ -39,6 +39,10 @@ vi.mock('@calame/core', () => ({
   // would issue SELECT DISTINCT against the mocked connector and is out of
   // scope for this unit test.
   computeDistinctValues: vi.fn().mockResolvedValue({}),
+  // Phase 2b — upgradeProfileShape must be in the mock or serve.ts throws at runtime.
+  // The identity function is sufficient: the test fixtures already carry the needed
+  // legacy fields (selectedTables etc.) so no actual migration is required here.
+  upgradeProfileShape: vi.fn((p: unknown) => p),
 }));
 
 vi.mock('@calame/connectors', () => ({

@@ -29,9 +29,43 @@ export interface NamedConnection {
 export interface ServeConfiguration {
   name: string;
   label: string;
+
+  /**
+   * Source ids active in this configuration. Phase 2+ canonical replacement for
+   * the legacy `connections` array. When both are present, `sources` wins; the
+   * migrator reconciles older shapes on read.
+   */
+  sources?: string[];
+
+  /**
+   * Per-source allowlist. Phase 2+ canonical replacement for the legacy
+   * `selectedTables`/`tableOptions`/`columnMasking` triple. Discriminated by `kind`.
+   */
+  scopes?: Record<string, import('../sources/index.js').ScopeSelection>;
+
+  /**
+   * @deprecated since Phase 2. Use `sources` instead. The migrator
+   * (`upgradeConfigurationShape`) folds this into `sources` on read. Will be
+   * removed in Phase 5.
+   */
   connections: string[];
+
+  /**
+   * @deprecated since Phase 2. Use `scopes[sourceId].selectedTables` instead.
+   * Will be removed in Phase 5.
+   */
   selectedTables: Record<string, string[]>;
+
+  /**
+   * @deprecated since Phase 2. Use `scopes[sourceId].tableOptions` instead.
+   * Will be removed in Phase 5.
+   */
   tableOptions?: Record<string, import('../introspect/types.js').TableToolOptions>;
+
+  /**
+   * @deprecated since Phase 2. Use `scopes[sourceId].columnMasking` instead.
+   * Will be removed in Phase 5.
+   */
   columnMasking?: Record<string, Record<string, import('../pii/types.js').ColumnMasking>>;
 }
 
@@ -83,13 +117,43 @@ export interface ServeProfile {
   configurations?: string[]; // References to ServeConfiguration names
   /** Names of AI settings (from ai_settings table) usable by clients of this MCP. First = default. */
   aiSettingNames?: string[];
-  /** @deprecated Use configurations instead */
+
+  /**
+   * Source ids active in this profile. Phase 2+ canonical replacement for
+   * `connections`. When both are present, `sources` wins; the migrator
+   * (`upgradeProfileShape`) reconciles older shapes on read.
+   * New writes should populate `sources` only. Will be the sole field in Phase 5.
+   */
+  sources?: string[];
+
+  /**
+   * Per-source allowlist. Phase 2+ canonical replacement for the legacy
+   * `selectedTables`/`tableOptions`/`columnMasking` triple at the profile root.
+   * Discriminated by `kind`.
+   */
+  scopes?: Record<string, import('../sources/index.js').ScopeSelection>;
+
+  /**
+   * @deprecated since Phase 2. Use `sources` instead. Kept for backward
+   * compatibility with on-disk profiles. The migrator (`upgradeProfileShape`)
+   * folds this into `sources` on read; new writes should populate `sources`
+   * only. Will be removed in Phase 5.
+   */
   connections?: string[]; // Named connection references
-  /** @deprecated Use configurations instead */
+  /**
+   * @deprecated since Phase 2. Use `scopes[sourceId].selectedTables` instead.
+   * Will be removed in Phase 5.
+   */
   selectedTables: Record<string, string[]>; // tableName -> selected columns
-  /** @deprecated Use configurations instead */
+  /**
+   * @deprecated since Phase 2. Use `scopes[sourceId].tableOptions` instead.
+   * Will be removed in Phase 5.
+   */
   tableOptions?: Record<string, import('../introspect/types.js').TableToolOptions>;
-  /** @deprecated Use configurations instead */
+  /**
+   * @deprecated since Phase 2. Use `scopes[sourceId].columnMasking` instead.
+   * Will be removed in Phase 5.
+   */
   columnMasking?: Record<string, Record<string, import('../pii/types.js').ColumnMasking>>;
   token?: string; // auth token for this profile
   /** Authentication mode for this MCP server endpoint */

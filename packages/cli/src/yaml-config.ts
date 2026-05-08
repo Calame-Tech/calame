@@ -3,6 +3,7 @@ import yaml from 'js-yaml';
 import type { AppConfig } from './config.js';
 import type { AppState } from './state.js';
 import type { Logger } from './logger.js';
+import { upgradeProfileShape } from '@calame/core';
 
 interface YamlDatabase {
   name: string;
@@ -11,12 +12,19 @@ interface YamlDatabase {
   ssl?: { ca?: string; cert?: string; key?: string; rejectUnauthorized?: boolean };
 }
 
+/**
+ * A YAML profile may be expressed in either the legacy shape (with `tables`,
+ * `database`) or the new shape (with `sources` + `scopes`). Both are accepted —
+ * `upgradeProfileShape` normalises them at the boundary.
+ */
 interface YamlProfile {
   name: string;
-  database: string;
+  /** Legacy: single database reference */
+  database?: string;
   queryTimeout?: number;
   maxRowLimit?: number;
-  tables: Record<
+  /** Legacy table allowlist */
+  tables?: Record<
     string,
     {
       columns?: string[];
@@ -24,6 +32,15 @@ interface YamlProfile {
       piiMasking?: Record<string, string>;
     }
   >;
+  /** New shape: list of source ids */
+  sources?: string[];
+  /** New shape: per-source scope selections */
+  scopes?: Record<string, unknown>;
+  /** Legacy: list of connection names */
+  connections?: string[];
+  /** Legacy: table→columns map */
+  selectedTables?: Record<string, string[]>;
+  [key: string]: unknown;
 }
 
 interface YamlMcpServer {
@@ -120,6 +137,45 @@ export async function loadYamlConfig(
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         log.error(`[yaml] Failed to connect "${db.name}": ${msg}`);
+      }
+    }
+  }
+
+  // Apply dataProfiles — convert each YAML profile to a ServeProfile and load into state.
+  // Both legacy (database + tables) and new (sources + scopes) shapes are accepted;
+  // upgradeProfileShape normalises them at the boundary so downstream code always sees
+  // the full new shape with legacy fields preserved (until Phase 3 removes them).
+  if (config.dataProfiles) {
+    for (const yamlProfile of config.dataProfiles) {
+      if (!yamlProfile.name) {
+        log.warn('[yaml] Skipping dataProfile entry with missing name');
+        continue;
+      }
+
+      // Build a raw profile object from the YAML definition.
+      // For the legacy `database + tables` shape, synthesise `connections` and
+      // `selectedTables` from the table list so that upgradeProfileShape can convert them.
+      const rawProfile: Record<string, unknown> = { ...yamlProfile };
+
+      if (yamlProfile.database && !rawProfile['connections']) {
+        rawProfile['connections'] = [yamlProfile.database];
+      }
+
+      if (yamlProfile.tables && !rawProfile['selectedTables']) {
+        const selectedTables: Record<string, string[]> = {};
+        for (const [tableName, opts] of Object.entries(yamlProfile.tables)) {
+          selectedTables[tableName] = opts.columns ?? [];
+        }
+        rawProfile['selectedTables'] = selectedTables;
+      }
+
+      try {
+        const upgraded = upgradeProfileShape(rawProfile);
+        state.serveProfiles[upgraded.name] = upgraded;
+        log.info(`[yaml] Profile "${upgraded.name}" loaded`);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        log.warn(`[yaml] Failed to load profile "${yamlProfile.name}": ${msg}`);
       }
     }
   }

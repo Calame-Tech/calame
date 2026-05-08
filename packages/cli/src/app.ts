@@ -55,6 +55,8 @@ import { registerAiSettingsRoute } from './routes/ai-settings.js';
 import { registerSmtpSettingsRoute } from './routes/smtp-settings.js';
 import { registerHealthRoute } from './routes/health.js';
 import { registerMetricsRoute } from './routes/metrics.js';
+import { registerProfileScopesRoute } from './routes/profile-scopes.js';
+import { legacyPathDeprecationMiddleware } from './routes/source-aliases.js';
 import { TokenRateLimiter } from './rate-limiter.js';
 import { createSecretsProvider } from './secrets.js';
 import { LlmRouter } from './llm-router.js';
@@ -193,6 +195,11 @@ export function createApp(
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 
+  // Deprecation middleware for legacy path prefixes (Phase 2: logger-only).
+  // Adds Sunset header and logs once per unique path.
+  // TODO(Phase 3): flip to actual URL rewriting once canonical /api/sources/* handlers exist.
+  app.use(legacyPathDeprecationMiddleware());
+
   // Health check — public, no auth
   registerHealthRoute(app, appState);
 
@@ -248,6 +255,7 @@ export function createApp(
   registerQueryRoute(app, appState);
   registerChatRoute(app, appState);
   registerProfilesRoute(app, appState);
+  registerProfileScopesRoute(app, appState);
   registerPiiRoute(app, appState);
   registerTokensRoute(app, appState);
   registerAuditRoute(app, appState);

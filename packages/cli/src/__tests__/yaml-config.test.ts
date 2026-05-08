@@ -194,6 +194,97 @@ describe('loadYamlConfig', () => {
     expect(infoMessages.some((m) => m.includes('already exists'))).toBe(true);
   });
 
+  it('loads a legacy-shape dataProfile (database + tables) into state.serveProfiles with sources/scopes populated', async () => {
+    const { loadYamlConfig } = await import('../yaml-config.js');
+    const filePath = path.join(tmpDir, 'profiles-legacy.yaml');
+    fs.writeFileSync(
+      filePath,
+      [
+        'dataProfiles:',
+        '  - name: finance',
+        '    database: prod',
+        '    tables:',
+        '      invoices:',
+        '        columns: [id, amount]',
+        '      orders:',
+        '        columns: [id]',
+      ].join('\n'),
+    );
+
+    const serveProfiles: Record<string, unknown> = {};
+    const state = {
+      connections: new Map(),
+      addConnection: vi.fn(),
+      serveProfiles,
+    } as unknown as AppState;
+
+    await loadYamlConfig(filePath, state, makeConfig(), logger);
+
+    expect(serveProfiles['finance']).toBeDefined();
+    const profile = serveProfiles['finance'] as Record<string, unknown>;
+    // upgradeProfileShape should have synthesised sources from connections
+    expect(Array.isArray(profile['sources'])).toBe(true);
+    // scopes should be present when selectedTables is non-empty
+    expect(typeof profile['scopes']).toBe('object');
+  });
+
+  it('loads a new-shape dataProfile (sources + scopes) into state.serveProfiles', async () => {
+    const { loadYamlConfig } = await import('../yaml-config.js');
+    const filePath = path.join(tmpDir, 'profiles-new.yaml');
+    fs.writeFileSync(
+      filePath,
+      [
+        'dataProfiles:',
+        '  - name: analytics',
+        '    sources: [dw]',
+        '    scopes:',
+        '      dw:',
+        '        kind: relational',
+        '        selectedTables:',
+        '          events: [id, type]',
+      ].join('\n'),
+    );
+
+    const serveProfiles: Record<string, unknown> = {};
+    const state = {
+      connections: new Map(),
+      addConnection: vi.fn(),
+      serveProfiles,
+    } as unknown as AppState;
+
+    await loadYamlConfig(filePath, state, makeConfig(), logger);
+
+    expect(serveProfiles['analytics']).toBeDefined();
+    const profile = serveProfiles['analytics'] as Record<string, unknown>;
+    // New shape passes through upgradeProfileShape idempotently
+    expect(profile['sources']).toEqual(['dw']);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((profile['scopes'] as any)['dw'].kind).toBe('relational');
+  });
+
+  it('skips a dataProfile entry with a missing name', async () => {
+    const { loadYamlConfig } = await import('../yaml-config.js');
+    const filePath = path.join(tmpDir, 'profiles-noname.yaml');
+    fs.writeFileSync(
+      filePath,
+      ['dataProfiles:', '  - database: prod', '    tables: {}'].join('\n'),
+    );
+
+    const serveProfiles: Record<string, unknown> = {};
+    const state = {
+      connections: new Map(),
+      addConnection: vi.fn(),
+      serveProfiles,
+    } as unknown as AppState;
+
+    await expect(
+      loadYamlConfig(filePath, state, makeConfig(), logger),
+    ).resolves.toBeUndefined();
+
+    expect(Object.keys(serveProfiles)).toHaveLength(0);
+    expect(warnMessages.some((m) => m.includes('missing name'))).toBe(true);
+  });
+
   it('logs error when connection introspection fails', async () => {
     // Override the mock to throw for this test
     const { getConnector } = await import('@calame/connectors');

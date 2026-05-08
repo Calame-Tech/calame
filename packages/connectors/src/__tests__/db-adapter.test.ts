@@ -293,6 +293,31 @@ describe('buildDatabaseSourceAdapter', () => {
       expect(opts.profileName).toBe('myprofile');
       expect(opts.responseMode).toBe('friendly');
       expect(opts.databaseType).toBe('postgresql');
+      expect(opts.toolNamespace).toBe('');
+    });
+
+    it('forwards a non-empty toolNamespace to registerDynamicTools', () => {
+      const adapter = buildDatabaseSourceAdapter('postgresql', 'PostgreSQL');
+      const server = makeMcpServer();
+      const schema = { kind: 'relational' as const, tables: [], relations: [] };
+      const selection = { kind: 'relational' as const, selectedTables: {} };
+
+      adapter.registerMcpTools!({
+        server,
+        source: { id: 'src1', name: 'prod', type: 'postgresql', configEncrypted: '', capabilities: [], createdAt: '', updatedAt: '' },
+        config: { connectionString: 'postgresql://localhost/db' },
+        schema,
+        selection,
+        profileName: 'myprofile',
+        toolNamespace: 'production_db_',
+        responseMode: 'friendly',
+        onAuditLog: vi.fn(),
+        executeQuery: vi.fn(),
+      });
+
+      expect(mockRegisterDynamicTools).toHaveBeenCalledOnce();
+      const opts = mockRegisterDynamicTools.mock.calls[0][0];
+      expect(opts.toolNamespace).toBe('production_db_');
     });
 
     it('throws when given a non-relational selection', () => {

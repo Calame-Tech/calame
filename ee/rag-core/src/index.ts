@@ -61,6 +61,16 @@ export type { DocumentParser, ParsedDocument } from './parsers/types.js';
 export { IngestionPipeline } from './pipeline/ingest.js';
 export type { IngestionPipelineDeps, IngestDocumentInput } from './pipeline/ingest.js';
 
+// ---------- Source Adapter ----------
+export { buildDocumentSourceAdapter } from './source-adapter.js';
+export type {
+	DocumentAdapterDeps,
+	LocalDocumentAdapterConfig,
+	ConnectorLike as DocumentConnectorLike,
+	DocumentSearchIndex,
+	DocumentStorage,
+} from './source-adapter.js';
+
 // ---------- Routes ----------
 export { registerRagSourcesRoutes } from './routes/rag-sources.js';
 export { registerRagContentRoutes } from './routes/rag-content.js';

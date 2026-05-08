@@ -174,9 +174,6 @@ export function buildDatabaseSourceAdapter(
 
       const { selectedTables, tableOptions, columnMasking } = ctx.selection;
 
-      // TODO(Phase 3): toolNamespace is not yet forwarded to registerDynamicTools.
-      // The current function signature has no name-prefix concept. Phase 3 will
-      // add a toolNamespace option to registerDynamicTools and wire it here.
       // DynamicToolsOptions.onAuditLog receives entries without id/timestamp
       // (the tool internals add those fields before calling the host callback).
       // McpRegistrationContext.onAuditLog receives complete AuditLogEntry objects.
@@ -205,6 +202,7 @@ export function buildDatabaseSourceAdapter(
         onAuditLog,
         responseMode: ctx.responseMode,
         databaseType: type,
+        toolNamespace: ctx.toolNamespace,
       });
     },
   };

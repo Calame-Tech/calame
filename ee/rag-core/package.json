@@ -21,6 +21,8 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@calame/core": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.27.1",
     "formidable": "^3.5.4",
     "gpt-tokenizer": "^2.9.0",
     "mammoth": "^1.8.0",

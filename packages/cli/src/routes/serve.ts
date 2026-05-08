@@ -3,13 +3,23 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { getConnector } from '@calame/connectors';
 import type { AppState, ConnectionState } from '../state.js';
-import type { TableToolOptions, ColumnMasking, UserIdentity } from '@calame/core';
+import type {
+  TableToolOptions,
+  ColumnMasking,
+  UserIdentity,
+  ScopeSelection,
+  McpRegistrationContext,
+  Source,
+  SourceAdapter,
+  AuditLogEntry,
+} from '@calame/core';
 import {
   registerDynamicTools,
   resolveUserScope,
   createScopeGuard,
   computeDistinctValues,
   upgradeProfileShape,
+  sourceAdapterRegistry,
 } from '@calame/core';
 import { readConfigurationsFile } from './configurations.js';
 import { INTERNAL_CHAT_SECRET } from '../chat-engine.js';
@@ -424,7 +434,14 @@ export function registerServeRoute(app: Express, state: AppState): void {
         const cs = state.getConnection(cn);
         if (cs) profileConnections.push(cs);
       }
-      if (profileConnections.length === 0) {
+
+      // Phase 3c: allow profiles that have only document sources (no DB connections).
+      // A profile is valid if it has at least one connection OR at least one document-kind scope.
+      const hasDocumentSources =
+        profile.scopes !== undefined &&
+        Object.values(profile.scopes).some((s) => s.kind === 'document');
+
+      if (profileConnections.length === 0 && !hasDocumentSources) {
         res.status(500).json({ error: 'No database connection available for this profile.' });
         return;
       }
@@ -455,105 +472,104 @@ export function registerServeRoute(app: Express, state: AppState): void {
       const wrapResponse = (jsonData: string): string => jsonData;
       void responseMode; // kept on the closure for future per-mode logic
 
-      // --- Register tools via core registerDynamicTools (grouped by connection) ---
-      // Group tables by connection
-      const tablesByConnection = new Map<ConnectionState, { tables: import('@calame/core').TableInfo[]; selectedTables: Record<string, string[]> }>();
-      for (const [tableName, columns] of Object.entries(effectiveSelectedTables)) {
-        let matchedConnState: ConnectionState | undefined;
-        let tableInfo: import('@calame/core').TableInfo | undefined;
-        for (const cs of profileConnections) {
-          const found = cs.schema.tables.find(t => t.name === tableName);
-          if (found) { matchedConnState = cs; tableInfo = found; break; }
-        }
-        if (!matchedConnState || !tableInfo) {
-          state.logger?.warn(`Table "${tableName}" not found in any connection schema — skipping`, { component: `mcp/${profileName}` });
-          continue;
-        }
-        let group = tablesByConnection.get(matchedConnState);
-        if (!group) { group = { tables: [], selectedTables: {} }; tablesByConnection.set(matchedConnState, group); }
-        group.tables.push(tableInfo);
-        group.selectedTables[tableName] = columns;
-      }
+      // --- Register MCP tools (Phase 3c: adapter-driven, iterates profile.sources) ---
+      //
+      // Strategy:
+      //   1. Prefer the new shape (profile.sources + profile.scopes populated by upgradeProfileShape).
+      //   2. Fall back to the legacy path (effectiveConnections + effectiveSelectedTables) when
+      //      profile.scopes is empty — this covers profiles that haven't been through the migrator
+      //      yet (e.g. created via YAML or old API). Backward compat invariant: a single-DB profile
+      //      must emit identical tool names as before this refactor.
+      //
+      // The legacy path is kept verbatim so that existing tests keep passing unchanged. The new
+      // adapter path is only taken when `profile.scopes` has been populated by upgradeProfileShape.
 
-      // Register tools per connection.
-      // If no table matched any connection (empty profile, stale schema, or all tables restricted),
-      // we still need to call registerDynamicTools at least once so that the MCP server registers
-      // the tools/list handler. Without it, the server responds with -32601 (MethodNotFound) to
-      // any tools/list request from the client, which breaks the chat flow and external MCP clients.
-      if (tablesByConnection.size === 0) {
-        // Pick any available connection just to satisfy the MCP protocol requirement.
-        const fallbackConn = profileConnections[0];
-        const connector = getConnector(fallbackConn.connection.databaseType);
-        const connectionString = fallbackConn.connection.connectionString;
-        const sslConfig = fallbackConn.connection.sslConfig;
+      // Determine which path to take.
+      const hasNewShape =
+        profile.scopes !== undefined &&
+        profile.scopes !== null &&
+        typeof profile.scopes === 'object' &&
+        Object.keys(profile.scopes).length > 0;
 
-        registerDynamicTools({
-          server: mcpServer,
-          tables: [],
-          relations: [],
-          selectedTables: {},
-          tableOptions: effectiveTableOptions,
-          columnMasking: effectiveColumnMasking,
-          executeQuery: async (sql: string, params: unknown[]) => {
-            const result = await connector.query(connectionString, sql, { timeoutMs: getQueryTimeoutMs(), ssl: sslConfig, params });
-            return { rows: result.rows as Record<string, unknown>[], fields: Object.keys(result.rows[0] ?? {}).map(name => ({ name })) };
-          },
-          onAuditLog: (entry) => {
-            if (state.auditLog) {
-              state.auditLog.addEntry({ ...entry, tokenLabel: resolvedTokenLabel });
-              state.auditLog.save().catch(() => {});
-            }
-          },
+      if (hasNewShape) {
+        // --- New path: adapter-driven registration ---
+        await registerToolsViaAdapters({
+          mcpServer,
+          profile,
+          state,
           profileName,
-          databaseType: fallbackConn.connection.databaseType,
+          profileConnections,
+          effectiveSelectedTables,
+          effectiveTableOptions,
+          effectiveColumnMasking,
+          scopeGuard,
           responseMode,
           wrapResponse,
-          maxOffset: 10000,
-          scopeGuard,
+          resolvedTokenLabel,
         });
       } else {
-        for (const [connState, group] of tablesByConnection) {
-          const connector = getConnector(connState.connection.databaseType);
-          const connectionString = connState.connection.connectionString;
-          const sslConfig = connState.connection.sslConfig;
-          const databaseType = connState.connection.databaseType;
-
-          // Lazily compute (and cache) the distinct values used to render
-          // categorical columns as `enum:a|b|c` in the tool catalogue.
-          const distinctCacheKey = distinctValuesCacheKey(
-            profileName,
-            connectionString,
-            group.selectedTables,
-            effectiveColumnMasking,
-          );
-          let distinctValuesByTable = distinctValuesCache.get(distinctCacheKey);
-          if (!distinctValuesByTable) {
-            distinctValuesByTable = await computeDistinctValues({
-              tables: group.tables,
-              selectedTables: group.selectedTables,
-              columnMasking: effectiveColumnMasking,
-              executeQuery: async (sql: string, params: unknown[]) => {
-                const result = await connector.query(connectionString, sql, { timeoutMs: getQueryTimeoutMs(), ssl: sslConfig, params });
-                return { rows: result.rows as Record<string, unknown>[], fields: Object.keys(result.rows[0] ?? {}).map(name => ({ name })) };
-              },
-              databaseType,
-              perQueryTimeoutMs: 2000,
-            });
-            distinctValuesCache.set(distinctCacheKey, distinctValuesByTable);
+        // --- Legacy path: direct registerDynamicTools iteration (unchanged) ---
+        // Group tables by connection
+        const tablesByConnection = new Map<
+          ConnectionState,
+          { tables: import('@calame/core').TableInfo[]; selectedTables: Record<string, string[]> }
+        >();
+        for (const [tableName, columns] of Object.entries(effectiveSelectedTables)) {
+          let matchedConnState: ConnectionState | undefined;
+          let tableInfo: import('@calame/core').TableInfo | undefined;
+          for (const cs of profileConnections) {
+            const found = cs.schema.tables.find((t) => t.name === tableName);
+            if (found) {
+              matchedConnState = cs;
+              tableInfo = found;
+              break;
+            }
           }
+          if (!matchedConnState || !tableInfo) {
+            state.logger?.warn(
+              `Table "${tableName}" not found in any connection schema — skipping`,
+              { component: `mcp/${profileName}` },
+            );
+            continue;
+          }
+          let group = tablesByConnection.get(matchedConnState);
+          if (!group) {
+            group = { tables: [], selectedTables: {} };
+            tablesByConnection.set(matchedConnState, group);
+          }
+          group.tables.push(tableInfo);
+          group.selectedTables[tableName] = columns;
+        }
+
+        // Register tools per connection.
+        // If no table matched any connection (empty profile, stale schema, or all tables restricted),
+        // we still need to call registerDynamicTools at least once so that the MCP server registers
+        // the tools/list handler. Without it, the server responds with -32601 (MethodNotFound) to
+        // any tools/list request from the client, which breaks the chat flow and external MCP clients.
+        if (tablesByConnection.size === 0) {
+          // Pick any available connection just to satisfy the MCP protocol requirement.
+          const fallbackConn = profileConnections[0];
+          const connector = getConnector(fallbackConn.connection.databaseType);
+          const connectionString = fallbackConn.connection.connectionString;
+          const sslConfig = fallbackConn.connection.sslConfig;
 
           registerDynamicTools({
             server: mcpServer,
-            tables: group.tables,
-            relations: profileConnections.flatMap(cs => cs.schema.relations ?? []),
-            selectedTables: group.selectedTables,
+            tables: [],
+            relations: [],
+            selectedTables: {},
             tableOptions: effectiveTableOptions,
             columnMasking: effectiveColumnMasking,
-            distinctValuesByTable,
             executeQuery: async (sql: string, params: unknown[]) => {
-              // Route query through the correct connector with timeout
-              const result = await connector.query(connectionString, sql, { timeoutMs: getQueryTimeoutMs(), ssl: sslConfig, params });
-              return { rows: result.rows as Record<string, unknown>[], fields: Object.keys(result.rows[0] ?? {}).map(name => ({ name })) };
+              const result = await connector.query(connectionString, sql, {
+                timeoutMs: getQueryTimeoutMs(),
+                ssl: sslConfig,
+                params,
+              });
+              return {
+                rows: result.rows as Record<string, unknown>[],
+                fields: Object.keys(result.rows[0] ?? {}).map((name) => ({ name })),
+              };
             },
             onAuditLog: (entry) => {
               if (state.auditLog) {
@@ -562,12 +578,84 @@ export function registerServeRoute(app: Express, state: AppState): void {
               }
             },
             profileName,
-            databaseType,
+            databaseType: fallbackConn.connection.databaseType,
             responseMode,
             wrapResponse,
             maxOffset: 10000,
             scopeGuard,
           });
+        } else {
+          for (const [connState, group] of tablesByConnection) {
+            const connector = getConnector(connState.connection.databaseType);
+            const connectionString = connState.connection.connectionString;
+            const sslConfig = connState.connection.sslConfig;
+            const databaseType = connState.connection.databaseType;
+
+            // Lazily compute (and cache) the distinct values used to render
+            // categorical columns as `enum:a|b|c` in the tool catalogue.
+            const distinctCacheKey = distinctValuesCacheKey(
+              profileName,
+              connectionString,
+              group.selectedTables,
+              effectiveColumnMasking,
+            );
+            let distinctValuesByTable = distinctValuesCache.get(distinctCacheKey);
+            if (!distinctValuesByTable) {
+              distinctValuesByTable = await computeDistinctValues({
+                tables: group.tables,
+                selectedTables: group.selectedTables,
+                columnMasking: effectiveColumnMasking,
+                executeQuery: async (sql: string, params: unknown[]) => {
+                  const result = await connector.query(connectionString, sql, {
+                    timeoutMs: getQueryTimeoutMs(),
+                    ssl: sslConfig,
+                    params,
+                  });
+                  return {
+                    rows: result.rows as Record<string, unknown>[],
+                    fields: Object.keys(result.rows[0] ?? {}).map((name) => ({ name })),
+                  };
+                },
+                databaseType,
+                perQueryTimeoutMs: 2000,
+              });
+              distinctValuesCache.set(distinctCacheKey, distinctValuesByTable);
+            }
+
+            registerDynamicTools({
+              server: mcpServer,
+              tables: group.tables,
+              relations: profileConnections.flatMap((cs) => cs.schema.relations ?? []),
+              selectedTables: group.selectedTables,
+              tableOptions: effectiveTableOptions,
+              columnMasking: effectiveColumnMasking,
+              distinctValuesByTable,
+              executeQuery: async (sql: string, params: unknown[]) => {
+                // Route query through the correct connector with timeout
+                const result = await connector.query(connectionString, sql, {
+                  timeoutMs: getQueryTimeoutMs(),
+                  ssl: sslConfig,
+                  params,
+                });
+                return {
+                  rows: result.rows as Record<string, unknown>[],
+                  fields: Object.keys(result.rows[0] ?? {}).map((name) => ({ name })),
+                };
+              },
+              onAuditLog: (entry) => {
+                if (state.auditLog) {
+                  state.auditLog.addEntry({ ...entry, tokenLabel: resolvedTokenLabel });
+                  state.auditLog.save().catch(() => {});
+                }
+              },
+              profileName,
+              databaseType,
+              responseMode,
+              wrapResponse,
+              maxOffset: 10000,
+              scopeGuard,
+            });
+          }
         }
       }
 
@@ -740,4 +828,420 @@ async function verifyBearerToken(
 /** Read the global query timeout from environment (default 10000ms). */
 function getQueryTimeoutMs(): number {
   return parseInt(process.env.CALAME_QUERY_TIMEOUT_MS ?? '10000', 10) || 10000;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3c — adapter-driven tool registration
+// ---------------------------------------------------------------------------
+
+/** Options passed down to the adapter-driven registration helper. */
+interface RegisterAdaptersOptions {
+  mcpServer: McpServer;
+  profile: import('@calame/core').ServeProfile;
+  state: AppState;
+  profileName: string;
+  profileConnections: ConnectionState[];
+  effectiveSelectedTables: Record<string, string[]>;
+  effectiveTableOptions: Record<string, TableToolOptions> | undefined;
+  effectiveColumnMasking: Record<string, Record<string, ColumnMasking>> | undefined;
+  scopeGuard: import('@calame/core').ScopeGuard;
+  responseMode: 'friendly' | 'raw';
+  wrapResponse: (json: string) => string;
+  resolvedTokenLabel: string | undefined;
+}
+
+/**
+ * Sanitizes a source name/id into a tool-name-safe prefix:
+ * lowercase alphanumeric + underscore, max 32 chars, trailing underscore appended by caller.
+ */
+function sanitizeToolNamespace(raw: string): string {
+  return raw
+    .toLowerCase()
+    .replace(/[^a-z0-9_]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '')
+    .slice(0, 32);
+}
+
+/**
+ * Resolve the human-readable display name for a source.
+ * For DB connections: uses the connection label. For RAG sources: uses the rag_sources.name.
+ */
+function resolveSourceDisplayName(sourceId: string, state: AppState): string {
+  // DB connection?
+  const connState = state.connections.get(sourceId);
+  if (connState) {
+    return connState.connection.label ?? sourceId;
+  }
+  // RAG source? Read from the rag_sources SQLite table.
+  if (state.ragRuntime && state.db) {
+    try {
+      const row = state.db.raw
+        .prepare<[string], { name: string }>('SELECT name FROM rag_sources WHERE id = ? LIMIT 1')
+        .get(sourceId);
+      if (row) return row.name;
+    } catch {
+      // Defensive: if rag_sources doesn't exist yet (no migrations run), fall through.
+    }
+  }
+  return sourceId;
+}
+
+/**
+ * Resolve the SourceAdapter for a given sourceId.
+ * Returns the adapter and a synthesized Source record, or null when not resolvable.
+ */
+function resolveAdapterForSource(
+  sourceId: string,
+  scope: ScopeSelection,
+  state: AppState,
+): { adapter: SourceAdapter; source: Source } | null {
+  if (scope.kind === 'relational') {
+    // DB source — look up the connection to get its databaseType
+    const connState = state.connections.get(sourceId);
+    if (!connState) return null;
+    const adapter = sourceAdapterRegistry.get(connState.connection.databaseType);
+    if (!adapter) return null;
+    const source: Source = {
+      id: sourceId,
+      name: connState.connection.label ?? sourceId,
+      type: connState.connection.databaseType,
+      configEncrypted: '',
+      capabilities: [...adapter.capabilities],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    return { adapter, source };
+  }
+
+  if (scope.kind === 'document') {
+    // RAG document source — look up the type from rag_sources
+    if (!state.ragRuntime || !state.db) return null;
+    let ragSourceType: string | undefined;
+    try {
+      const row = state.db.raw
+        .prepare<[string], { type: string }>('SELECT type FROM rag_sources WHERE id = ? LIMIT 1')
+        .get(sourceId);
+      ragSourceType = row?.type;
+    } catch {
+      // Defensive: rag_sources may not exist.
+      return null;
+    }
+    if (!ragSourceType) return null;
+    const adapter = sourceAdapterRegistry.get(ragSourceType);
+    if (!adapter) return null;
+    const displayName = resolveSourceDisplayName(sourceId, state);
+    const source: Source = {
+      id: sourceId,
+      name: displayName,
+      type: ragSourceType,
+      configEncrypted: '',
+      capabilities: [...adapter.capabilities],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    return { adapter, source };
+  }
+
+  return null;
+}
+
+/**
+ * Build a decrypted adapter config for a source.
+ * For DB sources: synthesizes a DatabaseAdapterConfig from the ConnectionState.
+ * For RAG document sources: decrypts from rag_sources.config_encrypted.
+ */
+function resolveAdapterConfig(
+  sourceId: string,
+  scope: ScopeSelection,
+  state: AppState,
+): unknown | null {
+  if (scope.kind === 'relational') {
+    const connState = state.connections.get(sourceId);
+    if (!connState) return null;
+    return {
+      connectionString: connState.connection.connectionString,
+      ssl: connState.connection.sslConfig,
+      ssh: connState.connection.sshConfig,
+    };
+  }
+
+  if (scope.kind === 'document') {
+    if (!state.ragRuntime || !state.db) return null;
+    try {
+      const row = state.db.raw
+        .prepare<[string], { config_encrypted: string }>(
+          'SELECT config_encrypted FROM rag_sources WHERE id = ? LIMIT 1',
+        )
+        .get(sourceId);
+      if (!row) return null;
+      const decrypted = state.ragRuntime.decryptConfig(row.config_encrypted);
+      return JSON.parse(decrypted) as unknown;
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Phase 3c: Register MCP tools by iterating `profile.sources`/`profile.scopes`
+ * and delegating to `SourceAdapter.registerMcpTools` for each source.
+ *
+ * Backward compat invariant: single-DB profiles (one relational source, one kind)
+ * produce toolNamespace='' → tool names are unchanged (e.g. `query`, not `prod_query`).
+ *
+ * Multi-source profiles produce `<sanitizedName>_` prefix per source when more
+ * than one source of the same `kind` is active in the profile.
+ */
+async function registerToolsViaAdapters(opts: RegisterAdaptersOptions): Promise<void> {
+  const {
+    mcpServer,
+    profile,
+    state,
+    profileName,
+    profileConnections,
+    effectiveSelectedTables,
+    effectiveTableOptions,
+    effectiveColumnMasking,
+    scopeGuard,
+    responseMode,
+    wrapResponse,
+    resolvedTokenLabel,
+  } = opts;
+
+  const scopes = profile.scopes ?? {};
+  const sources = profile.sources ?? Object.keys(scopes);
+
+  // Count active sources per kind to determine when namespacing is needed.
+  const kindCounts = new Map<string, number>();
+  for (const sourceId of sources) {
+    const scope = scopes[sourceId];
+    if (!scope) continue;
+    kindCounts.set(scope.kind, (kindCounts.get(scope.kind) ?? 0) + 1);
+  }
+
+  let anyRegistered = false;
+
+  for (const sourceId of sources) {
+    const scope = scopes[sourceId];
+    if (!scope) continue;
+
+    const resolved = resolveAdapterForSource(sourceId, scope, state);
+    if (!resolved) {
+      state.logger?.warn(
+        `No adapter found for source "${sourceId}" (kind=${scope.kind}) — skipping`,
+        { component: `mcp/${profileName}` },
+      );
+      continue;
+    }
+
+    const { adapter, source } = resolved;
+
+    // Compute toolNamespace: empty when only one source of this kind, prefixed otherwise.
+    const kindCount = kindCounts.get(scope.kind) ?? 1;
+    const toolNamespace =
+      kindCount >= 2
+        ? sanitizeToolNamespace(source.name) + '_'
+        : '';
+
+    // Build the adapter config.
+    const config = resolveAdapterConfig(sourceId, scope, state);
+    if (config === null) {
+      state.logger?.warn(
+        `Could not resolve config for source "${sourceId}" — skipping`,
+        { component: `mcp/${profileName}` },
+      );
+      continue;
+    }
+
+    // Build a SourceSchema for the adapter. For relational sources we synthesize
+    // it from the in-memory ConnectionState schema (already introspected). For
+    // document sources the adapter introspects lazily; we pass an empty schema
+    // here because registerMcpTools doesn't need the full schema — the RAG tools
+    // query the storage layer at runtime.
+    let schema: import('@calame/core').SourceSchema;
+    if (scope.kind === 'relational') {
+      const connState = state.connections.get(sourceId);
+      // Apply user-level table restrictions to the scope selection before passing in.
+      // effectiveSelectedTables has already been narrowed by the user restrictions block above.
+      const narrowedScope: ScopeSelection = {
+        kind: 'relational',
+        selectedTables: effectiveSelectedTables,
+        tableOptions: effectiveTableOptions,
+        columnMasking: effectiveColumnMasking,
+      };
+      schema = {
+        kind: 'relational',
+        tables: connState?.schema.tables ?? [],
+        relations: profileConnections.flatMap((cs) => cs.schema.relations ?? []),
+      };
+      // Override scope with the narrowed one.
+      (resolved as { adapter: SourceAdapter; source: Source; narrowedScope?: ScopeSelection }).narrowedScope =
+        narrowedScope;
+    } else {
+      schema = { kind: 'document', folders: [], documents: [] };
+    }
+
+    // Retrieve the (potentially narrowed) scope.
+    const effectiveScope: ScopeSelection =
+      (resolved as { adapter: SourceAdapter; source: Source; narrowedScope?: ScopeSelection })
+        .narrowedScope ?? scope;
+
+    // Build McpRegistrationContext.
+    // For relational sources: build a live executeQuery closure over the connection.
+    // For document sources: searchIndex is provided via the RAG runtime's search wrapper.
+    const connState = scope.kind === 'relational' ? state.connections.get(sourceId) : undefined;
+    const connector = connState ? getConnector(connState.connection.databaseType) : undefined;
+    const connectionString = connState?.connection.connectionString ?? '';
+    const sslConfig = connState?.connection.sslConfig;
+
+    // Distinct-values cache for relational sources (same pattern as legacy path).
+    let distinctValuesByTable: Record<string, Record<string, unknown[]>> | undefined;
+    if (scope.kind === 'relational' && connState && connector) {
+      const relScope = effectiveScope as Extract<ScopeSelection, { kind: 'relational' }>;
+      const distinctCacheKey = distinctValuesCacheKey(
+        profileName,
+        connectionString,
+        relScope.selectedTables,
+        relScope.columnMasking,
+      );
+      let cached = distinctValuesCache.get(distinctCacheKey);
+      if (!cached) {
+        cached = await computeDistinctValues({
+          tables: connState.schema.tables,
+          selectedTables: relScope.selectedTables,
+          columnMasking: relScope.columnMasking,
+          executeQuery: async (sql: string, params: unknown[]) => {
+            const result = await connector.query(connectionString, sql, {
+              timeoutMs: getQueryTimeoutMs(),
+              ssl: sslConfig,
+              params,
+            });
+            return {
+              rows: result.rows as Record<string, unknown>[],
+              fields: Object.keys(result.rows[0] ?? {}).map((name) => ({ name })),
+            };
+          },
+          databaseType: connState.connection.databaseType,
+          perQueryTimeoutMs: 2000,
+        });
+        distinctValuesCache.set(distinctCacheKey, cached);
+      }
+      distinctValuesByTable = cached;
+    }
+
+    const ctx: McpRegistrationContext = {
+      server: mcpServer,
+      source,
+      config,
+      schema,
+      selection: effectiveScope,
+      profileName,
+      toolNamespace,
+      responseMode,
+      onAuditLog: (entry: AuditLogEntry) => {
+        if (state.auditLog) {
+          state.auditLog.addEntry({ ...entry, tokenLabel: resolvedTokenLabel });
+          state.auditLog.save().catch(() => {});
+        }
+      },
+      scopeGuard,
+      executeQuery: connector
+        ? async (sql: string, params?: ReadonlyArray<unknown>) => {
+            const result = await connector.query(connectionString, sql, {
+              timeoutMs: getQueryTimeoutMs(),
+              ssl: sslConfig,
+              params: params ? [...params] : [],
+            });
+            return {
+              rows: result.rows as Record<string, unknown>[],
+              fields: Object.keys(result.rows[0] ?? {}).map((name) => ({ name })),
+            };
+          }
+        : undefined,
+    };
+
+    // Document adapters (kind === 'document') read their search index from the
+    // closure-bound deps that rag-runtime.ts injected at adapter construction time
+    // (see packages/cli/src/rag-runtime.ts where buildDocumentSourceAdapter is
+    // called). The McpRegistrationContext.searchIndex field is intentionally not
+    // populated here — it would be dead since the adapter never reads it.
+
+    // Inject wrapResponse for relational adapters (the DB adapter delegates to
+    // registerDynamicTools which accepts wrapResponse).
+    if (scope.kind === 'relational') {
+      (ctx as McpRegistrationContext & {
+        wrapResponse?: (json: string) => string;
+        maxOffset?: number;
+        distinctValuesByTable?: Record<string, Record<string, unknown[]>>;
+      }).wrapResponse = wrapResponse;
+      (ctx as McpRegistrationContext & {
+        wrapResponse?: (json: string) => string;
+        maxOffset?: number;
+        distinctValuesByTable?: Record<string, Record<string, unknown[]>>;
+      }).maxOffset = 10000;
+      if (distinctValuesByTable) {
+        (ctx as McpRegistrationContext & {
+          wrapResponse?: (json: string) => string;
+          maxOffset?: number;
+          distinctValuesByTable?: Record<string, Record<string, unknown[]>>;
+        }).distinctValuesByTable = distinctValuesByTable;
+      }
+    }
+
+    try {
+      adapter.registerMcpTools?.(ctx);
+      anyRegistered = true;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      state.logger?.warn(
+        `registerMcpTools failed for source "${sourceId}": ${msg}`,
+        { component: `mcp/${profileName}` },
+      );
+    }
+  }
+
+  // If no adapter registered anything (e.g. all sources had no matched adapter),
+  // fall back to registering an empty relational tool set on the first available
+  // connection so the MCP server always has a tools/list handler (avoids -32601).
+  if (!anyRegistered && profileConnections.length > 0) {
+    const fallbackConn = profileConnections[0];
+    const connector = getConnector(fallbackConn.connection.databaseType);
+    const connectionString = fallbackConn.connection.connectionString;
+    const sslConfig = fallbackConn.connection.sslConfig;
+
+    registerDynamicTools({
+      server: mcpServer,
+      tables: [],
+      relations: [],
+      selectedTables: {},
+      tableOptions: effectiveTableOptions,
+      columnMasking: effectiveColumnMasking,
+      executeQuery: async (sql: string, params: unknown[]) => {
+        const result = await connector.query(connectionString, sql, {
+          timeoutMs: getQueryTimeoutMs(),
+          ssl: sslConfig,
+          params,
+        });
+        return {
+          rows: result.rows as Record<string, unknown>[],
+          fields: Object.keys(result.rows[0] ?? {}).map((name) => ({ name })),
+        };
+      },
+      onAuditLog: (entry) => {
+        if (state.auditLog) {
+          state.auditLog.addEntry({ ...entry, tokenLabel: resolvedTokenLabel });
+          state.auditLog.save().catch(() => {});
+        }
+      },
+      profileName,
+      databaseType: fallbackConn.connection.databaseType,
+      responseMode,
+      wrapResponse,
+      maxOffset: 10000,
+      scopeGuard,
+    });
+  }
 }

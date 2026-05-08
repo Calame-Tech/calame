@@ -1,0 +1,756 @@
+// SPDX-License-Identifier: BUSL-1.1
+// Copyright (c) 2026 Calame Tech inc. Licensed under the Business Source License 1.1.
+// See ee/LICENSE.BUSL at the root of the ee/ directory for terms.
+
+/**
+ * DocumentSourceAdapter — wraps the RAG runtime (vector store, storage, connector)
+ * behind the `SourceAdapter<TConfig, TSchema, TCaps>` contract from @calame/core.
+ *
+ * Design decisions:
+ *
+ * ONE adapter per RagSourceType (vs. one for all):
+ *   Mirrors DatabaseSourceAdapter's per-DB-type pattern. Each call to
+ *   `buildDocumentSourceAdapter('local', ...)` produces a dedicated adapter for
+ *   that source type. Phase 4+ can call the factory again for 's3', 'http', etc.
+ *   A single "any-type" adapter would couple the configSchema to ALL connector
+ *   types at once and make capability testing brittle.
+ *
+ * rag_list_sources placement:
+ *   All 5 RAG tools are registered per-adapter (option c from the plan
+ *   deferred to a comment below). The adapter only knows its own source; the
+ *   `rag_list_sources` tool it registers returns a single-element list for the
+ *   source it was wired to. A host-level aggregation tool can be added in
+ *   Phase 4 by iterating all document-kind adapters and merging their outputs.
+ *   See "Phase 4 note" comments below.
+ *
+ * Allowlist filtering invariant (rag-integration-plan.md §6.3):
+ *   Filtering never happens at the embedding / vector-store layer. Every tool
+ *   applies the profile ScopeSelection AFTER receiving results from the search
+ *   index or storage, ensuring that connector-side changes (new documents in an
+ *   allowed folder) are reflected immediately without profile rewrites.
+ */
+
+import { z } from 'zod';
+import { nanoid } from 'nanoid';
+import type {
+  SourceAdapter,
+  ScopeSelection,
+  McpRegistrationContext,
+  DocumentFolderInfo,
+  DocumentItemInfo,
+  AuditLogEntry,
+} from '@calame/core';
+import type { RagFolder, RagDocument, RagSearchResult } from './types.js';
+
+// ---------------------------------------------------------------------------
+// Public config type
+// ---------------------------------------------------------------------------
+
+/**
+ * Config shape for a 'local' document source adapter.
+ * Mirrors the `config` object accepted by `POST /api/rag/sources` when `type === 'local'`.
+ */
+export interface LocalDocumentAdapterConfig {
+  root: string;
+  includeGlobs?: string[];
+  excludeGlobs?: string[];
+}
+
+// ---------------------------------------------------------------------------
+// Capability and schema type aliases
+// ---------------------------------------------------------------------------
+
+type DocumentCaps = 'enumerate' | 'fetch' | 'search' | 'introspect';
+
+type DocumentSchema = Extract<
+  import('@calame/core').SourceSchema,
+  { kind: 'document' }
+>;
+
+// ---------------------------------------------------------------------------
+// Dependencies
+// ---------------------------------------------------------------------------
+
+/**
+ * Minimal duck-typed connector shape. Avoids importing @calame-ee/rag-connectors
+ * directly (rag-connectors → rag-core, not back) while still allowing type-safe
+ * delegation. Matches ConnectorLike from routes/types.ts.
+ */
+export interface ConnectorLike {
+  type: string;
+  testConnection(config: Record<string, unknown>): Promise<void>;
+}
+
+/**
+ * Search index abstraction. The adapter does not reach into the vector store
+ * directly — it goes through this interface which the host builds and injects.
+ */
+export interface DocumentSearchIndex {
+  search(
+    sourceId: string,
+    query: string,
+    opts: {
+      topK: number;
+      folders?: readonly string[];
+      fileTypes?: readonly string[];
+    },
+  ): Promise<RagSearchResult>;
+}
+
+/**
+ * Read-side storage accessors. All sync-to-DB writes go through IngestionPipeline;
+ * the adapter only reads. The host builds an implementation over the shared
+ * BetterSqlite3Database instance.
+ */
+export interface DocumentStorage {
+  listFolders(sourceId: string, parent?: string): Promise<RagFolder[]>;
+  listDocuments(sourceId: string, folder?: string): Promise<RagDocument[]>;
+  getDocument(
+    documentId: string,
+  ): Promise<{ doc: RagDocument; text: string } | null>;
+  listSources(): Promise<
+    Array<{
+      id: string;
+      name: string;
+      type: string;
+      folderCount: number;
+      documentCount: number;
+    }>
+  >;
+}
+
+/**
+ * Constructor-time dependencies injected by the host. Keeps the adapter
+ * decoupled from packages/cli and the BetterSqlite3 database.
+ */
+export interface DocumentAdapterDeps {
+  /**
+   * Resolves a DocumentSourceConnector for a given source type. The adapter
+   * calls this once per `testConnection` invocation.
+   */
+  resolveConnector(type: string): ConnectorLike | null;
+  /** Abstracted search layer over the vector store + embedding query. */
+  searchIndex: DocumentSearchIndex;
+  /** Read-side accessors over the SQLite-backed RAG tables. */
+  storage: DocumentStorage;
+}
+
+// ---------------------------------------------------------------------------
+// Zod schemas
+// ---------------------------------------------------------------------------
+
+const configSchema = z.object({
+  root: z.string().min(1),
+  includeGlobs: z.array(z.string()).optional(),
+  excludeGlobs: z.array(z.string()).optional(),
+});
+
+// Accepts both document and relational ScopeSelection so the registry can store
+// a single adapter instance without type errors; the adapter validates at
+// runtime that it received a 'document' kind selection.
+const scopeSelectionSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('document'),
+    mode: z.enum(['allowAll', 'allowList']),
+    allowedFolders: z.array(z.string()),
+    allowedDocuments: z.array(z.string()),
+  }),
+  z.object({
+    kind: z.literal('relational'),
+    selectedTables: z.record(z.string(), z.array(z.string())),
+    tableOptions: z.record(z.string(), z.unknown()).optional(),
+    columnMasking: z.record(z.string(), z.record(z.string(), z.unknown())).optional(),
+  }),
+]) as z.ZodType<ScopeSelection>;
+
+// ---------------------------------------------------------------------------
+// Allowlist helpers
+// ---------------------------------------------------------------------------
+
+/** Returns true when the document passes the scope selection allowlist. */
+function isDocumentAllowed(
+  documentId: string,
+  folderPath: string | null,
+  scope: Extract<ScopeSelection, { kind: 'document' }>,
+): boolean {
+  if (scope.mode === 'allowAll') return true;
+  if (scope.allowedDocuments.includes(documentId)) return true;
+  if (folderPath !== null) {
+    for (const allowed of scope.allowedFolders) {
+      if (folderPath === allowed || folderPath.startsWith(allowed + '/')) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Computes the effective folder filter for rag_search.
+ * - allowAll: no restriction unless caller explicitly filtered
+ * - allowList: intersect caller folders with profile allowedFolders (or default
+ *   to all allowedFolders when caller does not specify)
+ */
+function effectiveFolders(
+  argFolders: readonly string[] | undefined,
+  scope: Extract<ScopeSelection, { kind: 'document' }>,
+): readonly string[] | undefined {
+  if (scope.mode === 'allowAll') return argFolders; // no extra restriction
+  const allowed = scope.allowedFolders;
+  if (!argFolders || argFolders.length === 0) {
+    return allowed.length > 0 ? allowed : undefined;
+  }
+  const intersection = argFolders.filter((f) => allowed.includes(f));
+  return intersection.length > 0 ? intersection : allowed;
+}
+
+// ---------------------------------------------------------------------------
+// Token-budget cap for chunk text
+// ---------------------------------------------------------------------------
+
+const APPROX_CHARS_PER_TOKEN = 4;
+const MAX_CHUNK_TOKENS = 1000;
+const MAX_CHUNK_CHARS = MAX_CHUNK_TOKENS * APPROX_CHARS_PER_TOKEN;
+
+function capChunkText(text: string): { text: string; truncated: boolean } {
+  if (text.length <= MAX_CHUNK_CHARS) return { text, truncated: false };
+  return { text: text.slice(0, MAX_CHUNK_CHARS), truncated: true };
+}
+
+// Document full-text cap (50 KB, matching the plan §rag_get_document)
+const MAX_DOC_BYTES = 50 * 1024;
+
+function capDocText(text: string): { text: string; truncated: boolean } {
+  if (text.length <= MAX_DOC_BYTES) return { text, truncated: false };
+  return { text: text.slice(0, MAX_DOC_BYTES), truncated: true };
+}
+
+// ---------------------------------------------------------------------------
+// Factory
+// ---------------------------------------------------------------------------
+
+/**
+ * Builds a SourceAdapter for a specific document source type.
+ *
+ * For Phase 3, only `'local'` is fully wired (the host provides a real
+ * LocalFolderConnector via `deps.resolveConnector`). Additional types ('s3',
+ * 'http', …) can be supported by calling the factory again with the
+ * corresponding type string once their connectors land in Phase 3+.
+ *
+ * @param deps   - Host-provided runtime dependencies (search index, storage).
+ * @param type   - Adapter type key (e.g. `'local'`). Registered under this key
+ *                 in the SourceAdapterRegistry.
+ * @param displayName - Human-readable name shown in the UI.
+ */
+export function buildDocumentSourceAdapter(
+  deps: DocumentAdapterDeps,
+  type: 'local',
+  displayName: 'Local folder',
+): SourceAdapter<LocalDocumentAdapterConfig, DocumentSchema, DocumentCaps>;
+export function buildDocumentSourceAdapter(
+  deps: DocumentAdapterDeps,
+  type: string,
+  displayName: string,
+): SourceAdapter<LocalDocumentAdapterConfig, DocumentSchema, DocumentCaps>;
+export function buildDocumentSourceAdapter(
+  deps: DocumentAdapterDeps,
+  type: string,
+  displayName: string,
+): SourceAdapter<LocalDocumentAdapterConfig, DocumentSchema, DocumentCaps> {
+  return {
+    type,
+    displayName,
+    capabilities: ['enumerate', 'fetch', 'search', 'introspect'] as const,
+    configSchema,
+    scopeSelectionSchema,
+
+    // -----------------------------------------------------------------------
+    // testConnection — delegates to the connector
+    // -----------------------------------------------------------------------
+    async testConnection(config: LocalDocumentAdapterConfig): Promise<void> {
+      const connector = deps.resolveConnector(type);
+      if (!connector) {
+        throw new Error(
+          `DocumentSourceAdapter(${type}): no connector registered for type '${type}'.`,
+        );
+      }
+      await connector.testConnection(config as unknown as Record<string, unknown>);
+    },
+
+    // -----------------------------------------------------------------------
+    // introspect — produces a DocumentSchema from storage
+    // -----------------------------------------------------------------------
+    async introspect(
+      _config: LocalDocumentAdapterConfig,
+      sourceId: string,
+    ): Promise<DocumentSchema> {
+      const [ragFolders, ragDocuments] = await Promise.all([
+        deps.storage.listFolders(sourceId),
+        deps.storage.listDocuments(sourceId),
+      ]);
+
+      const folders: DocumentFolderInfo[] = ragFolders.map((f) => ({
+        id: f.id,
+        name: f.name,
+        path: f.path,
+        parentId: f.parentId,
+      }));
+
+      const documents: DocumentItemInfo[] = ragDocuments.map((d) => ({
+        id: d.id,
+        name: d.name,
+        path: d.path,
+        parentId: d.folderId,
+        mimeType: d.mimeType,
+        size: d.size,
+      }));
+
+      return { kind: 'document', folders, documents };
+    },
+
+    // -----------------------------------------------------------------------
+    // listScopes — returns folders (from storage, simpler than live connector)
+    // Choice: storage-backed (cached). This avoids an extra live FS scan and
+    // is consistent with what the MCP tools actually expose. Phase 4 can swap
+    // to a live connector call when incremental sync lands.
+    // -----------------------------------------------------------------------
+    async listScopes(
+      _config: LocalDocumentAdapterConfig,
+      sourceId: string,
+      parent?: string,
+    ): Promise<ReadonlyArray<{ id: string; name: string; path: string }>> {
+      const folders = await deps.storage.listFolders(sourceId, parent);
+      return folders.map((f) => ({ id: f.id, name: f.name, path: f.path }));
+    },
+
+    // -----------------------------------------------------------------------
+    // listItems — returns documents in a folder
+    // -----------------------------------------------------------------------
+    async listItems(
+      _config: LocalDocumentAdapterConfig,
+      sourceId: string,
+      scope?: string,
+    ): Promise<ReadonlyArray<{ id: string; name: string; mimeType: string; size: number }>> {
+      const docs = await deps.storage.listDocuments(sourceId, scope);
+      return docs.map((d) => ({ id: d.id, name: d.name, mimeType: d.mimeType, size: d.size }));
+    },
+
+    // -----------------------------------------------------------------------
+    // fetchItem — returns full document content
+    // -----------------------------------------------------------------------
+    async fetchItem(
+      _config: LocalDocumentAdapterConfig,
+      _sourceId: string,
+      itemId: string,
+    ): Promise<{ id: string; name: string; mimeType: string; size: number; text: string } | null> {
+      const result = await deps.storage.getDocument(itemId);
+      if (!result) return null;
+      const { doc, text } = result;
+      return { id: doc.id, name: doc.name, mimeType: doc.mimeType, size: doc.size, text };
+    },
+
+    // -----------------------------------------------------------------------
+    // search — delegates to the search index
+    // -----------------------------------------------------------------------
+    async search(
+      _config: LocalDocumentAdapterConfig,
+      query: string,
+      options?: { sourceId?: string; topK?: number; folders?: string[]; fileTypes?: string[] },
+    ): Promise<RagSearchResult> {
+      const sourceId = options?.sourceId ?? '';
+      const topK = Math.min(options?.topK ?? 5, 10);
+      return deps.searchIndex.search(sourceId, query, {
+        topK,
+        folders: options?.folders,
+        fileTypes: options?.fileTypes,
+      });
+    },
+
+    // -----------------------------------------------------------------------
+    // registerMcpTools — the 5 RAG MCP tools
+    // -----------------------------------------------------------------------
+    registerMcpTools(
+      ctx: McpRegistrationContext<LocalDocumentAdapterConfig, DocumentSchema>,
+    ): void {
+      if (ctx.selection.kind !== 'document') {
+        throw new Error(
+          `DocumentSourceAdapter(${type}): expected document selection, got '${ctx.selection.kind}'`,
+        );
+      }
+
+      const scope = ctx.selection;
+      const ns = ctx.toolNamespace; // e.g. '' or 'kb1_'
+      const sourceId = ctx.source.id;
+
+      // Shorthand for audit logging. durationMs is measured from the provided
+      // startTime (Date.now() at handler entry) so the entry reflects actual
+      // async execution time rather than a hard-coded 0.
+      const audit = (
+        tool: string,
+        args: Record<string, unknown>,
+        resultSummary: string,
+        result: 'success' | 'error' = 'success',
+        startTime: number = Date.now(),
+      ): void => {
+        const entry: AuditLogEntry = {
+          id: nanoid(),
+          timestamp: new Date().toISOString(),
+          profileName: ctx.profileName,
+          toolName: `${ns}${tool}`,
+          toolArgs: args,
+          result,
+          resultSummary,
+          durationMs: Date.now() - startTime,
+        };
+        ctx.onAuditLog(entry);
+      };
+
+      // -------------------------------------------------------------------
+      // rag_search
+      // -------------------------------------------------------------------
+      ctx.server.tool(
+        `${ns}rag_search`,
+        `Search documents in source "${ctx.source.name}" using semantic (vector) similarity. ` +
+          `Returns the most relevant text chunks. Use this when you need information from ` +
+          `the knowledge base.`,
+        {
+          query: z.string().min(1).describe('The natural language search query.'),
+          topK: z
+            .number()
+            .int()
+            .min(1)
+            .max(10)
+            .optional()
+            .describe('Number of chunks to return (default 5, max 10).'),
+          folders: z
+            .array(z.string())
+            .optional()
+            .describe('Restrict search to specific folder paths (further filtered by profile allowlist).'),
+          fileTypes: z
+            .array(z.string())
+            .optional()
+            .describe('Restrict search to specific MIME types, e.g. ["application/pdf"].'),
+        },
+        async (args) => {
+          const t0 = Date.now();
+          const topK = Math.min(args.topK ?? 5, 10);
+          const folders = effectiveFolders(args.folders, scope);
+
+          let searchResult: RagSearchResult;
+          try {
+            searchResult = await deps.searchIndex.search(sourceId, args.query, {
+              topK,
+              folders,
+              fileTypes: args.fileTypes,
+            });
+          } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err);
+            audit('rag_search', { query: args.query, topK }, `error: ${message}`, 'error', t0);
+            return { content: [{ type: 'text', text: JSON.stringify({ error: message }) }] };
+          }
+
+          // Post-search allowlist filter (§6.3 invariant)
+          const filtered = searchResult.chunks.filter((chunk) => {
+            return isDocumentAllowed(chunk.documentId, chunk.folder, scope);
+          });
+
+          const cappedChunks = filtered.map((chunk) => {
+            const { text, truncated } = capChunkText(chunk.text);
+            return {
+              text,
+              truncated,
+              score: chunk.score,
+              sourceId: chunk.sourceId,
+              folder: chunk.folder,
+              fileName: chunk.fileName,
+              position: chunk.position,
+              documentId: chunk.documentId,
+            };
+          });
+
+          const response = { chunks: cappedChunks };
+          audit('rag_search', { query: args.query, topK }, `${cappedChunks.length} chunks returned`, 'success', t0);
+
+          return {
+            content: [{ type: 'text', text: JSON.stringify(response) }],
+          };
+        },
+      );
+
+      // -------------------------------------------------------------------
+      // rag_list_sources
+      // Phase 4 note: this tool returns a single-element list scoped to
+      // ctx.source. When multiple document-kind sources are in a profile, each
+      // adapter registers its own namespaced rag_list_sources (e.g.
+      // kb1_rag_list_sources, kb2_rag_list_sources). A host-level aggregation
+      // tool that merges them into a single list is planned for Phase 4 — it
+      // would iterate all document adapters in the active profile and collect
+      // their source records. For now, per-adapter single-source output is
+      // correct and sufficient.
+      // -------------------------------------------------------------------
+      ctx.server.tool(
+        `${ns}rag_list_sources`,
+        `List the document source(s) available through this MCP server endpoint.`,
+        {},
+        async (_args) => {
+          const t0 = Date.now();
+          let sources: Array<{
+            id: string;
+            name: string;
+            type: string;
+            folderCount: number;
+            documentCount: number;
+          }>;
+          try {
+            const all = await deps.storage.listSources();
+            // Filter to only THIS source (the adapter is per-source)
+            sources = all.filter((s) => s.id === sourceId);
+          } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err);
+            audit('rag_list_sources', {}, `error: ${message}`, 'error', t0);
+            return { content: [{ type: 'text', text: JSON.stringify({ error: message }) }] };
+          }
+
+          audit('rag_list_sources', {}, `${sources.length} source(s) returned`, 'success', t0);
+          return {
+            content: [{ type: 'text', text: JSON.stringify({ sources }) }],
+          };
+        },
+      );
+
+      // -------------------------------------------------------------------
+      // rag_list_folders
+      // -------------------------------------------------------------------
+      ctx.server.tool(
+        `${ns}rag_list_folders`,
+        `List folders in source "${ctx.source.name}". Useful for exploring the knowledge base structure.`,
+        {
+          parent: z
+            .string()
+            .optional()
+            .describe('Parent folder path. Omit to list root folders.'),
+        },
+        async (args) => {
+          const t0 = Date.now();
+          let folders: RagFolder[];
+          try {
+            folders = await deps.storage.listFolders(sourceId, args.parent);
+          } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err);
+            audit('rag_list_folders', { parent: args.parent }, `error: ${message}`, 'error', t0);
+            return { content: [{ type: 'text', text: JSON.stringify({ error: message }) }] };
+          }
+
+          // Apply allowlist filter
+          const filtered =
+            scope.mode === 'allowAll'
+              ? folders
+              : folders.filter((f) => {
+                  for (const allowed of scope.allowedFolders) {
+                    if (f.path === allowed || f.path.startsWith(allowed + '/')) return true;
+                  }
+                  return false;
+                });
+
+          const result = {
+            folders: filtered.map((f) => ({
+              id: f.id,
+              sourceId: f.sourceId,
+              path: f.path,
+              parent: f.parentId,
+              name: f.name,
+            })),
+          };
+
+          audit(
+            'rag_list_folders',
+            { parent: args.parent },
+            `${result.folders.length} folders returned`,
+            'success',
+            t0,
+          );
+          return {
+            content: [{ type: 'text', text: JSON.stringify(result) }],
+          };
+        },
+      );
+
+      // -------------------------------------------------------------------
+      // rag_list_documents
+      // -------------------------------------------------------------------
+      ctx.server.tool(
+        `${ns}rag_list_documents`,
+        `List documents in a specific folder of source "${ctx.source.name}".`,
+        {
+          folder: z.string().describe('The folder path to list documents from.'),
+          limit: z
+            .number()
+            .int()
+            .min(1)
+            .max(200)
+            .optional()
+            .describe('Maximum number of documents to return (default 50, max 200).'),
+        },
+        async (args) => {
+          const t0 = Date.now();
+          const limit = Math.min(args.limit ?? 50, 200);
+
+          // Allowlist check on folder before fetching documents
+          if (scope.mode === 'allowList') {
+            const folderAllowed = scope.allowedFolders.some(
+              (af) => args.folder === af || args.folder.startsWith(af + '/'),
+            );
+            if (!folderAllowed) {
+              audit(
+                'rag_list_documents',
+                { folder: args.folder, limit },
+                'folder not in allowlist',
+                'error',
+                t0,
+              );
+              return {
+                content: [
+                  {
+                    type: 'text',
+                    text: JSON.stringify({
+                      error: `Folder "${args.folder}" is not accessible in this profile.`,
+                    }),
+                  },
+                ],
+              };
+            }
+          }
+
+          let docs: RagDocument[];
+          try {
+            docs = await deps.storage.listDocuments(sourceId, args.folder);
+          } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err);
+            audit(
+              'rag_list_documents',
+              { folder: args.folder, limit },
+              `error: ${message}`,
+              'error',
+              t0,
+            );
+            return { content: [{ type: 'text', text: JSON.stringify({ error: message }) }] };
+          }
+
+          // Post-fetch per-document allowlist filter (document may be individually
+          // blocked even when the folder is not)
+          const allowed = docs
+            .filter((d) => isDocumentAllowed(d.id, d.folderId ? args.folder : null, scope))
+            .slice(0, limit);
+
+          const result = {
+            documents: allowed.map((d) => ({
+              id: d.id,
+              name: d.name,
+              mimeType: d.mimeType,
+              size: d.size,
+              modifiedAt: d.lastIndexedAt,
+            })),
+          };
+
+          audit(
+            'rag_list_documents',
+            { folder: args.folder, limit },
+            `${result.documents.length} documents returned`,
+            'success',
+            t0,
+          );
+          return {
+            content: [{ type: 'text', text: JSON.stringify(result) }],
+          };
+        },
+      );
+
+      // -------------------------------------------------------------------
+      // rag_get_document
+      // -------------------------------------------------------------------
+      ctx.server.tool(
+        `${ns}rag_get_document`,
+        `Retrieve the full text content of a document from source "${ctx.source.name}". ` +
+          `Content is capped at 50 KB — large documents are truncated with a flag.`,
+        {
+          documentId: z.string().describe('The document id to retrieve.'),
+        },
+        async (args) => {
+          const t0 = Date.now();
+          let result: { doc: RagDocument; text: string } | null;
+          try {
+            result = await deps.storage.getDocument(args.documentId);
+          } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err);
+            audit('rag_get_document', { documentId: args.documentId }, `error: ${message}`, 'error', t0);
+            return { content: [{ type: 'text', text: JSON.stringify({ error: message }) }] };
+          }
+
+          if (!result) {
+            audit(
+              'rag_get_document',
+              { documentId: args.documentId },
+              'document not found',
+              'error',
+              t0,
+            );
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify({ error: `Document "${args.documentId}" not found.` }),
+                },
+              ],
+            };
+          }
+
+          const { doc, text } = result;
+
+          // Allowlist enforcement — must be in allowedDocuments OR in an allowed folder
+          // We look up the folder path from the document's folderId. Because the storage
+          // interface only returns RagDocument (with folderId, not path), we use the
+          // document's own path to derive the folder component for the check.
+          const folderPath = doc.folderId ? doc.path.split('/').slice(0, -1).join('/') : null;
+          if (!isDocumentAllowed(doc.id, folderPath, scope)) {
+            audit(
+              'rag_get_document',
+              { documentId: args.documentId },
+              'document not in allowlist',
+              'error',
+              t0,
+            );
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify({
+                    error: `Document "${args.documentId}" is not accessible in this profile.`,
+                  }),
+                },
+              ],
+            };
+          }
+
+          const { text: capped, truncated } = capDocText(text);
+          const response = {
+            id: doc.id,
+            name: doc.name,
+            mimeType: doc.mimeType,
+            size: doc.size,
+            text: capped,
+            truncated,
+          };
+
+          audit(
+            'rag_get_document',
+            { documentId: args.documentId },
+            `${doc.size} bytes, truncated=${truncated}`,
+            'success',
+            t0,
+          );
+          return {
+            content: [{ type: 'text', text: JSON.stringify(response) }],
+          };
+        },
+      );
+    },
+  };
+}

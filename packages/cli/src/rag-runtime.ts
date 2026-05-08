@@ -15,6 +15,7 @@ import type { CalameDatabase } from './database.js';
 import type { AiSettingsManager } from './ai-config.js';
 import { settingSupports } from './ai-config.js';
 import { deriveKeyFromEnv, encryptString, decryptString } from './crypto.js';
+import { sourceAdapterRegistry } from '@calame/core';
 
 /**
  * Public shape of the RAG runtime stored on `AppState.ragRuntime`. All fields
@@ -251,6 +252,259 @@ export async function initRagRuntime(
     resolveConnector,
     ragCore,
   };
+
+  // Phase 3d: Register the DocumentSourceAdapter into the global SourceAdapterRegistry.
+  // Guard with has() for idempotency — if initRagRuntime is somehow called twice
+  // (the guard at the top catches this, but be defensive) we don't want a duplicate-
+  // registration error from the registry.
+  if (!sourceAdapterRegistry.has('local')) {
+    // Build DocumentAdapterDeps from the runtime fields we just assembled.
+    // Storage and searchIndex are implemented below as closures over `db` so
+    // we can make synchronous-friendly implementations on top of better-sqlite3.
+    const ragDb = db;
+
+    // ---------------------------------------------------------------------------
+    // DocumentStorage implementation backed by the shared SQLite DB
+    // ---------------------------------------------------------------------------
+    interface RagFolderRow {
+      id: string;
+      source_id: string;
+      parent_id: string | null;
+      path: string;
+      name: string;
+      created_at: string;
+    }
+    interface RagDocumentRow {
+      id: string;
+      source_id: string;
+      folder_id: string | null;
+      path: string;
+      name: string;
+      mime_type: string;
+      size: number;
+      hash: string;
+      etag: string | null;
+      last_indexed_at: string;
+      deleted_at: string | null;
+    }
+    interface RagChunkRow {
+      id: string;
+      document_id: string;
+      position: number;
+      text: string;
+    }
+    interface SourceAggRow {
+      id: string;
+      name: string;
+      type: string;
+      folder_count: number;
+      document_count: number;
+    }
+
+    const storage: import('@calame-ee/rag-core').DocumentStorage = {
+      async listFolders(sourceId: string, parent?: string) {
+        const rows: RagFolderRow[] =
+          parent !== undefined
+            ? ragDb.raw
+                .prepare<[string, string], RagFolderRow>(
+                  'SELECT * FROM rag_folders WHERE source_id = ? AND parent_id = ? ORDER BY path ASC',
+                )
+                .all(sourceId, parent)
+            : ragDb.raw
+                .prepare<[string], RagFolderRow>(
+                  'SELECT * FROM rag_folders WHERE source_id = ? ORDER BY path ASC',
+                )
+                .all(sourceId);
+        return rows.map((r) => ({
+          id: r.id,
+          sourceId: r.source_id,
+          parentId: r.parent_id,
+          path: r.path,
+          name: r.name,
+          createdAt: r.created_at,
+        }));
+      },
+
+      async listDocuments(sourceId: string, folder?: string) {
+        const rows: RagDocumentRow[] =
+          folder !== undefined
+            ? ragDb.raw
+                .prepare<[string, string], RagDocumentRow>(
+                  `SELECT * FROM rag_documents
+                   WHERE source_id = ? AND folder_id = ? AND deleted_at IS NULL
+                   ORDER BY path ASC`,
+                )
+                .all(sourceId, folder)
+            : ragDb.raw
+                .prepare<[string], RagDocumentRow>(
+                  `SELECT * FROM rag_documents
+                   WHERE source_id = ? AND deleted_at IS NULL
+                   ORDER BY path ASC`,
+                )
+                .all(sourceId);
+        return rows.map((r) => ({
+          id: r.id,
+          sourceId: r.source_id,
+          folderId: r.folder_id,
+          path: r.path,
+          name: r.name,
+          mimeType: r.mime_type,
+          size: r.size,
+          hash: r.hash,
+          etag: r.etag,
+          lastIndexedAt: r.last_indexed_at,
+          deletedAt: r.deleted_at,
+        }));
+      },
+
+      async getDocument(documentId: string) {
+        const row = ragDb.raw
+          .prepare<[string], RagDocumentRow>('SELECT * FROM rag_documents WHERE id = ?')
+          .get(documentId);
+        if (!row) return null;
+        const chunks = ragDb.raw
+          .prepare<[string], RagChunkRow>(
+            'SELECT * FROM rag_chunks WHERE document_id = ? ORDER BY position ASC',
+          )
+          .all(documentId);
+        const text = chunks.map((c) => c.text).join('\n');
+        return {
+          doc: {
+            id: row.id,
+            sourceId: row.source_id,
+            folderId: row.folder_id,
+            path: row.path,
+            name: row.name,
+            mimeType: row.mime_type,
+            size: row.size,
+            hash: row.hash,
+            etag: row.etag,
+            lastIndexedAt: row.last_indexed_at,
+            deletedAt: row.deleted_at,
+          },
+          text,
+        };
+      },
+
+      async listSources() {
+        const rows = ragDb.raw
+          .prepare<[], SourceAggRow>(
+            `SELECT
+               s.id,
+               s.name,
+               s.type,
+               (SELECT COUNT(*) FROM rag_folders f WHERE f.source_id = s.id) AS folder_count,
+               (SELECT COUNT(*) FROM rag_documents d WHERE d.source_id = s.id AND d.deleted_at IS NULL) AS document_count
+             FROM rag_sources s
+             ORDER BY s.created_at ASC`,
+          )
+          .all();
+        return rows.map((r) => ({
+          id: r.id,
+          name: r.name,
+          type: r.type,
+          folderCount: r.folder_count,
+          documentCount: r.document_count,
+        }));
+      },
+    };
+
+    // ---------------------------------------------------------------------------
+    // DocumentSearchIndex implementation (vector search + SQL join)
+    // ---------------------------------------------------------------------------
+    const capturedVectorStore = vectorStore;
+    const capturedResolveEmbeddingClient = resolveEmbeddingClient;
+
+    const searchIndex: import('@calame-ee/rag-core').DocumentSearchIndex = {
+      async search(sourceId, query, opts) {
+        // Resolve embedding setting for this source.
+        const settingRow = ragDb.raw
+          .prepare<[string], { embedding_setting_name: string }>(
+            'SELECT embedding_setting_name FROM rag_sources WHERE id = ? LIMIT 1',
+          )
+          .get(sourceId);
+        if (!settingRow) return { chunks: [] };
+
+        const client = capturedResolveEmbeddingClient(settingRow.embedding_setting_name);
+        const vectors = await client.embed([query]);
+        const queryVec = new Float32Array(vectors[0] ?? []);
+
+        const topK = Math.min(opts.topK ?? 5, 10);
+        const vecResults = capturedVectorStore.search(queryVec, topK * 4);
+        if (vecResults.length === 0) return { chunks: [] };
+
+        interface ChunkJoinRow {
+          chunk_id: string;
+          chunk_text: string;
+          chunk_position: number;
+          doc_id: string;
+          doc_source_id: string;
+          doc_name: string;
+          folder_path: string | null;
+        }
+
+        const placeholders = vecResults.map(() => '?').join(',');
+        const chunkIds = vecResults.map((r) => r.chunkId);
+        const rows = ragDb.raw
+          .prepare<string[], ChunkJoinRow>(
+            `SELECT
+               c.id        AS chunk_id,
+               c.text      AS chunk_text,
+               c.position  AS chunk_position,
+               d.id        AS doc_id,
+               d.source_id AS doc_source_id,
+               d.name      AS doc_name,
+               f.path      AS folder_path
+             FROM rag_chunks c
+             JOIN rag_documents d ON d.id = c.document_id
+             LEFT JOIN rag_folders f ON f.id = d.folder_id
+             WHERE c.id IN (${placeholders})
+               AND d.source_id = ?
+               AND d.deleted_at IS NULL`,
+          )
+          .all(...chunkIds, sourceId);
+
+        const filtered = rows.filter((row) => {
+          if (opts.folders && opts.folders.length > 0) {
+            const fp = row.folder_path ?? '';
+            return opts.folders.some((f) => fp === f || fp.startsWith(f + '/'));
+          }
+          return true;
+        });
+
+        const distanceMap = new Map(vecResults.map((r) => [r.chunkId, r.distance]));
+
+        return {
+          chunks: filtered
+            .sort(
+              (a, b) =>
+                (distanceMap.get(a.chunk_id) ?? 1) - (distanceMap.get(b.chunk_id) ?? 1),
+            )
+            .slice(0, topK)
+            .map((row) => ({
+              text: row.chunk_text,
+              score: 1 - (distanceMap.get(row.chunk_id) ?? 1),
+              sourceId: row.doc_source_id,
+              folder: row.folder_path ?? '',
+              fileName: row.doc_name,
+              position: row.chunk_position,
+              documentId: row.doc_id,
+            })),
+        };
+      },
+    };
+
+    // Build and register the adapter.
+    const deps: import('@calame-ee/rag-core').DocumentAdapterDeps = {
+      resolveConnector,
+      searchIndex,
+      storage,
+    };
+
+    const documentAdapter = ragCore.buildDocumentSourceAdapter(deps, 'local', 'Local folder');
+    sourceAdapterRegistry.register(documentAdapter);
+    log.info('RAG DocumentSourceAdapter (local) registered in SourceAdapterRegistry.');
+  }
 
   log.info(`RAG runtime initialized (vector dimension=${dimension}).`);
 }

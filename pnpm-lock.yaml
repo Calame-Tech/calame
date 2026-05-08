@@ -66,6 +66,12 @@ importers:
 
   ee/rag-core:
     dependencies:
+      '@calame/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.27.1
+        version: 1.27.1(zod@4.3.6)
       formidable:
         specifier: ^3.5.4
         version: 3.5.4

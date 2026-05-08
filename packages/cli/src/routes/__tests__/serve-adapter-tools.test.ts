@@ -362,11 +362,16 @@ describe('serve route — Phase 3c adapter-driven tool registration', () => {
   // -------------------------------------------------------------------------
   // Test 4: Unknown sourceId → skipped gracefully, fallback registers empty DB tools
   // -------------------------------------------------------------------------
-  it('unknown source id is skipped; fallback empty tools registered to avoid -32601', async () => {
+  it('unknown relational source id falls back to live connections (legacy parity)', async () => {
     const state = new AppState();
     state.addConnection('main', makeConnectionState('main'));
 
-    // Profile references a source that is not in connections and not in rag_sources.
+    // Profile references a sourceId that does NOT match any state.connection key.
+    // This mirrors the case where the migrator synthesised a placeholder id
+    // (e.g. 'default') for a legacy profile whose `connections` field was empty
+    // but the actual connection is named otherwise. The legacy serve.ts path
+    // fell back to `state.connections.keys()` when `profile.connections` was
+    // empty (serve.ts:379-381); the adapter path mirrors that fallback.
     state.serveProfiles = {
       ghost: {
         name: 'ghost',
@@ -384,15 +389,13 @@ describe('serve route — Phase 3c adapter-driven tool registration', () => {
     const res = await postInitialize(app, 'ghost');
     expect(res.status).toBe(200);
 
-    // The nonexistent adapter produces no call; the fallback registerDynamicTools fires.
+    // The placeholder id falls back to the live `main` connection. The pg adapter
+    // is called once with the resolved live source.
     const pgAdapter = registeredAdapters.get('postgresql');
-    expect(pgAdapter?.registerMcpTools).not.toHaveBeenCalled();
-
-    // Fallback must have fired so MCP server always has tools/list handler.
-    expect(registerDynamicToolsMock).toHaveBeenCalledOnce();
-    const fallbackArgs = registerDynamicToolsMock.mock.calls[0][0];
-    expect(fallbackArgs.tables).toEqual([]);
-    expect(fallbackArgs.profileName).toBe('ghost');
+    expect(pgAdapter?.registerMcpTools).toHaveBeenCalledOnce();
+    const ctx = pgAdapter!.registerMcpTools.mock.calls[0][0];
+    expect(ctx.source.id).toBe('main');
+    expect(ctx.toolNamespace).toBe('');
   });
 
   // -------------------------------------------------------------------------

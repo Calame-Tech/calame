@@ -1012,22 +1012,45 @@ async function registerToolsViaAdapters(opts: RegisterAdaptersOptions): Promise<
   } = opts;
 
   const scopes = profile.scopes ?? {};
-  const sources = profile.sources ?? Object.keys(scopes);
+  const rawSources = profile.sources ?? Object.keys(scopes);
+
+  // Resolve sourceIds against the live runtime. The migrator may have
+  // synthesised placeholder ids (e.g. 'default') for legacy profiles whose
+  // `connections` field was empty — those placeholders won't match
+  // `state.connections` keys when the actual connection has a different name.
+  // Mirror the legacy fallback at serve.ts:379-381: when a relational
+  // sourceId doesn't match any live connection, fan the scope out to every
+  // available DB connection. Document scopes are left as-is.
+  const resolvedPairs: Array<{ sourceId: string; scope: ScopeSelection }> = [];
+  for (const sourceId of rawSources) {
+    const scope = scopes[sourceId];
+    if (!scope) continue;
+    if (scope.kind === 'relational' && !state.connections.has(sourceId)) {
+      const liveConnIds = [...state.connections.keys()];
+      if (liveConnIds.length === 0) {
+        state.logger?.warn(
+          `Relational source "${sourceId}" has no matching live connection — skipping`,
+          { component: `mcp/${profileName}` },
+        );
+        continue;
+      }
+      for (const realId of liveConnIds) {
+        resolvedPairs.push({ sourceId: realId, scope });
+      }
+    } else {
+      resolvedPairs.push({ sourceId, scope });
+    }
+  }
 
   // Count active sources per kind to determine when namespacing is needed.
   const kindCounts = new Map<string, number>();
-  for (const sourceId of sources) {
-    const scope = scopes[sourceId];
-    if (!scope) continue;
+  for (const { scope } of resolvedPairs) {
     kindCounts.set(scope.kind, (kindCounts.get(scope.kind) ?? 0) + 1);
   }
 
   let anyRegistered = false;
 
-  for (const sourceId of sources) {
-    const scope = scopes[sourceId];
-    if (!scope) continue;
-
+  for (const { sourceId, scope } of resolvedPairs) {
     const resolved = resolveAdapterForSource(sourceId, scope, state);
     if (!resolved) {
       state.logger?.warn(

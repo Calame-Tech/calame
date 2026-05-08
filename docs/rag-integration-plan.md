@@ -4,7 +4,54 @@ Ce document propose une architecture pour ajouter une couche RAG (Retrieval-Augm
 
 ---
 
-## 0. État d'avancement (mis à jour 2026-05-06)
+## 0. État d'avancement (mis à jour 2026-05-08)
+
+> **Pivot stratégique (2026-05-07)** — La suite de la roadmap RAG est désormais portée par un plan plus large : **`docs/sources-unified-plan.md`**. La RAG-Phase-2 originale de ce document (intégration profiles + MCP) **est livrée comme Phase 3 de ce plan unifié**, dans le cadre d'une refonte qui généralise « Connection (DB) » et « RagSource » en un concept polymorphique `Source` accueillant aussi les futurs APIs / SaaS / streams. Lire les deux docs en parallèle pour comprendre le contexte.
+
+### ✅ Livré 2026-05-08 — Polish UX `ragDisabledReason` (commit `d774228`)
+
+Priorité #2 de la "Prochaine session" précédente.
+
+- `packages/cli/src/state.ts` — champ `ragDisabledReason: string | null`
+- `packages/cli/src/rag-runtime.ts` — capture la raison à chaque early-exit (5 cas : EE absent, migrations, dimension mismatch, inspection vec0, sqlite-vec native binding) + clear sur succès
+- `packages/cli/src/routes/health.ts` — expose `ragDisabledReason` aux côtés de `ragEnabled` dans `/health`
+- `packages/web/src/App.tsx` + `Sidebar.tsx` — entrée nav "Bases de connaissance" rendue **disabled avec tooltip** (au lieu d'être masquée silencieusement) quand le runtime n'a pas pu charger
+- Bonus : fix du mock `ai-config.test.ts` qui ne suivait pas la migration v9 (`embedding_dimensions`)
+
+### ✅ Livré 2026-05-07/08 — Refactor "Sources unifiées" Phases 0-3 (commits `3c94610`, `b700af6`, `781fca4`)
+
+Cf. `docs/sources-unified-plan.md` pour le plan complet. Ce qui satisfait directement la roadmap RAG :
+
+**Phases 0-2 (commit `3c94610`)** — Fondations Apache + migration profile shape :
+- `packages/core/src/sources/` : types abstraits `Source`, `SourceAdapter`, `Capability`, `SourceSchema` (union discriminée `relational` | `document`), `ScopeSelection`, `SourceAdapterRegistry` singleton
+- `packages/connectors/src/db-adapter.ts` : `DatabaseSourceAdapter` (postgresql/mysql/sqlite) qui wrap les connecteurs DB existants par composition, auto-enregistré dans le registre au module-load
+- `packages/core/src/serve/types.ts` : `ServeProfile` étendu avec `sources?: string[]` et `scopes?: Record<sourceId, ScopeSelection>` ; anciens champs `selectedTables`/`tableOptions`/`columnMasking`/`connections` marqués `@deprecated`
+- `packages/core/src/sources/migrate.ts` : `upgradeProfileShape` / `upgradeConfigurationShape` migrent au boundary (lecture/écriture), shape duale préservée pour rétro-compat
+- `packages/cli/src/routes/profile-scopes.ts` : route `POST /api/profiles/:name/scopes` (validation Zod via `sourceAdapterRegistry`) + `GET .../scopes/preview` skeletal
+- `packages/cli/src/routes/source-aliases.ts` : middleware de dépréciation logger-only sur `/api/connections/*` et `/api/rag/*` (header `Sunset: 2026-12-31`)
+- Wiring : `profiles.ts`, `configurations.ts`, `serve.ts`, `yaml-config.ts` passent par les migrateurs à chaque lecture/écriture
+
+**Phase 3 (commit `b700af6`)** — Couche MCP unifiée + livraison RAG-Phase-2 :
+- `packages/core/src/serve/dynamic-tools.ts` : `registerDynamicTools` accepte `toolNamespace?: string` qui préfixe tous les tools registered (calc, list_tables, query, describe, aggregate, join_aggregate, write)
+- `ee/rag-core/src/source-adapter.ts` (BUSL) : `DocumentSourceAdapter` qui ship les 5 MCP tools `rag_search`, `rag_list_sources`, `rag_list_folders`, `rag_list_documents`, `rag_get_document` avec filtrage allowlist post-search (invariant §6.3)
+- `packages/cli/src/routes/serve.ts` : bloc d'enregistrement réécrit, itère `profile.sources` → résout l'adapter via `sourceAdapterRegistry` → calcule `toolNamespace` (préfixe `<sourceName>_` quand 2+ sources du même kind, sinon vide pour rétro-compat single-DB) → `adapter.registerMcpTools(ctx)`. `calc` hoisté hors de la boucle, registered une seule fois au niveau profile
+- `packages/cli/src/rag-runtime.ts` : enregistre automatiquement le `DocumentSourceAdapter` dans le registre après `initRagRuntime` succès (idempotent), construit storage + searchIndex deps en closure (vector store + SQL `rag_chunks/rag_documents/rag_folders`)
+- Path legacy préservé : profiles dans l'ancienne shape (sans `scopes`) prennent toujours le chemin `registerDynamicTools` direct, comportement identique à avant
+
+**Fix critique post-shakedown (commit `781fca4`)** :
+- Bug : le migrateur synthétisait `'default'` comme placeholder `sourceId` quand `profile.connections` était vide, mais `state.connections` avait la connexion sous un autre nom (ex: `'colis-db'`). Le path adapter rate `state.connections.get('default')` → null → aucun tool DB enregistré → chat répond "je n'ai pas accès aux outils"
+- Fix : `serve.ts:registerToolsViaAdapters` reproduit le fallback legacy (`profile.connections?.length ? ... : [...state.connections.keys()]`). Quand un `sourceId` `relational` ne matche aucune live connection, fan-out de la `ScopeSelection` sur toutes les connexions DB disponibles. Test mis à jour en conséquence
+
+**Statut RAG-spécifique après Phase 3 du plan unifié** :
+- ✅ MCP tools `rag_*` opérationnels en serveur (un client MCP qui tape `/mcp/<profile>` les voit quand le profile a un scope `kind: 'document'`)
+- ✅ Filtrage allowlist par profile (mode `allowAll` ou `allowList` avec `allowedFolders` / `allowedDocuments`)
+- ✅ Tool namespacing multi-source : profile avec 2 KB → `kb1_rag_search`, `kb2_rag_search`. Profile single-KB → pas de préfixe (rétro-compat)
+- ✅ Audit log unifié format DB/RAG via `ctx.onAuditLog`
+- ⚠️ **Pas encore d'UI** pour assigner un scope `document` à un profile. Aujourd'hui ça se fait via `POST /api/profiles/:name/scopes` à curl. UI = Phase 4 du plan unifié (`SourcesPage` tabbed + `ProfileManager` multi-kind + `RagAccessSelector`)
+
+**Tests** :
+- 768 tests verts au total (28 sso + 204 core + 38 rag-core + 72 connectors + 426 cli)
+- Couverture nouvelle : registry (14), profile migrate (41), DB adapter (21 dont test forwarding `toolNamespace`), document adapter (38), serve adapter-driven (7), tool namespacing (10), profile-scopes routes (15), source-aliases (8)
 
 ### ✅ Livré — Phase B (fondations)
 
@@ -90,34 +137,45 @@ Quand on a démarré pour tester en vrai, plusieurs choses cassaient. Voici les 
 | 3 | Open-core : tout BUSL en `ee/` | ✅ |
 | 4 | Parser PDF : `unpdf` | ✅ |
 
-### 🛑 Limitations Phase 1 documentées
+### 🛑 Limitations restantes (après 2026-05-08)
 
-- **Une seule dimension d'embedding par instance** (sqlite-vec exige une dim fixée au create de la virtual table). Auto-heal possible si rag_chunks est vide (cf. fix #3). Phase 5 prévoit un vec0 par dimension.
-- **Sync synchrone bloquante** : OK pour tester, pas pour de gros corpora. Phase 4.
-- **Pas de profile/MCP** : les routes `rag_*` n'ont pas encore d'`registerRagTools()` ; les profiles n'ont pas de `ProfileRagAccess`. Phase 2.
-- **Connecteurs externes** absents : seul Local. S3/HTTP en Phase 3.
-- **Watch incrémental** absent (`chokidar`, polling) : Phase 4.
-- **MCP `rag_*` tools** non enregistrés au runtime serveur : Phase 2.
-- **PII detection** non appliquée sur les chunks (cf. §12 question 5) : à trancher Phase 2.
-- **Audit log** RAG : émis via `onAudit` mais pas encore intégré au format unifié SQL/RAG du audit existant — à vérifier en Phase 2.
+- **Une seule dimension d'embedding par instance** (sqlite-vec exige une dim fixée au create de la virtual table). Auto-heal possible si rag_chunks est vide (cf. fix #3). Phase 5 du plan original prévoyait un vec0 par dimension — **toujours d'actualité**.
+- **Sync synchrone bloquante** : OK pour tester, pas pour de gros corpora. Phase 4 du plan original — **toujours pendant**.
+- **Connecteurs externes absents** : seul `LocalFolderConnector`. S3/HTTP/GDrive — **toujours pendant**, Phase 3 du plan original (= ce qui suit dans ce document).
+- **Watch incrémental absent** (`chokidar`, polling) : Phase 4 du plan original — **toujours pendant**.
+- **PII detection non appliquée** sur les chunks (cf. §12 question 5) : décision toujours non tranchée. À discuter à la prochaine session.
+- **Pas d'UI** pour assigner un scope `document` à un profile. L'admin doit utiliser `POST /api/profiles/:name/scopes` via curl. Phase 4 du plan unifié (`docs/sources-unified-plan.md`) le livre.
+- **Tests E2E manquants** : pas de test qui upload un fichier puis fait `rag_search` end-to-end. Aurait évité plusieurs fixes runtime ; aurait évité aussi le bug `sourceId` placeholder du commit `781fca4`.
 
-### 🟢 Statut technique
+### ✅ Limitations résolues 2026-05-07/08
+
+- ~~**Pas de profile/MCP** : les routes `rag_*` n'ont pas encore d'`registerRagTools()`~~ → livré via `DocumentSourceAdapter.registerMcpTools` (Phase 3 du plan unifié)
+- ~~**MCP `rag_*` tools non enregistrés au runtime serveur**~~ → enregistrés automatiquement quand un profile a un scope `kind: 'document'`
+- ~~**Audit log RAG : pas encore intégré au format unifié**~~ → format unifié via `McpRegistrationContext.onAuditLog`, identique pour DB et RAG
+- ~~**Polish UX `ragDisabledReason`**~~ → livré dans le commit `d774228`
+
+### 🟢 Statut technique (2026-05-08)
 
 - `pnpm install` : OK 8 packages
 - `pnpm build` : OK tous packages compilent (TS strict, no `any`)
 - `pnpm lint` : 0 erreur 0 warning
-- `pnpm test` : crypto tests 32/32, ai-config 12/12. Pré-existing better-sqlite3 NODE_MODULE_VERSION mismatch (115 vs 137) sur tests SQLite — résolu localement par `pnpm rebuild better-sqlite3`.
+- `pnpm test` : **768 tests verts** (28 sso + 204 core + 38 rag-core + 72 connectors + 426 cli). Pré-existing better-sqlite3 NODE_MODULE_VERSION mismatch (115 vs 137) sur tests SQLite — résolu localement par `pnpm rebuild better-sqlite3`.
 - Smoke test manuel : drag & drop d'un .txt fonctionne, ingestion complète + chunking + embeddings + sqlite-vec OK. Sync via le bouton fonctionne après les fixes.
+- Smoke test 2026-05-08 : chat MCP DB fonctionne après le fix `781fca4` (test "donne moi le nombre de colis total" → LLM voit `query_<table>`, `describe_<table>`, etc., et répond).
 
 ### 🔜 Prochaine session — Priorités
 
-1. **Lancer Phase 2** (intégration MCP + profiles) si le shakedown actuel est stable
-2. **Polish UX** : afficher la raison du `ragEnabled: false` côté UI (au lieu de juste masquer la nav). Champ `ragDisabledReason` à exposer via `/api/health`.
-3. **Tests E2E** manquants pour Phase 1 : un test qui upload un fichier puis fait une `rag_search`. Aurait évité plusieurs fixes runtime.
-4. **Sync async** (Phase 4 anticipée si la sync synchrone gêne le test).
-5. **Commit** : à ce stade plus rien n'est commit. Faire un commit Phase B + Phase A + fixes runtime, ou les séparer.
+1. ~~**Lancer Phase 2** (intégration MCP + profiles)~~ → ✅ **livré** via Phase 3 du plan unifié
+2. ~~**Polish UX `ragDisabledReason`**~~ → ✅ **livré** (commit `d774228`)
+3. **Tests E2E manquants** : un test qui crée une source RAG, upload un fichier, fait un `rag_search` via le MCP server. Aurait évité plusieurs fixes runtime ET le bug `sourceId` placeholder. **Priorité haute** — la confiance dans la chain RAG repose dessus.
+4. **Sync async (Phase 4 plan original)** : passer la sync `LocalFolderConnector` en mode background job + queue. Toujours pertinent pour gros corpora.
+5. **Connecteurs externes (Phase 3 plan original)** : `S3Connector`, `HttpConnector` dans `ee/rag-connectors`. Important pour passer du POC à un vrai usage.
+6. **UI scope document (Phase 4 plan unifié)** : `SourcesPage` tabbed + `RagAccessSelector` + `ProfileManager` multi-kind. Aujourd'hui l'admin doit curl `POST /api/profiles/:name/scopes` à la main pour tester le RAG via MCP — c'est le frein UX principal.
+7. **Décision PII** (cf. §12 question 5) : applique-t-on le PII detector aux chunks avant retour MCP ? Coût vs cohérence avec l'existant DB.
 
 ### Fichiers modifiés / créés en récap
+
+**Livraison initiale Phases A + B (2026-05-06)** — pré-pivot stratégique :
 
 ```
 NOUVEAUX (BUSL-1.1)
@@ -150,6 +208,51 @@ packages/cli/src/__tests__/{ai-config,crypto}.test.ts
 packages/cli/{package,tsconfig}.json
 packages/web/src/{App,components/AiSettings}.tsx
 packages/web/{package.json,tailwind.config.ts}
+```
+
+**Polish UX 2026-05-08 (commit `d774228`)** :
+
+```
+MOD packages/cli/src/state.ts                        (champ ragDisabledReason)
+MOD packages/cli/src/rag-runtime.ts                  (capture aux 5 early-exits)
+MOD packages/cli/src/routes/health.ts                (expose dans /health)
+MOD packages/web/src/App.tsx                         (lit le champ /health)
+MOD packages/web/src/components/Sidebar.tsx          (entrée disabled + tooltip)
+MOD packages/cli/src/__tests__/ai-config.test.ts     (fix mock embedding_dimensions)
+```
+
+**Refactor Sources unifiées Phases 0-3 (commits `3c94610`, `b700af6`, `781fca4`)** — cf. `docs/sources-unified-plan.md` pour le détail :
+
+```
+NOUVEAUX (Apache 2.0)
+docs/sources-unified-plan.md                                       (plan complet du refactor)
+packages/core/src/sources/                                         (7 fichiers : types, registry, selection, mcp-context, migrate, index)
+packages/core/src/sources/__tests__/{registry,migrate}.test.ts     (14 + 41 tests)
+packages/core/src/serve/__tests__/dynamic-tools-namespace.test.ts  (10 tests)
+packages/connectors/src/db-adapter.ts                              (~200 lignes, DatabaseSourceAdapter)
+packages/connectors/src/__tests__/db-adapter.test.ts               (21 tests)
+packages/cli/src/routes/profile-scopes.ts                          (POST /scopes + GET /preview)
+packages/cli/src/routes/source-aliases.ts                          (deprecation middleware)
+packages/cli/src/routes/__tests__/profile-scopes.test.ts           (15 tests)
+packages/cli/src/routes/__tests__/source-aliases.test.ts           (8 tests)
+packages/cli/src/routes/__tests__/serve-adapter-tools.test.ts      (7 tests)
+
+NOUVEAUX (BUSL-1.1)
+ee/rag-core/src/source-adapter.ts                                  (DocumentSourceAdapter, 5 RAG MCP tools)
+ee/rag-core/src/__tests__/source-adapter.test.ts                   (38 tests)
+
+MODIFIÉS (Apache 2.0)
+packages/core/src/{index,serve/types,serve/dynamic-tools}.ts
+packages/cli/src/{state,rag-runtime,app}.ts
+packages/cli/src/routes/{profiles,configurations,serve}.ts
+packages/cli/src/yaml-config.ts
+packages/cli/src/__tests__/{yaml-config}.test.ts
+packages/cli/src/routes/__tests__/{profiles,serve-empty-profile}.test.ts
+packages/connectors/{src/index.ts,package.json}
+pnpm-lock.yaml
+
+MODIFIÉS (BUSL-1.1)
+ee/rag-core/{src/index.ts,package.json,tsconfig.json}
 ```
 
 ---
@@ -723,4 +826,4 @@ Découper pour livrer de la valeur incrémentalement :
 
 ---
 
-*Brouillon initial — à itérer en équipe avant Phase 0.*
+*Brouillon initial 2026-05-06 — Phases A + B livrées 2026-05-06, Polish UX et RAG-Phase-2 (via plan unifié) livrés 2026-05-07/08. Cf. §0 "État d'avancement" pour le détail des commits et `docs/sources-unified-plan.md` pour la suite de la roadmap (Phases 4-5 du plan unifié + Phases 3-5 du plan RAG original toujours à faire).*

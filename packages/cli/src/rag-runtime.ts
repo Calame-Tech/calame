@@ -63,7 +63,7 @@ const DEFAULT_DIMENSION = 1536;
  * @param logger optional logger for status messages
  */
 export async function initRagRuntime(
-  state: { ragRuntime?: RagRuntime },
+  state: { ragRuntime?: RagRuntime; ragDisabledReason: string | null },
   db: CalameDatabase,
   aiSettingsManager: AiSettingsManager,
   logger?: { info: (msg: string) => void; warn: (msg: string) => void },
@@ -80,6 +80,7 @@ export async function initRagRuntime(
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     log.info(`RAG features disabled (@calame-ee/rag-core not available): ${msg}`);
+    state.ragDisabledReason = 'EE package @calame-ee/rag-core not installed';
     return;
   }
   // The connectors package provides concrete DocumentSourceConnector
@@ -99,6 +100,7 @@ export async function initRagRuntime(
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     log.warn(`Failed to run RAG migrations: ${msg}. RAG features disabled.`);
+    state.ragDisabledReason = `RAG migrations failed: ${msg}`;
     return;
   }
 
@@ -122,11 +124,16 @@ export async function initRagRuntime(
           `but ${result.chunkCount} chunks present — refusing to drop. Manually wipe rag_chunks ` +
           `and rag_chunks_vec to switch dimensions. RAG features disabled.`,
       );
+      state.ragDisabledReason =
+        `Vector store dimension mismatch (rag_chunks_vec=${result.previousDimension}, ` +
+        `expected ${dimension}) and chunks already present — manually wipe rag_chunks/rag_chunks_vec ` +
+        `to switch dimensions`;
       return;
     }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     log.warn(`RAG: failed to inspect rag_chunks_vec: ${msg}. RAG features disabled.`);
+    state.ragDisabledReason = `Failed to inspect rag_chunks_vec: ${msg}`;
     return;
   }
 
@@ -138,6 +145,7 @@ export async function initRagRuntime(
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     log.warn(`Failed to initialize RAG vector store: ${msg}. RAG features disabled.`);
+    state.ragDisabledReason = `Failed to initialize sqlite-vec native binding: ${msg}`;
     return;
   }
 
@@ -231,6 +239,7 @@ export async function initRagRuntime(
     return null;
   };
 
+  state.ragDisabledReason = null;
   state.ragRuntime = {
     vectorStore,
     pipeline,

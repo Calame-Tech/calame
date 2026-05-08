@@ -21,8 +21,10 @@ interface SidebarProps {
   onNavigate: (page: NavigablePage) => void;
   user?: SidebarUser;
   onLogout?: () => void;
-  /** When true, adds a "Bases de connaissance" entry to the nav. */
+  /** When true, the "Bases de connaissance" entry is enabled and navigable. */
   ragEnabled?: boolean;
+  /** Human-readable reason shown as tooltip when ragEnabled is false. */
+  ragDisabledReason?: string | null;
 }
 
 interface NavItem {
@@ -262,7 +264,14 @@ function getInitials(email?: string): string {
   return (parts[0][0] + parts[1][0]).toUpperCase();
 }
 
-export default function Sidebar({ currentPage, onNavigate, user, onLogout, ragEnabled }: SidebarProps) {
+export default function Sidebar({
+  currentPage,
+  onNavigate,
+  user,
+  onLogout,
+  ragEnabled,
+  ragDisabledReason,
+}: SidebarProps) {
   const [isOpen, setIsOpen] = useState(false);
 
   // Lock body scroll when the mobile drawer is open
@@ -407,29 +416,59 @@ export default function Sidebar({ currentPage, onNavigate, user, onLogout, ragEn
                   );
                 })}
 
-                {/* Conditional RAG entry — shown only when ragEnabled is true */}
-                {section.label === 'Admin' && ragEnabled && (() => {
+                {/* RAG entry — always shown under Admin, enabled or disabled depending on backend */}
+                {section.label === 'Admin' && (() => {
                   const page: NavigablePage = 'knowledge';
-                  const isActive = currentPage === page;
+                  const isActive = ragEnabled === true && currentPage === page;
+                  const disabledTitle = ragDisabledReason ?? 'RAG features unavailable';
+
+                  if (ragEnabled === true) {
+                    return (
+                      <li key="knowledge" className="w-full flex-shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleNavigate(page)}
+                          aria-current={isActive ? 'page' : undefined}
+                          className={[
+                            'w-full flex items-center gap-2.5 px-2.5 py-2 text-sm transition-colors rounded-lg',
+                            'whitespace-nowrap',
+                            isActive
+                              ? 'bg-os-500/15 text-os-300 ring-1 ring-os-500/30'
+                              : 'text-gray-400 hover:bg-white/5 hover:text-gray-200',
+                          ].join(' ')}
+                        >
+                          <span className={isActive ? 'text-os-400' : 'text-gray-500'}>
+                            {IconBookOpen}
+                          </span>
+                          <span>Bases de connaissance</span>
+                          {isActive && IconChevronRight}
+                        </button>
+                      </li>
+                    );
+                  }
+
                   return (
                     <li key="knowledge" className="w-full flex-shrink-0">
                       <button
                         type="button"
-                        onClick={() => handleNavigate(page)}
-                        aria-current={isActive ? 'page' : undefined}
+                        disabled
+                        title={disabledTitle}
+                        aria-disabled="true"
                         className={[
-                          'w-full flex items-center gap-2.5 px-2.5 py-2 text-sm transition-colors rounded-lg',
-                          'whitespace-nowrap',
-                          isActive
-                            ? 'bg-os-500/15 text-os-300 ring-1 ring-os-500/30'
-                            : 'text-gray-400 hover:bg-white/5 hover:text-gray-200',
+                          'w-full flex items-center gap-2.5 px-2.5 py-2 text-sm rounded-lg',
+                          'whitespace-nowrap cursor-not-allowed opacity-50',
+                          'text-gray-600',
                         ].join(' ')}
                       >
-                        <span className={isActive ? 'text-os-400' : 'text-gray-500'}>
-                          {IconBookOpen}
-                        </span>
+                        <span className="text-gray-600">{IconBookOpen}</span>
                         <span>Bases de connaissance</span>
-                        {isActive && IconChevronRight}
+                        {/* Info indicator — visible hint that the feature is unavailable */}
+                        <span
+                          className="ml-auto text-gray-600 text-[10px] leading-none select-none"
+                          aria-hidden="true"
+                        >
+                          ⓘ
+                        </span>
                       </button>
                     </li>
                   );

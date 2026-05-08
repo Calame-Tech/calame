@@ -16,6 +16,7 @@ type Row = {
   base_url: string | null;
   capabilities: string | null;
   embedding_model: string | null;
+  embedding_dimensions: number | null;
   created_at: string;
 };
 
@@ -27,17 +28,27 @@ function makeStmt(type: 'list' | 'get' | 'insert' | 'update' | 'delete') {
     get: vi.fn((name: string) => store.get(name)),
     run: vi.fn((...args: unknown[]) => {
       if (type === 'insert') {
-        const [name, label, provider, api_key, model, base_url, capabilities, embedding_model] =
-          args as [
-            string,
-            string,
-            string,
-            string,
-            string | null,
-            string | null,
-            string | null,
-            string | null,
-          ];
+        const [
+          name,
+          label,
+          provider,
+          api_key,
+          model,
+          base_url,
+          capabilities,
+          embedding_model,
+          embedding_dimensions,
+        ] = args as [
+          string,
+          string,
+          string,
+          string,
+          string | null,
+          string | null,
+          string | null,
+          string | null,
+          number | null,
+        ];
         store.set(name, {
           name,
           label,
@@ -47,20 +58,31 @@ function makeStmt(type: 'list' | 'get' | 'insert' | 'update' | 'delete') {
           base_url,
           capabilities,
           embedding_model,
+          embedding_dimensions,
           created_at: new Date().toISOString(),
         });
       } else if (type === 'update') {
-        const [label, provider, api_key, model, base_url, capabilities, embedding_model, name] =
-          args as [
-            string,
-            string,
-            string,
-            string | null,
-            string | null,
-            string | null,
-            string | null,
-            string,
-          ];
+        const [
+          label,
+          provider,
+          api_key,
+          model,
+          base_url,
+          capabilities,
+          embedding_model,
+          embedding_dimensions,
+          name,
+        ] = args as [
+          string,
+          string,
+          string,
+          string | null,
+          string | null,
+          string | null,
+          string | null,
+          number | null,
+          string,
+        ];
         const existing = store.get(name);
         if (existing) {
           store.set(name, {
@@ -72,6 +94,7 @@ function makeStmt(type: 'list' | 'get' | 'insert' | 'update' | 'delete') {
             base_url,
             capabilities,
             embedding_model,
+            embedding_dimensions,
           });
         }
       } else if (type === 'delete') {
@@ -175,6 +198,7 @@ describe('AiSettingsManager — capabilities', () => {
       base_url: null,
       capabilities: null,
       embedding_model: null,
+      embedding_dimensions: null,
       created_at: new Date().toISOString(),
     });
     const mgr = makeManager();

@@ -45,6 +45,7 @@ export class AppState {
   private _secretsProvider: SecretsProvider | null = null;
   private _llmRouter: LlmRouter | null = null;
   private _ragRuntime: RagRuntime | undefined = undefined;
+  private _ragDisabledReason: string | null = null;
 
   // --- Multi-connection API ---
 
@@ -348,5 +349,17 @@ export class AppState {
 
   set ragRuntime(value: RagRuntime | undefined) {
     this._ragRuntime = value;
+  }
+
+  /** Human-readable reason why the RAG runtime failed to initialize, or `null`
+   *  when RAG is enabled or has not been attempted yet. Exposed via `/health`
+   *  so the frontend can show a disabled entry with a reason tooltip instead of
+   *  silently hiding the nav entry. */
+  get ragDisabledReason(): string | null {
+    return this._ragDisabledReason;
+  }
+
+  set ragDisabledReason(value: string | null) {
+    this._ragDisabledReason = value;
   }
 }

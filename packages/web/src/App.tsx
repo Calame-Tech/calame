@@ -120,6 +120,8 @@ export default function App() {
   const [authenticated, setAuthenticated] = useState(false);
   // Whether the RAG runtime is available on this instance (from /health).
   const [ragEnabled, setRagEnabled] = useState(false);
+  // Human-readable reason when RAG is unavailable (null when ragEnabled is true).
+  const [ragDisabledReason, setRagDisabledReason] = useState<string | null>(null);
   const [authRequired, setAuthRequired] = useState(false);
   const [needsSetup, setNeedsSetup] = useState(false);
 
@@ -152,8 +154,12 @@ export default function App() {
 
         if (healthRes?.ok) {
           try {
-            const healthData = (await healthRes.json()) as { ragEnabled?: boolean };
+            const healthData = (await healthRes.json()) as {
+              ragEnabled?: boolean;
+              ragDisabledReason?: string | null;
+            };
             setRagEnabled(healthData.ragEnabled === true);
+            setRagDisabledReason(healthData.ragDisabledReason ?? null);
           } catch {
             // Ignore parse errors — ragEnabled stays false.
           }
@@ -673,6 +679,7 @@ export default function App() {
         user={currentUser ?? undefined}
         onLogout={handleLogout}
         ragEnabled={ragEnabled}
+        ragDisabledReason={ragDisabledReason}
       />
 
       {/* Main content column */}

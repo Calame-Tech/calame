@@ -48,6 +48,14 @@ const sourceCreateSchema = z.object({
 	/** Decrypted, structured config object — encrypted server-side before persist. */
 	config: z.record(z.string(), z.unknown()),
 	embeddingSettingName: z.string().min(1),
+	/**
+	 * Optional auto-sync interval in seconds. `null` (or absent) disables
+	 * polling; the source is then synced manually only. Range:
+	 *   - min 60s — protects against accidental DB churn / connector DDoS,
+	 *   - max 86400s (24h) — anything longer is more reliably handled by an
+	 *     external cron in production.
+	 */
+	pollingIntervalSeconds: z.number().int().min(60).max(86400).nullable().optional(),
 });
 
 const sourcePatchSchema = sourceCreateSchema.partial();
@@ -60,6 +68,7 @@ interface SourceRow {
 	embedding_setting_name: string;
 	embedding_model_version: string;
 	embedding_dimensions: number;
+	polling_interval_seconds: number | null;
 	created_at: string;
 	updated_at: string;
 	last_sync_at: string | null;
@@ -94,6 +103,7 @@ function rowToSource(row: SourceRow, deps: RagRouteDeps): RagSourcePublic {
 		embeddingSettingName: row.embedding_setting_name,
 		embeddingModelVersion: row.embedding_model_version,
 		embeddingDimensions: row.embedding_dimensions,
+		pollingIntervalSeconds: row.polling_interval_seconds,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 		...(row.last_sync_at !== null ? { lastSyncAt: row.last_sync_at } : {}),
@@ -223,13 +233,17 @@ export function registerRagSourcesRoutes(app: Express, deps: RagRouteDeps): void
 			const id = nanoid();
 			const now = new Date().toISOString();
 			const encrypted = deps.encryptConfig(JSON.stringify(parsed.data.config));
+			// `pollingIntervalSeconds` may be omitted (undefined) or explicitly null.
+			// Both map to NULL in SQL — better-sqlite3 binds JS `null` to SQL NULL.
+			const pollingInterval = parsed.data.pollingIntervalSeconds ?? null;
 			deps.db
 				.prepare(
 					`INSERT INTO rag_sources
 					 (id, name, type, config_encrypted, embedding_setting_name,
 					  embedding_model_version, embedding_dimensions,
+					  polling_interval_seconds,
 					  created_at, updated_at)
-					 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+					 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 				)
 				.run(
 					id,
@@ -239,12 +253,19 @@ export function registerRagSourcesRoutes(app: Express, deps: RagRouteDeps): void
 					parsed.data.embeddingSettingName,
 					resolved.embeddingModel,
 					resolved.dimensions,
+					pollingInterval,
 					now,
 					now,
 				);
 			const row = deps.db
 				.prepare<[string], SourceRow>(`SELECT * FROM rag_sources WHERE id = ?`)
 				.get(id);
+			// Register the scheduler timer when polling is enabled. We do this
+			// AFTER the INSERT succeeded so a failed write doesn't leave a
+			// dangling timer pointing at a nonexistent source.
+			if (pollingInterval !== null) {
+				deps.pollScheduler.upsert(id, pollingInterval);
+			}
 			audit(deps, { type: 'rag.sources.created', payload: { id, name: parsed.data.name } });
 			res.status(201).json({ source: row ? rowToSource(row, deps) : null });
 		} catch (error: unknown) {
@@ -306,6 +327,19 @@ export function registerRagSourcesRoutes(app: Express, deps: RagRouteDeps): void
 				nextEmbeddingDimensions = resolved.dimensions;
 			}
 
+			// Compute the next polling interval. `parsed.data.pollingIntervalSeconds`:
+			//   - undefined → field absent from PATCH body, keep existing value,
+			//   - null      → caller wants polling disabled,
+			//   - number    → caller wants polling enabled at that interval.
+			// The Zod schema already constrains the number to [60, 86400].
+			const pollingChanged = Object.prototype.hasOwnProperty.call(
+				parsed.data,
+				'pollingIntervalSeconds',
+			);
+			const nextPollingInterval = pollingChanged
+				? (parsed.data.pollingIntervalSeconds ?? null)
+				: existing.polling_interval_seconds;
+
 			const next = {
 				name: parsed.data.name ?? existing.name,
 				type: parsed.data.type ?? existing.type,
@@ -316,13 +350,15 @@ export function registerRagSourcesRoutes(app: Express, deps: RagRouteDeps): void
 				embedding_setting_name: nextEmbeddingSettingName,
 				embedding_model_version: nextEmbeddingModel,
 				embedding_dimensions: nextEmbeddingDimensions,
+				polling_interval_seconds: nextPollingInterval,
 			};
 			const now = new Date().toISOString();
 			deps.db
 				.prepare(
 					`UPDATE rag_sources
 					 SET name = ?, type = ?, config_encrypted = ?, embedding_setting_name = ?,
-					     embedding_model_version = ?, embedding_dimensions = ?, updated_at = ?
+					     embedding_model_version = ?, embedding_dimensions = ?,
+					     polling_interval_seconds = ?, updated_at = ?
 					 WHERE id = ?`,
 				)
 				.run(
@@ -332,9 +368,17 @@ export function registerRagSourcesRoutes(app: Express, deps: RagRouteDeps): void
 					next.embedding_setting_name,
 					next.embedding_model_version,
 					next.embedding_dimensions,
+					next.polling_interval_seconds,
 					now,
 					id,
 				);
+			// Sync the in-process timer registry with whatever value just landed
+			// in the DB. We only re-call upsert when the field actually changed
+			// to avoid resetting an active timer (which would push the next
+			// fire forward by `intervalSeconds`) on unrelated PATCHes.
+			if (pollingChanged) {
+				deps.pollScheduler.upsert(id, next.polling_interval_seconds);
+			}
 			const row = deps.db
 				.prepare<[string], SourceRow>(`SELECT * FROM rag_sources WHERE id = ?`)
 				.get(id);
@@ -355,6 +399,9 @@ export function registerRagSourcesRoutes(app: Express, deps: RagRouteDeps): void
 				sendError(res, 404, `Source "${id}" not found.`);
 				return;
 			}
+			// Clear any registered poll timer. `remove` is idempotent so calling
+			// it on a source that never had polling enabled is a no-op.
+			deps.pollScheduler.remove(id);
 			audit(deps, { type: 'rag.sources.deleted', payload: { id } });
 			res.json({ success: true });
 		} catch (error: unknown) {

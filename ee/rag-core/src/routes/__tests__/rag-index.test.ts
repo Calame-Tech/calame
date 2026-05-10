@@ -12,6 +12,7 @@ import type { Express, Request, Response } from 'express';
 import { runRagMigrations } from '../../storage/schema.js';
 import { registerRagIndexRoutes, runSyncJob } from '../rag-index.js';
 import { SyncQueue, recoverOrphanedJobs } from '../../jobs/sync-queue.js';
+import { PollScheduler } from '../../jobs/poll-scheduler.js';
 import type { ConnectorLike, RagRouteDeps } from '../types.js';
 import type { IngestionPipeline } from '../../pipeline/ingest.js';
 import type { RagJob, RagSource } from '../../types.js';
@@ -217,6 +218,14 @@ function makeDeps(
 	pipeline: IngestionPipeline,
 	overrides?: Partial<RagRouteDeps>,
 ): RagRouteDeps & { syncQueue: SyncQueue } {
+	// Build a scheduler tied to the same DB. Tests that exercise rag-index
+	// don't use it directly, but `RagRouteDeps` requires the field — supply a
+	// real instance and rely on the test never calling `start()`.
+	const pollScheduler = new PollScheduler({
+		db,
+		triggerSync: () => null,
+	});
+
 	const base: Omit<RagRouteDeps, 'syncQueue'> = {
 		db,
 		pipeline,
@@ -235,6 +244,7 @@ function makeDeps(
 		encryptConfig: (s: string) => s,
 		decryptConfig: (s: string) => s,
 		resolveConnector: vi.fn(() => connector),
+		pollScheduler,
 		onAudit: vi.fn(),
 		...overrides,
 	};

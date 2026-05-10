@@ -25,6 +25,11 @@ export interface RagSourcePublic {
 	embeddingSettingName: string;
 	embeddingModelVersion: string;
 	embeddingDimensions: number;
+	/**
+	 * Optional auto-sync interval in seconds (60–86400). `null` = manual sync only.
+	 * Always present in API responses for clarity, even when `null`.
+	 */
+	pollingIntervalSeconds: number | null;
 	createdAt: string;
 	updatedAt: string;
 	lastSyncAt?: string;

@@ -33,6 +33,31 @@ interface SourceTypeMeta {
   available: boolean;
 }
 
+/**
+ * Allowed polling intervals exposed in the UI. Restricting the picker to a
+ * fixed enum (rather than a free-form number input) trades flexibility for
+ * an unambiguous UX:
+ *   - users can't accidentally configure a 1-second poll that DDoSes the
+ *     connector,
+ *   - the dropdown communicates the available cadences at a glance.
+ *
+ * The backend Zod schema accepts any integer in [60, 86400], so a future
+ * "Custom…" option can be added without a server change.
+ */
+interface PollingIntervalOption {
+  value: number | null;
+  label: string;
+}
+
+const POLLING_INTERVAL_OPTIONS: readonly PollingIntervalOption[] = [
+  { value: null, label: 'Désactivé (sync manuelle uniquement)' },
+  { value: 300, label: 'Toutes les 5 minutes' },
+  { value: 900, label: 'Toutes les 15 minutes' },
+  { value: 3600, label: 'Toutes les heures' },
+  { value: 21600, label: 'Toutes les 6 heures' },
+  { value: 86400, label: 'Tous les jours' },
+];
+
 const SOURCE_TYPES: readonly SourceTypeMeta[] = [
   { value: 'local', label: 'Local (dossier)', available: true },
   { value: 's3', label: 'S3 / R2 / MinIO', available: true },
@@ -166,6 +191,12 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
   const [type, setType] = useState<RagSourceType>(initial?.type ?? 'local');
   const [embeddingSettingName, setEmbeddingSettingName] = useState(
     initial?.embeddingSettingName ?? '',
+  );
+  // Polling interval — null means "manual sync only". Pre-fill from the
+  // existing source on edit so the dropdown shows the saved cadence rather
+  // than defaulting back to "off".
+  const [pollingIntervalSeconds, setPollingIntervalSeconds] = useState<number | null>(
+    initial?.pollingIntervalSeconds ?? null,
   );
 
   // ---- local fields ----
@@ -360,6 +391,10 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
     type,
     config: buildConfig(),
     embeddingSettingName,
+    // Always include the polling field. On PATCH this ensures a transition
+    // from "every 15 min" → "off" (null) actually clears the timer in the
+    // scheduler — the route handler keys off `hasOwnProperty` for that.
+    pollingIntervalSeconds,
   });
 
   // ---------------------------------------------------------------------------
@@ -983,6 +1018,36 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
             )}
           </div>
         )}
+      </div>
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Polling interval (auto-sync)                                         */}
+      {/* ------------------------------------------------------------------ */}
+      <div>
+        <FieldLabel htmlFor="rag-source-polling">Intervalle de synchronisation auto</FieldLabel>
+        <select
+          id="rag-source-polling"
+          value={pollingIntervalSeconds === null ? '' : String(pollingIntervalSeconds)}
+          onChange={(e) => {
+            const v = e.target.value;
+            setPollingIntervalSeconds(v === '' ? null : Number(v));
+          }}
+          className="input-editorial w-full text-sm mt-1"
+        >
+          {POLLING_INTERVAL_OPTIONS.map((opt) => (
+            <option
+              key={opt.value === null ? 'off' : String(opt.value)}
+              value={opt.value === null ? '' : String(opt.value)}
+              className="bg-gray-800"
+            >
+              {opt.label}
+            </option>
+          ))}
+        </select>
+        <HelperText>
+          Choisissez la fréquence à laquelle la source est interrogée pour détecter les changements.
+          La synchronisation manuelle reste toujours disponible.
+        </HelperText>
       </div>
 
       {/* Error / test result banners */}

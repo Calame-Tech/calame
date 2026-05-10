@@ -6,6 +6,7 @@ import type { Database as BetterSqlite3Database } from 'better-sqlite3';
 import type { EmbeddingClient, VectorStore } from '../types.js';
 import type { IngestionPipeline } from '../pipeline/ingest.js';
 import type { SyncQueue } from '../jobs/sync-queue.js';
+import type { PollScheduler } from '../jobs/poll-scheduler.js';
 
 /** Audit hook entry — matches the shape used by the host's audit log. */
 export interface RagAuditEntry {
@@ -93,6 +94,13 @@ export interface RagRouteDeps {
 	 * requests.
 	 */
 	syncQueue: SyncQueue;
+	/**
+	 * In-process timer registry that triggers periodic syncs for sources
+	 * configured with `polling_interval_seconds`. The sources route handler
+	 * calls `upsert` on POST/PATCH and `remove` on DELETE so the scheduler
+	 * stays in sync with the persisted source set.
+	 */
+	pollScheduler: PollScheduler;
 	/** Optional audit hook called on success and failure. */
 	onAudit?: (entry: RagAuditEntry) => void;
 }

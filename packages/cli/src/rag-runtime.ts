@@ -11,7 +11,9 @@ import type {
   EmbeddingClient,
   ConnectorLike,
   SyncQueue,
+  PollScheduler,
 } from '@calame-ee/rag-core';
+import { randomUUID } from 'node:crypto';
 import type { CalameDatabase } from './database.js';
 import type { AiSettingsManager } from './ai-config.js';
 import { settingSupports } from './ai-config.js';
@@ -47,6 +49,13 @@ export interface RagRuntime {
    * across concurrent HTTP requests.
    */
   syncQueue: SyncQueue;
+  /**
+   * In-process timer registry for sources with `pollingIntervalSeconds` set.
+   * Built and started at boot; the sources route updates it on POST/PATCH
+   * and DELETE so the scheduler stays consistent with the persisted source
+   * set.
+   */
+  pollScheduler: PollScheduler;
   /** Reference to the loaded @calame-ee/rag-core module — used to register routes. */
   ragCore: typeof import('@calame-ee/rag-core');
 }
@@ -300,6 +309,7 @@ export async function initRagRuntime(
           encryptConfig: rt.encryptConfig,
           decryptConfig: rt.decryptConfig,
           syncQueue: rt.syncQueue,
+          pollScheduler: rt.pollScheduler,
           onAudit: (entry) => {
             log.info(`[rag-audit] ${entry.type} ${JSON.stringify(entry.payload)}`);
           },
@@ -314,6 +324,44 @@ export async function initRagRuntime(
     },
   });
 
+  // Build the poll scheduler. Its `triggerSync` callback mirrors the body of
+  // `POST /api/rag/sources/:id/sync`: insert a pending job, ask the queue to
+  // pick it up, and DELETE the row when the queue rejects (already running /
+  // queued for the same source). Closing over `db.raw` and `syncQueue` keeps
+  // the scheduler tied to the runtime — the host never needs to thread these
+  // through the route deps explicitly.
+  const pollScheduler = new ragCore.PollScheduler({
+    db: db.raw,
+    triggerSync: (sourceId: string) => {
+      const jobId = randomUUID();
+      const now = new Date().toISOString();
+      db.raw
+        .prepare(
+          `INSERT INTO rag_jobs
+           (id, source_id, status, progress, total_documents, processed_documents,
+            skipped_by_etag, gc_deleted, started_at)
+           VALUES (?, ?, 'pending', 0, 0, 0, 0, 0, ?)`,
+        )
+        .run(jobId, sourceId, now);
+      const accepted = syncQueue.enqueue(sourceId, jobId);
+      if (!accepted) {
+        // Queue rejected — sync already active for this source. Clean up
+        // the phantom row so the UI doesn't poll a job that will never run.
+        db.raw.prepare(`DELETE FROM rag_jobs WHERE id = ?`).run(jobId);
+        return null;
+      }
+      return jobId;
+    },
+    onAudit: (event) => {
+      log.info(`[rag-audit] ${event.type} ${JSON.stringify(event.payload)}`);
+    },
+  });
+  // Start AFTER the runtime is wired so any tick that fires during boot has
+  // a fully-built `triggerSync` to call. setInterval's first fire is N
+  // seconds after registration, so a tick during boot is impossible in
+  // practice — but ordering this way removes the race entirely.
+  pollScheduler.start();
+
   state.ragDisabledReason = null;
   state.ragRuntime = {
     vectorStore,
@@ -325,6 +373,7 @@ export async function initRagRuntime(
     decryptConfig,
     resolveConnector,
     syncQueue,
+    pollScheduler,
     ragCore,
   };
   ragRuntimeRef.current = state.ragRuntime;

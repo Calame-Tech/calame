@@ -35,6 +35,13 @@ export interface RagSource {
   embeddingSettingName: string;
   /** Frozen embedding model identifier captured at index time, for traceability. */
   embeddingModelVersion: string;
+  /**
+   * Optional auto-sync interval in seconds. When set, the in-process PollScheduler
+   * triggers a background sync every N seconds. Range enforced at the API
+   * boundary: 60s ≤ N ≤ 86400s (1 minute to 24 hours). `null` / `undefined`
+   * means "manual sync only".
+   */
+  pollingIntervalSeconds?: number | null;
 }
 
 /**

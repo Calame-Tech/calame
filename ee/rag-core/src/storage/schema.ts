@@ -13,7 +13,7 @@ export interface RagMigrationDb {
 	raw: BetterSqlite3Database;
 }
 
-const CURRENT_RAG_SCHEMA_VERSION = 3;
+const CURRENT_RAG_SCHEMA_VERSION = 4;
 
 /** Returns true if a column exists on a table. */
 function hasColumn(db: BetterSqlite3Database, table: string, column: string): boolean {
@@ -79,6 +79,7 @@ export function runRagMigrations(db: RagMigrationDb): void {
 			embedding_setting_name TEXT NOT NULL,
 			embedding_model_version TEXT NOT NULL,
 			embedding_dimensions INTEGER NOT NULL DEFAULT 0,
+			polling_interval_seconds INTEGER,
 			created_at TEXT NOT NULL DEFAULT (datetime('now')),
 			updated_at TEXT NOT NULL DEFAULT (datetime('now')),
 			last_sync_at TEXT
@@ -170,6 +171,15 @@ export function runRagMigrations(db: RagMigrationDb): void {
 		addColumnIfMissing(raw, 'rag_jobs', 'skipped_by_etag', 'INTEGER NOT NULL DEFAULT 0');
 		addColumnIfMissing(raw, 'rag_jobs', 'gc_deleted', 'INTEGER NOT NULL DEFAULT 0');
 		setRagSchemaVersion(raw, 3);
+	}
+
+	if (current < 4) {
+		// v4 — add `polling_interval_seconds` to rag_sources. Nullable: NULL
+		// means "no polling, manual sync only". Existing rows remain unaffected
+		// (NULL after ALTER), preserving the prior behavior. The PollScheduler
+		// only registers timers for rows where this column is non-null.
+		addColumnIfMissing(raw, 'rag_sources', 'polling_interval_seconds', 'INTEGER');
+		setRagSchemaVersion(raw, 4);
 	}
 
 	// Future migrations slot here, each gated on `current < N`.

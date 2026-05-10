@@ -87,6 +87,15 @@ export type {
 // ---------- Search ----------
 export { HybridSearchIndex, escapeFtsQuery } from './search/hybrid-search.js';
 export type { HybridSearchDeps } from './search/hybrid-search.js';
+export { CohereReranker, RerankerError } from './search/reranker.js';
+export type {
+	Reranker,
+	RerankerInput,
+	RerankerResult,
+	CohereRerankerConfig,
+} from './search/reranker.js';
+export { RerankingSearchIndex } from './search/reranking-search-index.js';
+export type { RerankingSearchDeps, RerankAuditEntry } from './search/reranking-search-index.js';
 
 // ---------- Routes ----------
 export { registerRagSourcesRoutes } from './routes/rag-sources.js';

@@ -3,9 +3,9 @@ import type { CalameDatabase } from './database.js';
 
 export type AiProvider = 'anthropic' | 'openrouter' | 'custom';
 
-export type AiCapability = 'chat' | 'embeddings';
+export type AiCapability = 'chat' | 'embeddings' | 'rerank';
 
-const VALID_CAPABILITIES: ReadonlySet<AiCapability> = new Set(['chat', 'embeddings']);
+const VALID_CAPABILITIES: ReadonlySet<AiCapability> = new Set(['chat', 'embeddings', 'rerank']);
 
 export interface AiConfig {
   provider: AiProvider;
@@ -23,6 +23,12 @@ export interface AiSetting extends AiConfig {
   embeddingModel?: string;
   /** Discovered at save time by probing the embeddings endpoint. Required for RAG sources. */
   embeddingDimensions?: number;
+  /**
+   * Reranker model name (e.g. 'rerank-multilingual-v3.0'). Required when
+   * 'rerank' is in capabilities. Unlike embeddings, rerankers don't have a
+   * fixed output dimension so nothing else needs to be cached.
+   */
+  rerankModel?: string;
 }
 
 export type MaskedAiSetting = AiSetting & { configured: boolean };
@@ -49,6 +55,7 @@ interface AiSettingRow {
   capabilities: string | null;
   embedding_model: string | null;
   embedding_dimensions: number | null;
+  rerank_model: string | null;
 }
 
 const VALID_PROVIDERS: ReadonlySet<AiProvider> = new Set(['anthropic', 'openrouter', 'custom']);
@@ -78,21 +85,26 @@ function rowToSetting(row: AiSettingRow): AiSetting {
     capabilities: parseCapabilities(row.capabilities),
     embeddingModel: row.embedding_model ?? undefined,
     embeddingDimensions: row.embedding_dimensions ?? undefined,
+    rerankModel: row.rerank_model ?? undefined,
   };
 }
 
 function validateCapabilities(
   capabilities: AiCapability[] | undefined,
   embeddingModel: string | undefined,
+  rerankModel: string | undefined,
 ): void {
   if (capabilities === undefined) return;
   for (const cap of capabilities) {
     if (!VALID_CAPABILITIES.has(cap)) {
-      throw new Error(`Unknown capability "${cap}". Valid values: chat, embeddings.`);
+      throw new Error(`Unknown capability "${cap}". Valid values: chat, embeddings, rerank.`);
     }
   }
   if (capabilities.includes('embeddings') && !embeddingModel) {
     throw new Error('embeddingModel is required when capabilities includes "embeddings".');
+  }
+  if (capabilities.includes('rerank') && !rerankModel) {
+    throw new Error('rerankModel is required when capabilities includes "rerank".');
   }
 }
 
@@ -129,12 +141,12 @@ export class AiSettingsManager {
     this.stmtList = this.db.prepare(`SELECT * FROM ai_settings ORDER BY created_at ASC, name ASC`);
     this.stmtGet = this.db.prepare(`SELECT * FROM ai_settings WHERE name = ?`);
     this.stmtInsert = this.db.prepare(
-      `INSERT INTO ai_settings (name, label, provider, api_key, model, base_url, capabilities, embedding_model, embedding_dimensions)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO ai_settings (name, label, provider, api_key, model, base_url, capabilities, embedding_model, embedding_dimensions, rerank_model)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     this.stmtUpdate = this.db.prepare(
       `UPDATE ai_settings SET label = ?, provider = ?, api_key = ?, model = ?, base_url = ?,
-       capabilities = ?, embedding_model = ?, embedding_dimensions = ?
+       capabilities = ?, embedding_model = ?, embedding_dimensions = ?, rerank_model = ?
        WHERE name = ?`,
     );
     this.stmtDelete = this.db.prepare(`DELETE FROM ai_settings WHERE name = ?`);
@@ -168,7 +180,7 @@ export class AiSettingsManager {
     if (!setting.name) throw new Error('Setting name is required.');
     if (!setting.label) throw new Error('Setting label is required.');
     if (this.getSetting(setting.name)) throw new Error(`Setting "${setting.name}" already exists.`);
-    validateCapabilities(setting.capabilities, setting.embeddingModel);
+    validateCapabilities(setting.capabilities, setting.embeddingModel, setting.rerankModel);
     this.stmtInsert.run(
       setting.name,
       setting.label,
@@ -179,6 +191,7 @@ export class AiSettingsManager {
       serializeCapabilities(setting.capabilities),
       setting.embeddingModel ?? null,
       setting.embeddingDimensions ?? null,
+      setting.rerankModel ?? null,
     );
   }
 
@@ -191,7 +204,7 @@ export class AiSettingsManager {
       name: current.name,
     };
     if (!VALID_PROVIDERS.has(next.provider)) throw new Error('Invalid provider.');
-    validateCapabilities(next.capabilities, next.embeddingModel);
+    validateCapabilities(next.capabilities, next.embeddingModel, next.rerankModel);
     this.stmtUpdate.run(
       next.label,
       next.provider,
@@ -201,6 +214,7 @@ export class AiSettingsManager {
       serializeCapabilities(next.capabilities),
       next.embeddingModel ?? null,
       next.embeddingDimensions ?? null,
+      next.rerankModel ?? null,
       name,
     );
   }

@@ -122,4 +122,14 @@ export function runMigrations(db: CalameDatabase): void {
     addColumnIfMissing(db, 'configurations', 'sources_scopes', 'TEXT');
     db.setSchemaVersion(10);
   }
+
+  if (currentVersion < 11) {
+    // Version 11: Phase 5 EE RAG Tranche 2 — add `rerank_model` column to the
+    // `ai_settings` table. Stores the Cohere reranker model identifier (e.g.
+    // 'rerank-multilingual-v3.0') alongside the existing embedding fields. The
+    // RAG runtime resolves this column to build a Cohere reranker that
+    // post-processes hybrid-search candidates. Nullable — rerank is opt-in.
+    addColumnIfMissing(db, 'ai_settings', 'rerank_model', 'TEXT');
+    db.setSchemaVersion(11);
+  }
 }

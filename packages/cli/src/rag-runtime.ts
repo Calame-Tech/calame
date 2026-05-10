@@ -580,15 +580,24 @@ export async function initRagRuntime(
     // Rank Fusion (RRF). The hybrid index transparently falls back to
     // pure vector when the v5 FTS table is missing (logged once).
     //
-    // Toggle: setting `CALAME_RAG_HYBRID_SEARCH=off` forces the legacy
-    // vector-only implementation. Useful for A/B debugging.
+    // Phase 5 / Tranche 2: when an AI setting advertises the 'rerank'
+    // capability with a Cohere API key + rerankModel, wrap the hybrid
+    // index in a RerankingSearchIndex that re-orders the top-N candidates
+    // through Cohere's cross-encoder API before returning top-K. The
+    // wrapper is fail-open: a Cohere outage degrades quality but does not
+    // break search.
+    //
+    // Toggles:
+    //   CALAME_RAG_HYBRID_SEARCH=off → legacy vector-only first stage.
+    //   CALAME_RAG_RERANK=off        → skip the rerank wrapper even when
+    //                                  a 'rerank'-capable setting exists.
     // ---------------------------------------------------------------------------
     const hybridFlag = process.env.CALAME_RAG_HYBRID_SEARCH;
     const hybridEnabled = hybridFlag !== 'off';
 
-    let searchIndex: import('@calame-ee/rag-core').DocumentSearchIndex;
+    let baseIndex: import('@calame-ee/rag-core').DocumentSearchIndex;
     if (hybridEnabled) {
-      searchIndex = new ragCore.HybridSearchIndex({
+      baseIndex = new ragCore.HybridSearchIndex({
         db: ragDb.raw,
         vectorStore,
         resolveEmbeddingClient,
@@ -602,7 +611,7 @@ export async function initRagRuntime(
       const capturedVectorStore = vectorStore;
       const capturedResolveEmbeddingClient = resolveEmbeddingClient;
 
-      searchIndex = {
+      baseIndex = {
         async search(sourceId, query, opts) {
           const settingRow = ragDb.raw
             .prepare<[string], { embedding_setting_name: string }>(
@@ -681,6 +690,37 @@ export async function initRagRuntime(
       };
     }
 
+    // ---------------------------------------------------------------------------
+    // Reranker composition (Phase 5 / Tranche 2)
+    //
+    // Look up any AI setting that advertises the 'rerank' capability with a
+    // Cohere apiKey + rerankModel. When present (and CALAME_RAG_RERANK != 'off')
+    // wrap the first-stage index in a RerankingSearchIndex that calls Cohere
+    // /v2/rerank to re-order the top-N candidates before returning top-K.
+    //
+    // No matching setting → searchIndex == baseIndex (hybrid only).
+    // ---------------------------------------------------------------------------
+    const rerankFlag = process.env.CALAME_RAG_RERANK;
+    const rerankEnabled = rerankFlag !== 'off';
+
+    const reranker = rerankEnabled ? resolveCohereReranker(aiSettingsManager, ragCore, log) : null;
+
+    const searchIndex: import('@calame-ee/rag-core').DocumentSearchIndex = reranker
+      ? new ragCore.RerankingSearchIndex({
+          base: baseIndex,
+          reranker,
+          candidatesPerSearch: 50,
+          onAudit: (event) => {
+            log.info(`[rag-audit] ${event.type} ${JSON.stringify(event.payload)}`);
+          },
+        })
+      : baseIndex;
+    if (reranker) {
+      log.info(`RAG: rerank wrapper active (model=${reranker.model}).`);
+    } else if (rerankFlag === 'off') {
+      log.info('RAG: CALAME_RAG_RERANK=off — rerank disabled by env flag.');
+    }
+
     // Build and register the adapter.
     const deps: import('@calame-ee/rag-core').DocumentAdapterDeps = {
       resolveConnector,
@@ -733,6 +773,44 @@ function makeUnconfiguredEmbeddingClient(dimensions: number): EmbeddingClient {
       );
     },
   };
+}
+
+/**
+ * Pick the first AI setting that advertises the `rerank` capability and has the
+ * pieces a {@link CohereReranker} needs (apiKey + rerankModel). Returns the
+ * built reranker, or null when no usable setting is configured.
+ *
+ * Note: we only support Cohere here. Voyage AI / local cross-encoder would
+ * branch on `setting.provider`, but Phase 5 ships Cohere only.
+ */
+function resolveCohereReranker(
+  aiSettingsManager: AiSettingsManager,
+  ragCore: typeof import('@calame-ee/rag-core'),
+  log: { info: (msg: string) => void; warn: (msg: string) => void },
+): import('@calame-ee/rag-core').Reranker | null {
+  const settings = aiSettingsManager.listSettings();
+  for (const setting of settings) {
+    if (!settingSupports(setting, 'rerank')) continue;
+    if (!setting.apiKey) {
+      log.warn(`Skipping rerank AI setting "${setting.name}": missing apiKey.`);
+      continue;
+    }
+    if (!setting.rerankModel) {
+      log.warn(`Skipping rerank AI setting "${setting.name}": missing rerankModel.`);
+      continue;
+    }
+    try {
+      return new ragCore.CohereReranker({
+        apiKey: setting.apiKey,
+        model: setting.rerankModel,
+        baseUrl: setting.baseUrl,
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      log.warn(`Failed to build CohereReranker from "${setting.name}": ${msg}`);
+    }
+  }
+  return null;
 }
 
 /** Read the dimension already in use by existing rag_sources, or null when empty. */

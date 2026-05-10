@@ -17,6 +17,7 @@ type Row = {
   capabilities: string | null;
   embedding_model: string | null;
   embedding_dimensions: number | null;
+  rerank_model: string | null;
   created_at: string;
 };
 
@@ -38,6 +39,7 @@ function makeStmt(type: 'list' | 'get' | 'insert' | 'update' | 'delete') {
           capabilities,
           embedding_model,
           embedding_dimensions,
+          rerank_model,
         ] = args as [
           string,
           string,
@@ -48,6 +50,7 @@ function makeStmt(type: 'list' | 'get' | 'insert' | 'update' | 'delete') {
           string | null,
           string | null,
           number | null,
+          string | null,
         ];
         store.set(name, {
           name,
@@ -59,6 +62,7 @@ function makeStmt(type: 'list' | 'get' | 'insert' | 'update' | 'delete') {
           capabilities,
           embedding_model,
           embedding_dimensions,
+          rerank_model,
           created_at: new Date().toISOString(),
         });
       } else if (type === 'update') {
@@ -71,6 +75,7 @@ function makeStmt(type: 'list' | 'get' | 'insert' | 'update' | 'delete') {
           capabilities,
           embedding_model,
           embedding_dimensions,
+          rerank_model,
           name,
         ] = args as [
           string,
@@ -81,6 +86,7 @@ function makeStmt(type: 'list' | 'get' | 'insert' | 'update' | 'delete') {
           string | null,
           string | null,
           number | null,
+          string | null,
           string,
         ];
         const existing = store.get(name);
@@ -95,6 +101,7 @@ function makeStmt(type: 'list' | 'get' | 'insert' | 'update' | 'delete') {
             capabilities,
             embedding_model,
             embedding_dimensions,
+            rerank_model,
           });
         }
       } else if (type === 'delete') {
@@ -199,6 +206,7 @@ describe('AiSettingsManager — capabilities', () => {
       capabilities: null,
       embedding_model: null,
       embedding_dimensions: null,
+      rerank_model: null,
       created_at: new Date().toISOString(),
     });
     const mgr = makeManager();
@@ -223,6 +231,51 @@ describe('AiSettingsManager — capabilities', () => {
     expect(() => {
       mgr.updateSetting('ollama', { capabilities: ['embeddings'] });
     }).toThrow(/embeddingModel is required/);
+  });
+
+  // -------------------------------------------------------------------------
+  // Rerank capability (Phase 5 EE RAG Tranche 2)
+  // -------------------------------------------------------------------------
+
+  it('creates a setting with rerank capability and rerankModel', () => {
+    const mgr = makeManager();
+    mgr.createSetting({
+      ...BASE,
+      name: 'cohere',
+      label: 'Cohere',
+      capabilities: ['rerank'],
+      rerankModel: 'rerank-multilingual-v3.0',
+    });
+    const saved = mgr.getSetting('cohere');
+    expect(saved).not.toBeNull();
+    expect(saved!.capabilities).toEqual(['rerank']);
+    expect(saved!.rerankModel).toBe('rerank-multilingual-v3.0');
+  });
+
+  it('throws when capabilities includes rerank but rerankModel is absent', () => {
+    const mgr = makeManager();
+    expect(() => {
+      mgr.createSetting({ ...BASE, capabilities: ['rerank'] });
+    }).toThrow(/rerankModel is required/);
+  });
+
+  it('backward compat: capabilities=[chat, embeddings] still validates without rerankModel', () => {
+    const mgr = makeManager();
+    mgr.createSetting({
+      ...BASE,
+      capabilities: ['chat', 'embeddings'],
+      embeddingModel: 'nomic-embed-text',
+    });
+    const saved = mgr.getSetting('ollama');
+    expect(saved!.capabilities).toEqual(['chat', 'embeddings']);
+    expect(saved!.rerankModel).toBeUndefined();
+  });
+
+  it('error message lists rerank among valid capabilities', () => {
+    const mgr = makeManager();
+    expect(() => {
+      mgr.createSetting({ ...BASE, capabilities: ['nope'] as unknown as AiCapability[] });
+    }).toThrow(/Valid values: chat, embeddings, rerank\./);
   });
 });
 

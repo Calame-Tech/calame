@@ -3,6 +3,9 @@ import type { AuthMode, Config, Profile, ServeStatus } from '../types/schema.js'
 import {
   getProfileTableNames,
   getProfileRelationalSources,
+  getProfileSelectedTables,
+  getProfileTableOptions,
+  getProfileColumnMasking,
 } from '../lib/profile-accessors.js';
 import ChatPanel from './ChatPanel.js';
 import TokenManager from './TokenManager.js';
@@ -184,7 +187,7 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
     const isActive = profileStatus?.active === true;
     const basePath = profileStatus?.endpoint ?? `/mcp/${detailProfile.name}`;
     const endpoint = `${window.location.origin}${basePath}`;
-    const tableCount = Object.keys(detailProfile.selectedTables).length;
+    const tableCount = getProfileTableNames(detailProfile).length;
 
     return (
       <div className="space-y-4">
@@ -218,10 +221,10 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
                   {isActive ? 'Active' : 'Inactive'} &middot; {tableCount} table
                   {tableCount !== 1 ? 's' : ''}
                 </p>
-                {detailProfile.connections && detailProfile.connections.length > 0 && (
+                {getProfileRelationalSources(detailProfile).length > 0 && (
                   <div className="flex items-center gap-1.5 mt-1">
                     <span className="text-xs text-gray-500">Connections:</span>
-                    {detailProfile.connections.map((conn) => (
+                    {getProfileRelationalSources(detailProfile).map((conn) => (
                       <span
                         key={conn}
                         className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-os-700/20 text-os-400 border border-os-600/30"
@@ -305,7 +308,7 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
             <p className="text-sm text-gray-500">No tables selected.</p>
           ) : (
             <div className="space-y-2">
-              {Object.entries(detailProfile.selectedTables).map(([table, columns]) => (
+              {Object.entries(getProfileSelectedTables(detailProfile)).map(([table, columns]) => (
                 <div
                   key={table}
                   className="card-nested px-4 py-3"
@@ -328,8 +331,8 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
             <p className="text-sm text-gray-500">No tables selected.</p>
           ) : (
             <div className="space-y-2">
-              {Object.keys(detailProfile.selectedTables).map((table) => {
-                const opts = detailProfile.tableOptions?.[table];
+              {Object.keys(getProfileSelectedTables(detailProfile)).map((table) => {
+                const opts = getProfileTableOptions(detailProfile)[table];
                 const tools = opts?.enabledTools ?? ['describe', 'aggregate', 'query'];
                 return (
                   <div
@@ -359,12 +362,11 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
           <h3 className="eyebrow mb-3">Profile</h3>
           <div className="space-y-3">
             {/* Table options summary */}
-            {detailProfile.tableOptions &&
-            Object.keys(detailProfile.tableOptions).length > 0 ? (
+            {Object.keys(getProfileTableOptions(detailProfile)).length > 0 ? (
               <div>
                 <p className="text-xs text-gray-500 mb-1">Table Options</p>
                 <div className="space-y-2">
-                  {Object.entries(detailProfile.tableOptions).map(([table, opts]) => (
+                  {Object.entries(getProfileTableOptions(detailProfile)).map(([table, opts]) => (
                     <div
                       key={table}
                       className="card-nested px-4 py-3"
@@ -388,12 +390,11 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
             )}
 
             {/* Column masking summary */}
-            {detailProfile.columnMasking &&
-            Object.keys(detailProfile.columnMasking).length > 0 ? (
+            {Object.keys(getProfileColumnMasking(detailProfile)).length > 0 ? (
               <div>
                 <p className="text-xs text-gray-500 mb-1 mt-3">Column Masking</p>
                 <div className="space-y-2">
-                  {Object.entries(detailProfile.columnMasking).map(([table, columns]) => (
+                  {Object.entries(getProfileColumnMasking(detailProfile)).map(([table, columns]) => (
                     <div
                       key={table}
                       className="card-nested px-4 py-3"

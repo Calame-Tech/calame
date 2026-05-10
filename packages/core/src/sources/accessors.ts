@@ -141,3 +141,140 @@ export function getProfileRelationalSources(profile: ProfileScopeShape): string[
   }
   return profile.connections ?? [];
 }
+
+// ---------------------------------------------------------------------------
+// Configuration accessors — mirror of the Profile accessors above
+//
+// These read from `ServeConfiguration` which carries both the unified shape
+// (sources + scopes, Phase 2+) and the legacy flat fields (connections,
+// selectedTables, tableOptions, columnMasking) as optional fields. The
+// latter are present only on pre-migration v10 rows; absent on all rows
+// written after Phase 5 (upgradeConfigurationShape deletes them on write).
+//
+// Behaviour: each accessor first reads from `cfg.scopes` (Phase 2+ canonical
+// shape), aggregating across every relational scope. When `scopes` is empty /
+// absent, it falls back to the corresponding legacy flat field. Returns an
+// empty container (never undefined, except columnMasking) when neither shape
+// carries data.
+//
+// Note: a local structural interface is used rather than `import type { ServeConfiguration }`
+// to avoid a circular module dependency (serve/types.ts imports from sources/index.js
+// via inline import, which re-exports this file). The structural shape is the same.
+// ---------------------------------------------------------------------------
+
+/**
+ * Structural sub-shape these accessors actually read. Decoupled from
+ * `ServeConfiguration` so call sites can pass partial configuration-like objects
+ * without dragging the full ServeConfiguration shape.
+ *
+ * The legacy fields (`connections`, `selectedTables`, …) are kept as
+ * **optional reads** for one purpose only: bridging configurations that haven't
+ * been through `upgradeConfigurationShape` yet. New writes should populate
+ * `sources` / `scopes` exclusively.
+ */
+export interface ConfigScopeShape {
+  sources?: string[];
+  scopes?: Record<string, ScopeSelection>;
+  connections?: string[];
+  selectedTables?: Record<string, string[]>;
+  tableOptions?: Record<string, TableToolOptions>;
+  columnMasking?: Record<string, Record<string, ColumnMasking>>;
+}
+
+/** Names of all relational tables visible across the configuration's scopes. */
+export function getConfigurationTableNames(cfg: ConfigScopeShape): string[] {
+  const names = new Set<string>();
+  if (cfg.scopes) {
+    for (const scope of Object.values(cfg.scopes)) {
+      if (scope.kind === 'relational') {
+        for (const table of Object.keys(scope.selectedTables ?? {})) {
+          names.add(table);
+        }
+      }
+    }
+  }
+  if (names.size === 0 && cfg.selectedTables) {
+    for (const table of Object.keys(cfg.selectedTables)) {
+      names.add(table);
+    }
+  }
+  return Array.from(names);
+}
+
+/**
+ * Flat `tableName -> columns[]` projection across every relational scope.
+ * When two scopes reference the same table, later scopes win for duplicates.
+ * Mirrors the historic `cfg.selectedTables` shape.
+ */
+export function getConfigurationSelectedTables(
+  cfg: ConfigScopeShape,
+): Record<string, string[]> {
+  if (cfg.scopes) {
+    const out: Record<string, string[]> = {};
+    let hasAny = false;
+    for (const scope of Object.values(cfg.scopes)) {
+      if (scope.kind !== 'relational' || !scope.selectedTables) continue;
+      for (const [table, cols] of Object.entries(scope.selectedTables)) {
+        out[table] = cols;
+        hasAny = true;
+      }
+    }
+    if (hasAny) return out;
+  }
+  return cfg.selectedTables ?? {};
+}
+
+/** Same shape as the legacy `cfg.tableOptions`. */
+export function getConfigurationTableOptions(
+  cfg: ConfigScopeShape,
+): Record<string, TableToolOptions> | undefined {
+  if (cfg.scopes) {
+    const out: Record<string, TableToolOptions> = {};
+    let hasAny = false;
+    for (const scope of Object.values(cfg.scopes)) {
+      if (scope.kind !== 'relational' || !scope.tableOptions) continue;
+      for (const [table, opts] of Object.entries(scope.tableOptions)) {
+        out[table] = opts;
+        hasAny = true;
+      }
+    }
+    if (hasAny) return out;
+  }
+  return cfg.tableOptions;
+}
+
+/** Same shape as the legacy `cfg.columnMasking`. */
+export function getConfigurationColumnMasking(
+  cfg: ConfigScopeShape,
+): Record<string, Record<string, ColumnMasking>> | undefined {
+  if (cfg.scopes) {
+    const out: Record<string, Record<string, ColumnMasking>> = {};
+    let hasAny = false;
+    for (const scope of Object.values(cfg.scopes)) {
+      if (scope.kind !== 'relational' || !scope.columnMasking) continue;
+      for (const [table, masking] of Object.entries(scope.columnMasking)) {
+        out[table] = masking;
+        hasAny = true;
+      }
+    }
+    if (hasAny) return out;
+  }
+  return cfg.columnMasking;
+}
+
+/**
+ * The active source ids of `kind: 'relational'` from the unified shape, or
+ * the legacy `cfg.connections` array as fallback. Returns an empty array when
+ * neither shape carries data.
+ */
+export function getConfigurationRelationalSources(cfg: ConfigScopeShape): string[] {
+  if (cfg.sources && cfg.scopes) {
+    const out: string[] = [];
+    for (const sourceId of cfg.sources) {
+      const scope = cfg.scopes[sourceId];
+      if (scope?.kind === 'relational') out.push(sourceId);
+    }
+    if (out.length > 0) return out;
+  }
+  return cfg.connections ?? [];
+}

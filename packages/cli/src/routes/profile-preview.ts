@@ -2,7 +2,7 @@ import type { Express, Request, Response } from 'express';
 import crypto from 'crypto';
 import { getConnector } from '@calame/connectors';
 import type { AppState } from '../state.js';
-import type { TableToolOptions, ColumnMasking, ScopeSelection } from '@calame/core';
+import type { TableToolOptions, ColumnMasking, ScopeSelection, ServeConfiguration } from '@calame/core';
 import {
   getProfileSelectedTables,
   getProfileTableOptions,
@@ -137,12 +137,7 @@ export function registerProfilePreviewRoute(app: Express, state: AppState): void
         const configsFile = readConfigurationsFile(state.db);
         const resolvedConfigs = profile.configurations
           .map((configName) => configsFile.configurations[configName])
-          .filter(Boolean) as Array<{
-          connections: string[];
-          selectedTables: Record<string, string[]>;
-          tableOptions?: Record<string, TableToolOptions>;
-          columnMasking?: Record<string, Record<string, ColumnMasking>>;
-        }>;
+          .filter(Boolean) as ServeConfiguration[];
 
         if (resolvedConfigs.length === 0) {
           res.status(400).json({ success: false, message: 'No valid configurations found for this profile.' });

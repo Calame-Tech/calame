@@ -5,8 +5,14 @@ import {
   getProfileTableOptions,
   getProfileColumnMasking,
   getProfileRelationalSources,
+  getConfigurationTableNames,
+  getConfigurationSelectedTables,
+  getConfigurationTableOptions,
+  getConfigurationColumnMasking,
+  getConfigurationRelationalSources,
   type ProfileScopeShape,
 } from '../accessors.js';
+import type { ServeConfiguration } from '../../serve/types.js';
 
 /**
  * The accessors operate on `ProfileScopeShape` — a structural sub-type that
@@ -178,5 +184,150 @@ describe('profile accessors — unified shape preferred', () => {
   it('getProfileRelationalSources returns [] when nothing is set', () => {
     const profile = makeProfile();
     expect(getProfileRelationalSources(profile)).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Configuration accessors
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a minimal ServeConfiguration for tests.
+ * Partial to allow constructing both unified (scopes) and legacy shapes without
+ * TypeScript complaining about missing required fields.
+ */
+function makeCfg(overrides: Partial<ServeConfiguration>): ServeConfiguration {
+  return {
+    name: 'test',
+    label: 'Test',
+    ...overrides,
+  } as ServeConfiguration;
+}
+
+describe('configuration accessors — unified shape preferred', () => {
+  it('getConfigurationTableNames returns table names from every relational scope', () => {
+    const cfg = makeCfg({
+      sources: ['db1', 'db2'],
+      scopes: {
+        db1: { kind: 'relational', selectedTables: { users: ['id'], orders: ['id'] } },
+        db2: { kind: 'relational', selectedTables: { products: ['sku'] } },
+      },
+    });
+    expect(getConfigurationTableNames(cfg).sort()).toEqual(['orders', 'products', 'users']);
+  });
+
+  it('getConfigurationTableNames falls back to legacy selectedTables when scopes is absent', () => {
+    const cfg = makeCfg({ selectedTables: { legacy_table: ['col1'] } });
+    expect(getConfigurationTableNames(cfg)).toEqual(['legacy_table']);
+  });
+
+  it('getConfigurationTableNames ignores document scopes', () => {
+    const cfg = makeCfg({
+      sources: ['kb', 'db'],
+      scopes: {
+        kb: { kind: 'document', mode: 'allowAll', allowedFolders: [], allowedDocuments: [] },
+        db: { kind: 'relational', selectedTables: { invoices: ['id'] } },
+      },
+    });
+    expect(getConfigurationTableNames(cfg)).toEqual(['invoices']);
+  });
+
+  it('getConfigurationSelectedTables merges across multiple relational scopes', () => {
+    const cfg = makeCfg({
+      sources: ['db1', 'db2'],
+      scopes: {
+        db1: { kind: 'relational', selectedTables: { users: ['id'] } },
+        db2: { kind: 'relational', selectedTables: { orders: ['total'] } },
+      },
+    });
+    expect(getConfigurationSelectedTables(cfg)).toEqual({
+      users: ['id'],
+      orders: ['total'],
+    });
+  });
+
+  it('getConfigurationSelectedTables returns the legacy field when scopes is absent', () => {
+    const cfg = makeCfg({ selectedTables: { x: ['y'] } });
+    expect(getConfigurationSelectedTables(cfg)).toEqual({ x: ['y'] });
+  });
+
+  it('getConfigurationSelectedTables returns empty object when neither shape carries data', () => {
+    const cfg = makeCfg({ scopes: {} });
+    expect(getConfigurationSelectedTables(cfg)).toEqual({});
+  });
+
+  it('getConfigurationTableOptions reads from the unified scope', () => {
+    const cfg = makeCfg({
+      sources: ['db1'],
+      scopes: {
+        db1: {
+          kind: 'relational',
+          selectedTables: { users: ['id'] },
+          tableOptions: {
+            users: { enabledTools: ['describe'], maxLimit: 50, filterableColumns: [], groupableColumns: [] },
+          },
+        },
+      },
+    });
+    expect(getConfigurationTableOptions(cfg)).toEqual({
+      users: { enabledTools: ['describe'], maxLimit: 50, filterableColumns: [], groupableColumns: [] },
+    });
+  });
+
+  it('getConfigurationTableOptions falls back to legacy field when scopes has none', () => {
+    const cfg = makeCfg({
+      tableOptions: {
+        orders: { enabledTools: ['query'], maxLimit: 200, filterableColumns: [], groupableColumns: [] },
+      },
+    });
+    expect(getConfigurationTableOptions(cfg)).toEqual({
+      orders: { enabledTools: ['query'], maxLimit: 200, filterableColumns: [], groupableColumns: [] },
+    });
+  });
+
+  it('getConfigurationColumnMasking reads from the unified scope', () => {
+    const cfg = makeCfg({
+      sources: ['db1'],
+      scopes: {
+        db1: {
+          kind: 'relational',
+          selectedTables: { users: ['email'] },
+          columnMasking: { users: { email: { maskingMode: 'hash' } } },
+        },
+      },
+    });
+    expect(getConfigurationColumnMasking(cfg)).toEqual({
+      users: { email: { maskingMode: 'hash' } },
+    });
+  });
+
+  it('getConfigurationColumnMasking returns undefined when neither shape carries masking', () => {
+    const cfg = makeCfg({
+      sources: ['db1'],
+      scopes: { db1: { kind: 'relational', selectedTables: { users: ['id'] } } },
+    });
+    expect(getConfigurationColumnMasking(cfg)).toBeUndefined();
+  });
+
+  it('getConfigurationRelationalSources lists only relational kinds from sources[]', () => {
+    const cfg = makeCfg({
+      sources: ['db1', 'kb1', 'db2'],
+      scopes: {
+        db1: { kind: 'relational', selectedTables: {} },
+        kb1: { kind: 'document', mode: 'allowAll', allowedFolders: [], allowedDocuments: [] },
+        db2: { kind: 'relational', selectedTables: {} },
+      },
+    });
+    expect(getConfigurationRelationalSources(cfg)).toEqual(['db1', 'db2']);
+  });
+
+  it('getConfigurationRelationalSources falls back to legacy connections when no relational scope', () => {
+    const cfg = makeCfg({ connections: ['conn1', 'conn2'] });
+    expect(getConfigurationRelationalSources(cfg)).toEqual(['conn1', 'conn2']);
+  });
+
+  it('getConfigurationRelationalSources returns [] when nothing is set', () => {
+    const cfg = makeCfg({});
+    expect(getConfigurationRelationalSources(cfg)).toEqual([]);
   });
 });

@@ -99,10 +99,10 @@ export interface NamedConnection {
 export interface Configuration {
   name: string;
   label: string;
-  connections: string[];
-  selectedTables: Record<string, string[]>;
-  tableOptions?: Record<string, TableToolOptions>;
-  columnMasking?: Record<string, Record<string, ColumnMasking>>;
+  /** Source ids associated with this configuration (Phase 5+). */
+  sources?: string[];
+  /** Per-source access scopes (Phase 5+). Discriminated by `kind`. */
+  scopes?: Record<string, ScopeSelection>;
 }
 
 export interface ConfigurationsFile {

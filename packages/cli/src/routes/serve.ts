@@ -24,8 +24,13 @@ import {
   getProfileTableOptions,
   getProfileColumnMasking,
   getProfileRelationalSources,
+  getConfigurationSelectedTables,
+  getConfigurationTableOptions,
+  getConfigurationColumnMasking,
+  getConfigurationRelationalSources,
 } from '@calame/core';
 import { readConfigurationsFile } from './configurations.js';
+import type { ServeConfiguration } from '@calame/core';
 import { INTERNAL_CHAT_SECRET } from '../chat-engine.js';
 
 // Distinct-values cache. Keyed by `profile|connection|selectedTables-hash|masking-hash`.
@@ -67,20 +72,15 @@ const MASKING_ORDER: readonly string[] = [
  * Union permissive strategy: all tools enabled by any config are enabled,
  * max limits are taken, columns are unioned, least restrictive masking wins.
  *
- * Phase 2 decision: mergeConfigurations remains legacy-only (operates on
- * `connections`/`selectedTables`/`tableOptions`/`columnMasking`). The inputs
- * returned by `readConfigurationsFile` already carry both legacy and new shapes
- * (via `upgradeConfigurationShape`), so the legacy reads here are still valid.
- * Phase 3 will replace this function with a new-shape merge that iterates
- * `scopes` per source kind via the adapter registry.
+ * Phase 5: now accepts `ServeConfiguration` objects directly (the type returned
+ * by `readConfigurationsFile`). The legacy `connections`/`selectedTables`/
+ * `tableOptions`/`columnMasking` root fields have been made optional as of Phase 5
+ * (the migrator deletes them after folding their data into `sources`/`scopes`).
+ * All field reads go through the Configuration accessors so that both the
+ * pre-migration legacy shape and the new unified shape are handled identically.
  */
 export function mergeConfigurations(
-  configs: Array<{
-    connections: string[];
-    selectedTables: Record<string, string[]>;
-    tableOptions?: Record<string, TableToolOptions>;
-    columnMasking?: Record<string, Record<string, ColumnMasking>>;
-  }>,
+  configs: ServeConfiguration[],
 ): {
   connections: string[];
   selectedTables: Record<string, string[]>;
@@ -93,10 +93,10 @@ export function mergeConfigurations(
   const columnMasking: Record<string, Record<string, ColumnMasking>> = {};
 
   for (const config of configs) {
-    for (const c of config.connections) connectionsSet.add(c);
+    for (const c of getConfigurationRelationalSources(config)) connectionsSet.add(c);
 
-    // Union of tables and columns
-    for (const [table, cols] of Object.entries(config.selectedTables)) {
+    // Union of tables and columns (read via accessor — handles both unified and legacy shape)
+    for (const [table, cols] of Object.entries(getConfigurationSelectedTables(config))) {
       if (!selectedTables[table]) {
         selectedTables[table] = [...cols];
       } else {
@@ -107,7 +107,7 @@ export function mergeConfigurations(
     }
 
     // Union permissive for tableOptions
-    for (const [table, rawOpts] of Object.entries(config.tableOptions ?? {})) {
+    for (const [table, rawOpts] of Object.entries(getConfigurationTableOptions(config) ?? {})) {
       const opts = rawOpts as Partial<TableToolOptions>;
       if (!tableOptions[table]) {
         tableOptions[table] = {
@@ -133,7 +133,7 @@ export function mergeConfigurations(
     }
 
     // Least restrictive masking wins
-    for (const [table, colMasking] of Object.entries(config.columnMasking ?? {})) {
+    for (const [table, colMasking] of Object.entries(getConfigurationColumnMasking(config) ?? {})) {
       if (!columnMasking[table]) {
         columnMasking[table] = { ...colMasking };
       } else {
@@ -359,14 +359,12 @@ export function registerServeRoute(app: Express, state: AppState): void {
           return;
         }
         const configsFile = readConfigurationsFile(state.db);
+        // Cast to ServeConfiguration[] — readConfigurationsFile always passes rows through
+        // upgradeConfigurationShape which returns ServeConfiguration. The filter(Boolean) is
+        // retained to silently skip deleted configurations that are still referenced by the profile.
         const resolvedConfigs = profile.configurations
           .map((configName) => configsFile.configurations[configName])
-          .filter(Boolean) as Array<{
-          connections: string[];
-          selectedTables: Record<string, string[]>;
-          tableOptions?: Record<string, TableToolOptions>;
-          columnMasking?: Record<string, Record<string, ColumnMasking>>;
-        }>;
+          .filter(Boolean) as ServeConfiguration[];
 
         if (resolvedConfigs.length === 0) {
           res.status(500).json({ error: 'No valid configurations found for this profile.' });

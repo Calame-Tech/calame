@@ -108,4 +108,18 @@ export function runMigrations(db: CalameDatabase): void {
     addColumnIfMissing(db, 'ai_settings', 'embedding_dimensions', 'INTEGER');
     db.setSchemaVersion(9);
   }
+
+  if (currentVersion < 10) {
+    // Version 10: Phase 5 unified Sources shape — add `sources_scopes` column to the
+    // `configurations` table. This JSON column stores the post-migration
+    // { sources: string[], scopes: Record<id, ScopeSelection> } blob so that
+    // configurations created via the Phase 5 frontend payload (which carries only
+    // sources/scopes, not the legacy connections/selectedTables) survive a round-trip
+    // through SQLite without data loss.
+    // The legacy NOT-NULL columns (connections, selected_tables) are kept to avoid a
+    // breaking schema change; they receive empty-array/empty-object fallbacks on write
+    // when only the unified shape is present.
+    addColumnIfMissing(db, 'configurations', 'sources_scopes', 'TEXT');
+    db.setSchemaVersion(10);
+  }
 }

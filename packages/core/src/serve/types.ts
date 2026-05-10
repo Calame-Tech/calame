@@ -45,16 +45,21 @@ export interface ServeConfiguration {
 
   /**
    * @deprecated since Phase 2. Use `sources` instead. The migrator
-   * (`upgradeConfigurationShape`) folds this into `sources` on read. Will be
-   * removed in Phase 5.
+   * (`upgradeConfigurationShape`) folds this into `sources` on read and deletes
+   * this field (Phase 5). Present only on pre-migration v10 rows; absent on all
+   * rows written after Phase 5. Use `getConfigurationRelationalSources()` instead
+   * of reading this directly.
    */
-  connections: string[];
+  connections?: string[];
 
   /**
    * @deprecated since Phase 2. Use `scopes[sourceId].selectedTables` instead.
-   * Will be removed in Phase 5.
+   * The migrator (`upgradeConfigurationShape`) folds this into `scopes` on read
+   * and deletes this field (Phase 5). Present only on pre-migration v10 rows;
+   * absent on all rows written after Phase 5. Use `getConfigurationSelectedTables()`
+   * instead of reading this directly.
    */
-  selectedTables: Record<string, string[]>;
+  selectedTables?: Record<string, string[]>;
 
   /**
    * @deprecated since Phase 2. Use `scopes[sourceId].tableOptions` instead.

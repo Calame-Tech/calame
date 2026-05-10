@@ -1,7 +1,11 @@
 import type { Express } from 'express';
 import type { AppState } from '../state.js';
 import type { ServeProfile } from '@calame/core';
-import { upgradeProfileShape, getProfileRelationalSources } from '@calame/core';
+import {
+  upgradeProfileShape,
+  getProfileRelationalSources,
+  getConfigurationSelectedTables,
+} from '@calame/core';
 import { readConfigurationsFile } from './configurations.js';
 
 export function registerServeStatusRoute(app: Express, state: AppState): void {
@@ -135,7 +139,9 @@ export function registerServeStatusRoute(app: Express, state: AppState): void {
           for (const cfgName of sp.configurations) {
             const cfg = configsFile.configurations[cfgName];
             if (cfg) {
-              for (const [table, cols] of Object.entries(cfg.selectedTables)) {
+              // Use the accessor so that both the legacy shape (selectedTables at root)
+              // and the Phase 5 unified shape (scopes[].selectedTables) are handled.
+              for (const [table, cols] of Object.entries(getConfigurationSelectedTables(cfg))) {
                 if (!mergedTables[table]) {
                   mergedTables[table] = [...cols];
                 } else {
@@ -327,7 +333,9 @@ export function registerServeStatusRoute(app: Express, state: AppState): void {
           for (const cfgName of updatedProfile.configurations) {
             const cfg = configsFile.configurations[cfgName];
             if (cfg) {
-              for (const [table, cols] of Object.entries(cfg.selectedTables)) {
+              // Use the accessor so that both the legacy shape (selectedTables at root)
+              // and the Phase 5 unified shape (scopes[].selectedTables) are handled.
+              for (const [table, cols] of Object.entries(getConfigurationSelectedTables(cfg))) {
                 if (!mergedTables[table]) {
                   mergedTables[table] = [...cols];
                 } else {

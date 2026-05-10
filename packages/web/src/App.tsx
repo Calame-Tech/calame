@@ -18,7 +18,18 @@ import ProfilePreview from './components/ProfilePreview.js';
 import MetricsDashboard from './components/MetricsDashboard.js';
 import ChatEntryPage from './components/ChatEntryPage.js';
 import SourcesPage from './components/SourcesPage.js';
-import { pickMaskingTargetSourceId } from './lib/profile-accessors.js';
+import {
+  pickMaskingTargetSourceId,
+  getProfileSelectedTables,
+  getProfileTableOptions,
+  getProfileColumnMasking,
+} from './lib/profile-accessors.js';
+import {
+  getConfigurationTableNames,
+  getConfigurationSelectedTables,
+  getConfigurationTableOptions,
+  getConfigurationColumnMasking,
+} from './lib/configuration-accessors.js';
 import type {
   DatabaseSchema,
   Config,
@@ -101,7 +112,7 @@ type View =
   | { page: 'knowledge' };
 
 function createDefaultProfile(): Profile {
-  return { name: 'default', label: 'Default', selectedTables: {}, tableOptions: {} };
+  return { name: 'default', label: 'Default' };
 }
 
 /** Convert Set-based selection to array-based for Profile storage */
@@ -437,16 +448,16 @@ export default function App() {
   const safeActiveIndex = Math.max(0, Math.min(activeProfileIndex, profiles.length - 1));
   const activeProfile = profiles[safeActiveIndex] ?? createDefaultProfile();
 
-  // Derive selectedTables (Set-based) from active profile
+  // Derive selectedTables (Set-based) from active profile's relational scopes
   const selectedTables = useMemo(
-    () => arraysToSets(activeProfile.selectedTables ?? {}),
-    [activeProfile.selectedTables],
+    () => arraysToSets(getProfileSelectedTables(activeProfile)),
+    [activeProfile],
   );
 
   // Derive config with active profile's tableOptions
   const configWithProfileOptions = useMemo(
-    () => ({ ...config, tableOptions: activeProfile.tableOptions ?? {} }),
-    [config, activeProfile.tableOptions],
+    () => ({ ...config, tableOptions: getProfileTableOptions(activeProfile) }),
+    [config, activeProfile],
   );
 
   const handlePiiOverride = useCallback(
@@ -509,7 +520,7 @@ export default function App() {
         const baseMasking =
           existingScope?.kind === 'relational'
             ? { ...(existingScope.columnMasking ?? {}) }
-            : { ...(profile.columnMasking ?? {}) };
+            : { ...getProfileColumnMasking(profile) };
 
         const masking = baseMasking;
 
@@ -535,17 +546,14 @@ export default function App() {
           existingScope?.kind === 'relational' ? existingScope : null;
         scopes[targetSourceId] = {
           kind: 'relational',
-          selectedTables: existingRelational?.selectedTables ?? profile.selectedTables ?? {},
-          tableOptions: existingRelational?.tableOptions ?? profile.tableOptions,
+          selectedTables: existingRelational?.selectedTables ?? getProfileSelectedTables(profile),
+          tableOptions: existingRelational?.tableOptions ?? getProfileTableOptions(profile),
           columnMasking: masking,
         };
         profile.scopes = scopes;
         if (!profile.sources?.includes(targetSourceId)) {
           profile.sources = [...(profile.sources ?? []), targetSourceId];
         }
-        // Also keep the legacy field in sync until it is dropped — backend
-        // accessors prefer `scopes` so the duplication is inert.
-        profile.columnMasking = masking;
         updated[activeProfileIndex] = profile;
         return updated;
       });
@@ -560,7 +568,7 @@ export default function App() {
 
   // Profile CRUD
   const handleProfileCreate = useCallback((name: string, label: string) => {
-    setProfiles((prev) => [...prev, { name, label, selectedTables: {}, tableOptions: {} }]);
+    setProfiles((prev) => [...prev, { name, label }]);
     setActiveProfileIndex((prev) => prev + 1);
   }, []);
 
@@ -888,7 +896,7 @@ export default function App() {
                     footer={
                       <div className="space-y-0 max-h-40 overflow-y-auto">
                         {configurations.slice(0, 4).map((cfg) => {
-                          const tCount = Object.keys(cfg.selectedTables).length;
+                          const tCount = getConfigurationTableNames(cfg).length;
                           return (
                             <button
                               key={cfg.name}
@@ -1126,8 +1134,6 @@ export default function App() {
                     const newConfig: Configuration = {
                       name,
                       label,
-                      connections: [],
-                      selectedTables: {},
                     };
                     // Add to local state immediately so detail view can find it
                     setConfigurations((prev) => [...prev, newConfig]);
@@ -1249,8 +1255,6 @@ export default function App() {
                       const newConfig: Configuration = {
                         name: slug,
                         label: 'New Configuration',
-                        connections: [],
-                        selectedTables: {},
                       };
                       setConfigurations((prev) => [...prev, newConfig]);
                       handleConfigurationSave(newConfig);
@@ -1556,7 +1560,7 @@ function McpDetailView({
     for (const cfgName of profileConfigurations) {
       const cfg = configurations.find((c) => c.name === cfgName);
       if (cfg) {
-        for (const t of Object.keys(cfg.selectedTables)) tables.add(t);
+        for (const t of getConfigurationTableNames(cfg)) tables.add(t);
       }
     }
     return tables.size;
@@ -2423,7 +2427,8 @@ function McpDetailView({
               <div className="flex flex-wrap gap-2">
                 {configurations.map((cfg) => {
                   const isSelected = profileConfigurations.includes(cfg.name);
-                  const tableCount = Object.keys(cfg.selectedTables).length;
+                  const tableCount = getConfigurationTableNames(cfg).length;
+                  const sourceCount = (cfg.sources ?? []).length;
                   return (
                     <div key={cfg.name} className="flex items-center gap-1">
                       <button
@@ -2441,8 +2446,8 @@ function McpDetailView({
                         />
                         {cfg.label}
                         <span className="text-xs text-gray-500">
-                          ({tableCount} table{tableCount !== 1 ? 's' : ''}, {cfg.connections.length}{' '}
-                          base{cfg.connections.length !== 1 ? 's' : ''})
+                          ({tableCount} table{tableCount !== 1 ? 's' : ''}, {sourceCount}{' '}
+                          base{sourceCount !== 1 ? 's' : ''})
                         </span>
                       </button>
                       <button
@@ -2483,7 +2488,7 @@ function McpDetailView({
                 for (const cfgName of profileConfigurations) {
                   const cfg = configurations.find((c) => c.name === cfgName);
                   if (!cfg) continue;
-                  for (const [table, cols] of Object.entries(cfg.selectedTables)) {
+                  for (const [table, cols] of Object.entries(getConfigurationSelectedTables(cfg))) {
                     if (!mergedTables[table]) {
                       mergedTables[table] = [...cols];
                     } else {
@@ -2793,7 +2798,7 @@ function ConfigurationListView({
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {configurations.map((cfg) => {
-            const tableCount = Object.keys(cfg.selectedTables).length;
+            const tableCount = getConfigurationTableNames(cfg).length;
             return (
               <div
                 key={cfg.name}
@@ -2831,7 +2836,7 @@ function ConfigurationListView({
                 </div>
                 <div className="flex gap-3 text-sm text-gray-500">
                   <span>
-                    {cfg.connections.length} connection{cfg.connections.length !== 1 ? 's' : ''}
+                    {(cfg.sources ?? []).length} source{(cfg.sources ?? []).length !== 1 ? 's' : ''}
                   </span>
                   <span>&middot;</span>
                   <span>
@@ -2898,17 +2903,17 @@ function ConfigurationDetailView({
   // Local editing state
   const [label, setLabel] = useState(config?.label ?? configName);
   const [selectedConns, setSelectedConns] = useState<Set<string>>(
-    new Set(config?.connections ?? []),
+    new Set(config?.sources ?? []),
   );
   const [localSelectedTables, setLocalSelectedTables] = useState<Record<string, Set<string>>>(
-    config ? arraysToSets(config.selectedTables) : {},
+    config ? arraysToSets(getConfigurationSelectedTables(config)) : {},
   );
   const [localTableOptions, setLocalTableOptions] = useState<
     Record<string, import('./types/schema.js').TableToolOptions>
-  >(config?.tableOptions ?? {});
+  >(config ? getConfigurationTableOptions(config) : {});
   const [localColumnMasking, setLocalColumnMasking] = useState<
     Record<string, Record<string, ColumnMasking>>
-  >(config?.columnMasking ?? {});
+  >(config ? getConfigurationColumnMasking(config) : {});
   const [editingLabel, setEditingLabel] = useState(false);
   const [loadingSchemas, setLoadingSchemas] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -3001,13 +3006,25 @@ function ConfigurationDetailView({
       }
     }
 
-    const configToSave = {
+    // Build the Phase 5 unified shape. Each selected connection becomes a
+    // relational scope carrying the cleaned tables/options/masking. When
+    // multiple connections are selected they all share the same selection for
+    // now (per-source differentiation can be added later via RagAccessSelector).
+    const sourcesArray = [...selectedConns];
+    const scopes: Record<string, import('./types/schema.js').ScopeSelection> = {};
+    for (const sourceId of sourcesArray) {
+      scopes[sourceId] = {
+        kind: 'relational',
+        selectedTables: cleanedTables,
+        tableOptions: cleanedTableOptions,
+        columnMasking: cleanedColumnMasking,
+      };
+    }
+    const configToSave: Configuration = {
       name: configName,
       label,
-      connections: [...selectedConns],
-      selectedTables: cleanedTables,
-      tableOptions: cleanedTableOptions,
-      columnMasking: cleanedColumnMasking,
+      sources: sourcesArray,
+      scopes,
     };
     const success = await onSave(configToSave);
     if (success) {

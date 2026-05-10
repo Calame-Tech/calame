@@ -4,6 +4,8 @@
 
 import { useState, useMemo } from 'react';
 import type { Profile, Configuration, DataScopeRule } from '../../../../packages/web/src/types/schema.js';
+import { getConfigurationSelectedTables } from '../../../../packages/web/src/lib/configuration-accessors.js';
+import { getProfileSelectedTables } from '../../../../packages/web/src/lib/profile-accessors.js';
 
 interface DataScopingSectionProps {
   profile: Profile;
@@ -26,11 +28,11 @@ export default function DataScopingSection({
       for (const cfgName of cfgNames) {
         const cfg = configurations.find((c) => c.name === cfgName);
         if (cfg) {
-          for (const t of Object.keys(cfg.selectedTables)) tables.add(t);
+          for (const t of Object.keys(getConfigurationSelectedTables(cfg))) tables.add(t);
         }
       }
     } else {
-      for (const t of Object.keys(profile.selectedTables ?? {})) tables.add(t);
+      for (const t of Object.keys(getProfileSelectedTables(profile))) tables.add(t);
     }
     return [...tables].sort();
   }, [profile, configurations]);
@@ -42,13 +44,13 @@ export default function DataScopingSection({
       for (const cfgName of cfgNames) {
         const cfg = configurations.find((c) => c.name === cfgName);
         if (cfg) {
-          for (const [table, cols] of Object.entries(cfg.selectedTables)) {
+          for (const [table, cols] of Object.entries(getConfigurationSelectedTables(cfg))) {
             result[table] = [...new Set([...(result[table] ?? []), ...cols])];
           }
         }
       }
     } else {
-      for (const [table, cols] of Object.entries(profile.selectedTables ?? {})) {
+      for (const [table, cols] of Object.entries(getProfileSelectedTables(profile))) {
         result[table] = [...cols];
       }
     }

@@ -59,11 +59,18 @@ describe('profiles routes', () => {
 
       expect(res.body.success).toBe(true);
 
-      // Verify data is in SQLite
+      // Verify data is in SQLite. Phase 5: the migrator drops legacy fields
+      // from the persisted shape, so the same data lives under
+      // `scopes[sourceId].selectedTables` instead of `selectedTables`.
       const row = db.raw.prepare("SELECT data FROM profiles WHERE key = 'main'").get() as { data: string };
       const saved = JSON.parse(row.data);
       expect(saved.profiles.finance.label).toBe('Finance');
-      expect(saved.profiles.finance.selectedTables.invoices).toEqual(['id', 'amount']);
+      expect(saved.profiles.finance.selectedTables).toBeUndefined();
+      const sourceId = saved.profiles.finance.sources[0];
+      expect(saved.profiles.finance.scopes[sourceId].selectedTables.invoices).toEqual([
+        'id',
+        'amount',
+      ]);
     });
 
     it('should return error when profiles data is missing', async () => {
@@ -213,7 +220,13 @@ describe('profiles routes', () => {
 
       expect(res.body.found).toBe(true);
       expect(res.body.profiles.dev.label).toBe('Dev Team');
-      expect(res.body.profiles.dev.selectedTables.users).toEqual(['id', 'name']);
+      // Phase 5: legacy `selectedTables` is folded into `scopes[sourceId]` by
+      // the migrator on read.
+      const sourceId = res.body.profiles.dev.sources[0];
+      expect(res.body.profiles.dev.scopes[sourceId].selectedTables.users).toEqual([
+        'id',
+        'name',
+      ]);
     });
 
     it('upgrades legacy-shape profiles to new shape on load', async () => {
@@ -321,8 +334,13 @@ describe('profiles routes', () => {
 
       expect(res.body.found).toBe(true);
       expect(res.body.connection.envVar).toBe('MY_DB_URL');
-      expect(res.body.profiles.analytics.tableOptions.events.maxLimit).toBe(50);
-      expect(res.body.profiles.analytics.tableOptions.events.enabledTools).toEqual(['describe', 'aggregate']);
+      // Phase 5: legacy tableOptions live in scopes[sourceId].tableOptions.
+      const sourceId = res.body.profiles.analytics.sources[0];
+      expect(res.body.profiles.analytics.scopes[sourceId].tableOptions.events.maxLimit).toBe(50);
+      expect(res.body.profiles.analytics.scopes[sourceId].tableOptions.events.enabledTools).toEqual([
+        'describe',
+        'aggregate',
+      ]);
     });
 
     it('should return warnings when schema is available and profiles reference missing tables', async () => {
@@ -592,10 +610,20 @@ describe('PATCH /api/profiles/:name/response-mode', () => {
 
     const row = db.raw.prepare("SELECT data FROM profiles WHERE key = 'main'").get() as { data: string };
     const saved = JSON.parse(row.data) as {
-      profiles: Record<string, { label: string; selectedTables: Record<string, string[]>; responseMode?: string }>;
+      profiles: Record<
+        string,
+        {
+          label: string;
+          sources?: string[];
+          scopes?: Record<string, { kind: string; selectedTables: Record<string, string[]> }>;
+          responseMode?: string;
+        }
+      >;
     };
     expect(saved.profiles.sales.label).toBe('Sales');
-    expect(saved.profiles.sales.selectedTables.orders).toEqual(['id', 'amount']);
+    // Phase 5: legacy selectedTables now lives in scopes[sourceId].selectedTables
+    const sourceId = saved.profiles.sales.sources![0];
+    expect(saved.profiles.sales.scopes![sourceId].selectedTables.orders).toEqual(['id', 'amount']);
     expect(saved.profiles.sales.responseMode).toBe('friendly');
   });
 
@@ -681,7 +709,12 @@ describe('PATCH /api/profiles/:name/response-mode', () => {
     state.db = localDb;
     state.userManager = new UserManager(localDb);
     state.serveProfiles = {
-      live: { name: 'live', label: 'Live', selectedTables: { users: ['id'] } },
+      live: {
+        name: 'live',
+        label: 'Live',
+        sources: ['main'],
+        scopes: { main: { kind: 'relational', selectedTables: { users: ['id'] } } },
+      },
     };
     const appWithState = createApp(state);
     const localCookie = await setupAdminAndGetCookie(appWithState);

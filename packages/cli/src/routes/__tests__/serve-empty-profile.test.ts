@@ -43,6 +43,23 @@ vi.mock('@calame/core', () => ({
   // The identity function is sufficient: the test fixtures already carry the needed
   // legacy fields (selectedTables etc.) so no actual migration is required here.
   upgradeProfileShape: vi.fn((p: unknown) => p),
+  // Phase 5 — profile accessors. The serve route reads via these in the legacy
+  // path; they must passthrough to the corresponding flat fields so existing
+  // legacy fixtures (`selectedTables` at the root) keep emitting the same
+  // tool set as before this refactor.
+  getProfileSelectedTables: vi.fn(
+    (p: { selectedTables?: Record<string, string[]> }) => p.selectedTables ?? {},
+  ),
+  getProfileTableOptions: vi.fn(
+    (p: { tableOptions?: Record<string, unknown> }) => p.tableOptions,
+  ),
+  getProfileColumnMasking: vi.fn(
+    (p: { columnMasking?: Record<string, Record<string, unknown>> }) => p.columnMasking,
+  ),
+  getProfileRelationalSources: vi.fn(
+    (p: { sources?: string[]; connections?: string[] }) =>
+      p.sources && p.sources.length > 0 ? p.sources : (p.connections ?? []),
+  ),
 }));
 
 vi.mock('@calame/connectors', () => ({
@@ -90,6 +107,7 @@ import express from 'express';
 import request from 'supertest';
 import { AppState } from '../../state.js';
 import { registerServeRoute } from '../serve.js';
+import type { ServeProfile } from '@calame/core';
 import type { ConnectionState } from '../../state.js';
 import type { NamedConnection } from '@calame/core';
 
@@ -180,7 +198,7 @@ describe('serve route — fix for MCP -32601 on empty / unmatched profiles', () 
     const state = new AppState();
     state.addConnection('main', makeConnectionState('main'));
     state.serveProfiles = {
-      empty: { name: 'empty', label: 'Empty', selectedTables: {}, authMode: 'token' },
+      empty: { name: 'empty', label: 'Empty', authMode: 'token' },
     };
     state.activeProfileNames.add('empty');
 
@@ -200,12 +218,14 @@ describe('serve route — fix for MCP -32601 on empty / unmatched profiles', () 
     const state = new AppState();
     state.addConnection('main', makeConnectionState('main'));
     state.serveProfiles = {
+      // Cast: validates the legacy path (pre-unified shape) — `selectedTables`
+      // at the root is no longer on the type but the runtime still handles it.
       withTables: {
         name: 'withTables',
         label: 'With Tables',
         selectedTables: { users: ['id', 'email'] },
         authMode: 'token',
-      },
+      } as unknown as ServeProfile,
     };
     state.activeProfileNames.add('withTables');
 
@@ -225,13 +245,14 @@ describe('serve route — fix for MCP -32601 on empty / unmatched profiles', () 
     const state = new AppState();
     state.addConnection('main', makeConnectionState('main'));
     state.serveProfiles = {
+      // Cast: legacy path test — `selectedTables` at the root.
       partial: {
         name: 'partial',
         label: 'Partial',
         // 'users' matches the schema; 'ghost_table' does not
         selectedTables: { users: ['id', 'email'], ghost_table: ['col'] },
         authMode: 'token',
-      },
+      } as unknown as ServeProfile,
     };
     state.activeProfileNames.add('partial');
 
@@ -250,7 +271,7 @@ describe('serve route — fix for MCP -32601 on empty / unmatched profiles', () 
     const state = new AppState();
     state.addConnection('main', makeConnectionState('main'));
     state.serveProfiles = {
-      demo: { name: 'demo', label: 'Demo', selectedTables: {}, authMode: 'token' },
+      demo: { name: 'demo', label: 'Demo', authMode: 'token' },
     };
     // Not added to activeProfileNames
 
@@ -275,7 +296,7 @@ describe('serve route — fix for MCP -32601 on empty / unmatched profiles', () 
     const state = new AppState();
     state.addConnection('main', makeConnectionState('main'));
     state.serveProfiles = {
-      demo: { name: 'demo', label: 'Demo', selectedTables: {}, authMode: 'token' },
+      demo: { name: 'demo', label: 'Demo', authMode: 'token' },
     };
     state.activeProfileNames.add('demo');
 

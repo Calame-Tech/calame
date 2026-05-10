@@ -121,12 +121,12 @@ describe('upgradeProfileShape', () => {
       expect(scope.columnMasking!['users']!['email']).toEqual({ maskingMode: 'hash' });
     });
 
-    it('preserves legacy fields in the result (backward compat)', () => {
-      const result = upgradeProfileShape(legacyProfile);
-      expect(result.connections).toEqual(['pg-main']);
-      expect(result.selectedTables).toEqual(legacyProfile['selectedTables']);
-      expect(result.tableOptions).toBeDefined();
-      expect(result.columnMasking).toBeDefined();
+    it('drops legacy root fields after folding into sources/scopes (Phase 5)', () => {
+      const result = upgradeProfileShape(legacyProfile) as unknown as Record<string, unknown>;
+      expect(result['connections']).toBeUndefined();
+      expect(result['selectedTables']).toBeUndefined();
+      expect(result['tableOptions']).toBeUndefined();
+      expect(result['columnMasking']).toBeUndefined();
     });
 
     it('does not mutate the input', () => {
@@ -150,12 +150,9 @@ describe('upgradeProfileShape', () => {
     });
 
     it('has no legacy fields when none were provided', () => {
-      const result = upgradeProfileShape(newProfile);
-      expect(result.connections).toBeUndefined();
-      // selectedTables is a required field on ServeProfile, but it was not in
-      // the input — the migrator does not inject it; cast is safe.
-      const asRecord = result as unknown as Record<string, unknown>;
-      expect(asRecord['selectedTables']).toBeUndefined();
+      const result = upgradeProfileShape(newProfile) as unknown as Record<string, unknown>;
+      expect(result['connections']).toBeUndefined();
+      expect(result['selectedTables']).toBeUndefined();
     });
   });
 
@@ -171,9 +168,9 @@ describe('upgradeProfileShape', () => {
       expect(result.sources).toEqual(['pg-new']);
     });
 
-    it('preserves legacy fields', () => {
-      const result = upgradeProfileShape(halfMigratedProfile);
-      expect(result.connections).toEqual(['pg-old']);
+    it('drops legacy fields even when both shapes are present (Phase 5)', () => {
+      const result = upgradeProfileShape(halfMigratedProfile) as unknown as Record<string, unknown>;
+      expect(result['connections']).toBeUndefined();
     });
   });
 
@@ -342,10 +339,12 @@ describe('upgradeConfigurationShape', () => {
       expect(scope.columnMasking!['invoices']!['amount']).toEqual({ maskingMode: 'none' });
     });
 
-    it('preserves legacy fields', () => {
-      const result = upgradeConfigurationShape(legacyConfig);
-      expect(result.connections).toEqual(['pg-prod']);
-      expect(result.selectedTables).toEqual(legacyConfig['selectedTables']);
+    it('drops legacy root fields after folding into sources/scopes (Phase 5)', () => {
+      const result = upgradeConfigurationShape(legacyConfig) as unknown as Record<string, unknown>;
+      expect(result['connections']).toBeUndefined();
+      expect(result['selectedTables']).toBeUndefined();
+      expect(result['tableOptions']).toBeUndefined();
+      expect(result['columnMasking']).toBeUndefined();
     });
   });
 

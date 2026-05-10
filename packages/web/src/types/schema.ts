@@ -151,14 +151,10 @@ export interface Profile {
   dataScopeRules?: DataScopeRule[];
   /** Tables explicitly shared (no scoping) when dataScopeRules is non-empty. */
   sharedTables?: string[];
-  /** @deprecated Use configurations instead */
-  connections?: string[];
-  /** @deprecated Use configurations instead */
-  selectedTables: Record<string, string[]>;
-  /** @deprecated Use configurations instead */
-  tableOptions?: Record<string, TableToolOptions>;
-  /** @deprecated Use configurations instead */
-  columnMasking?: Record<string, Record<string, ColumnMasking>>;
+  /** Source ids active in this profile (Phase 2+). */
+  sources?: string[];
+  /** Per-source access scopes (Phase 2+). Discriminated by `kind`. */
+  scopes?: Record<string, ScopeSelection>;
 }
 
 export interface ProfilesFile {
@@ -253,6 +249,21 @@ export interface PoolStats {
   connectionName: string;
   stats: { active: number; idle: number; waiting: number; total: number };
 }
+
+// RAG / Sources access scoping — mirrors @calame/core ScopeSelection
+export type ScopeSelection =
+  | {
+      kind: 'relational';
+      selectedTables: Record<string, string[]>;
+      tableOptions?: Record<string, TableToolOptions>;
+      columnMasking?: Record<string, Record<string, ColumnMasking>>;
+    }
+  | {
+      kind: 'document';
+      mode: 'allowAll' | 'allowList';
+      allowedFolders: readonly string[];
+      allowedDocuments: readonly string[];
+    };
 
 // Serve status
 export interface ServeStatus {

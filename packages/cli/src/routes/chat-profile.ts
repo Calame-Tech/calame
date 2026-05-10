@@ -13,6 +13,7 @@
 import type { Express } from 'express';
 import type { AppState } from '../state.js';
 import type { ServeProfile } from '@calame/core';
+import { upgradeProfileShape } from '@calame/core';
 
 /** Shape of the response profile object. */
 interface ChatProfileInfo {
@@ -49,20 +50,11 @@ async function loadProfileFromDb(
     const profileRaw = profilesRaw[profileName];
     if (!profileRaw || typeof profileRaw !== 'object') return null;
 
-    const p = profileRaw as Record<string, unknown>;
-
-    return {
-      name: profileName,
-      label: (p.label as string) ?? profileName,
-      configurations: p.configurations as string[] | undefined,
-      aiSettingNames: p.aiSettingNames as string[] | undefined,
-      selectedTables: (p.selectedTables as Record<string, string[]>) ?? {},
-      tableOptions: p.tableOptions,
-      columnMasking: p.columnMasking,
-      authMode: (p.authMode as ServeProfile['authMode']) ?? undefined,
-      oauthConfig: p.oauthConfig as ServeProfile['oauthConfig'] | undefined,
-      externalAuthConfig: p.externalAuthConfig as ServeProfile['externalAuthConfig'] | undefined,
-    } as ServeProfile;
+    // Run the raw JSON through the shape migrator so legacy and unified
+    // profiles emerge with the same structure. Field names from the storage
+    // (e.g. `selectedTables`, `tableOptions`) are preserved when present so
+    // they remain visible to legacy consumers reading the result directly.
+    return upgradeProfileShape({ ...profileRaw, name: profileName });
   } catch (err: unknown) {
     state.logger?.warn(`Failed to load profile "${profileName}" from DB`, {
       error: err instanceof Error ? err.message : String(err),

@@ -2,7 +2,6 @@ import { useState, useCallback, useMemo, useEffect, lazy, Suspense } from 'react
 import { Button, Card, PageHeader, Eyebrow, KpiCard, EmptyState, Breadcrumb } from './components/ui/index.js';
 import Sidebar from './components/Sidebar.js';
 import HelpTip from './components/HelpTip.js';
-import ConnectionManager from './components/ConnectionManager.js';
 import SchemaExplorer from './components/SchemaExplorer.js';
 import ConfigPanel from './components/ConfigPanel.js';
 import ServePanel from './components/ServePanel.js';
@@ -18,6 +17,8 @@ import { OidcSettings, ProfileSsoNotice, DataScopingSection } from '@calame-ee/s
 import ProfilePreview from './components/ProfilePreview.js';
 import MetricsDashboard from './components/MetricsDashboard.js';
 import ChatEntryPage from './components/ChatEntryPage.js';
+import SourcesPage from './components/SourcesPage.js';
+import { pickMaskingTargetSourceId } from './lib/profile-accessors.js';
 import type {
   DatabaseSchema,
   Config,
@@ -33,6 +34,7 @@ import type {
   OAuthConfig,
   ExternalAuthConfig,
   DataScopeRule,
+  ScopeSelection,
 } from './types/schema.js';
 
 /**
@@ -54,9 +56,36 @@ const KnowledgeBaseManager = lazy(() =>
     })),
 );
 
+/**
+ * Lazy-loaded RagAccessSelector from the ee package. Only loaded when the user
+ * navigates to the "Knowledge Bases" section of an MCP detail view.
+ */
+const RagAccessSelector = lazy(() =>
+  import('@calame-ee/rag-core/web')
+    .then((m) => ({ default: m.RagAccessSelector }))
+    .catch(() => ({
+      default: function RagAccessSelectorUnavailable() {
+        return (
+          <div className="p-6 text-sm text-gray-400 text-center">
+            Les fonctionnalités RAG ne sont pas disponibles sur cette instance.
+          </div>
+        );
+      },
+    })),
+);
+
 /** View-based navigation replacing the old step wizard */
 type View =
   | { page: 'dashboard' }
+  /**
+   * Unified sources page — databases and knowledge bases in one place.
+   * `tab` defaults to 'databases' when omitted.
+   */
+  | { page: 'sources'; tab?: 'databases' | 'knowledge'; backTo?: View; editConnectionName?: string }
+  /**
+   * Legacy alias for `{ page: 'sources', tab: 'databases' }`.
+   * Kept for backwards-compat (existing navigation calls, deep links).
+   */
   | { page: 'connections'; backTo?: View; editConnectionName?: string }
   | { page: 'configurations' }
   | { page: 'config-detail'; configName: string; backTo?: View }
@@ -65,6 +94,10 @@ type View =
   | { page: 'users'; selectedUserId?: string; backTo?: View }
   | { page: 'settings'; backTo?: View; initialTab?: 'ai' | 'email' | 'sso' }
   | { page: 'metrics' }
+  /**
+   * Legacy alias for `{ page: 'sources', tab: 'knowledge' }`.
+   * Kept for backwards-compat.
+   */
   | { page: 'knowledge' };
 
 function createDefaultProfile(): Profile {
@@ -100,6 +133,34 @@ function persistProfiles(profiles: Record<string, Record<string, unknown>>): Pro
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ profiles }),
   });
+}
+
+/**
+ * Serialize a Profile array into the shape expected by persistProfiles / /api/profiles/save.
+ *
+ * Phase 5: drops the legacy `selectedTables` / `tableOptions` / `columnMasking` /
+ * `connections` projections — the backend `upgradeProfileShape` migrator runs at
+ * the save boundary and folds anything legacy back into `sources` / `scopes` when
+ * needed. New writes therefore carry only the unified shape.
+ */
+function buildProfilesData(profiles: Profile[]): Record<string, Record<string, unknown>> {
+  const result: Record<string, Record<string, unknown>> = {};
+  for (const p of profiles) {
+    result[p.name] = {
+      label: p.label,
+      configurations: p.configurations,
+      authMode: p.authMode,
+      oauthConfig: p.oauthConfig,
+      externalAuthConfig: p.externalAuthConfig,
+      responseMode: p.responseMode,
+      dataScopeRules: p.dataScopeRules,
+      sharedTables: p.sharedTables,
+      aiSettingNames: p.aiSettingNames,
+      sources: p.sources,
+      scopes: p.scopes,
+    };
+  }
+  return result;
 }
 
 /**
@@ -286,13 +347,14 @@ export default function App() {
         const data = await res.json();
         if (data.found && data.profiles) {
           const loaded: Record<string, Omit<Profile, 'name'>> = data.profiles;
+          // Phase 5 — load uses the unified shape only. The backend
+          // `upgradeProfileShape` runs at every read boundary and synthesises
+          // `sources` / `scopes` for legacy profiles before they reach this
+          // code, so the frontend never has to handle the legacy fields.
           const loadedProfiles: Profile[] = Object.entries(loaded).map(([name, p]) => ({
             name,
             label: p.label,
             configurations: p.configurations,
-            connections: p.connections ?? ['default'],
-            selectedTables: p.selectedTables ?? {},
-            tableOptions: p.tableOptions ?? {},
             authMode: p.authMode,
             oauthConfig: p.oauthConfig,
             externalAuthConfig: p.externalAuthConfig,
@@ -300,6 +362,8 @@ export default function App() {
             dataScopeRules: p.dataScopeRules,
             sharedTables: p.sharedTables,
             aiSettingNames: p.aiSettingNames,
+            sources: p.sources,
+            scopes: p.scopes,
           }));
           if (loadedProfiles.length > 0) {
             setProfiles(loadedProfiles);
@@ -433,7 +497,21 @@ export default function App() {
       setProfiles((prev) => {
         const updated = [...prev];
         const profile = { ...updated[activeProfileIndex] };
-        const masking = { ...(profile.columnMasking ?? {}) };
+
+        // Phase 5 — write masking into the unified scope shape rather than the
+        // legacy `profile.columnMasking` field. Pick a single relational scope
+        // as target (multi-DB profiles get the masking on their first source —
+        // good enough for the global-rules use case; per-source overrides can
+        // still be done from RagAccessSelector / TableOptionsCard).
+        const targetSourceId = pickMaskingTargetSourceId(profile);
+        const scopes = { ...(profile.scopes ?? {}) };
+        const existingScope = scopes[targetSourceId];
+        const baseMasking =
+          existingScope?.kind === 'relational'
+            ? { ...(existingScope.columnMasking ?? {}) }
+            : { ...(profile.columnMasking ?? {}) };
+
+        const masking = baseMasking;
 
         for (const [tableName, colDetections] of Object.entries(piiDetections)) {
           const tableMasking = { ...(masking[tableName] ?? {}) };
@@ -451,6 +529,22 @@ export default function App() {
           masking[tableName] = tableMasking;
         }
 
+        // Reflect the masking into the relational scope (creating the scope
+        // skeleton if the profile didn't have one yet).
+        const existingRelational =
+          existingScope?.kind === 'relational' ? existingScope : null;
+        scopes[targetSourceId] = {
+          kind: 'relational',
+          selectedTables: existingRelational?.selectedTables ?? profile.selectedTables ?? {},
+          tableOptions: existingRelational?.tableOptions ?? profile.tableOptions,
+          columnMasking: masking,
+        };
+        profile.scopes = scopes;
+        if (!profile.sources?.includes(targetSourceId)) {
+          profile.sources = [...(profile.sources ?? []), targetSourceId];
+        }
+        // Also keep the legacy field in sync until it is dropped — backend
+        // accessors prefer `scopes` so the duplication is inert.
         profile.columnMasking = masking;
         updated[activeProfileIndex] = profile;
         return updated;
@@ -496,22 +590,8 @@ export default function App() {
       });
 
       // Persist the deletion to backend
-      const profilesData: Record<string, Record<string, unknown>> = {};
-      for (const p of newProfiles) {
-        profilesData[p.name] = {
-          label: p.label,
-          configurations: p.configurations,
-          selectedTables: p.selectedTables,
-          tableOptions: p.tableOptions,
-          authMode: p.authMode,
-          oauthConfig: p.oauthConfig,
-          externalAuthConfig: p.externalAuthConfig,
-          responseMode: p.responseMode,
-          aiSettingNames: p.aiSettingNames,
-        };
-      }
       try {
-        await persistProfiles(profilesData);
+        await persistProfiles(buildProfilesData(newProfiles));
       } catch {
         // ignore save errors
       }
@@ -678,8 +758,6 @@ export default function App() {
         onNavigate={(page) => setView({ page } as View)}
         user={currentUser ?? undefined}
         onLogout={handleLogout}
-        ragEnabled={ragEnabled}
-        ragDisabledReason={ragDisabledReason}
       />
 
       {/* Main content column */}
@@ -998,25 +1076,38 @@ export default function App() {
               </div>
             )}
 
+            {/* Unified Sources page */}
+            {view.page === 'sources' && (
+              <SourcesPage
+                currentTab={view.tab ?? 'databases'}
+                onTabChange={(tab) =>
+                  setView({ page: 'sources', tab, backTo: view.backTo })
+                }
+                connections={connections}
+                onConnectionsChange={setConnections}
+                onSchemaLoaded={handleSchemaLoaded}
+                editConnectionName={view.editConnectionName}
+                ragEnabled={ragEnabled}
+                ragDisabledReason={ragDisabledReason}
+                KnowledgeBaseManagerComponent={KnowledgeBaseManager}
+              />
+            )}
+
+            {/* Legacy alias: 'connections' → sources/databases tab */}
             {view.page === 'connections' && (
-              <div className="space-y-4">
-                <PageHeader
-                  breadcrumb={[
-                    { label: 'Dashboard', onClick: () => setView({ page: 'dashboard' }) },
-                    { label: 'Connections' },
-                  ]}
-                  title="Database Connections"
-                  description="Connect your databases to start building MCP servers. Supports PostgreSQL, MySQL, and SQLite."
-                />
-                <ConnectionManager
-                  connections={connections}
-                  onConnectionsChange={setConnections}
-                  onSchemaLoaded={handleSchemaLoaded}
-                  editConnectionName={
-                    view.page === 'connections' ? view.editConnectionName : undefined
-                  }
-                />
-              </div>
+              <SourcesPage
+                currentTab="databases"
+                onTabChange={(tab) =>
+                  setView({ page: 'sources', tab, backTo: view.backTo })
+                }
+                connections={connections}
+                onConnectionsChange={setConnections}
+                onSchemaLoaded={handleSchemaLoaded}
+                editConnectionName={view.editConnectionName}
+                ragEnabled={ragEnabled}
+                ragDisabledReason={ragDisabledReason}
+                KnowledgeBaseManagerComponent={KnowledgeBaseManager}
+              />
             )}
 
             {view.page === 'configurations' && (
@@ -1189,6 +1280,8 @@ export default function App() {
                       },
                     })
                   }
+                  ragEnabled={ragEnabled}
+                  ragDisabledReason={ragDisabledReason}
                 />
               </div>
             )}
@@ -1240,24 +1333,18 @@ export default function App() {
               </div>
             )}
 
+            {/* Legacy alias: 'knowledge' → sources/knowledge tab */}
             {view.page === 'knowledge' && (
-              <div className="space-y-4">
-                <PageHeader
-                  breadcrumb={[
-                    { label: 'Dashboard', onClick: () => setView({ page: 'dashboard' }) },
-                    { label: 'Bases de connaissance' },
-                  ]}
-                  title="Bases de connaissance"
-                  description="Configurez les sources documentaires qui alimentent le RAG."
-                />
-                <Suspense
-                  fallback={
-                    <div className="text-sm text-gray-500 italic">Chargement…</div>
-                  }
-                >
-                  <KnowledgeBaseManager />
-                </Suspense>
-              </div>
+              <SourcesPage
+                currentTab="knowledge"
+                onTabChange={(tab) => setView({ page: 'sources', tab })}
+                connections={connections}
+                onConnectionsChange={setConnections}
+                onSchemaLoaded={handleSchemaLoaded}
+                ragEnabled={ragEnabled}
+                ragDisabledReason={ragDisabledReason}
+                KnowledgeBaseManagerComponent={KnowledgeBaseManager}
+              />
             )}
           </div>
         </main>
@@ -1275,6 +1362,15 @@ export default function App() {
 // MCP Detail / Config view — shown when clicking an MCP card
 // ---------------------------------------------------------------------------
 
+/** Totals returned by GET /api/profiles/:name/scopes/preview */
+interface ScopesPreviewTotals {
+  tables: number;
+  columns: number;
+  folders: number;
+  documents: number;
+  chunks: number;
+}
+
 interface McpDetailViewProps {
   profileName: string;
   profiles: Profile[];
@@ -1290,6 +1386,8 @@ interface McpDetailViewProps {
   onNavigateToUser: (userId: string) => void;
   onNavigateToAiSettings: () => void;
   initialActiveSection?: string;
+  ragEnabled: boolean;
+  ragDisabledReason: string | null;
 }
 
 function McpDetailView({
@@ -1307,17 +1405,29 @@ function McpDetailView({
   onNavigateBack,
   onNavigateToUser,
   initialActiveSection,
+  ragEnabled,
+  ragDisabledReason,
 }: McpDetailViewProps) {
   const [togglingProfile, setTogglingProfile] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copiedEndpoint, setCopiedEndpoint] = useState(false);
   const [activeSection, setActiveSection] = useState<
-    'tables' | 'config' | 'tokens' | 'audit' | 'users' | 'scoping'
+    'tables' | 'config' | 'tokens' | 'audit' | 'users' | 'scoping' | 'sources'
   >(
-    (initialActiveSection as 'tables' | 'config' | 'tokens' | 'audit' | 'users' | 'scoping') ??
-      'tables',
+    (initialActiveSection as
+      | 'tables'
+      | 'config'
+      | 'tokens'
+      | 'audit'
+      | 'users'
+      | 'scoping'
+      | 'sources') ?? 'tables',
   );
+
+  // RAG scopes preview state
+  const [scopesPreview, setScopesPreview] = useState<ScopesPreviewTotals | null>(null);
+  const [scopesPreviewLoading, setScopesPreviewLoading] = useState(false);
   const [editingLabel, setEditingLabel] = useState(false);
   const [editLabel, setEditLabel] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -1334,25 +1444,7 @@ function McpDetailView({
     onProfilesChange((prev) => {
       const updated = [...prev];
       updated[profileIndex] = { ...updated[profileIndex], authMode: mode };
-      const profilesData: Record<string, Record<string, unknown>> = {};
-      for (const prof of updated) {
-        profilesData[prof.name] = {
-          label: prof.label,
-          configurations: prof.configurations,
-          connections: prof.connections,
-          selectedTables: prof.selectedTables,
-          tableOptions: prof.tableOptions,
-          columnMasking: prof.columnMasking,
-          authMode: prof.authMode,
-          oauthConfig: prof.oauthConfig,
-          externalAuthConfig: prof.externalAuthConfig,
-          responseMode: prof.responseMode,
-          dataScopeRules: prof.dataScopeRules,
-          sharedTables: prof.sharedTables,
-          aiSettingNames: prof.aiSettingNames,
-        };
-      }
-      persistProfiles(profilesData).catch(() => {});
+      persistProfiles(buildProfilesData(updated)).catch(() => {});
       return updated;
     });
   };
@@ -1371,25 +1463,7 @@ function McpDetailView({
         ...current,
         oauthConfig: { ...existingOauth, ...partial },
       };
-      const profilesData: Record<string, Record<string, unknown>> = {};
-      for (const prof of updated) {
-        profilesData[prof.name] = {
-          label: prof.label,
-          configurations: prof.configurations,
-          connections: prof.connections,
-          selectedTables: prof.selectedTables,
-          tableOptions: prof.tableOptions,
-          columnMasking: prof.columnMasking,
-          authMode: prof.authMode,
-          oauthConfig: prof.oauthConfig,
-          externalAuthConfig: prof.externalAuthConfig,
-          responseMode: prof.responseMode,
-          dataScopeRules: prof.dataScopeRules,
-          sharedTables: prof.sharedTables,
-          aiSettingNames: prof.aiSettingNames,
-        };
-      }
-      persistProfiles(profilesData).catch(() => {});
+      persistProfiles(buildProfilesData(updated)).catch(() => {});
       return updated;
     });
   };
@@ -1406,25 +1480,7 @@ function McpDetailView({
         ...current,
         externalAuthConfig: { ...existingExternal, ...partial },
       };
-      const profilesData: Record<string, Record<string, unknown>> = {};
-      for (const prof of updated) {
-        profilesData[prof.name] = {
-          label: prof.label,
-          configurations: prof.configurations,
-          connections: prof.connections,
-          selectedTables: prof.selectedTables,
-          tableOptions: prof.tableOptions,
-          columnMasking: prof.columnMasking,
-          authMode: prof.authMode,
-          oauthConfig: prof.oauthConfig,
-          externalAuthConfig: prof.externalAuthConfig,
-          responseMode: prof.responseMode,
-          dataScopeRules: prof.dataScopeRules,
-          sharedTables: prof.sharedTables,
-          aiSettingNames: prof.aiSettingNames,
-        };
-      }
-      persistProfiles(profilesData).catch(() => {});
+      persistProfiles(buildProfilesData(updated)).catch(() => {});
       return updated;
     });
   };
@@ -1434,25 +1490,7 @@ function McpDetailView({
     onProfilesChange((prev) => {
       const updated = [...prev];
       updated[profileIndex] = { ...updated[profileIndex], aiSettingNames };
-      const profilesData: Record<string, Record<string, unknown>> = {};
-      for (const prof of updated) {
-        profilesData[prof.name] = {
-          label: prof.label,
-          configurations: prof.configurations,
-          connections: prof.connections,
-          selectedTables: prof.selectedTables,
-          tableOptions: prof.tableOptions,
-          columnMasking: prof.columnMasking,
-          authMode: prof.authMode,
-          oauthConfig: prof.oauthConfig,
-          externalAuthConfig: prof.externalAuthConfig,
-          responseMode: prof.responseMode,
-          dataScopeRules: prof.dataScopeRules,
-          sharedTables: prof.sharedTables,
-          aiSettingNames: prof.aiSettingNames,
-        };
-      }
-      persistProfiles(profilesData).catch(() => {});
+      persistProfiles(buildProfilesData(updated)).catch(() => {});
       return updated;
     });
   };
@@ -1462,25 +1500,7 @@ function McpDetailView({
     onProfilesChange((prev) => {
       const updated = [...prev];
       updated[profileIndex] = { ...updated[profileIndex], dataScopeRules, sharedTables };
-      const profilesData: Record<string, Record<string, unknown>> = {};
-      for (const prof of updated) {
-        profilesData[prof.name] = {
-          label: prof.label,
-          configurations: prof.configurations,
-          connections: prof.connections,
-          selectedTables: prof.selectedTables,
-          tableOptions: prof.tableOptions,
-          columnMasking: prof.columnMasking,
-          authMode: prof.authMode,
-          oauthConfig: prof.oauthConfig,
-          externalAuthConfig: prof.externalAuthConfig,
-          responseMode: prof.responseMode,
-          dataScopeRules: prof.dataScopeRules,
-          sharedTables: prof.sharedTables,
-          aiSettingNames: prof.aiSettingNames,
-        };
-      }
-      persistProfiles(profilesData).catch(() => {});
+      persistProfiles(buildProfilesData(updated)).catch(() => {});
       return updated;
     });
   };
@@ -1491,6 +1511,30 @@ function McpDetailView({
       onActiveProfileIndexChange(profileIndex);
     }
   }, [profileIndex, activeProfileIndex, onActiveProfileIndexChange]);
+
+  // Fetch RAG scopes preview when on the "Knowledge Bases" section
+  const fetchScopesPreview = useCallback(async () => {
+    setScopesPreviewLoading(true);
+    try {
+      const res = await fetch(`/api/profiles/${encodeURIComponent(profileName)}/scopes/preview`, {
+        credentials: 'include',
+      });
+      const data = await res.json();
+      if (data.success !== false && data.totals) {
+        setScopesPreview(data.totals as ScopesPreviewTotals);
+      }
+    } catch {
+      // Preview is best-effort — silently ignore errors
+    } finally {
+      setScopesPreviewLoading(false);
+    }
+  }, [profileName]);
+
+  useEffect(() => {
+    if (activeSection === 'sources') {
+      void fetchScopesPreview();
+    }
+  }, [activeSection, fetchScopesPreview]);
 
   if (!profile) {
     return (
@@ -1520,18 +1564,7 @@ function McpDetailView({
 
   /** Save all profiles to backend before starting, so new profiles are known */
   const saveProfiles = async () => {
-    const profilesData: Record<string, Record<string, unknown>> = {};
-    for (const p of profiles) {
-      profilesData[p.name] = {
-        label: p.label,
-        configurations: p.configurations,
-        authMode: p.authMode,
-        oauthConfig: p.oauthConfig,
-        externalAuthConfig: p.externalAuthConfig,
-        responseMode: p.responseMode,
-      };
-    }
-    await persistProfiles(profilesData);
+    await persistProfiles(buildProfilesData(profiles));
   };
 
   const handleStartProfile = async () => {
@@ -1616,25 +1649,7 @@ function McpDetailView({
       updated[profileIndex] = p;
 
       // Persist to backend and refresh active MCP servers
-      const profilesData: Record<string, Record<string, unknown>> = {};
-      for (const prof of updated) {
-        profilesData[prof.name] = {
-          label: prof.label,
-          configurations: prof.configurations,
-          connections: prof.connections,
-          selectedTables: prof.selectedTables,
-          tableOptions: prof.tableOptions,
-          columnMasking: prof.columnMasking,
-          authMode: prof.authMode,
-          oauthConfig: prof.oauthConfig,
-          externalAuthConfig: prof.externalAuthConfig,
-          responseMode: prof.responseMode,
-          dataScopeRules: prof.dataScopeRules,
-          sharedTables: prof.sharedTables,
-          aiSettingNames: prof.aiSettingNames,
-        };
-      }
-      persistProfiles(profilesData)
+      persistProfiles(buildProfilesData(updated))
         .then(() => fetch('/api/serve/refresh', { method: 'POST' }))
         .catch(() => {});
 
@@ -1692,6 +1707,11 @@ function McpDetailView({
       id: 'scoping',
       label: 'Data Scoping',
       tooltip: "Configurer l'isolation des données par utilisateur (row-level)",
+    },
+    {
+      id: 'sources',
+      label: 'Knowledge Bases',
+      tooltip: 'Configurer les bases de connaissance RAG accessibles via ce serveur MCP',
     },
     {
       id: 'audit',
@@ -2521,6 +2541,139 @@ function McpDetailView({
         <div className="card-primary p-4">
           <h3 className="text-sm font-semibold text-gray-300 mb-3">Tokens</h3>
           <TokenManagerLazy profile={profile} port={serveStatus.port} />
+        </div>
+      )}
+
+      {activeSection === 'sources' && (
+        <div className="space-y-4">
+          {/* Preview header */}
+          <div className="card-primary p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-gray-300">Knowledge Bases</h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Sélectionnez les bases de connaissance et les dossiers accessibles via ce serveur MCP.
+                </p>
+              </div>
+              {/* Scope summary badge */}
+              {scopesPreviewLoading ? (
+                <span className="text-xs text-gray-500 italic">Chargement…</span>
+              ) : scopesPreview ? (
+                <div className="flex items-center gap-2 text-xs text-gray-400 flex-wrap justify-end">
+                  {scopesPreview.tables > 0 && (
+                    <span className="px-2 py-0.5 rounded bg-gray-800/60 border border-gray-700">
+                      {scopesPreview.tables} table{scopesPreview.tables !== 1 ? 's' : ''}
+                    </span>
+                  )}
+                  {scopesPreview.columns > 0 && (
+                    <span className="px-2 py-0.5 rounded bg-gray-800/60 border border-gray-700">
+                      {scopesPreview.columns} col{scopesPreview.columns !== 1 ? 's' : ''}
+                    </span>
+                  )}
+                  {scopesPreview.folders > 0 && (
+                    <span className="px-2 py-0.5 rounded bg-gray-800/60 border border-gray-700">
+                      {scopesPreview.folders} dossier{scopesPreview.folders !== 1 ? 's' : ''}
+                    </span>
+                  )}
+                  {scopesPreview.documents > 0 && (
+                    <span className="px-2 py-0.5 rounded bg-gray-800/60 border border-gray-700">
+                      {scopesPreview.documents} document{scopesPreview.documents !== 1 ? 's' : ''}
+                    </span>
+                  )}
+                  {scopesPreview.chunks > 0 && (
+                    <span className="px-2 py-0.5 rounded bg-gray-800/60 border border-gray-700">
+                      ~{scopesPreview.chunks} chunk{scopesPreview.chunks !== 1 ? 's' : ''}
+                    </span>
+                  )}
+                  {scopesPreview.tables === 0 &&
+                    scopesPreview.folders === 0 &&
+                    scopesPreview.documents === 0 && (
+                      <span className="text-gray-600 italic">Aucun élément accessible</span>
+                    )}
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+          {/* RAG access selector body */}
+          {!ragEnabled ? (
+            <div className="card-primary p-6 text-center space-y-2">
+              <svg
+                className="w-8 h-8 text-gray-600 mx-auto"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={1.5}
+                aria-hidden="true"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25"
+                />
+              </svg>
+              <p className="text-sm font-medium text-gray-400">
+                Bases de connaissance non disponibles
+              </p>
+              {ragDisabledReason && (
+                <p className="text-xs text-gray-600 max-w-sm mx-auto">{ragDisabledReason}</p>
+              )}
+            </div>
+          ) : (
+            <div className="card-primary p-4">
+              <Suspense
+                fallback={
+                  <div className="p-6 text-sm text-gray-500 italic flex items-center gap-2">
+                    <svg
+                      className="w-3 h-3 animate-spin text-gray-500 flex-shrink-0"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
+                    >
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                      />
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                      />
+                    </svg>
+                    Chargement…
+                  </div>
+                }
+              >
+                <RagAccessSelector
+                  profileName={profile.name}
+                  initialScopes={profile.scopes as unknown as Record<string, ScopeSelection>}
+                  initialSources={profile.sources ?? []}
+                  onSaved={(newScopes, newSources) => {
+                    // Update local profile state — do NOT call persistProfiles here.
+                    // The RagAccessSelector already posted to /api/profiles/:name/scopes.
+                    // Cast via unknown: the mirror type in schema.ts and @calame/core are
+                    // structurally equivalent at the values we use; the mismatch is only on
+                    // tableOptions (unknown vs TableToolOptions) which is inert here.
+                    onProfilesChange((prev) => {
+                      const updated = [...prev];
+                      updated[profileIndex] = {
+                        ...updated[profileIndex],
+                        scopes: newScopes as unknown as Record<string, ScopeSelection>,
+                        sources: newSources,
+                      };
+                      return updated;
+                    });
+                    // Refresh the preview summary
+                    void fetchScopesPreview();
+                  }}
+                />
+              </Suspense>
+            </div>
+          )}
         </div>
       )}
 

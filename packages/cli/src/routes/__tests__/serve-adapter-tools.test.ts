@@ -58,6 +58,20 @@ vi.mock('@calame/core', () => ({
     return p as Record<string, unknown>;
   }),
   sourceAdapterRegistry: mockRegistry,
+  // Phase 5 profile accessors — passthrough mocks (legacy path).
+  getProfileSelectedTables: vi.fn(
+    (p: { selectedTables?: Record<string, string[]> }) => p.selectedTables ?? {},
+  ),
+  getProfileTableOptions: vi.fn(
+    (p: { tableOptions?: Record<string, unknown> }) => p.tableOptions,
+  ),
+  getProfileColumnMasking: vi.fn(
+    (p: { columnMasking?: Record<string, Record<string, unknown>> }) => p.columnMasking,
+  ),
+  getProfileRelationalSources: vi.fn(
+    (p: { sources?: string[]; connections?: string[] }) =>
+      p.sources && p.sources.length > 0 ? p.sources : (p.connections ?? []),
+  ),
 }));
 
 vi.mock('@calame/connectors', () => ({
@@ -228,7 +242,6 @@ describe('serve route — Phase 3c adapter-driven tool registration', () => {
       single: {
         name: 'single',
         label: 'Single',
-        selectedTables: {},
         sources: ['main'],
         scopes: {
           main: relationalScope(),
@@ -263,7 +276,6 @@ describe('serve route — Phase 3c adapter-driven tool registration', () => {
       multi: {
         name: 'multi',
         label: 'Multi',
-        selectedTables: {},
         sources: ['prod', 'staging'],
         scopes: {
           prod: relationalScope(),
@@ -332,7 +344,6 @@ describe('serve route — Phase 3c adapter-driven tool registration', () => {
       mixed: {
         name: 'mixed',
         label: 'Mixed',
-        selectedTables: {},
         sources: ['main', 'kb1'],
         scopes: {
           main: relationalScope(),
@@ -370,13 +381,13 @@ describe('serve route — Phase 3c adapter-driven tool registration', () => {
     // This mirrors the case where the migrator synthesised a placeholder id
     // (e.g. 'default') for a legacy profile whose `connections` field was empty
     // but the actual connection is named otherwise. The legacy serve.ts path
-    // fell back to `state.connections.keys()` when `profile.connections` was
-    // empty (serve.ts:379-381); the adapter path mirrors that fallback.
+    // fell back to `state.connections.keys()` when no relational source matched a
+    // live connection; the adapter path mirrors that fallback (cf.
+    // registerToolsViaAdapters in serve.ts).
     state.serveProfiles = {
       ghost: {
         name: 'ghost',
         label: 'Ghost',
-        selectedTables: {},
         sources: ['nonexistent'],
         scopes: {
           nonexistent: relationalScope(),
@@ -406,13 +417,16 @@ describe('serve route — Phase 3c adapter-driven tool registration', () => {
     state.addConnection('main', makeConnectionState('main'));
 
     state.serveProfiles = {
+      // Cast: this fixture intentionally carries a legacy `selectedTables`
+      // root field (now dropped from `ServeProfile`) to validate that the
+      // serve route still falls back to `registerDynamicTools` for legacy
+      // profiles that the upgrade-mock leaves unchanged.
       legacy: {
         name: 'legacy',
         label: 'Legacy',
         selectedTables: { users: ['id', 'email'] },
         authMode: 'token',
-        // No sources/scopes — upgradeProfileShape returns the raw object unchanged in mock
-      },
+      } as unknown as import('@calame/core').ServeProfile,
     };
     state.activeProfileNames.add('legacy');
 
@@ -467,7 +481,6 @@ describe('serve route — Phase 3c adapter-driven tool registration', () => {
       restrictedKb: {
         name: 'restrictedKb',
         label: 'Restricted KB',
-        selectedTables: {},
         sources: ['kb1'],
         scopes: { kb1: allowListScope },
       },
@@ -528,7 +541,6 @@ describe('serve route — Phase 3c adapter-driven tool registration', () => {
       dualKb: {
         name: 'dualKb',
         label: 'Dual KB',
-        selectedTables: {},
         sources: ['kb1', 'kb2'],
         scopes: {
           kb1: documentScope('allowAll'),
@@ -550,5 +562,50 @@ describe('serve route — Phase 3c adapter-driven tool registration', () => {
 
     expect(ctx1.toolNamespace).toBe('knowledge_base_1_');
     expect(ctx2.toolNamespace).toBe('knowledge_base_2_');
+  });
+
+  // -------------------------------------------------------------------------
+  // Test 8: Empty sources/scopes → adapter path NOT taken, fallback registers
+  // zero concrete tools (but still wires the MCP tools/list handler)
+  //
+  // Validates the post-2026-05-09 contract: a profile with `sources: []` is
+  // legitimate (e.g. just created, or admin de-selected everything via the
+  // RagAccessSelector). The serve route must not throw and must register zero
+  // concrete tools. The MCP protocol nonetheless requires the tools/list
+  // handler to exist — `registerDynamicTools` is therefore called once with
+  // an empty tables/selectedTables payload to wire that handler. See the
+  // "tablesByConnection.size === 0" branch in serve.ts:549.
+  // -------------------------------------------------------------------------
+  it('empty sources array: no adapter is called, fallback registers 0 tools', async () => {
+    const state = new AppState();
+    state.addConnection('orphan', makeConnectionState('orphan', 'Orphan DB'));
+
+    state.serveProfiles = {
+      empty: {
+        name: 'empty',
+        label: 'Empty Profile',
+        sources: [],
+        scopes: {},
+      },
+    };
+    state.activeProfileNames.add('empty');
+
+    const app = makeApp(state);
+    const res = await postInitialize(app, 'empty');
+    expect(res.status).toBe(200);
+
+    // The adapter-driven path is not taken (Object.keys(scopes).length === 0).
+    const pgAdapter = registeredAdapters.get('postgresql');
+    expect(pgAdapter?.registerMcpTools).not.toHaveBeenCalled();
+
+    // The legacy path runs the "fallback for empty profile" branch: 1 call to
+    // registerDynamicTools with empty tables/selectedTables to wire tools/list.
+    expect(registerDynamicToolsMock).toHaveBeenCalledTimes(1);
+    const args = registerDynamicToolsMock.mock.calls[0][0] as {
+      tables: unknown[];
+      selectedTables: Record<string, unknown>;
+    };
+    expect(args.tables).toEqual([]);
+    expect(args.selectedTables).toEqual({});
   });
 });

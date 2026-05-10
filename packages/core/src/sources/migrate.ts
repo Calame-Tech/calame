@@ -14,9 +14,13 @@ import type { ScopeSelection } from './types.js';
 //   - tableOptions: Record<tableName, TableToolOptions>
 //   - columnMasking: Record<tableName, Record<columnName, ColumnMasking>>
 //
-// Evidence from packages/cli/src/routes/serve.ts lines 354-361:
-//   effectiveConnections = profile.connections ?? [...state.connections.keys()]
-//   effectiveSelectedTables = { ...profile.selectedTables }  // flat table-keyed map
+// Evidence from packages/cli/src/routes/serve.ts (post-Phase 5 Tier 1):
+//   const relationalSources = getProfileRelationalSources(profile);
+//   const matchedSources = relationalSources.filter((id) => state.connections.has(id));
+//   effectiveConnections = matchedSources.length ? [...matchedSources] : [...state.connections.keys()];
+//   effectiveSelectedTables = { ...getProfileSelectedTables(profile) }  // flat table-keyed map
+// Pre-Phase-5 the same logic read directly from `profile.connections` and
+// `profile.selectedTables`; the accessors now absorb the legacy/unified branching.
 //
 // The serve.ts runtime then resolves which connection owns each table at
 // request time by matching table names against each connection's introspected
@@ -66,9 +70,28 @@ export function upgradeProfileShape(raw: unknown): ServeProfile {
   if (!hasNonEmptyScopes(result)) {
     const scopeBlock = buildRelationalScopeBlock(raw);
     if (scopeBlock !== null) {
-      result['scopes'] = distributeScope(result['sources'], scopeBlock);
+      const distributed = distributeScope(result['sources'], scopeBlock);
+      result['scopes'] = distributed;
+      // When `sources` was missing entirely, distributeScope falls back to a
+      // synthetic `'default'` id — make sure it is also reflected on `sources`
+      // so the unified shape is internally consistent.
+      if (
+        (result['sources'] === undefined || result['sources'] === null) &&
+        Object.keys(distributed).length > 0
+      ) {
+        result['sources'] = Object.keys(distributed);
+      }
     }
   }
+
+  // Phase 5 — strip the legacy root fields after they have been folded into
+  // `sources` / `scopes`. Profiles previously authored in the legacy shape
+  // therefore emerge from the migrator with the unified shape only, and the
+  // next storage write persists without the deprecated keys.
+  delete result['connections'];
+  delete result['selectedTables'];
+  delete result['tableOptions'];
+  delete result['columnMasking'];
 
   return result as unknown as ServeProfile;
 }
@@ -103,9 +126,22 @@ export function upgradeConfigurationShape(raw: unknown): ServeConfiguration {
   if (!hasNonEmptyScopes(result)) {
     const scopeBlock = buildRelationalScopeBlock(raw);
     if (scopeBlock !== null) {
-      result['scopes'] = distributeScope(result['sources'], scopeBlock);
+      const distributed = distributeScope(result['sources'], scopeBlock);
+      result['scopes'] = distributed;
+      if (
+        (result['sources'] === undefined || result['sources'] === null) &&
+        Object.keys(distributed).length > 0
+      ) {
+        result['sources'] = Object.keys(distributed);
+      }
     }
   }
+
+  // Phase 5 — strip the legacy root fields (same rationale as upgradeProfileShape).
+  delete result['connections'];
+  delete result['selectedTables'];
+  delete result['tableOptions'];
+  delete result['columnMasking'];
 
   return result as unknown as ServeConfiguration;
 }

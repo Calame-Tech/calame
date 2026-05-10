@@ -14,9 +14,23 @@ export interface ProfileWarning {
 /**
  * Validate loaded profiles against the current database schema.
  * Returns a list of warnings for stale tables/columns.
+ *
+ * Reads through `getProfileSelectedTables` so it covers both the unified
+ * shape (`scopes[sid].selectedTables`) and the legacy `selectedTables`
+ * fallback for profiles that haven't been through `upgradeProfileShape`.
  */
+import { getProfileSelectedTables } from '@calame/core';
+
 export function validateProfiles(
-  profiles: Record<string, { selectedTables?: Record<string, string[]>; tableOptions?: Record<string, unknown> }>,
+  profiles: Record<
+    string,
+    {
+      selectedTables?: Record<string, string[]>;
+      tableOptions?: Record<string, unknown>;
+      sources?: string[];
+      scopes?: Parameters<typeof getProfileSelectedTables>[0]['scopes'];
+    }
+  >,
   schemaTables: { name: string; columns: { name: string }[] }[],
 ): ProfileWarning[] {
   const warnings: ProfileWarning[] = [];
@@ -27,8 +41,12 @@ export function validateProfiles(
   }
 
   for (const [profileName, profile] of Object.entries(profiles)) {
-    const selected = profile.selectedTables;
-    if (!selected) continue;
+    // Cast: validateProfiles' input type carries `tableOptions: Record<string, unknown>`
+    // for backward compat with callers; the accessor's `ProfileScopeShape`
+    // expects the structural `TableToolOptions`. They are interchangeable here
+    // because the accessor only reads `selectedTables` from the relational
+    // scope.
+    const selected = getProfileSelectedTables(profile as Parameters<typeof getProfileSelectedTables>[0]);
 
     for (const [tableName, columns] of Object.entries(selected)) {
       const schemaColumns = tableMap.get(tableName);

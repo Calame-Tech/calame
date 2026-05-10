@@ -133,28 +133,13 @@ export interface ServeProfile {
    */
   scopes?: Record<string, import('../sources/index.js').ScopeSelection>;
 
-  /**
-   * @deprecated since Phase 2. Use `sources` instead. Kept for backward
-   * compatibility with on-disk profiles. The migrator (`upgradeProfileShape`)
-   * folds this into `sources` on read; new writes should populate `sources`
-   * only. Will be removed in Phase 5.
-   */
-  connections?: string[]; // Named connection references
-  /**
-   * @deprecated since Phase 2. Use `scopes[sourceId].selectedTables` instead.
-   * Will be removed in Phase 5.
-   */
-  selectedTables: Record<string, string[]>; // tableName -> selected columns
-  /**
-   * @deprecated since Phase 2. Use `scopes[sourceId].tableOptions` instead.
-   * Will be removed in Phase 5.
-   */
-  tableOptions?: Record<string, import('../introspect/types.js').TableToolOptions>;
-  /**
-   * @deprecated since Phase 2. Use `scopes[sourceId].columnMasking` instead.
-   * Will be removed in Phase 5.
-   */
-  columnMasking?: Record<string, Record<string, import('../pii/types.js').ColumnMasking>>;
+  // Phase 5 — legacy fields (`connections`, `selectedTables`, `tableOptions`,
+  // `columnMasking`) were dropped from `ServeProfile`. Profiles authored in
+  // the legacy shape are read via `upgradeProfileShape` (which folds them into
+  // `sources` / `scopes` and drops the root fields). Code that still needs to
+  // accept the legacy shape on input should use `ProfileScopeShape` from
+  // `@calame/core/sources/accessors` (carries the legacy fields as optional
+  // reads).
   token?: string; // auth token for this profile
   /** Authentication mode for this MCP server endpoint */
   authMode?: 'open' | 'token' | 'calame' | 'sso' | 'oauth' | 'external';

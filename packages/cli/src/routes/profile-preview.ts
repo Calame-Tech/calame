@@ -2,7 +2,13 @@ import type { Express, Request, Response } from 'express';
 import crypto from 'crypto';
 import { getConnector } from '@calame/connectors';
 import type { AppState } from '../state.js';
-import type { TableToolOptions, ColumnMasking } from '@calame/core';
+import type { TableToolOptions, ColumnMasking, ScopeSelection } from '@calame/core';
+import {
+  getProfileSelectedTables,
+  getProfileTableOptions,
+  getProfileColumnMasking,
+  getProfileRelationalSources,
+} from '@calame/core';
 import { mergeConfigurations } from './serve.js';
 import { readConfigurationsFile } from './configurations.js';
 
@@ -107,6 +113,10 @@ export function registerProfilePreviewRoute(app: Express, state: AppState): void
             selectedTables?: Record<string, string[]>;
             tableOptions?: Record<string, TableToolOptions>;
             columnMasking?: Record<string, Record<string, ColumnMasking>>;
+            // Phase 2+ unified shape — read by accessors with fallback to the
+            // legacy fields above for profiles authored before the migration.
+            sources?: string[];
+            scopes?: Record<string, ScopeSelection>;
           }
         >;
       };
@@ -145,12 +155,14 @@ export function registerProfilePreviewRoute(app: Express, state: AppState): void
         effectiveTableOptions = merged.tableOptions;
         effectiveColumnMasking = merged.columnMasking;
       } else {
-        effectiveConnections = profile.connections?.length
-          ? profile.connections
+        const profileShape = profile;
+        const relationalSources = getProfileRelationalSources(profileShape);
+        effectiveConnections = relationalSources.length
+          ? relationalSources
           : [...state.connections.keys()];
-        effectiveSelectedTables = profile.selectedTables ?? {};
-        effectiveTableOptions = profile.tableOptions;
-        effectiveColumnMasking = profile.columnMasking;
+        effectiveSelectedTables = getProfileSelectedTables(profileShape);
+        effectiveTableOptions = getProfileTableOptions(profileShape);
+        effectiveColumnMasking = getProfileColumnMasking(profileShape);
       }
 
       const tables: PreviewTableResult[] = [];

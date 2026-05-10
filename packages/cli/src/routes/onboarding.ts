@@ -1,5 +1,6 @@
 import type { Express } from 'express';
 import type { AppState } from '../state.js';
+import { getProfileTableNames } from '@calame/core';
 
 export function registerOnboardingRoute(app: Express, state: AppState): void {
   /**
@@ -30,11 +31,10 @@ export function registerOnboardingRoute(app: Express, state: AppState): void {
 
       const profilesInfo = user.profiles.map((pa) => {
         const profile = state.serveProfiles[pa.profileName];
-        const tables = profile
-          ? Object.keys(profile.selectedTables).filter(
-              (t) => !pa.allowedTables || pa.allowedTables.includes(t),
-            )
-          : [];
+        const tableNames = profile ? getProfileTableNames(profile) : [];
+        const tables = tableNames.filter(
+          (t) => !pa.allowedTables || pa.allowedTables.includes(t),
+        );
         const mcpUrl = `${protocol}://${host}/mcp/${pa.profileName}`;
         return {
           profileName: pa.profileName,

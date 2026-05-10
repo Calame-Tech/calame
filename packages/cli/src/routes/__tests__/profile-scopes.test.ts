@@ -41,13 +41,14 @@ describe('profile-scopes routes', () => {
   let app: ReturnType<typeof createApp>;
   let tmpDir: string;
   let db: CalameDatabase;
+  let state: AppState;
   let cookie: string;
 
   beforeEach(async () => {
     tmpDir = path.join(os.tmpdir(), `calame-scopes-test-${Date.now()}`);
     await fs.mkdir(tmpDir, { recursive: true });
 
-    const state = new AppState();
+    state = new AppState();
     db = new CalameDatabase(tmpDir);
     state.db = db;
     state.userManager = new UserManager(db);
@@ -105,18 +106,28 @@ describe('profile-scopes routes', () => {
       expect(res.body.message).toBe('Invalid request body');
     });
 
-    it('returns 400 when sources is empty', async () => {
+    it('accepts an empty sources array (profile with no source assigned)', async () => {
       insertProfiles(db, {
-        dev: { name: 'dev', label: 'Dev', selectedTables: {} },
+        dev: {
+          name: 'dev',
+          label: 'Dev',
+          sources: ['prod'],
+          scopes: {
+            prod: { kind: 'relational', selectedTables: { users: ['id'] } },
+          },
+          selectedTables: {},
+        },
       });
 
       const res = await request(app)
         .post('/api/profiles/dev/scopes')
         .set('Cookie', cookie)
         .send({ sources: [], scopes: {} })
-        .expect(400);
+        .expect(200);
 
-      expect(res.body.success).toBe(false);
+      expect(res.body.success).toBe(true);
+      expect(res.body.profile.sources).toEqual([]);
+      expect(res.body.profile.scopes).toEqual({});
     });
 
     it('updates the profile with new sources and scopes', async () => {
@@ -415,6 +426,332 @@ describe('profile-scopes routes', () => {
       expect(res.body.totals.folders).toBe(1);
       expect(res.body.totals.documents).toBe(0);
       expect(res.body.sources).toHaveLength(2);
+    });
+
+    // ------------------------------------------------------------------------
+    // Phase 4: enriched counts
+    // ------------------------------------------------------------------------
+
+    it('returns counts and live=true for a relational scope', async () => {
+      insertProfiles(db, {
+        rel: {
+          name: 'rel',
+          label: 'Relational',
+          sources: ['pg'],
+          scopes: {
+            pg: {
+              kind: 'relational',
+              selectedTables: { users: ['id', 'email'], orders: ['id', 'amount', 'status'] },
+            },
+          },
+          connections: ['pg'],
+          selectedTables: {},
+        },
+      });
+
+      const res = await request(app)
+        .get('/api/profiles/rel/scopes/preview')
+        .set('Cookie', cookie)
+        .expect(200);
+
+      expect(res.body.success).toBe(true);
+
+      const src = res.body.sources.find((s: { id: string }) => s.id === 'pg');
+      expect(src).toBeDefined();
+      expect(src.kind).toBe('relational');
+      // New counts field
+      expect(src.counts).toBeDefined();
+      expect(src.counts.tables).toBe(2);
+      expect(src.counts.columns).toBe(5); // 2 + 3
+      // live flag
+      expect(src.live).toBe(true);
+
+      // Totals include columns
+      expect(res.body.totals.columns).toBe(5);
+    });
+
+    it('returns live=false with naive counts when ragRuntime is absent (document scope)', async () => {
+      // state.ragRuntime is undefined by default in this test suite (no RAG bootstrap).
+      insertProfiles(db, {
+        kb2: {
+          name: 'kb2',
+          label: 'KB 2',
+          sources: ['docs1'],
+          scopes: {
+            docs1: {
+              kind: 'document',
+              mode: 'allowList',
+              allowedFolders: ['api', 'guides', 'faq'],
+              allowedDocuments: ['readme.md', 'changelog.md'],
+            },
+          },
+          connections: [],
+          selectedTables: {},
+        },
+      });
+
+      const res = await request(app)
+        .get('/api/profiles/kb2/scopes/preview')
+        .set('Cookie', cookie)
+        .expect(200);
+
+      expect(res.body.success).toBe(true);
+
+      const src = res.body.sources.find((s: { id: string }) => s.id === 'docs1');
+      expect(src).toBeDefined();
+      expect(src.kind).toBe('document');
+      // Fallback: naive counts from the arrays
+      expect(src.counts.folders).toBe(3);
+      expect(src.counts.documents).toBe(2);
+      expect(src.counts.chunks).toBe(0);
+      // live=false signals approximation
+      expect(src.live).toBe(false);
+
+      // Totals
+      expect(res.body.totals.folders).toBe(3);
+      expect(res.body.totals.documents).toBe(2);
+      expect(res.body.totals.chunks).toBe(0);
+    });
+
+    it('returns live=false for document allowAll scope when ragRuntime is absent', async () => {
+      insertProfiles(db, {
+        kball: {
+          name: 'kball',
+          label: 'KB All',
+          sources: ['src1'],
+          scopes: {
+            src1: {
+              kind: 'document',
+              mode: 'allowAll',
+              allowedFolders: [],
+              allowedDocuments: [],
+            },
+          },
+          connections: [],
+          selectedTables: {},
+        },
+      });
+
+      const res = await request(app)
+        .get('/api/profiles/kball/scopes/preview')
+        .set('Cookie', cookie)
+        .expect(200);
+
+      expect(res.body.success).toBe(true);
+      const src = res.body.sources.find((s: { id: string }) => s.id === 'src1');
+      expect(src).toBeDefined();
+      expect(src.live).toBe(false);
+      expect(src.counts.chunks).toBe(0);
+    });
+
+    // ----------------------------------------------------------------------
+    // Live document counts (state.ragRuntime present + RAG tables populated)
+    // ----------------------------------------------------------------------
+
+    /**
+     * Helper that creates the minimal `rag_*` tables directly on the test DB
+     * and inserts a small fixture (1 source, 2 folders, 3 docs, 5 chunks).
+     * Mirrors `runRagMigrations` so the preview SQL can resolve.
+     */
+    function setupRagFixtures(): void {
+      db.raw.exec(`CREATE TABLE IF NOT EXISTS rag_folders (
+        id TEXT PRIMARY KEY,
+        source_id TEXT NOT NULL,
+        parent_id TEXT,
+        path TEXT NOT NULL,
+        name TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`);
+      db.raw.exec(`CREATE TABLE IF NOT EXISTS rag_documents (
+        id TEXT PRIMARY KEY,
+        source_id TEXT NOT NULL,
+        folder_id TEXT,
+        path TEXT NOT NULL,
+        name TEXT NOT NULL,
+        mime_type TEXT NOT NULL,
+        size INTEGER NOT NULL,
+        hash TEXT NOT NULL,
+        etag TEXT,
+        last_indexed_at TEXT NOT NULL DEFAULT (datetime('now')),
+        deleted_at TEXT
+      )`);
+      db.raw.exec(`CREATE TABLE IF NOT EXISTS rag_chunks (
+        id TEXT PRIMARY KEY,
+        document_id TEXT NOT NULL,
+        position INTEGER NOT NULL,
+        text TEXT NOT NULL,
+        token_count INTEGER NOT NULL,
+        embedding_dimensions INTEGER NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`);
+
+      // Source `kb` with two folders
+      db.raw
+        .prepare(
+          `INSERT INTO rag_folders (id, source_id, parent_id, path, name) VALUES (?, ?, NULL, ?, ?)`,
+        )
+        .run('f-faq', 'kb', 'docs/faq', 'faq');
+      db.raw
+        .prepare(
+          `INSERT INTO rag_folders (id, source_id, parent_id, path, name) VALUES (?, ?, NULL, ?, ?)`,
+        )
+        .run('f-guides', 'kb', 'docs/guides', 'guides');
+
+      // 2 docs in faq, 1 in guides, 1 soft-deleted in faq
+      const insDoc = db.raw.prepare(
+        `INSERT INTO rag_documents (id, source_id, folder_id, path, name, mime_type, size, hash, deleted_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      );
+      insDoc.run('d1', 'kb', 'f-faq', 'docs/faq/intro.pdf', 'intro.pdf', 'application/pdf', 1024, 'h1', null);
+      insDoc.run('d2', 'kb', 'f-faq', 'docs/faq/faq.md', 'faq.md', 'text/markdown', 512, 'h2', null);
+      insDoc.run('d3', 'kb', 'f-guides', 'docs/guides/start.md', 'start.md', 'text/markdown', 256, 'h3', null);
+      insDoc.run('d4', 'kb', 'f-faq', 'docs/faq/old.pdf', 'old.pdf', 'application/pdf', 768, 'h4', '2026-05-01T00:00:00Z');
+
+      // 5 chunks total: 2 on d1, 2 on d2, 1 on d3, 0 on d4 (soft-deleted)
+      const insChunk = db.raw.prepare(
+        `INSERT INTO rag_chunks (id, document_id, position, text, token_count, embedding_dimensions)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      );
+      insChunk.run('c1', 'd1', 0, 'a', 10, 1536);
+      insChunk.run('c2', 'd1', 1, 'b', 10, 1536);
+      insChunk.run('c3', 'd2', 0, 'c', 10, 1536);
+      insChunk.run('c4', 'd2', 1, 'd', 10, 1536);
+      insChunk.run('c5', 'd3', 0, 'e', 10, 1536);
+    }
+
+    it('returns live=true with SQL counts for document allowAll scope', async () => {
+      setupRagFixtures();
+      // Activate the live-count path. The route only checks truthiness.
+      state.ragRuntime = {} as unknown as AppState['ragRuntime'];
+
+      insertProfiles(db, {
+        kbprof: {
+          name: 'kbprof',
+          label: 'KB Profile',
+          sources: ['kb'],
+          scopes: {
+            kb: {
+              kind: 'document',
+              mode: 'allowAll',
+              allowedFolders: [],
+              allowedDocuments: [],
+            },
+          },
+          connections: [],
+          selectedTables: {},
+        },
+      });
+
+      const res = await request(app)
+        .get('/api/profiles/kbprof/scopes/preview')
+        .set('Cookie', cookie)
+        .expect(200);
+
+      const src = res.body.sources.find((s: { id: string }) => s.id === 'kb');
+      expect(src).toBeDefined();
+      expect(src.live).toBe(true);
+      // Fixture: 3 non-deleted docs (d1, d2, d3) — d4 is soft-deleted
+      expect(src.counts.documents).toBe(3);
+      expect(src.counts.folders).toBe(2);
+      // 5 chunks total but only c1..c4 (on d1, d2) and c5 (on d3) — all visible
+      expect(src.counts.chunks).toBe(5);
+    });
+
+    it('returns live=true with SQL counts for document allowList scope (folder + explicit doc union)', async () => {
+      setupRagFixtures();
+      state.ragRuntime = {} as unknown as AppState['ragRuntime'];
+
+      insertProfiles(db, {
+        kbpartial: {
+          name: 'kbpartial',
+          label: 'KB Partial',
+          sources: ['kb'],
+          scopes: {
+            kb: {
+              kind: 'document',
+              mode: 'allowList',
+              // Allow the `guides` folder (resolves to d3) + explicit doc d1 from faq
+              allowedFolders: ['docs/guides'],
+              allowedDocuments: ['d1'],
+            },
+          },
+          connections: [],
+          selectedTables: {},
+        },
+      });
+
+      const res = await request(app)
+        .get('/api/profiles/kbpartial/scopes/preview')
+        .set('Cookie', cookie)
+        .expect(200);
+
+      const src = res.body.sources.find((s: { id: string }) => s.id === 'kb');
+      expect(src).toBeDefined();
+      expect(src.live).toBe(true);
+      // Union of `docs/guides` (1 doc: d3) + explicit `d1` (1 doc) = 2 docs
+      expect(src.counts.documents).toBe(2);
+      expect(src.counts.folders).toBe(1);
+      // Chunks for the union: d1 has 2 (c1, c2), d3 has 1 (c5) = 3
+      expect(src.counts.chunks).toBe(3);
+    });
+
+    it('live=true: ignores soft-deleted docs from allowList explicit IDs', async () => {
+      setupRagFixtures();
+      state.ragRuntime = {} as unknown as AppState['ragRuntime'];
+
+      insertProfiles(db, {
+        kbsoft: {
+          name: 'kbsoft',
+          label: 'KB Soft-deleted',
+          sources: ['kb'],
+          scopes: {
+            kb: {
+              kind: 'document',
+              mode: 'allowList',
+              allowedFolders: [],
+              // d4 is soft-deleted — should not be counted
+              allowedDocuments: ['d4', 'd1'],
+            },
+          },
+          connections: [],
+          selectedTables: {},
+        },
+      });
+
+      const res = await request(app)
+        .get('/api/profiles/kbsoft/scopes/preview')
+        .set('Cookie', cookie)
+        .expect(200);
+
+      const src = res.body.sources.find((s: { id: string }) => s.id === 'kb');
+      expect(src.counts.documents).toBe(1); // only d1 — d4 filtered by deleted_at
+      expect(src.counts.chunks).toBe(2); // c1 + c2
+    });
+
+    it('new totals fields are present and zero-valued when no data', async () => {
+      insertProfiles(db, {
+        empty2: {
+          name: 'empty2',
+          label: 'Empty 2',
+          sources: ['x'],
+          scopes: {
+            x: {
+              kind: 'relational',
+              selectedTables: {},
+            },
+          },
+          connections: ['x'],
+          selectedTables: {},
+        },
+      });
+
+      const res = await request(app)
+        .get('/api/profiles/empty2/scopes/preview')
+        .set('Cookie', cookie)
+        .expect(200);
+
+      expect(res.body.totals.columns).toBe(0);
+      expect(res.body.totals.chunks).toBe(0);
     });
   });
 });

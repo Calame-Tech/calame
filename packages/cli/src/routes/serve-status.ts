@@ -1,6 +1,7 @@
 import type { Express } from 'express';
 import type { AppState } from '../state.js';
 import type { ServeProfile } from '@calame/core';
+import { upgradeProfileShape, getProfileRelationalSources } from '@calame/core';
 import { readConfigurationsFile } from './configurations.js';
 
 export function registerServeStatusRoute(app: Express, state: AppState): void {
@@ -22,28 +23,21 @@ export function registerServeStatusRoute(app: Express, state: AppState): void {
 
       const serveProfiles: Record<string, ServeProfile> = {};
       for (const [name, profile] of Object.entries(parsed.profiles as Record<string, unknown>)) {
-        const p = profile as Record<string, unknown>;
-        serveProfiles[name] = {
-          name,
-          label: (p.label as string) ?? name,
-          configurations: p.configurations as string[] | undefined,
-          selectedTables: (p.selectedTables as Record<string, string[]>) ?? {},
-          tableOptions: p.tableOptions,
-          columnMasking: p.columnMasking,
-          authMode: p.authMode as ServeProfile['authMode'],
-          oauthConfig: p.oauthConfig as ServeProfile['oauthConfig'],
-          externalAuthConfig: p.externalAuthConfig as ServeProfile['externalAuthConfig'],
-          responseMode: p.responseMode as ServeProfile['responseMode'],
-          dataScopeRules: p.dataScopeRules as ServeProfile['dataScopeRules'],
-          sharedTables: p.sharedTables as ServeProfile['sharedTables'],
-          aiSettingNames: p.aiSettingNames as string[] | undefined,
-        } as ServeProfile;
+        serveProfiles[name] = upgradeProfileShape({ ...(profile as Record<string, unknown>), name });
       }
-      // Backward compat: set default connections on profiles that lack the field
+      // Backward compat: synthesise a default relational source on profiles
+      // that have no configurations and no sources. Mirrors the historic
+      // behaviour where empty profiles defaulted to `connections: ['default']`.
       for (const profile of Object.values(serveProfiles)) {
-        const p = profile as ServeProfile & { connections?: string[] };
-        if (!p.configurations?.length && (!p.connections || p.connections.length === 0)) {
-          p.connections = ['default'];
+        if (
+          !profile.configurations?.length &&
+          getProfileRelationalSources(profile).length === 0
+        ) {
+          profile.sources = ['default'];
+          profile.scopes = {
+            ...(profile.scopes ?? {}),
+            default: { kind: 'relational', selectedTables: {} },
+          };
         }
       }
 
@@ -127,27 +121,15 @@ export function registerServeStatusRoute(app: Express, state: AppState): void {
       // Convert profiles to ServeProfile format and store
       const serveProfiles: Record<string, ServeProfile> = {};
       for (const [name, profile] of Object.entries(profilesData)) {
-        const p = profile as unknown as Record<string, unknown>;
-        serveProfiles[name] = {
+        serveProfiles[name] = upgradeProfileShape({
+          ...(profile as unknown as Record<string, unknown>),
           name,
-          label: (p.label as string) ?? name,
-          configurations: p.configurations as string[] | undefined,
-          selectedTables: (p.selectedTables as Record<string, string[]>) ?? {},
-          tableOptions: p.tableOptions,
-          columnMasking: p.columnMasking,
-          authMode: p.authMode as ServeProfile['authMode'],
-          oauthConfig: p.oauthConfig as ServeProfile['oauthConfig'],
-          externalAuthConfig: p.externalAuthConfig as ServeProfile['externalAuthConfig'],
-          responseMode: p.responseMode as ServeProfile['responseMode'],
-          dataScopeRules: p.dataScopeRules as ServeProfile['dataScopeRules'],
-          sharedTables: p.sharedTables as ServeProfile['sharedTables'],
-          aiSettingNames: p.aiSettingNames as string[] | undefined,
-        } as ServeProfile;
+        });
       }
 
       // Resolve configurations to get effective selectedTables
       const configsFile = readConfigurationsFile(state.db!);
-      for (const [name, sp] of Object.entries(serveProfiles)) {
+      for (const [_name, sp] of Object.entries(serveProfiles)) {
         if (sp.configurations && sp.configurations.length > 0) {
           const mergedTables: Record<string, string[]> = {};
           for (const cfgName of sp.configurations) {
@@ -164,7 +146,13 @@ export function registerServeStatusRoute(app: Express, state: AppState): void {
               }
             }
           }
-          serveProfiles[name].selectedTables = mergedTables;
+          // Phase 5 — write the merged tables into a `default` relational
+          // scope rather than the legacy `selectedTables` root field.
+          sp.sources = sp.sources?.length ? sp.sources : ['default'];
+          sp.scopes = {
+            ...(sp.scopes ?? {}),
+            [sp.sources[0]]: { kind: 'relational', selectedTables: mergedTables },
+          };
         }
       }
 
@@ -326,24 +314,14 @@ export function registerServeStatusRoute(app: Express, state: AppState): void {
         const profileRaw = profilesData[name];
         if (!profileRaw) continue;
 
-        // Rebuild the ServeProfile with fresh data
-        const updatedProfile: ServeProfile = {
+        // Rebuild the ServeProfile with fresh data via the unified migrator.
+        const updatedProfile = upgradeProfileShape({
+          ...(profileRaw as unknown as Record<string, unknown>),
           name,
-          label: (profileRaw.label as string) ?? name,
-          configurations: profileRaw.configurations as string[] | undefined,
-          selectedTables: (profileRaw.selectedTables as Record<string, string[]>) ?? {},
-          tableOptions: profileRaw.tableOptions,
-          columnMasking: profileRaw.columnMasking,
-          authMode: profileRaw.authMode as ServeProfile['authMode'],
-          oauthConfig: profileRaw.oauthConfig as ServeProfile['oauthConfig'],
-          externalAuthConfig: profileRaw.externalAuthConfig as ServeProfile['externalAuthConfig'],
-          responseMode: profileRaw.responseMode as ServeProfile['responseMode'],
-          dataScopeRules: profileRaw.dataScopeRules as ServeProfile['dataScopeRules'],
-          sharedTables: profileRaw.sharedTables as ServeProfile['sharedTables'],
-          aiSettingNames: profileRaw.aiSettingNames as string[] | undefined,
-        } as ServeProfile;
+        });
 
-        // If profile uses configurations, resolve them to get the latest selectedTables
+        // If profile uses configurations, resolve them and write the merged
+        // tables into a `default` relational scope.
         if (updatedProfile.configurations && updatedProfile.configurations.length > 0) {
           const mergedTables: Record<string, string[]> = {};
           for (const cfgName of updatedProfile.configurations) {
@@ -360,7 +338,13 @@ export function registerServeStatusRoute(app: Express, state: AppState): void {
               }
             }
           }
-          updatedProfile.selectedTables = mergedTables;
+          updatedProfile.sources = updatedProfile.sources?.length
+            ? updatedProfile.sources
+            : ['default'];
+          updatedProfile.scopes = {
+            ...(updatedProfile.scopes ?? {}),
+            [updatedProfile.sources[0]]: { kind: 'relational', selectedTables: mergedTables },
+          };
         }
 
         state.serveProfiles[name] = updatedProfile;

@@ -4,9 +4,223 @@ Ce document propose une architecture pour ajouter une couche RAG (Retrieval-Augm
 
 ---
 
-## 0. État d'avancement (mis à jour 2026-05-08)
+## 0. État d'avancement (mis à jour 2026-05-09)
 
 > **Pivot stratégique (2026-05-07)** — La suite de la roadmap RAG est désormais portée par un plan plus large : **`docs/sources-unified-plan.md`**. La RAG-Phase-2 originale de ce document (intégration profiles + MCP) **est livrée comme Phase 3 de ce plan unifié**, dans le cadre d'une refonte qui généralise « Connection (DB) » et « RagSource » en un concept polymorphique `Source` accueillant aussi les futurs APIs / SaaS / streams. Lire les deux docs en parallèle pour comprendre le contexte.
+
+### 🚧 En cours 2026-05-09 — Phase 4 du plan unifié : UI Sources unifiée + `RagAccessSelector` (non commité)
+
+Priorité #6 de la "Prochaine session" précédente. Ferme la boucle UX qui restait : aujourd'hui un admin pouvait techniquement curl `POST /api/profiles/:name/scopes` pour assigner un scope `document` à un profile, mais aucune UI n'existait. Cette tranche livre l'UI complète.
+
+**Frontend Apache (`packages/web/`)** :
+
+- `components/SourcesPage.tsx` (NEW, 259 lignes) : page unifiée tabbed `Databases` / `Knowledge bases`. Les compteurs des tabs (count des connexions / count des sources RAG) sont fetchés à l'ouverture. Tab `Knowledge bases` désactivé avec tooltip `ragDisabledReason` quand le runtime n'a pas chargé. Bouton « Add source » ouvre `AddSourceModal` (kind picker) ou délègue via `onAddSource` prop. `KnowledgeBaseManager` est passé en prop `KnowledgeBaseManagerComponent` (jamais d'import direct depuis `@calame-ee/*` — boundary respectée).
+- `components/AddSourceModal.tsx` (NEW, 190 lignes) : kind picker modal (Database card toujours active, Knowledge base card disabled si `ragEnabled === false` avec icône ⓘ). Focus trap + Escape close + click-outside close.
+- `App.tsx` :
+  - Nouveau `View` arm `{ page: 'sources'; tab?: 'databases' | 'knowledge' }` qui rend `SourcesPage`.
+  - Anciens `'connections'` et `'knowledge'` conservés comme **alias legacy** qui redirigent vers `'sources'` avec le bon tab — déjà-existant deep-links et navigation calls non cassés.
+  - `RagAccessSelector` lazy-imported depuis `@calame-ee/rag-core/web` avec fallback gracieux. Wired dans le `McpDetailView` en `activeSection === 'knowledge'`. À save, le composant POST lui-même `/api/profiles/:name/scopes` ; App.tsx met juste à jour le state local + refetch preview.
+  - Helper `buildProfilesData(profiles)` extrait pour centraliser la sérialisation côté `persistProfiles`. Bug latent corrigé : les anciennes call sites omettaient `sources` / `scopes` du payload, ce qui les droppait silencieusement à chaque save.
+- `Sidebar.tsx` : entrée `Connections` renommée **`Sources`** (icône `IconCircleStack` conservée). `activeWhen: ['connections', 'knowledge']` pour qu'elle reste highlightée sur les pages legacy. Suppression de l'entrée séparée `Bases de connaissance` (fusionnée dans Sources).
+- `types/schema.ts` : ajout du miroir `ScopeSelection` (union discriminée `relational` | `document`), ajout des champs `sources?: string[]` et `scopes?: Record<string, ScopeSelection>` sur `Profile`.
+
+**Frontend BUSL (`ee/rag-core/src/web/`)** :
+
+- `RagAccessSelector.tsx` (NEW, **1134 lignes**) : composant principal de sélection des dossiers / documents par profile. Implémente **toute** l'UX décrite §8.1 :
+  - Arborescence lazy : `GET /api/rag/sources` au mount → `GET /api/rag/sources/:id/folders|documents` à l'expansion d'un dossier
+  - Checkboxes 3-états (`checked` / `partial` / `unchecked`) calculés par `deriveFolderCheckState`
+  - Modes `auto-include` (badge bleu, recursive) / `strict` (badge orange, whitelist) bascule automatique : décocher un fichier individuel dans un dossier `auto-include` → bascule en `strict` avec toast confirmation
+  - Bouton retour `auto-include` via menu ⋯ contextuel
+  - Compteurs temps-réel par source (`X folders · Y documents · ~Z chunks`) via `GET /api/profiles/:name/scopes/preview`
+  - Save explicite via bouton (POST `/api/profiles/:name/scopes`) avec dirty tracking + bouton Annuler
+  - États visuels : source en ingestion (badge `[indexation N/M…]`), source en erreur de sync (badge rouge), document non encore indexé (grisé), document soft-deleted (barré)
+- `rag-access-state.ts` (NEW, 180 lignes) : helpers **purs** extraits du composant pour testabilité sans React/JSX :
+  - `deriveFolderCheckState(folderId, folderMap, sourceIncluded)` → `'checked' | 'partial' | 'unchecked'`
+  - `buildDocumentScope(sourceIncluded, rootFolderIds, rootDocuments, folderMap)` → `ScopeSelection` `{ kind: 'document', mode, allowedFolders, allowedDocuments }`
+  - `countSelected(...)` → `{ folders, documents }` pour récap header
+- `web/rag-access-state.ts` (NEW, 7 lignes) : re-export pour permettre `import from '@calame-ee/rag-core/web/rag-access-state'`
+- `web/index.ts` : export `RagAccessSelector` ajouté au barrel
+
+**Backend Apache (`packages/cli/src/routes/profile-scopes.ts`)** :
+
+- `GET /api/profiles/:name/scopes/preview` enrichi avec **live counts** quand `state.ragRuntime` est actif :
+  - `relational` scope : `tables` + `columns` (additif, ancien `summary.selectedTables` conservé pour rétro-compat)
+  - `document` scope mode `allowAll` : `COUNT(*)` SQL sur `rag_documents` / `rag_folders` / `rag_chunks JOIN rag_documents` filtré par `source_id` et `deleted_at IS NULL`
+  - `document` scope mode `allowList` : résolution des `allowedFolders[]` (path → folder.id → docs in folder) ∪ validation des `allowedDocuments[]` (docs encore non-soft-deletés) ; `liveChunkCount` = `COUNT(*) FROM rag_chunks WHERE document_id IN (union)`
+  - Fallback gracieux `live: false` quand le RAG n'est pas chargé : retombe sur les naive array-length counts (ancien comportement)
+- Réponse étendue : `sources: [{ id, kind, summary, counts, live }]` + `totals: { tables, folders, documents, columns, chunks }`. Tous les nouveaux champs **additifs** (clients existants ne cassent pas).
+- **`profileScopesBodySchema` assoupli (2026-05-09)** : `sources: z.array(z.string())` sans `.min(1)`. Un profile sans source assignée est sémantiquement valide (création progressive, ou admin qui décoche tout dans l'UI). Le commentaire JSDoc en tête du schema documente cette décision.
+
+**Tests** :
+
+- `ee/rag-core/src/__tests__/rag-access-state.test.ts` — **15 tests** sur les 3 helpers purs (state derivation, scope payload building, counters)
+- `packages/cli/src/routes/__tests__/profile-scopes.test.ts` — **22 tests** au total :
+  - 4 fallback path : preview avec `ragRuntime` absent (allowAll, allowList, naive counts, totals zéro)
+  - 3 live path (ajoutés 2026-05-09 fin de session) : `allowAll` SQL counts (3 docs / 2 folders / 5 chunks sur fixture), `allowList` folder+doc union (2 docs / 1 folder / 3 chunks), soft-delete filter (d4 ignoré dans `allowedDocuments`)
+  - 1 test de validation `sources: []` accepté (200, profile sans source)
+  - 14 autres existants (POST happy/error paths, GET preview pour relational, multi-source, etc.)
+- **Total : 790 tests verts** (28 sso + 204 core + 53 rag-core + 72 connectors + 433 cli) — vs. 768 avant cette tranche, soit **+22 tests** sans régression. Validé 2026-05-09.
+
+**Validation technique 2026-05-09 (avant commit)** :
+
+- ✅ `pnpm lint` (script global `eslint packages/*/src/**`) : 0 erreur, 0 warning
+- ✅ `npx eslint ee/rag-core/src/...` ciblé sur les nouveaux fichiers BUSL : 0 erreur après fix d'un warning `no-unused-vars` (`FolderNode` import inutile retiré dans `RagAccessSelector.tsx`). À noter : le script lint global ne couvre **pas** `ee/*/src/` aujourd'hui — gap connu, à fixer en Phase 5 cleanup.
+- ✅ `pnpm build` : tous les 7 packages compilent (TS strict, no `any`). Bundle Vite 675 kB (warning chunk size existant, non-bloquant).
+- ✅ `pnpm test` : 786 tests passants, 0 échec.
+
+**Findings 2026-05-09 — vérifications de cohérence avant commit** :
+
+- ✅ **Contract POST cohérent** : `RagAccessSelector` POST `{ sources: string[], scopes: Record<id, ScopeSelection> }` sur `/api/profiles/:name/scopes` (ligne 878 du composant), accepté tel quel par `profileScopesBodySchema` côté `profile-scopes.ts:45`. Pas de drift de format.
+- ✅ **Préservation des sources DB du profile** : la boucle de save itère uniquement sur `sourceNodes` (sources RAG visibles dans le composant). Les sources DB présentes dans `initialSources` ne sont **jamais** retirées de `updatedSources`. Conclusion : décocher des dossiers RAG ne supprime pas les tables DB du profile.
+- ✅ **~~Edge case `sources: []` non géré~~ → résolu 2026-05-09** : `profileScopesBodySchema` assoupli (`z.array(z.string())` sans `.min(1)`) — un profile sans aucune source assignée est sémantiquement valide. Test correspondant changé : « returns 400 when sources is empty » → « accepts an empty sources array (profile with no source assigned) » qui vérifie le 200 + `sources/scopes` vidés à la persistance.
+- ✅ **~~Trou de couverture path `live: true`~~ → résolu 2026-05-09** : 3 tests ajoutés dans `profile-scopes.test.ts` (allowAll, allowList folder+doc union, soft-delete filter). Le test crée les tables `rag_folders/rag_documents/rag_chunks` à la main avec un fixture connu (1 source `kb`, 2 folders, 4 docs dont 1 soft-deleted, 5 chunks), set `state.ragRuntime = {}` (truthy suffit), et vérifie les counts SQL exacts. **22 tests** dans le fichier (vs. 19 auparavant). `state` promu au scope du `describe` pour rendre les tests plus testables.
+
+**QA Review (2026-05-09) — verdict ✅ GO pour commit, score 8.5/10** :
+
+L'agent `opensmith-qa-reviewer` a passé en revue la tranche complète. Aucune faille critique. Trois findings importants notés comme dettes techniques. **Deux résolus dans la même session, un reporté post-commit** :
+
+- ✅ **~~N+1 queries en mode `allowList`~~ → résolu 2026-05-09** : `profile-scopes.ts:298-355` réécrit. La boucle `for…of allowedFolderPaths` (ex-N+1) est remplacée par 3 requêtes constantes :
+  1. Un seul `SELECT d.id FROM rag_documents d JOIN rag_folders f ON f.id = d.folder_id WHERE … AND f.path IN (?,?,...)` qui ramène tous les docs sous les folders allowed
+  2. Un seul `SELECT id FROM rag_documents WHERE id IN (?,?,...) AND deleted_at IS NULL` qui valide les docs explicites
+  3. Le COUNT chunks final inchangé (déjà en une seule requête)
+  
+  Pour 50 folders + 50 docs explicites : passe de ~100 requêtes à 3. Les 22 tests `profile-scopes.test.ts` couvraient déjà le path `live: true` (allowList folder+doc union, soft-delete) — ils ont validé le refactor sans modification.
+
+- ✅ **~~Test runtime `serve.ts` pour `sources: []`~~ → ajouté 2026-05-09** : nouveau test 8 dans `serve-adapter-tools.test.ts` (« empty sources array: no adapter is called, fallback registers 0 tools »). Découverte : la condition `hasNewShape` exige `Object.keys(profile.scopes).length > 0`, donc un profile avec `scopes: {}` retombe sur le path legacy. Le legacy path appelle `registerDynamicTools` **une fois avec `tables: []`** pour câbler le handler MCP `tools/list` (sinon le serveur retourne `-32601 MethodNotFound`). Comportement intentionnel, désormais codifié par un test.
+
+- 🟠 **`RagAccessSelector` = God Component (1133 lignes)** : tout dans une seule fonction, pas de découpage en `<SourceRow>` / `<FolderTreeNode>` / `<SaveFooter>`. Maintenabilité à terme dégradée. Tests sur le composant lui-même = 0 (les 15 tests sont sur les helpers purs). **Reporté post-commit** (refactor trop gros pour cette session).
+
+- 🟠 **Cast `unknown` pour `TableToolOptions`** (`App.tsx:2624`) : `ScopeSelection` mirror diverge structurellement entre `packages/web/types/schema.ts` et `@calame/core` sur `tableOptions`. Workaround inerte au runtime (les scopes `document` ne contiennent jamais `tableOptions`). **Reporté post-commit** (clarification de typing à faire en même temps que le refactor).
+
+Suggestions cosmétiques (à ramasser au fil du temps) : enrichir la JSDoc du `GET /preview` pour expliquer la sémantique `allowAll` vs `allowList` ; error boundary autour du Suspense de `AddSourceModal`/lazy KB ; commentaire sur la bascule auto-include → strict dans `RagAccessSelector` (ligne ~797-817).
+
+Points positifs relevés : tests fixture SQL réalistes, lazy loading propre avec fallback, migration legacy seamless via `upgradeProfileShape` aux 2 boundaries, backward-compat des deep-links `/connections` et `/knowledge`, sécurité SQL OK (parametrized queries partout, le `IN (${placeholders})` du preview est safe car les `?` sont générés depuis `idList.map(() => '?')`).
+
+**Reste à faire avant commit** :
+
+1. Smoke test manuel E2E : créer un profile → ajouter une KB scope → cocher quelques dossiers en auto-include → save → vérifier que `/serve/:profile/mcp` expose bien `rag_search` filtré sur ces dossiers
+2. Vérifier le rendu `KnowledgeBaseManagerComponent` passé en prop quand `RagAccessSelector` n'est PAS encore lazy-loaded (chemin froid)
+3. Décider du sort des fichiers `connections-old.tsx` / `KnowledgeBaseManager` orphelins dans la Sidebar legacy (Phase 5 du plan unifié)
+4. Commit (le QA a donné le go)
+
+**Issues à ouvrir post-commit** :
+
+- Refactor `RagAccessSelector` en sous-composants (`<SourceRow>`, `<FolderTreeNode>`, `<SaveFooter>`) — God Component à 1133 lignes
+- Clarifier le typing de `TableToolOptions` entre `packages/web/types/schema.ts` et `@calame/core` (cast `unknown` à retirer dans `App.tsx:2624`)
+- Couverture composant pour `RagAccessSelector` (aujourd'hui 0 test sur le composant lui-même, 15 sur les helpers purs)
+
+### 🚧 En cours 2026-05-09 — Phase 5 du plan unifié : Cleanup (partiel, non commité)
+
+Phase 5 du plan unifié (`docs/sources-unified-plan.md` §2) prévoit 4 sous-tâches. Cette session livre **3** ; la 4e est trop grosse pour cette tranche et reportée.
+
+**✅ Livré dans cette session** :
+
+- **ESLint rule `no-cross-license-import` ciblée RAG** (`.eslintrc.cjs` étendu) : nouveau `overrides` qui interdit les **value imports** statiques de `@calame-ee/rag-*` depuis `packages/**`. Les **type imports** (`import type`) sont autorisés (erased au build, aucun couplage runtime). La rule s'appuie sur `@typescript-eslint/no-restricted-imports` avec `allowTypeImports: true`. Validée : `pnpm lint` reste à 0 erreur, le seul import `@calame-ee/rag-core` du code Apache (`packages/cli/src/rag-runtime.ts:13`) est déjà en `import type`.
+
+  **Limitation explicite documentée dans le commentaire** : la rule ne couvre PAS `@calame-ee/sso` aujourd'hui car `packages/cli/src/app.ts:25`, `packages/web/src/App.tsx:16` et 2 autres fichiers ont des value imports statiques préexistants. Migration SSO en dynamic = tranche séparée future.
+
+- **JSDoc enrichie sur `GET /api/profiles/:name/scopes/preview`** : explique précisément la sémantique de comptage par kind (`relational`, `document` mode `allowAll`, `document` mode `allowList`), les requêtes SQL sous-jacentes (les 3 queries constantes après le fix N+1), et la sémantique du `live: false` quand RAG est désactivé. Cible : un futur dev qui touche au handler n'a plus besoin de lire 100 lignes de SQL pour comprendre.
+
+- **Commentaire JSDoc sur `handleToggleDocument`** dans `RagAccessSelector.tsx` : décrit explicitement les 2 cas (auto-include → bascule strict avec pré-cochage des autres docs ; strict → simple toggle). Ferme la suggestion cosmétique #4 du QA review.
+
+**🟡 Audit fin + amorce de migration (2026-05-09)** :
+
+L'audit grossier annonçait 166 call sites — chiffre **inflé** parce qu'il incluait `state.connections`, `fileData.connections`, `group.selectedTables` (variables locales sans rapport avec `Profile.X`). Re-grep avec pattern `(profile|p|prof|sp).<field>` : **42 reads sur 9 fichiers**.
+
+Catégorisation par tier :
+
+| Tier | Fichiers | Reads | Notes |
+|---|---|---|---|
+| 1 — Backend critique | `serve.ts` (8), `profile-preview.ts` (5), `serve-status.ts` (7), `chat-profile.ts` (3) | 23 | Path legacy actif quand `scopes` vide. Migration via les nouveaux accessors |
+| 2 — Routes dérivées | `profiles.ts` (4), `onboarding.ts` (1) ✅ | 5 | onboarding migré (cf. ci-dessous), profiles.ts a 2× la même logique "default si connections vide" — facile |
+| 3 — Frontend (web) | `App.tsx` (8), `ServePanel.tsx` (3) | 11 | Lié au `ScopeSelection` mirror et `buildProfilesData`. Migrable mais demande de toucher au type miroir |
+| 4 — Doc/test | `migrate.ts` (2 commentaires), `serve-adapter-tools.test.ts` (1 commentaire) | 3 | Inerte — uniquement des commentaires expliquant le legacy |
+
+**Amorce livrée 2026-05-09 (non commité)** :
+
+Plutôt que de migrer en aveugle, j'ai posé le **pattern de migration** que les 4 PR suivants pourront reprendre :
+
+- **`packages/core/src/sources/accessors.ts` (NEW)** : 5 helpers exportés depuis `@calame/core` :
+  - `getProfileTableNames(profile)` → `string[]` (toutes les tables des relational scopes ou fallback `selectedTables`)
+  - `getProfileSelectedTables(profile)` → `Record<table, columns[]>` (legacy projection)
+  - `getProfileTableOptions(profile)` → `Record<table, TableToolOptions>`
+  - `getProfileColumnMasking(profile)` → `Record<table, Record<column, ColumnMasking>>`
+  - `getProfileRelationalSources(profile)` → `string[]` (sources de kind `'relational'` ou fallback `connections`)
+  - Chaque accessor : (1) lit depuis `profile.scopes` en agrégeant tous les relational scopes ; (2) fallback sur le legacy field si `scopes` vide ; (3) retourne le default approprié si rien.
+
+- **`packages/core/src/sources/__tests__/accessors.test.ts` (NEW)** : 13 tests qui couvrent unified-shape, fallback legacy, multi-source merge, cas vide.
+
+- **`packages/cli/src/routes/onboarding.ts`** : premier call site migré (1 read remplacé par `getProfileTableNames(profile)`). Comportement identique pour les profiles legacy ET les profiles à scopes — confirmé par le test `accessors.test.ts:fallback`.
+
+**Plan d'attaque pour la suite (sessions futures)** :
+
+1. ~~Helpers + tests centralisés~~ → ✅ livré
+2. ~~Migrer Tier 1~~ → ✅ **4/4 livrés 2026-05-09 fin de session** :
+   - `chat-profile.ts` : `loadProfileFromDb` simplifié (raw JSON → `upgradeProfileShape` au lieu de projection à la main, 11 lignes → 4 lignes)
+   - `serve-status.ts` : 2 endroits (load DB, build from request body) remplacés par `upgradeProfileShape`. La logique "default if empty" passe par `getProfileRelationalSources`.
+   - `profile-preview.ts` : 4 reads remplacés par `getProfileSelectedTables` / `getProfileTableOptions` / `getProfileColumnMasking` / `getProfileRelationalSources`. Type local du body étendu avec `sources?` / `scopes?`.
+   - `serve.ts` legacy path (lignes 379-394) : pareil, accessors partout. **Bug latent corrigé** : avant, le fallback "live connections quand profile.connections vide" ne matchait que sur la **présence** du field, pas sur la **résolution** des sources. Maintenant le filtre `state.connections.has(id)` fan-out vers `state.connections.keys()` quand aucun sourceId du profile ne match — couvre le cas du migrateur qui synthétise un placeholder `'default'` pour un legacy profile sans `connections`.
+   - Mocks `@calame/core` mis à jour dans `serve-empty-profile.test.ts` et `serve-adapter-tools.test.ts` (passthrough mocks pour les 4 accessors)
+3. ~~Type `selectedTables` rendu optionnel~~ : `ServeProfile.selectedTables: Record<string, string[]>` (required) → `?: Record<string, string[]>` (optional). Permet aux call sites qui ne populate que `scopes` de type-check, sans casser le comportement runtime (fallback `?? {}` partout).
+4. ~~Tier 4 (commentaires)~~ → ✅ livré : `migrate.ts` mis à jour pour référencer les accessors au lieu du legacy direct ; `serve-adapter-tools.test.ts` commentaire reformulé.
+5. ~~Tier 3 frontend~~ → ✅ **complet 2026-05-09 fin de session** :
+   - `ServePanel.tsx` migré (3 reads → `getProfileTableNames` + `getProfileRelationalSources`)
+   - Helper `packages/web/src/lib/profile-accessors.ts` créé (mirror minimal côté web — `getProfileTableNames`, `getProfileRelationalSources`, `pickMaskingTargetSourceId`)
+   - `App.tsx` : logique `handleGlobalMaskingRulesChange` migrée — écrit désormais dans `scopes[targetSid].columnMasking` (target résolu via `pickMaskingTargetSourceId` : premier scope relational, sinon premier connection legacy, sinon `'default'`). Le legacy field reste populé en parallèle pour rétro-compat inerte.
+   - `App.tsx.buildProfilesData` nettoyé : drop des projections `selectedTables/tableOptions/columnMasking/connections` du payload save. Le backend `upgradeProfileShape` au save fold tout dans `scopes/sources`.
+   - `App.tsx` load : drop des fallbacks `?? ['default']` / `?? {}`. Le frontend reçoit déjà la shape unified du backend.
+   - `Profile.selectedTables/tableOptions/columnMasking/connections` côté `packages/web/types/schema.ts` **supprimés du type** (pas juste optional — vraiment droppés).
+6. ~~Migration boundary du `upgradeProfileShape`~~ → ✅ **livré** : le migrateur **drop** désormais les legacy root fields après les avoir foldés dans `sources/scopes`. Profiles persistés en SQLite après cette tranche n'auront plus que la shape unified. Bonus fix : quand `connections` est absent mais `selectedTables` existe, le migrateur synthetise `sources: ['default']` correctement (avant, `sources` restait `undefined` malgré `scopes: { default: ... }` — incohérence interne corrigée).
+7. **Validation côté `validateProfiles`** (`packages/cli/src/routes/profiles.ts`) : utilise désormais `getProfileSelectedTables` pour générer les warnings — couvre les 2 shapes.
+8. **Tests `migrate.test.ts`** mis à jour : 4 assertions « preserves legacy fields » → « drops legacy fields after folding ». 4 tests `profiles.test.ts` migrés vers les nouveaux paths `scopes[sourceId].selectedTables`.
+9. ~~Retrait absolu des `@deprecated` du type `ServeProfile` core~~ → ✅ **livré 2026-05-09 fin de session** :
+   - `ServeProfile` type purgé : `connections`, `selectedTables`, `tableOptions`, `columnMasking` **complètement supprimés**. Seul commentaire restant : un bloc qui pointe vers `ProfileScopeShape` pour les call sites qui doivent encore accepter la shape legacy en input.
+   - 25 fixtures de tests fixées : la majorité avait juste `selectedTables: {}` (vide, retiré sans ré-écrire), 2 fixtures « legacy path » castées via `as unknown as ServeProfile` (intentionnel — testent le fallback runtime), 1 fixture `profiles.test.ts:712` migrée vers la shape unified.
+   - 3 reads runtime dans `serve-status.ts` migrés : la logique « default if empty » synthétise maintenant `sources: ['default']` + un scope relational vide ; le merge de configurations écrit dans `scopes[default].selectedTables` au lieu du legacy field.
+
+Le runtime ET le type sont désormais 100 % unified. **Aucun champ legacy ne survit** dans le type `ServeProfile`. La rétro-compat existe uniquement au boundary :
+- `upgradeProfileShape` (read boundary) accepte tout JSON brut et fold dans `sources/scopes`
+- `ProfileScopeShape` (sub-type pour les accessors) accepte les fields legacy en optionnel pour les call sites qui consomment du JSON pré-migration
+
+- **Drop alias middleware `/api/connections/*` et `/api/rag/*`** : conservé tant qu'aucune release publique n'a publié le header `Sunset: 2026-12-31`. À retirer après une release ≥ 2026-Q3. Reste dans `packages/cli/src/routes/source-aliases.ts`.
+
+**Validation** :
+
+- `pnpm lint` : 0 erreur 0 warning (rule cross-license active)
+- `pnpm test` : **803 tests verts** (+13 nouveaux pour `accessors.test.ts` ; 28 sso + 217 core + 53 rag-core + 72 connectors + 433 cli)
+- `pnpm build` : OK
+
+**Fichiers modifiés (uncommitted, à grouper avec Phase 4 ou commit séparé)** :
+
+```
+NEW packages/core/src/sources/accessors.ts                 (5 helpers + ProfileScopeShape sub-type)
+NEW packages/core/src/sources/__tests__/accessors.test.ts  (13 tests)
+NEW packages/web/src/lib/profile-accessors.ts              (mirror minimal côté web : 3 helpers dont pickMaskingTargetSourceId)
+MOD packages/core/src/sources/index.ts                     (export accessors)
+MOD packages/core/src/sources/migrate.ts                   (drop legacy root fields après folding ; sources: ['default'] synthétisé)
+MOD packages/core/src/sources/__tests__/migrate.test.ts    (4 assertions « preserves » → « drops »)
+MOD packages/core/src/serve/types.ts                       (legacy fields complètement supprimés du type)
+MOD packages/cli/src/routes/onboarding.ts                  (1 call site migré vers getProfileTableNames)
+MOD packages/cli/src/routes/chat-profile.ts                (loadProfileFromDb passe par upgradeProfileShape)
+MOD packages/cli/src/routes/serve-status.ts                (3 endroits migrés : upgradeProfileShape + accessors + écriture dans scopes au lieu de selectedTables root)
+MOD packages/cli/src/routes/profile-preview.ts             (4 reads → accessors, type local étendu)
+MOD packages/cli/src/routes/serve.ts                       (legacy path : 4 reads → accessors, fix bug fallback live connections)
+MOD packages/cli/src/routes/profiles.ts                    (validateProfiles utilise getProfileSelectedTables)
+MOD packages/cli/src/routes/__tests__/profiles.test.ts     (4 assertions migrées vers scopes[sourceId] + 1 fixture migrée)
+MOD packages/cli/src/routes/__tests__/chat-auth.test.ts    (3 fixtures purgées du legacy selectedTables)
+MOD packages/cli/src/routes/__tests__/chat-profile.test.ts (6 fixtures purgées)
+MOD packages/cli/src/routes/__tests__/chat.test.ts         (helper makeProfile sans selectedTables)
+MOD packages/cli/src/routes/__tests__/serve-empty-profile.test.ts  (3 fixtures purgées + 2 castées en legacy intentionnel)
+MOD packages/cli/src/routes/__tests__/serve-adapter-tools.test.ts  (8 fixtures purgées du legacy + 1 castée en legacy intentionnel)
+MOD packages/cli/src/routes/__tests__/serve-empty-profile.test.ts   (mocks accessors ajoutés)
+MOD packages/cli/src/routes/__tests__/serve-adapter-tools.test.ts   (mocks accessors + commentaire mis à jour)
+MOD packages/web/src/types/schema.ts                       (Profile : drop selectedTables/tableOptions/columnMasking/connections)
+MOD packages/web/src/components/ServePanel.tsx             (3 reads → accessors web)
+MOD packages/web/src/App.tsx                               (handleGlobalMaskingRulesChange écrit dans scopes ; buildProfilesData et load nettoyés)
+MOD .eslintrc.cjs                                          (+30 lignes, rule no-cross-license-import RAG)
+MOD packages/cli/src/routes/profile-scopes.ts              (JSDoc enrichi sur GET /preview + fix N+1, ~20 lignes)
+MOD ee/rag-core/src/web/RagAccessSelector.tsx              (JSDoc sur handleToggleDocument, ~13 lignes)
+```
 
 ### ✅ Livré 2026-05-08 — Polish UX `ragDisabledReason` (commit `d774228`)
 
@@ -144,34 +358,46 @@ Quand on a démarré pour tester en vrai, plusieurs choses cassaient. Voici les 
 - **Connecteurs externes absents** : seul `LocalFolderConnector`. S3/HTTP/GDrive — **toujours pendant**, Phase 3 du plan original (= ce qui suit dans ce document).
 - **Watch incrémental absent** (`chokidar`, polling) : Phase 4 du plan original — **toujours pendant**.
 - **PII detection non appliquée** sur les chunks (cf. §12 question 5) : décision toujours non tranchée. À discuter à la prochaine session.
-- **Pas d'UI** pour assigner un scope `document` à un profile. L'admin doit utiliser `POST /api/profiles/:name/scopes` via curl. Phase 4 du plan unifié (`docs/sources-unified-plan.md`) le livre.
 - **Tests E2E manquants** : pas de test qui upload un fichier puis fait `rag_search` end-to-end. Aurait évité plusieurs fixes runtime ; aurait évité aussi le bug `sourceId` placeholder du commit `781fca4`.
 
-### ✅ Limitations résolues 2026-05-07/08
+### ✅ Limitations résolues 2026-05-07/09
 
 - ~~**Pas de profile/MCP** : les routes `rag_*` n'ont pas encore d'`registerRagTools()`~~ → livré via `DocumentSourceAdapter.registerMcpTools` (Phase 3 du plan unifié)
 - ~~**MCP `rag_*` tools non enregistrés au runtime serveur**~~ → enregistrés automatiquement quand un profile a un scope `kind: 'document'`
 - ~~**Audit log RAG : pas encore intégré au format unifié**~~ → format unifié via `McpRegistrationContext.onAuditLog`, identique pour DB et RAG
 - ~~**Polish UX `ragDisabledReason`**~~ → livré dans le commit `d774228`
+- ~~**Pas d'UI** pour assigner un scope `document` à un profile~~ → en cours (Phase 4 plan unifié, non commité 2026-05-09) : `RagAccessSelector` (BUSL, 1134 lignes) + `SourcesPage` (Apache, tabbed) + preview live counts. Plus de curl manuel.
 
-### 🟢 Statut technique (2026-05-08)
+### 🟢 Statut technique (2026-05-09)
 
 - `pnpm install` : OK 8 packages
 - `pnpm build` : OK tous packages compilent (TS strict, no `any`)
-- `pnpm lint` : 0 erreur 0 warning
-- `pnpm test` : **768 tests verts** (28 sso + 204 core + 38 rag-core + 72 connectors + 426 cli). Pré-existing better-sqlite3 NODE_MODULE_VERSION mismatch (115 vs 137) sur tests SQLite — résolu localement par `pnpm rebuild better-sqlite3`.
+- `pnpm lint` : 0 erreur 0 warning sur `packages/*/src/**`. Gap connu : le script ne couvre pas `ee/*/src/**` (à corriger en Phase 5 — pour l'instant validation manuelle via `npx eslint ee/...`)
+- `pnpm test` : **790 tests verts** (28 sso + 204 core + 53 rag-core + 72 connectors + 433 cli). +22 tests vs. 768 du 2026-05-08 (15 helpers `rag-access-state` + 7 preview live/fallback + sources empty 200 + serve-adapter-tools `sources: []`). Pré-existing better-sqlite3 NODE_MODULE_VERSION mismatch (115 vs 137) sur tests SQLite — résolu localement par `pnpm rebuild better-sqlite3`.
 - Smoke test manuel : drag & drop d'un .txt fonctionne, ingestion complète + chunking + embeddings + sqlite-vec OK. Sync via le bouton fonctionne après les fixes.
 - Smoke test 2026-05-08 : chat MCP DB fonctionne après le fix `781fca4` (test "donne moi le nombre de colis total" → LLM voit `query_<table>`, `describe_<table>`, etc., et répond).
+- ⏳ Smoke test Phase 4 UI (RagAccessSelector → save → MCP filtré) : pas encore fait, à faire avant commit.
 
 ### 🔜 Prochaine session — Priorités
 
 1. ~~**Lancer Phase 2** (intégration MCP + profiles)~~ → ✅ **livré** via Phase 3 du plan unifié
 2. ~~**Polish UX `ragDisabledReason`**~~ → ✅ **livré** (commit `d774228`)
-3. **Tests E2E manquants** : un test qui crée une source RAG, upload un fichier, fait un `rag_search` via le MCP server. Aurait évité plusieurs fixes runtime ET le bug `sourceId` placeholder. **Priorité haute** — la confiance dans la chain RAG repose dessus.
-4. **Sync async (Phase 4 plan original)** : passer la sync `LocalFolderConnector` en mode background job + queue. Toujours pertinent pour gros corpora.
-5. **Connecteurs externes (Phase 3 plan original)** : `S3Connector`, `HttpConnector` dans `ee/rag-connectors`. Important pour passer du POC à un vrai usage.
-6. **UI scope document (Phase 4 plan unifié)** : `SourcesPage` tabbed + `RagAccessSelector` + `ProfileManager` multi-kind. Aujourd'hui l'admin doit curl `POST /api/profiles/:name/scopes` à la main pour tester le RAG via MCP — c'est le frein UX principal.
-7. **Décision PII** (cf. §12 question 5) : applique-t-on le PII detector aux chunks avant retour MCP ? Coût vs cohérence avec l'existant DB.
+3. ~~**UI scope document (Phase 4 plan unifié)**~~ → 🚧 **en cours**, non commité 2026-05-09. **Validation technique passée** (lint vert, build vert, 786 tests verts). À finaliser :
+   - Smoke test manuel E2E : profile → KB scope → save → MCP server expose `rag_search` filtré sur les dossiers/docs cochés (cas allowAll + allowList)
+   - Vérifier qu'au save le `RagAccessSelector` POST bien sur `/api/profiles/:name/scopes` et que le preview en bas du composant se rafraîchit immédiatement après le save (pas de stale UI)
+   - Commit & QA review via `opensmith-qa-reviewer`
+4. **Tests E2E manquants** : un test qui crée une source RAG, upload un fichier, fait un `rag_search` via le MCP server. Aurait évité plusieurs fixes runtime ET le bug `sourceId` placeholder. **Priorité haute** — la confiance dans la chain RAG repose dessus. Désormais aussi un test E2E sur le `RagAccessSelector` (cocher folder → save → preview affiche le bon count).
+5. **Phase 5 du plan unifié — Cleanup** (3/4 livré 2026-05-09, voir section dédiée) :
+   - ✅ ~~Ajouter ESLint rule `no-cross-license-import`~~ → livré (cible RAG uniquement, SSO reporté)
+   - ✅ ~~JSDoc enrichi GET /preview + commentaire bascule auto-include/strict~~ → livré
+   - 📋 **Retirer les `@deprecated` fields de `ServeProfile`** : audit révèle 166 call sites encore actifs. Tranche dédiée 1-2 jours, plan d'attaque détaillé dans la section "🚧 En cours 2026-05-09 — Phase 5"
+   - 📋 Drop alias middleware `/api/connections/*` et `/api/rag/*` après une release avec header `Sunset` (≥ 2026-Q3)
+   - 📋 Migrer les value imports statiques `@calame-ee/sso` de `packages/cli/src/app.ts` et `packages/web/` en dynamic imports (étendre la rule cross-license à `@calame-ee/*` au lieu de seulement `@calame-ee/rag-*`)
+   - 📋 Décider du sort de `ConnectionManager.tsx` standalone : encore utilisé via le tab `databases` de `SourcesPage` mais plus comme view top-level
+6. **Sync async (Phase 4 plan original)** : passer la sync `LocalFolderConnector` en mode background job + queue. Toujours pertinent pour gros corpora.
+7. **Connecteurs externes (Phase 3 plan original)** : `S3Connector`, `HttpConnector` dans `ee/rag-connectors`. Important pour passer du POC à un vrai usage. Bénéficie maintenant de l'UI `SourcesPage` qui peut accueillir n'importe quel kind via `AddSourceModal`.
+8. **Décision PII** (cf. §12 question 5) : applique-t-on le PII detector aux chunks avant retour MCP ? Coût vs cohérence avec l'existant DB.
+9. **Délivrer un kind `api` ou `stream`** — premier test de l'extensibilité du `SourceAdapter`. HTTP/REST simple ou OpenAPI generator. Marqué TODO dans `SourceSchema` mais jamais essayé concrètement, donc on ne sait pas encore si l'abstraction tient.
 
 ### Fichiers modifiés / créés en récap
 
@@ -219,6 +445,30 @@ MOD packages/cli/src/routes/health.ts                (expose dans /health)
 MOD packages/web/src/App.tsx                         (lit le champ /health)
 MOD packages/web/src/components/Sidebar.tsx          (entrée disabled + tooltip)
 MOD packages/cli/src/__tests__/ai-config.test.ts     (fix mock embedding_dimensions)
+```
+
+**Phase 4 plan unifié — UI Sources unifiée (en cours 2026-05-09, non commité)** :
+
+```
+NOUVEAUX (Apache 2.0)
+packages/web/src/components/SourcesPage.tsx                       (259 lignes — page tabbed databases/knowledge)
+packages/web/src/components/AddSourceModal.tsx                    (190 lignes — kind picker modal)
+
+NOUVEAUX (BUSL-1.1)
+ee/rag-core/src/web/RagAccessSelector.tsx                         (1134 lignes — sélecteur dossiers/docs par profile)
+ee/rag-core/src/rag-access-state.ts                               (180 lignes — helpers purs)
+ee/rag-core/src/web/rag-access-state.ts                           (re-export pour barrel /web)
+ee/rag-core/src/__tests__/rag-access-state.test.ts                (15 tests sur les helpers purs)
+
+MODIFIÉS (Apache 2.0)
+packages/cli/src/routes/profile-scopes.ts                         (preview enrichi avec live RAG counts)
+packages/cli/src/routes/__tests__/profile-scopes.test.ts          (+4 tests pour live counts)
+packages/web/src/App.tsx                                          (view 'sources', RagAccessSelector lazy, buildProfilesData)
+packages/web/src/components/Sidebar.tsx                           (Connections → Sources, KB merged)
+packages/web/src/types/schema.ts                                  (mirror types ScopeSelection + Profile.sources/scopes)
+
+MODIFIÉS (BUSL-1.1)
+ee/rag-core/src/web/index.ts                                      (export RagAccessSelector)
 ```
 
 **Refactor Sources unifiées Phases 0-3 (commits `3c94610`, `b700af6`, `781fca4`)** — cf. `docs/sources-unified-plan.md` pour le détail :
@@ -826,4 +1076,4 @@ Découper pour livrer de la valeur incrémentalement :
 
 ---
 
-*Brouillon initial 2026-05-06 — Phases A + B livrées 2026-05-06, Polish UX et RAG-Phase-2 (via plan unifié) livrés 2026-05-07/08. Cf. §0 "État d'avancement" pour le détail des commits et `docs/sources-unified-plan.md` pour la suite de la roadmap (Phases 4-5 du plan unifié + Phases 3-5 du plan RAG original toujours à faire).*
+*Brouillon initial 2026-05-06 — Phases A + B livrées 2026-05-06, Polish UX et RAG-Phase-2 (via plan unifié) livrés 2026-05-07/08, **Phase 4 du plan unifié (UI Sources unifiée + `RagAccessSelector`) en cours 2026-05-09 (non commité)**. Cf. §0 "État d'avancement" pour le détail des commits et `docs/sources-unified-plan.md` pour la suite de la roadmap (Phase 5 du plan unifié + Phases 3-5 du plan RAG original toujours à faire).*

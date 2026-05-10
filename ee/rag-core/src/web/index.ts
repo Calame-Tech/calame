@@ -3,6 +3,7 @@
 // See ee/LICENSE.BUSL at the root of the ee/ directory for terms.
 
 export { default as KnowledgeBaseManager } from './KnowledgeBaseManager.js';
+export { default as RagAccessSelector } from './RagAccessSelector.js';
 export { default as SourceForm } from './SourceForm.js';
 export { default as FolderTreeView } from './FolderTreeView.js';
 export { default as DocumentUploader } from './DocumentUploader.js';

@@ -57,7 +57,7 @@ function makeApp(state: AppState): express.Express {
 
 /** Minimal ServeProfile fixture. */
 function makeProfile(name: string, overrides?: Partial<ServeProfile>): ServeProfile {
-  return { name, label: name, selectedTables: {}, ...overrides };
+  return { name, label: name, ...overrides };
 }
 
 /**

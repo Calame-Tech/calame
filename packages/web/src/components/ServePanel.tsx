@@ -1,5 +1,9 @@
 import { useState, useCallback, useMemo } from 'react';
 import type { AuthMode, Config, Profile, ServeStatus } from '../types/schema.js';
+import {
+  getProfileTableNames,
+  getProfileRelationalSources,
+} from '../lib/profile-accessors.js';
 import ChatPanel from './ChatPanel.js';
 import TokenManager from './TokenManager.js';
 import AuditLogViewer from './AuditLogViewer.js';
@@ -536,7 +540,8 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
           const isActive = profileStatus?.active === true;
           const basePath = profileStatus?.endpoint ?? `/mcp/${profile.name}`;
           const endpoint = `${window.location.origin}${basePath}`;
-          const tableCount = Object.keys(profile.selectedTables).length;
+          const tableCount = getProfileTableNames(profile).length;
+          const profileSources = getProfileRelationalSources(profile);
 
           const profileIdx = profiles.findIndex((p) => p.name === profile.name);
 
@@ -617,9 +622,9 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
                 <p className="text-xs text-gray-500">
                   {tableCount} table{tableCount !== 1 ? 's' : ''}
                 </p>
-                {profile.connections && profile.connections.length > 0 && (
+                {profileSources.length > 0 && (
                   <p className="text-xs text-gray-600 mt-0.5 truncate">
-                    {profile.connections.join(', ')}
+                    {profileSources.join(', ')}
                   </p>
                 )}
 

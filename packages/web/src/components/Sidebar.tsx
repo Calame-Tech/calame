@@ -5,6 +5,7 @@ type NavigablePage =
   | 'dashboard'
   | 'mcp-list'
   | 'configurations'
+  | 'sources'
   | 'connections'
   | 'users'
   | 'metrics'
@@ -21,10 +22,6 @@ interface SidebarProps {
   onNavigate: (page: NavigablePage) => void;
   user?: SidebarUser;
   onLogout?: () => void;
-  /** When true, the "Bases de connaissance" entry is enabled and navigable. */
-  ragEnabled?: boolean;
-  /** Human-readable reason shown as tooltip when ragEnabled is false. */
-  ragDisabledReason?: string | null;
 }
 
 interface NavItem {
@@ -168,24 +165,6 @@ const IconCog = (
   </svg>
 );
 
-const IconBookOpen = (
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    fill="none"
-    viewBox="0 0 24 24"
-    strokeWidth={1.5}
-    stroke="currentColor"
-    className="w-4 h-4"
-    aria-hidden="true"
-  >
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25"
-    />
-  </svg>
-);
-
 // Chevron right — indicates the currently active nav item
 const IconChevronRight = (
   <svg
@@ -237,7 +216,13 @@ const NAV_SECTIONS: NavSection[] = [
         activeWhen: ['config-detail'],
         icon: IconRectangleStack,
       },
-      { page: 'connections', label: 'Connections', icon: IconCircleStack },
+      {
+        page: 'sources',
+        label: 'Sources',
+        // Highlight this entry when on the legacy 'connections' or 'knowledge' pages too
+        activeWhen: ['connections', 'knowledge'],
+        icon: IconCircleStack,
+      },
     ],
   },
   {
@@ -269,8 +254,6 @@ export default function Sidebar({
   onNavigate,
   user,
   onLogout,
-  ragEnabled,
-  ragDisabledReason,
 }: SidebarProps) {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -416,63 +399,6 @@ export default function Sidebar({
                   );
                 })}
 
-                {/* RAG entry — always shown under Admin, enabled or disabled depending on backend */}
-                {section.label === 'Admin' && (() => {
-                  const page: NavigablePage = 'knowledge';
-                  const isActive = ragEnabled === true && currentPage === page;
-                  const disabledTitle = ragDisabledReason ?? 'RAG features unavailable';
-
-                  if (ragEnabled === true) {
-                    return (
-                      <li key="knowledge" className="w-full flex-shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => handleNavigate(page)}
-                          aria-current={isActive ? 'page' : undefined}
-                          className={[
-                            'w-full flex items-center gap-2.5 px-2.5 py-2 text-sm transition-colors rounded-lg',
-                            'whitespace-nowrap',
-                            isActive
-                              ? 'bg-os-500/15 text-os-300 ring-1 ring-os-500/30'
-                              : 'text-gray-400 hover:bg-white/5 hover:text-gray-200',
-                          ].join(' ')}
-                        >
-                          <span className={isActive ? 'text-os-400' : 'text-gray-500'}>
-                            {IconBookOpen}
-                          </span>
-                          <span>Bases de connaissance</span>
-                          {isActive && IconChevronRight}
-                        </button>
-                      </li>
-                    );
-                  }
-
-                  return (
-                    <li key="knowledge" className="w-full flex-shrink-0">
-                      <button
-                        type="button"
-                        disabled
-                        title={disabledTitle}
-                        aria-disabled="true"
-                        className={[
-                          'w-full flex items-center gap-2.5 px-2.5 py-2 text-sm rounded-lg',
-                          'whitespace-nowrap cursor-not-allowed opacity-50',
-                          'text-gray-600',
-                        ].join(' ')}
-                      >
-                        <span className="text-gray-600">{IconBookOpen}</span>
-                        <span>Bases de connaissance</span>
-                        {/* Info indicator — visible hint that the feature is unavailable */}
-                        <span
-                          className="ml-auto text-gray-600 text-[10px] leading-none select-none"
-                          aria-hidden="true"
-                        >
-                          ⓘ
-                        </span>
-                      </button>
-                    </li>
-                  );
-                })()}
               </ul>
             </div>
           ))}

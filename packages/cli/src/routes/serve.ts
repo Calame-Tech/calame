@@ -20,6 +20,10 @@ import {
   computeDistinctValues,
   upgradeProfileShape,
   sourceAdapterRegistry,
+  getProfileSelectedTables,
+  getProfileTableOptions,
+  getProfileColumnMasking,
+  getProfileRelationalSources,
 } from '@calame/core';
 import { readConfigurationsFile } from './configurations.js';
 import { INTERNAL_CHAT_SECRET } from '../chat-engine.js';
@@ -375,13 +379,26 @@ export function registerServeRoute(app: Express, state: AppState): void {
         effectiveTableOptions = merged.tableOptions;
         effectiveColumnMasking = merged.columnMasking;
       } else {
-        // Legacy path: use inline profile fields (shallow copy to avoid mutating shared state)
-        effectiveConnections = profile.connections?.length
-          ? [...profile.connections]
+        // Read via accessors so legacy profiles (`selectedTables` at the root)
+        // and unified profiles (`scopes[].selectedTables`) merge into the same
+        // effective payload. Shallow-clone the result so downstream mutations
+        // don't leak back into the live profile.
+        //
+        // Connection resolution mirrors the historic legacy behaviour: prefer
+        // the profile's relational sources when at least one matches a live
+        // connection, otherwise fan out to every available DB connection
+        // (covers the case where the migrator synthesised a placeholder id
+        // like 'default' that doesn't match the actual connection name).
+        const relationalSources = getProfileRelationalSources(profile);
+        const matchedSources = relationalSources.filter((id) => state.connections.has(id));
+        effectiveConnections = matchedSources.length
+          ? [...matchedSources]
           : [...state.connections.keys()];
-        effectiveSelectedTables = { ...profile.selectedTables };
-        effectiveTableOptions = profile.tableOptions ? { ...profile.tableOptions } as Record<string, TableToolOptions> : undefined;
-        effectiveColumnMasking = profile.columnMasking ? { ...profile.columnMasking } as Record<string, Record<string, ColumnMasking>> : undefined;
+        effectiveSelectedTables = { ...getProfileSelectedTables(profile) };
+        const aggTableOpts = getProfileTableOptions(profile);
+        effectiveTableOptions = aggTableOpts ? { ...aggTableOpts } : undefined;
+        const aggColumnMasking = getProfileColumnMasking(profile);
+        effectiveColumnMasking = aggColumnMasking ? { ...aggColumnMasking } : undefined;
       }
 
       // --- Apply user-level restrictions (narrow the profile scope) ---

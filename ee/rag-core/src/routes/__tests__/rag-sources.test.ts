@@ -11,6 +11,7 @@ import { runRagMigrations } from '../../storage/schema.js';
 import { registerRagSourcesRoutes } from '../rag-sources.js';
 import { SyncQueue } from '../../jobs/sync-queue.js';
 import { PollScheduler } from '../../jobs/poll-scheduler.js';
+import { WatchManager } from '../../jobs/watch-manager.js';
 import type { RagRouteDeps } from '../types.js';
 
 // ---------------------------------------------------------------------------
@@ -101,8 +102,11 @@ function makeDb(): BetterSqlite3Database {
 interface DepsBuild {
 	deps: RagRouteDeps;
 	pollScheduler: PollScheduler;
+	watchManager: WatchManager;
 	upsertSpy: ReturnType<typeof vi.spyOn>;
 	removeSpy: ReturnType<typeof vi.spyOn>;
+	watchUpsertSpy: ReturnType<typeof vi.spyOn>;
+	watchRemoveSpy: ReturnType<typeof vi.spyOn>;
 }
 
 function makeDeps(db: BetterSqlite3Database): DepsBuild {
@@ -114,6 +118,15 @@ function makeDeps(db: BetterSqlite3Database): DepsBuild {
 	// them — we just want to assert the calls.
 	const upsertSpy = vi.spyOn(pollScheduler, 'upsert');
 	const removeSpy = vi.spyOn(pollScheduler, 'remove');
+
+	const watchManager = new WatchManager({
+		db,
+		resolveConnector: () => null,
+		decryptConfig: (s2) => s2,
+		triggerSync: () => null,
+	});
+	const watchUpsertSpy = vi.spyOn(watchManager, 'upsert');
+	const watchRemoveSpy = vi.spyOn(watchManager, 'remove');
 
 	const syncQueue = new SyncQueue({
 		runJob: async () => undefined,
@@ -136,10 +149,11 @@ function makeDeps(db: BetterSqlite3Database): DepsBuild {
 		resolveConnector: vi.fn(() => null),
 		syncQueue,
 		pollScheduler,
+		watchManager,
 		onAudit: vi.fn(),
 	};
 
-	return { deps, pollScheduler, upsertSpy, removeSpy };
+	return { deps, pollScheduler, watchManager, upsertSpy, removeSpy, watchUpsertSpy, watchRemoveSpy };
 }
 
 // ---------------------------------------------------------------------------
@@ -452,3 +466,129 @@ describe('schema migration — v4 idempotence', () => {
 		expect(ver.version).toBe(4);
 	});
 });
+
+describe('registerRagSourcesRoutes — watch integration', () => {
+	let db: BetterSqlite3Database;
+	let captured: CapturedApp;
+	let build: DepsBuild;
+
+	beforeEach(() => {
+		db = makeDb();
+		captured = makeCapturedApp();
+		build = makeDeps(db);
+		registerRagSourcesRoutes(captured.app, build.deps);
+	});
+
+	it('POST a local source calls watchManager.upsert with the persisted row', async () => {
+		const handler = captured.post('/api/rag/sources');
+		const req = makeReq({
+			body: {
+				name: 'Watched local',
+				type: 'local',
+				config: { rootPath: '/tmp/x' },
+				embeddingSettingName: 'test',
+			},
+		});
+		const res = makeRes();
+		await handler(req, res.res);
+
+		expect(res.statusCode).toBe(201);
+		expect(build.watchUpsertSpy).toHaveBeenCalledTimes(1);
+		const arg = build.watchUpsertSpy.mock.calls[0]![0] as {
+			id: string;
+			type: string;
+			configEncrypted: string;
+		};
+		expect(arg.type).toBe('local');
+		expect(typeof arg.id).toBe('string');
+		expect(typeof arg.configEncrypted).toBe('string');
+	});
+
+	it('PATCH that changes config calls watchManager.upsert', async () => {
+		// Seed.
+		const createRes = makeRes();
+		await captured.post('/api/rag/sources')(
+			makeReq({
+				body: {
+					name: 'Source',
+					type: 'local',
+					config: { rootPath: '/tmp/a' },
+					embeddingSettingName: 'test',
+				},
+			}),
+			createRes.res,
+		);
+		const created = (createRes.body as { source: { id: string } }).source;
+		build.watchUpsertSpy.mockClear();
+
+		const patchRes = makeRes();
+		await captured.patch('/api/rag/sources/:id')(
+			makeReq({
+				params: { id: created.id },
+				body: { config: { rootPath: '/tmp/b' } },
+			}),
+			patchRes.res,
+		);
+
+		expect(patchRes.statusCode).toBe(200);
+		expect(build.watchUpsertSpy).toHaveBeenCalledTimes(1);
+	});
+
+	it('PATCH that only changes the name does NOT call watchManager.upsert', async () => {
+		const createRes = makeRes();
+		await captured.post('/api/rag/sources')(
+			makeReq({
+				body: {
+					name: 'Source',
+					type: 'local',
+					config: { rootPath: '/tmp/a' },
+					embeddingSettingName: 'test',
+				},
+			}),
+			createRes.res,
+		);
+		const created = (createRes.body as { source: { id: string } }).source;
+		build.watchUpsertSpy.mockClear();
+
+		const patchRes = makeRes();
+		await captured.patch('/api/rag/sources/:id')(
+			makeReq({ params: { id: created.id }, body: { name: 'Renamed' } }),
+			patchRes.res,
+		);
+
+		expect(patchRes.statusCode).toBe(200);
+		expect(build.watchUpsertSpy).not.toHaveBeenCalled();
+	});
+
+	it('DELETE source calls watchManager.remove', async () => {
+		const createRes = makeRes();
+		await captured.post('/api/rag/sources')(
+			makeReq({
+				body: {
+					name: 'Source',
+					type: 'local',
+					config: { rootPath: '/tmp/a' },
+					embeddingSettingName: 'test',
+				},
+			}),
+			createRes.res,
+		);
+		const created = (createRes.body as { source: { id: string } }).source;
+		// Clear the spy: WatchManager.upsert internally calls .remove() to
+		// tear down any prior watcher before re-registering, so the create
+		// path already incremented the counter once. We only care about the
+		// DELETE-driven call here.
+		build.watchRemoveSpy.mockClear();
+
+		const delRes = makeRes();
+		await captured.delete('/api/rag/sources/:id')(
+			makeReq({ params: { id: created.id } }),
+			delRes.res,
+		);
+
+		expect(delRes.statusCode).toBe(200);
+		expect(build.watchRemoveSpy).toHaveBeenCalledTimes(1);
+		expect(build.watchRemoveSpy.mock.calls[0]).toEqual([created.id]);
+	});
+});
+

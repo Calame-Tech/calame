@@ -287,6 +287,7 @@ export function createApp(
       decryptConfig: rt.decryptConfig,
       syncQueue: rt.syncQueue,
       pollScheduler: rt.pollScheduler,
+      watchManager: rt.watchManager,
       onAudit: (entry: { type: string; payload: unknown; timestamp: string }) => {
         log.info(`[rag-audit] ${entry.type} ${JSON.stringify(entry.payload)}`);
       },

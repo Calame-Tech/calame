@@ -19,6 +19,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.726.0",
     "@calame-ee/rag-core": "workspace:*",
+    "chokidar": "^4.0.0",
     "mime-types": "^2.1.35",
     "minimatch": "^10.0.1"
   },

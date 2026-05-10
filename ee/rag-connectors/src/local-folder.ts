@@ -6,11 +6,17 @@ import { constants as fsConstants, createReadStream } from 'node:fs';
 import { access, mkdir, readdir, stat } from 'node:fs/promises';
 import { basename, dirname, relative, resolve, sep } from 'node:path';
 import type { Readable } from 'node:stream';
+import chokidar from 'chokidar';
 import mime from 'mime-types';
 
 import type { RagDocument, RagFolder, RagSourceType } from '@calame-ee/rag-core';
 
-import type { DocumentSourceConfig, DocumentSourceConnector } from './types.js';
+import type {
+  DocumentSourceConfig,
+  DocumentSourceConnector,
+  Unsubscribe,
+  WatchEvent,
+} from './types.js';
 import {
   deterministicId,
   matchGlobs,
@@ -113,9 +119,11 @@ function decodeDocId(docId: string): string {
  *    accept this cost in Phase 1 because the host caches `RagDocument.hash`
  *    and only re-hashes when stat-based heuristics indicate a change.
  *
- * Deferred to later phases:
- *  - `watch()` (chokidar-based incremental sync) → Phase 4.
- *  - Symlink semantics beyond "follow or skip" → Phase 4.
+ * Phase 4 additions:
+ *  - `watch()` (chokidar-based incremental sync). Emits `created` / `updated`
+ *    / `deleted` events for files only — directory-level events (`addDir`,
+ *    `unlinkDir`) are silently dropped because folders are derived from
+ *    `listFolders`, not from the event stream.
  */
 export class LocalFolderConnector implements DocumentSourceConnector {
   readonly type: RagSourceType = 'local';
@@ -287,6 +295,92 @@ export class LocalFolderConnector implements DocumentSourceConnector {
     const mimeType = typeof lookup === 'string' ? lookup : 'application/octet-stream';
     const stream = createReadStream(fileAbs);
     return { stream, mimeType };
+  }
+
+  /**
+   * Subscribe to filesystem changes under `rootPath` via chokidar. Returns an
+   * `Unsubscribe` that closes the watcher when called.
+   *
+   * **Filtering**: events are filtered through `matchGlobs(includeGlobs,
+   * excludeGlobs)` so the host only receives notifications for paths it would
+   * have indexed at sync time. We normalize separators to forward slashes so
+   * the same patterns work on POSIX and Windows.
+   *
+   * **Initial scan**: chokidar is configured with `ignoreInitial: true` —
+   * pre-existing files do NOT replay as `created` events at watcher boot. The
+   * initial state is what the host loaded via `listDocuments` already; events
+   * cover deltas only.
+   *
+   * **Stability**: we use `awaitWriteFinish` (500ms stability threshold) so a
+   * single multi-write file save (editors writing in chunks, partial uploads,
+   * …) coalesces into ONE event instead of a flurry of `change`s. The host's
+   * own debounce on top of this still applies.
+   *
+   * **Symlinks**: we honor the connector's `followSymlinks` setting so the
+   * watcher behaves like `listDocuments`. When `followSymlinks` is false,
+   * symlinks at the root are followed once (standard chokidar behavior on
+   * the rootPath itself) but children that are symlinks are not traversed.
+   *
+   * **Errors**: chokidar emits `error` events when a directory disappears or
+   * is unreadable. We log and continue — we never crash the watcher because
+   * the upstream host has no recovery path beyond restarting the source.
+   *
+   * **Windows quirks**: chokidar uses ReadDirectoryChangesW on Windows, which
+   * fires events even for files inside subdirectories that get renamed.
+   * Atomic saves by some editors (e.g. VSCode "save through tmp") show up as
+   * `unlink` + `add` for the same path within milliseconds. The host's
+   * downstream debounce coalesces these into a single sync trigger.
+   */
+  watch(
+    rawConfig: DocumentSourceConfig,
+    _sourceId: string,
+    onChange: (event: WatchEvent) => void,
+  ): Unsubscribe {
+    const config = narrowConfig(rawConfig);
+    const root = resolve(config.rootPath);
+
+    const watcher = chokidar.watch(root, {
+      ignoreInitial: true,
+      followSymlinks: config.followSymlinks ?? false,
+      awaitWriteFinish: { stabilityThreshold: 500, pollInterval: 100 },
+    });
+
+    const map = (
+      kind: 'add' | 'change' | 'unlink',
+      absPath: string,
+    ): WatchEvent | null => {
+      const relPath = relative(root, absPath).split(sep).join('/');
+      // chokidar can emit events for paths that resolve outside the root when
+      // following symlinks; matchGlobs would still test, but a parent-escape
+      // means the host has no doc for this path. Skip those cleanly.
+      if (relPath === '' || relPath.startsWith('..')) return null;
+      if (!matchGlobs(relPath, config.includeGlobs, config.excludeGlobs)) {
+        return null;
+      }
+      const type =
+        kind === 'add' ? 'created' : kind === 'change' ? 'updated' : 'deleted';
+      return { type, documentId: encodeDocId(relPath) };
+    };
+
+    const handle = (kind: 'add' | 'change' | 'unlink', absPath: string): void => {
+      const event = map(kind, absPath);
+      if (event !== null) onChange(event);
+    };
+
+    watcher.on('add', (p) => handle('add', p));
+    watcher.on('change', (p) => handle('change', p));
+    watcher.on('unlink', (p) => handle('unlink', p));
+    // Directory events are intentionally ignored — folders are derived from
+    // `listFolders`, not from the event stream, and re-listing on the next
+    // sync picks up any directory-level structural changes.
+    watcher.on('error', (err) => {
+      // eslint-disable-next-line no-console
+      console.error('LocalFolderConnector watch error:', err);
+    });
+
+    return () => {
+      void watcher.close();
+    };
   }
 
   // -- helpers --------------------------------------------------------------

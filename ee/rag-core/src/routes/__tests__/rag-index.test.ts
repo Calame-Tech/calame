@@ -13,6 +13,7 @@ import { runRagMigrations } from '../../storage/schema.js';
 import { registerRagIndexRoutes, runSyncJob } from '../rag-index.js';
 import { SyncQueue, recoverOrphanedJobs } from '../../jobs/sync-queue.js';
 import { PollScheduler } from '../../jobs/poll-scheduler.js';
+import { WatchManager } from '../../jobs/watch-manager.js';
 import type { ConnectorLike, RagRouteDeps } from '../types.js';
 import type { IngestionPipeline } from '../../pipeline/ingest.js';
 import type { RagJob, RagSource } from '../../types.js';
@@ -245,6 +246,12 @@ function makeDeps(
 		decryptConfig: (s: string) => s,
 		resolveConnector: vi.fn(() => connector),
 		pollScheduler,
+		watchManager: new WatchManager({
+			db,
+			resolveConnector: () => null,
+			decryptConfig: (s2) => s2,
+			triggerSync: () => null,
+		}),
 		onAudit: vi.fn(),
 		...overrides,
 	};

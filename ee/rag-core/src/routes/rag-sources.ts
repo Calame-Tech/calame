@@ -266,6 +266,17 @@ export function registerRagSourcesRoutes(app: Express, deps: RagRouteDeps): void
 			if (pollingInterval !== null) {
 				deps.pollScheduler.upsert(id, pollingInterval);
 			}
+			// Register the real-time watcher. The manager is type-aware
+			// and no-ops for non-local sources, so we call it unconditionally.
+			// Passing the encrypted blob straight from the inserted row
+			// keeps the call site terse — the manager decrypts internally.
+			if (row) {
+				deps.watchManager.upsert({
+					id: row.id,
+					type: row.type,
+					configEncrypted: row.config_encrypted,
+				});
+			}
 			audit(deps, { type: 'rag.sources.created', payload: { id, name: parsed.data.name } });
 			res.status(201).json({ source: row ? rowToSource(row, deps) : null });
 		} catch (error: unknown) {
@@ -382,6 +393,20 @@ export function registerRagSourcesRoutes(app: Express, deps: RagRouteDeps): void
 			const row = deps.db
 				.prepare<[string], SourceRow>(`SELECT * FROM rag_sources WHERE id = ?`)
 				.get(id);
+			// Refresh the real-time watcher whenever the type or config changed.
+			// The manager replaces the existing watcher in-place — closing the
+			// old chokidar handle and starting a new one — so a rootPath or
+			// globs change is reflected immediately. No-op for non-local types
+			// (the manager removes any existing watcher and returns).
+			const watchSensitiveChanged =
+				parsed.data.type !== undefined || parsed.data.config !== undefined;
+			if (row && watchSensitiveChanged) {
+				deps.watchManager.upsert({
+					id: row.id,
+					type: row.type,
+					configEncrypted: row.config_encrypted,
+				});
+			}
 			audit(deps, { type: 'rag.sources.updated', payload: { id } });
 			res.json({ source: row ? rowToSource(row, deps) : null });
 		} catch (error: unknown) {
@@ -402,6 +427,7 @@ export function registerRagSourcesRoutes(app: Express, deps: RagRouteDeps): void
 			// Clear any registered poll timer. `remove` is idempotent so calling
 			// it on a source that never had polling enabled is a no-op.
 			deps.pollScheduler.remove(id);
+			deps.watchManager.remove(id);
 			audit(deps, { type: 'rag.sources.deleted', payload: { id } });
 			res.json({ success: true });
 		} catch (error: unknown) {

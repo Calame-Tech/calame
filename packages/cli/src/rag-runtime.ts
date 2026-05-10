@@ -12,6 +12,7 @@ import type {
   ConnectorLike,
   SyncQueue,
   PollScheduler,
+  WatchManager,
 } from '@calame-ee/rag-core';
 import { randomUUID } from 'node:crypto';
 import type { CalameDatabase } from './database.js';
@@ -56,6 +57,14 @@ export interface RagRuntime {
    * set.
    */
   pollScheduler: PollScheduler;
+  /**
+   * Real-time filesystem watcher registry for sources whose connector supports
+   * `watch()` (today: `local`). Built and started at boot; the sources route
+   * updates it on POST/PATCH/DELETE so the watcher set tracks the persisted
+   * source set. Shares the queue-backed `triggerSync` lambda with the poll
+   * scheduler so per-source dedupe is preserved across both trigger paths.
+   */
+  watchManager: WatchManager;
   /** Reference to the loaded @calame-ee/rag-core module — used to register routes. */
   ragCore: typeof import('@calame-ee/rag-core');
 }
@@ -310,6 +319,7 @@ export async function initRagRuntime(
           decryptConfig: rt.decryptConfig,
           syncQueue: rt.syncQueue,
           pollScheduler: rt.pollScheduler,
+          watchManager: rt.watchManager,
           onAudit: (entry) => {
             log.info(`[rag-audit] ${entry.type} ${JSON.stringify(entry.payload)}`);
           },
@@ -324,34 +334,39 @@ export async function initRagRuntime(
     },
   });
 
-  // Build the poll scheduler. Its `triggerSync` callback mirrors the body of
-  // `POST /api/rag/sources/:id/sync`: insert a pending job, ask the queue to
-  // pick it up, and DELETE the row when the queue rejects (already running /
-  // queued for the same source). Closing over `db.raw` and `syncQueue` keeps
+  // Single `triggerSync` lambda shared by the poll scheduler AND the watch
+  // manager. Mirrors the body of `POST /api/rag/sources/:id/sync`: insert a
+  // pending job, ask the queue to pick it up, and DELETE the row when the
+  // queue rejects (already running / queued for the same source). Sharing
+  // one lambda keeps the INSERT/enqueue/DELETE logic in a single place and
+  // ensures both trigger paths go through the same SyncQueue dedupe.
+  const triggerSync = (sourceId: string): string | null => {
+    const jobId = randomUUID();
+    const now = new Date().toISOString();
+    db.raw
+      .prepare(
+        `INSERT INTO rag_jobs
+         (id, source_id, status, progress, total_documents, processed_documents,
+          skipped_by_etag, gc_deleted, started_at)
+         VALUES (?, ?, 'pending', 0, 0, 0, 0, 0, ?)`,
+      )
+      .run(jobId, sourceId, now);
+    const accepted = syncQueue.enqueue(sourceId, jobId);
+    if (!accepted) {
+      // Queue rejected — sync already active for this source. Clean up
+      // the phantom row so the UI doesn't poll a job that will never run.
+      db.raw.prepare(`DELETE FROM rag_jobs WHERE id = ?`).run(jobId);
+      return null;
+    }
+    return jobId;
+  };
+
+  // Build the poll scheduler. Closing over `db.raw` and `syncQueue` keeps
   // the scheduler tied to the runtime — the host never needs to thread these
   // through the route deps explicitly.
   const pollScheduler = new ragCore.PollScheduler({
     db: db.raw,
-    triggerSync: (sourceId: string) => {
-      const jobId = randomUUID();
-      const now = new Date().toISOString();
-      db.raw
-        .prepare(
-          `INSERT INTO rag_jobs
-           (id, source_id, status, progress, total_documents, processed_documents,
-            skipped_by_etag, gc_deleted, started_at)
-           VALUES (?, ?, 'pending', 0, 0, 0, 0, 0, ?)`,
-        )
-        .run(jobId, sourceId, now);
-      const accepted = syncQueue.enqueue(sourceId, jobId);
-      if (!accepted) {
-        // Queue rejected — sync already active for this source. Clean up
-        // the phantom row so the UI doesn't poll a job that will never run.
-        db.raw.prepare(`DELETE FROM rag_jobs WHERE id = ?`).run(jobId);
-        return null;
-      }
-      return jobId;
-    },
+    triggerSync,
     onAudit: (event) => {
       log.info(`[rag-audit] ${event.type} ${JSON.stringify(event.payload)}`);
     },
@@ -361,6 +376,27 @@ export async function initRagRuntime(
   // seconds after registration, so a tick during boot is impossible in
   // practice — but ordering this way removes the race entirely.
   pollScheduler.start();
+
+  // Build the real-time watch manager. Shares the queue-backed `triggerSync`
+  // with the poll scheduler so concurrent watch + poll triggers serialize
+  // per-source through the queue's dedupe.
+  const watchManager = new ragCore.WatchManager({
+    db: db.raw,
+    resolveConnector: (type: string) => {
+      // Reuse the runtime's connector resolver. We narrow the return value to
+      // the WatchableConnector shape — the manager only touches `.type` and
+      // `.watch?`, both of which `LocalFolderConnector` provides.
+      const c = resolveConnector(type);
+      return c as unknown as import('@calame-ee/rag-core').WatchableConnector | null;
+    },
+    decryptConfig,
+    triggerSync,
+    debounceMs: 5000,
+    onAudit: (event) => {
+      log.info(`[rag-audit] ${event.type} ${JSON.stringify(event.payload)}`);
+    },
+  });
+  watchManager.start();
 
   state.ragDisabledReason = null;
   state.ragRuntime = {
@@ -374,6 +410,7 @@ export async function initRagRuntime(
     resolveConnector,
     syncQueue,
     pollScheduler,
+    watchManager,
     ragCore,
   };
   ragRuntimeRef.current = state.ragRuntime;

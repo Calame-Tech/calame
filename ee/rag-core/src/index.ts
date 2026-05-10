@@ -66,6 +66,12 @@ export { SyncQueue, recoverOrphanedJobs } from './jobs/sync-queue.js';
 export type { SyncQueueDeps } from './jobs/sync-queue.js';
 export { PollScheduler } from './jobs/poll-scheduler.js';
 export type { PollSchedulerDeps, PollAuditEntry } from './jobs/poll-scheduler.js';
+export { WatchManager } from './jobs/watch-manager.js';
+export type {
+	WatchManagerDeps,
+	WatchAuditEntry,
+	WatchableConnector,
+} from './jobs/watch-manager.js';
 export { runSyncJob } from './routes/rag-index.js';
 
 // ---------- Source Adapter ----------

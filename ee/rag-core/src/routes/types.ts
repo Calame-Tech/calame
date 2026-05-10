@@ -7,6 +7,7 @@ import type { EmbeddingClient, VectorStore } from '../types.js';
 import type { IngestionPipeline } from '../pipeline/ingest.js';
 import type { SyncQueue } from '../jobs/sync-queue.js';
 import type { PollScheduler } from '../jobs/poll-scheduler.js';
+import type { WatchManager } from '../jobs/watch-manager.js';
 
 /** Audit hook entry — matches the shape used by the host's audit log. */
 export interface RagAuditEntry {
@@ -101,6 +102,13 @@ export interface RagRouteDeps {
 	 * stays in sync with the persisted source set.
 	 */
 	pollScheduler: PollScheduler;
+	/**
+	 * Real-time filesystem watcher registry for sources whose connector
+	 * supports `watch()` (today: `local` only). The sources route handler
+	 * calls `upsert` on POST/PATCH and `remove` on DELETE so the manager
+	 * stays in sync with the persisted source set.
+	 */
+	watchManager: WatchManager;
 	/** Optional audit hook called on success and failure. */
 	onAudit?: (entry: RagAuditEntry) => void;
 }

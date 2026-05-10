@@ -457,13 +457,15 @@ describe('schema migration — v4 idempotence', () => {
 
 		runRagMigrations({ raw: db });
 
-		// Post-condition: column present, version bumped.
+		// Post-condition: column present, version bumped to the current head.
 		cols = db.pragma('table_info(rag_sources)') as Array<{ name: string }>;
 		expect(cols.some((c) => c.name === 'polling_interval_seconds')).toBe(true);
 		const ver = db
 			.prepare(`SELECT version FROM rag_schema_version WHERE key = 'rag'`)
 			.get() as { version: number };
-		expect(ver.version).toBe(4);
+		// v5 added the FTS5 mirror — the migration is no-op on this fixture
+		// (rag_chunks isn't seeded) but the version still advances.
+		expect(ver.version).toBe(5);
 	});
 });
 

@@ -84,6 +84,10 @@ export type {
 	DocumentStorage,
 } from './source-adapter.js';
 
+// ---------- Search ----------
+export { HybridSearchIndex, escapeFtsQuery } from './search/hybrid-search.js';
+export type { HybridSearchDeps } from './search/hybrid-search.js';
+
 // ---------- Routes ----------
 export { registerRagSourcesRoutes } from './routes/rag-sources.js';
 export { registerRagContentRoutes } from './routes/rag-content.js';

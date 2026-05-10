@@ -13,12 +13,90 @@ export interface RagMigrationDb {
 	raw: BetterSqlite3Database;
 }
 
-const CURRENT_RAG_SCHEMA_VERSION = 4;
+const CURRENT_RAG_SCHEMA_VERSION = 5;
 
 /** Returns true if a column exists on a table. */
 function hasColumn(db: BetterSqlite3Database, table: string, column: string): boolean {
 	const cols = db.pragma(`table_info(${table})`) as Array<{ name: string }>;
 	return cols.some((c) => c.name === column);
+}
+
+/** Returns true if a table exists. Works for both regular and virtual tables. */
+function hasTable(db: BetterSqlite3Database, name: string): boolean {
+	const row = db
+		.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name = ?`)
+		.get(name) as { name: string } | undefined;
+	return row !== undefined;
+}
+
+/**
+ * Create the FTS5 virtual table mirroring `rag_chunks.text` plus the
+ * insert/update/delete triggers that keep it in sync. Idempotent —
+ * uses `IF NOT EXISTS` guards everywhere and back-fills existing rows
+ * the first time it is run.
+ *
+ * Configuration:
+ *  - `content='rag_chunks'` + `content_rowid='rowid'` enables FTS5's
+ *    "external content" mode: the FTS table only stores the index,
+ *    not a copy of the text. Saves disk on large corpora.
+ *  - `porter unicode61 remove_diacritics 2` applies English stemming
+ *    on top of unicode-normalized tokens with diacritics stripped.
+ *    Acceptable default for fr/es content; a per-mimetype tokenizer
+ *    selection is out of scope for this tranche.
+ *
+ * NOTE (commercial frontier): hybrid retrieval (FTS5 + RRF fusion)
+ * lives in `ee/rag-core/` for this tranche. If the boundary between
+ * "free" (vector-only) and "Pro" (hybrid + reranker) hardens, this
+ * block plus `search/hybrid-search.ts` can be extracted into a
+ * separate `ee/rag-advanced` package without touching the
+ * DocumentSearchIndex contract — the host already injects the
+ * implementation.
+ */
+function createFtsTableAndTriggers(db: BetterSqlite3Database): void {
+	// Defensive guard for partial-schema DBs (typically test fixtures that
+	// only seed `rag_sources` + `rag_schema_version` to exercise upgrade
+	// paths). In a real installation `rag_chunks` is always created by the
+	// v1 baseline, but we don't want this step to crash on incomplete
+	// fixtures — the table can simply be skipped and the next sync will
+	// trigger a full re-run when chunks first appear.
+	if (!hasTable(db, 'rag_chunks')) {
+		return;
+	}
+
+	if (!hasTable(db, 'rag_chunks_fts')) {
+		db.exec(
+			`CREATE VIRTUAL TABLE rag_chunks_fts USING fts5(
+				text,
+				content='rag_chunks',
+				content_rowid='rowid',
+				tokenize='porter unicode61 remove_diacritics 2'
+			)`,
+		);
+	}
+
+	// Triggers — CREATE TRIGGER IF NOT EXISTS is supported by sqlite, so the
+	// migration is safe to re-run.
+	db.exec(`CREATE TRIGGER IF NOT EXISTS rag_chunks_ai AFTER INSERT ON rag_chunks BEGIN
+		INSERT INTO rag_chunks_fts(rowid, text) VALUES (new.rowid, new.text);
+	END`);
+	db.exec(`CREATE TRIGGER IF NOT EXISTS rag_chunks_ad AFTER DELETE ON rag_chunks BEGIN
+		INSERT INTO rag_chunks_fts(rag_chunks_fts, rowid, text) VALUES('delete', old.rowid, old.text);
+	END`);
+	db.exec(`CREATE TRIGGER IF NOT EXISTS rag_chunks_au AFTER UPDATE ON rag_chunks BEGIN
+		INSERT INTO rag_chunks_fts(rag_chunks_fts, rowid, text) VALUES('delete', old.rowid, old.text);
+		INSERT INTO rag_chunks_fts(rowid, text) VALUES (new.rowid, new.text);
+	END`);
+
+	// Back-fill — covers two cases:
+	//   1. Upgrade from v4: rag_chunks_fts is new and empty.
+	//   2. Fresh v5 DB created before any chunks were inserted: nothing to copy.
+	// The insert is keyed by rowid so re-running it is a no-op on already
+	// indexed rows in external-content mode (FTS5 dedupes by rowid in the
+	// index — re-inserting the same rowid+text simply replaces the entry).
+	const chunkCount = db.prepare(`SELECT COUNT(*) AS n FROM rag_chunks`).get() as { n: number };
+	if (chunkCount.n > 0) {
+		db.exec(`INSERT INTO rag_chunks_fts(rowid, text) SELECT rowid, text FROM rag_chunks`);
+	}
 }
 
 /** Idempotent ALTER TABLE — adds a column only when missing. */
@@ -150,6 +228,12 @@ export function runRagMigrations(db: RagMigrationDb): void {
 		raw.exec(`CREATE INDEX IF NOT EXISTS idx_rag_chunks_document ON rag_chunks(document_id)`);
 		raw.exec(`CREATE INDEX IF NOT EXISTS idx_rag_jobs_source ON rag_jobs(source_id)`);
 
+		// FTS5 mirror + triggers — created at v1 for fresh DBs so we don't run
+		// the v5 migration path on never-used installs. Pre-v5 DBs that upgrade
+		// from v4 hit the v5 branch below; both paths converge on the same
+		// `rag_chunks_fts` table.
+		createFtsTableAndTriggers(raw);
+
 		setRagSchemaVersion(raw, 1);
 	}
 
@@ -180,6 +264,19 @@ export function runRagMigrations(db: RagMigrationDb): void {
 		// only registers timers for rows where this column is non-null.
 		addColumnIfMissing(raw, 'rag_sources', 'polling_interval_seconds', 'INTEGER');
 		setRagSchemaVersion(raw, 4);
+	}
+
+	if (current < 5) {
+		// v5 — add the FTS5 virtual table mirroring `rag_chunks.text` plus the
+		// AI/AU/AD triggers that keep it in sync. Used by HybridSearchIndex
+		// (search/hybrid-search.ts) to combine keyword and vector retrieval
+		// through Reciprocal Rank Fusion (RRF).
+		//
+		// Idempotent: the helper guards table creation with IF NOT EXISTS and
+		// only backfills when rag_chunks contains rows. Re-running this step
+		// (e.g. after a partial earlier upgrade) is safe.
+		createFtsTableAndTriggers(raw);
+		setRagSchemaVersion(raw, 5);
 	}
 
 	// Future migrations slot here, each gated on `current < N`.

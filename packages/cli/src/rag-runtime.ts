@@ -230,9 +230,9 @@ export async function initRagRuntime(
     embeddingClient: defaultEmbeddingClient ?? makeUnconfiguredEmbeddingClient(dimension),
   });
 
-  // Build a connector resolver. Phase 1 wired `local`; Phase 3 adds `s3`.
-  // Other types (http, gdrive, …) still return null so the route layer can
-  // answer 501 with a clear message.
+  // Build a connector resolver. Phase 1 wired `local`; Phase 3 adds `s3` and
+  // `http`. Other types (gdrive, sharepoint, …) still return null so the
+  // route layer can answer 501 with a clear message.
   const resolveConnector = (type: string): ConnectorLike | null => {
     if (!ragConnectors) return null;
     if (type === 'local') {
@@ -240,6 +240,9 @@ export async function initRagRuntime(
     }
     if (type === 's3') {
       return new ragConnectors.S3Connector() as unknown as ConnectorLike;
+    }
+    if (type === 'http') {
+      return new ragConnectors.HttpConnector() as unknown as ConnectorLike;
     }
     return null;
   };

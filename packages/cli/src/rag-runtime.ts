@@ -10,6 +10,7 @@ import type {
   VectorStore,
   EmbeddingClient,
   ConnectorLike,
+  SyncQueue,
 } from '@calame-ee/rag-core';
 import type { CalameDatabase } from './database.js';
 import type { AiSettingsManager } from './ai-config.js';
@@ -40,6 +41,12 @@ export interface RagRuntime {
   decryptConfig: (ciphertext: string) => string;
   /** Resolves a document-source connector instance for a given source type. */
   resolveConnector: (type: string) => ConnectorLike | null;
+  /**
+   * Process-singleton FIFO queue for background sync jobs. Built once at boot
+   * and shared by all `RagRouteDeps` instances so dedupe-by-sourceId works
+   * across concurrent HTTP requests.
+   */
+  syncQueue: SyncQueue;
   /** Reference to the loaded @calame-ee/rag-core module — used to register routes. */
   ragCore: typeof import('@calame-ee/rag-core');
 }
@@ -103,6 +110,22 @@ export async function initRagRuntime(
     log.warn(`Failed to run RAG migrations: ${msg}. RAG features disabled.`);
     state.ragDisabledReason = `RAG migrations failed: ${msg}`;
     return;
+  }
+
+  // Boot recovery: sweep `pending` and `running` jobs left over from a previous
+  // process. The single-process SyncQueue (built below) does not survive a
+  // restart, so any in-flight job is now orphaned. Mark them failed so the UI
+  // doesn't poll forever waiting for a worker that no longer exists.
+  // Phase 4.1 limitation: we DO NOT re-enqueue pending jobs — the user can
+  // re-trigger the sync from the UI. See `recoverOrphanedJobs` JSDoc.
+  try {
+    const recovered = ragCore.recoverOrphanedJobs(db.raw);
+    if (recovered > 0) {
+      log.info(`RAG: marked ${recovered} orphaned job(s) as failed (server restart recovery).`);
+    }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    log.warn(`RAG: failed to sweep orphaned jobs at boot: ${msg} (continuing).`);
   }
 
   // Pick a dimension for the vec0 table. Use whatever existing sources have
@@ -247,6 +270,50 @@ export async function initRagRuntime(
     return null;
   };
 
+  // Build the singleton sync queue. The queue's worker callback closes over
+  // the runtime fields it needs to invoke `runSyncJob` — it does NOT close
+  // over a `RagRouteDeps` object because that lives in `app.ts` and may be
+  // rebuilt across hot-reloads. Reconstructing the deps inline keeps the
+  // queue tied to the runtime rather than to any specific Express app.
+  const ragRuntimeRef: { current: RagRuntime | null } = { current: null };
+  const syncQueue = new ragCore.SyncQueue({
+    runJob: async (sourceId: string, jobId: string) => {
+      const rt = ragRuntimeRef.current;
+      if (!rt) {
+        // Should never happen — the queue is owned by the runtime that owns
+        // this ref. Defensive throw → caught by SyncQueue and surfaced via
+        // onError.
+        throw new Error('RAG runtime not initialized while running job');
+      }
+      // Build a minimal RagRouteDeps for runSyncJob. We don't need the
+      // search-only fields (vectorStore, resolveEmbeddingClient, …) but
+      // RagRouteDeps requires them, so we pass the runtime values straight
+      // through.
+      await rt.ragCore.runSyncJob(
+        {
+          db: db.raw,
+          pipeline: rt.pipeline,
+          vectorStore: rt.vectorStore,
+          resolveEmbeddingClient: rt.resolveEmbeddingClient,
+          resolveEmbeddingSetting: rt.resolveEmbeddingSetting,
+          resolveConnector: rt.resolveConnector,
+          encryptConfig: rt.encryptConfig,
+          decryptConfig: rt.decryptConfig,
+          syncQueue: rt.syncQueue,
+          onAudit: (entry) => {
+            log.info(`[rag-audit] ${entry.type} ${JSON.stringify(entry.payload)}`);
+          },
+        },
+        sourceId,
+        jobId,
+      );
+    },
+    onError: (sourceId: string, jobId: string, err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      log.warn(`RAG sync worker failure (source=${sourceId} job=${jobId}): ${msg}`);
+    },
+  });
+
   state.ragDisabledReason = null;
   state.ragRuntime = {
     vectorStore,
@@ -257,8 +324,10 @@ export async function initRagRuntime(
     encryptConfig,
     decryptConfig,
     resolveConnector,
+    syncQueue,
     ragCore,
   };
+  ragRuntimeRef.current = state.ragRuntime;
 
   // Phase 3d: Register the DocumentSourceAdapter into the global SourceAdapterRegistry.
   // Guard with has() for idempotency — if initRagRuntime is somehow called twice

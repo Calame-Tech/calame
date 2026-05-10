@@ -10,7 +10,8 @@ import { nanoid } from 'nanoid';
 import type { Express, Request, Response } from 'express';
 
 import { runRagMigrations } from '../../storage/schema.js';
-import { registerRagIndexRoutes } from '../rag-index.js';
+import { registerRagIndexRoutes, runSyncJob } from '../rag-index.js';
+import { SyncQueue, recoverOrphanedJobs } from '../../jobs/sync-queue.js';
 import type { ConnectorLike, RagRouteDeps } from '../types.js';
 import type { IngestionPipeline } from '../../pipeline/ingest.js';
 import type { RagJob, RagSource } from '../../types.js';
@@ -20,7 +21,7 @@ import type { RagJob, RagSource } from '../../types.js';
 // so we can invoke it directly without spinning up an HTTP server.
 // ---------------------------------------------------------------------------
 
-type SyncHandler = (req: Request, res: Response) => Promise<void>;
+type SyncHandler = (req: Request, res: Response) => void | Promise<void>;
 
 interface CapturedApp {
 	app: Express;
@@ -82,7 +83,10 @@ function makeDb(): BetterSqlite3Database {
 	return db;
 }
 
-function insertSource(db: BetterSqlite3Database, overrides?: Partial<RagSource>): RagSource {
+function insertSource(
+	db: BetterSqlite3Database,
+	overrides?: Partial<RagSource>,
+): RagSource {
 	const source: RagSource = {
 		id: 'src-1',
 		name: 'Test source',
@@ -202,13 +206,18 @@ function makePipelineMock(): IngestionPipeline & {
 	};
 }
 
+/**
+ * Build a deps object with a real {@link SyncQueue} wired against the
+ * passed-in deps. The queue's `runJob` calls back into `runSyncJob` so the
+ * full pipeline runs end-to-end exactly as it would in production.
+ */
 function makeDeps(
 	db: BetterSqlite3Database,
 	connector: ConnectorLike,
 	pipeline: IngestionPipeline,
 	overrides?: Partial<RagRouteDeps>,
-): RagRouteDeps {
-	return {
+): RagRouteDeps & { syncQueue: SyncQueue } {
+	const base: Omit<RagRouteDeps, 'syncQueue'> = {
 		db,
 		pipeline,
 		vectorStore: {
@@ -229,13 +238,26 @@ function makeDeps(
 		onAudit: vi.fn(),
 		...overrides,
 	};
+	// `runJob` closes over `deps` — but `deps` isn't built yet, so build it in
+	// two passes with a trampoline.
+	let resolved: RagRouteDeps;
+	const queue = new SyncQueue({
+		runJob: async (sourceId, jobId) => runSyncJob(resolved, sourceId, jobId),
+	});
+	resolved = { ...base, syncQueue: queue };
+	return resolved as RagRouteDeps & { syncQueue: SyncQueue };
 }
 
-async function runSync(captured: CapturedApp, sourceId: string): Promise<FakeResponse> {
+/**
+ * POST the sync route AND drain the queue so the test sees the terminal job
+ * state. This matches the legacy synchronous behavior the older tests assume.
+ */
+async function runSync(captured: CapturedApp, sourceId: string, deps: RagRouteDeps): Promise<FakeResponse> {
 	const handler = captured.getSyncHandler();
 	const req = makeReq(sourceId);
 	const res = makeRes();
 	await handler(req, res.res);
+	await deps.syncQueue.drain();
 	return res;
 }
 
@@ -261,7 +283,8 @@ function readJob(db: BetterSqlite3Database, sourceId: string): RagJob {
 }
 
 // ---------------------------------------------------------------------------
-// Tests
+// Tests — Tranche 4: incremental sync (etag fast-path + GC). These call
+// runSync(...) which awaits drain() so the sync completes before assertions.
 // ---------------------------------------------------------------------------
 
 describe('registerRagIndexRoutes — incremental sync (etag fast-path + GC)', () => {
@@ -281,11 +304,12 @@ describe('registerRagIndexRoutes — incremental sync (etag fast-path + GC)', ()
 		]);
 		const pipeline = makePipelineMock();
 		const captured = makeCapturedApp();
-		registerRagIndexRoutes(captured.app, makeDeps(db, connector, pipeline));
+		const deps = makeDeps(db, connector, pipeline);
+		registerRagIndexRoutes(captured.app, deps);
 
-		const res = await runSync(captured, source.id);
+		const res = await runSync(captured, source.id, deps);
 
-		expect(res.statusCode).toBe(200);
+		expect(res.statusCode).toBe(202);
 		expect(connector.fetchDocument).not.toHaveBeenCalled();
 		expect(pipeline.ingestDocument).not.toHaveBeenCalled();
 		const job = readJob(db, source.id);
@@ -304,9 +328,10 @@ describe('registerRagIndexRoutes — incremental sync (etag fast-path + GC)', ()
 		const connector = makeConnector([{ id: 'doc-a', path: 'a.txt', etag: 'etag-new' }]);
 		const pipeline = makePipelineMock();
 		const captured = makeCapturedApp();
-		registerRagIndexRoutes(captured.app, makeDeps(db, connector, pipeline));
+		const deps = makeDeps(db, connector, pipeline);
+		registerRagIndexRoutes(captured.app, deps);
 
-		await runSync(captured, source.id);
+		await runSync(captured, source.id, deps);
 
 		expect(connector.fetchDocument).toHaveBeenCalledTimes(1);
 		expect(pipeline.ingestDocument).toHaveBeenCalledTimes(1);
@@ -323,9 +348,10 @@ describe('registerRagIndexRoutes — incremental sync (etag fast-path + GC)', ()
 		const connector = makeConnector([{ id: 'doc-a', path: 'a.txt', etag: null }]);
 		const pipeline = makePipelineMock();
 		const captured = makeCapturedApp();
-		registerRagIndexRoutes(captured.app, makeDeps(db, connector, pipeline));
+		const deps = makeDeps(db, connector, pipeline);
+		registerRagIndexRoutes(captured.app, deps);
 
-		await runSync(captured, source.id);
+		await runSync(captured, source.id, deps);
 
 		expect(connector.fetchDocument).toHaveBeenCalledTimes(1);
 		expect(pipeline.ingestDocument).toHaveBeenCalledTimes(1);
@@ -341,9 +367,10 @@ describe('registerRagIndexRoutes — incremental sync (etag fast-path + GC)', ()
 		const connector = makeConnector([{ id: 'doc-a', path: 'a.txt', etag: 'etag-a' }]);
 		const pipeline = makePipelineMock();
 		const captured = makeCapturedApp();
-		registerRagIndexRoutes(captured.app, makeDeps(db, connector, pipeline));
+		const deps = makeDeps(db, connector, pipeline);
+		registerRagIndexRoutes(captured.app, deps);
 
-		await runSync(captured, source.id);
+		await runSync(captured, source.id, deps);
 
 		// The connector listing reports the file again — a soft-deleted row must
 		// be re-ingested, not silently skipped.
@@ -366,9 +393,10 @@ describe('registerRagIndexRoutes — incremental sync (etag fast-path + GC)', ()
 		const connector = makeConnector([{ id: 'doc-keep', path: 'keep.txt', etag: 'etag-k' }]);
 		const pipeline = makePipelineMock();
 		const captured = makeCapturedApp();
-		registerRagIndexRoutes(captured.app, makeDeps(db, connector, pipeline));
+		const deps = makeDeps(db, connector, pipeline);
+		registerRagIndexRoutes(captured.app, deps);
 
-		await runSync(captured, source.id);
+		await runSync(captured, source.id, deps);
 
 		expect(pipeline.markDocumentDeleted).toHaveBeenCalledTimes(1);
 		expect(pipeline.markDocumentDeleted).toHaveBeenCalledWith(goneId);
@@ -394,12 +422,10 @@ describe('registerRagIndexRoutes — incremental sync (etag fast-path + GC)', ()
 		const pipeline = makePipelineMock();
 		const onAudit = vi.fn();
 		const captured = makeCapturedApp();
-		registerRagIndexRoutes(
-			captured.app,
-			makeDeps(db, connector, pipeline, { onAudit }),
-		);
+		const deps = makeDeps(db, connector, pipeline, { onAudit });
+		registerRagIndexRoutes(captured.app, deps);
 
-		await runSync(captured, source.id);
+		await runSync(captured, source.id, deps);
 
 		const job = readJob(db, source.id);
 		expect(job.status).toBe('completed');
@@ -423,5 +449,277 @@ describe('registerRagIndexRoutes — incremental sync (etag fast-path + GC)', ()
 			gcDeleted: 1,
 			failures: 0,
 		});
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Tests — Tranche 1: background sync (queue-based) — POST returns 202 + jobId
+// immediately, the work runs in the background, the UI polls /api/rag/jobs.
+// ---------------------------------------------------------------------------
+
+describe('registerRagIndexRoutes — background sync (HTTP 202 + queue)', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it('POST returns 202 + jobId immediately without waiting on the sync', async () => {
+		const db = makeDb();
+		const source = insertSource(db);
+		const connector = makeConnector([{ id: 'doc-a', path: 'a.txt', etag: 'e' }]);
+		const pipeline = makePipelineMock();
+		const captured = makeCapturedApp();
+		const deps = makeDeps(db, connector, pipeline);
+		registerRagIndexRoutes(captured.app, deps);
+
+		// Fire the request but do NOT drain the queue. The handler should
+		// respond synchronously with 202 — long before the worker has had a
+		// chance to call connector.fetchDocument.
+		const handler = captured.getSyncHandler();
+		const res = makeRes();
+		await handler(makeReq(source.id), res.res);
+
+		expect(res.statusCode).toBe(202);
+		const body = res.body as { job: RagJob };
+		expect(body.job).toBeDefined();
+		expect(body.job.sourceId).toBe(source.id);
+		expect(body.job.id).toBeTypeOf('string');
+		// The worker hasn't run yet — fetchDocument must NOT have been called.
+		// (The microtask queue may have ticked once, so we drain after
+		// asserting on the HTTP-time state below.)
+		await deps.syncQueue.drain();
+	});
+
+	it('job starts as pending and transitions to running when the worker picks it up', async () => {
+		const db = makeDb();
+		const source = insertSource(db);
+		// Make the connector hang on listDocuments so we can observe the
+		// 'running' transition without it racing past us.
+		let resolveList: (() => void) | null = null;
+		const connector = makeConnector([]);
+		(connector.listDocuments as ReturnType<typeof vi.fn>).mockImplementation(
+			() =>
+				new Promise<unknown[]>((resolve) => {
+					resolveList = () => resolve([]);
+				}),
+		);
+		const pipeline = makePipelineMock();
+		const captured = makeCapturedApp();
+		const deps = makeDeps(db, connector, pipeline);
+		registerRagIndexRoutes(captured.app, deps);
+
+		// Fire the request — the response carries the freshly inserted
+		// pending row.
+		const handler = captured.getSyncHandler();
+		const res = makeRes();
+		await handler(makeReq(source.id), res.res);
+
+		const body = res.body as { job: RagJob };
+		expect(body.job.status).toBe('pending');
+
+		// Yield to the microtask queue so the worker has a chance to flip the
+		// status to 'running' before listDocuments blocks it.
+		await new Promise((r) => setImmediate(r));
+
+		const running = readJob(db, source.id);
+		expect(running.status).toBe('running');
+
+		// Unblock + drain so the test cleans up.
+		if (resolveList) (resolveList as () => void)();
+		await deps.syncQueue.drain();
+
+		const completed = readJob(db, source.id);
+		expect(completed.status).toBe('completed');
+	});
+
+	it('two POSTs back-to-back on the same source: the second returns 409 Conflict', async () => {
+		const db = makeDb();
+		const source = insertSource(db);
+		// Hang the connector so the first job stays running while we fire the
+		// second request.
+		let resolveList: (() => void) | null = null;
+		const connector = makeConnector([]);
+		(connector.listDocuments as ReturnType<typeof vi.fn>).mockImplementation(
+			() =>
+				new Promise<unknown[]>((resolve) => {
+					resolveList = () => resolve([]);
+				}),
+		);
+		const pipeline = makePipelineMock();
+		const captured = makeCapturedApp();
+		const deps = makeDeps(db, connector, pipeline);
+		registerRagIndexRoutes(captured.app, deps);
+
+		const handler = captured.getSyncHandler();
+		const res1 = makeRes();
+		await handler(makeReq(source.id), res1.res);
+		expect(res1.statusCode).toBe(202);
+
+		// Yield once so the worker has actually moved the job to 'running' and
+		// claimed the source in the queue's #running set. Without this, the
+		// first job is still in the queue (not yet running) when we fire the
+		// second request — but the queue's enqueue check ALSO covers "already
+		// queued", so the test passes either way. Yielding makes the assertion
+		// specifically test the running-side dedupe.
+		await new Promise((r) => setImmediate(r));
+
+		const res2 = makeRes();
+		await handler(makeReq(source.id), res2.res);
+		expect(res2.statusCode).toBe(409);
+		expect((res2.body as { error: string }).error).toMatch(/already in progress/i);
+
+		// Verify we didn't leave a phantom pending row from the rejected
+		// request — there should still be exactly ONE job for this source.
+		const count = db
+			.prepare<[string], { c: number }>(
+				`SELECT COUNT(*) AS c FROM rag_jobs WHERE source_id = ?`,
+			)
+			.get(source.id);
+		expect(count?.c).toBe(1);
+
+		if (resolveList) (resolveList as () => void)();
+		await deps.syncQueue.drain();
+	});
+
+	it('parallel POSTs on different sources: both enqueue, worker runs them sequentially', async () => {
+		const db = makeDb();
+		const sourceA = insertSource(db, { id: 'src-A' });
+		const sourceB = insertSource(db, { id: 'src-B' });
+
+		// Track the order in which connector.listDocuments is invoked so we
+		// can assert sequential execution (only one at a time).
+		const callOrder: Array<{ sid: string; phase: 'start' | 'end' }> = [];
+		const docsBySource: Record<string, ConnectorDoc[]> = {
+			'src-A': [{ id: 'a1', path: 'a1.txt', etag: 'e' }],
+			'src-B': [{ id: 'b1', path: 'b1.txt', etag: 'e' }],
+		};
+
+		const connector: ConnectorLike = {
+			type: 'local',
+			testConnection: vi.fn(async () => undefined),
+			listFolders: vi.fn(async () => []),
+			listDocuments: vi.fn(async (_cfg: unknown, sid: string, folder: unknown) => {
+				if (folder !== undefined) return [];
+				callOrder.push({ sid, phase: 'start' });
+				// Yield to give other in-flight sync attempts a chance to
+				// interleave — they MUST NOT, because the queue's concurrency
+				// is 1.
+				await new Promise((r) => setImmediate(r));
+				callOrder.push({ sid, phase: 'end' });
+				return docsBySource[sid]!.map((d) => ({
+					id: d.id,
+					sourceId: sid,
+					folderId: null,
+					path: d.path,
+					name: d.path,
+					mimeType: 'text/plain',
+					size: 10,
+					hash: '',
+					etag: d.etag,
+					lastIndexedAt: '2026-01-01T00:00:00.000Z',
+					deletedAt: null,
+				}));
+			}),
+			fetchDocument: vi.fn(async () => ({
+				stream: Readable.from([Buffer.from('payload')]),
+				mimeType: 'text/plain',
+			})),
+		};
+
+		const pipeline = makePipelineMock();
+		const captured = makeCapturedApp();
+		const deps = makeDeps(db, connector, pipeline);
+		registerRagIndexRoutes(captured.app, deps);
+
+		const handler = captured.getSyncHandler();
+		const resA = makeRes();
+		const resB = makeRes();
+		await handler(makeReq(sourceA.id), resA.res);
+		await handler(makeReq(sourceB.id), resB.res);
+
+		expect(resA.statusCode).toBe(202);
+		expect(resB.statusCode).toBe(202);
+
+		await deps.syncQueue.drain();
+
+		// Sequential: every 'start' must be immediately followed by its 'end'
+		// for the same sourceId before the next 'start'.
+		const startsAndEnds = callOrder.filter((c) => c.sid === sourceA.id || c.sid === sourceB.id);
+		// We expect: A start, A end, B start, B end (FIFO ordering).
+		expect(startsAndEnds[0]).toEqual({ sid: sourceA.id, phase: 'start' });
+		expect(startsAndEnds[1]).toEqual({ sid: sourceA.id, phase: 'end' });
+		expect(startsAndEnds[2]).toEqual({ sid: sourceB.id, phase: 'start' });
+		expect(startsAndEnds[3]).toEqual({ sid: sourceB.id, phase: 'end' });
+
+		const jobA = readJob(db, sourceA.id);
+		const jobB = readJob(db, sourceB.id);
+		expect(jobA.status).toBe('completed');
+		expect(jobB.status).toBe('completed');
+	});
+
+	it('POST on an unknown source returns 404 and does not enqueue anything', async () => {
+		const db = makeDb();
+		// Don't insert any source.
+		const connector = makeConnector([]);
+		const pipeline = makePipelineMock();
+		const captured = makeCapturedApp();
+		const deps = makeDeps(db, connector, pipeline);
+		registerRagIndexRoutes(captured.app, deps);
+
+		const handler = captured.getSyncHandler();
+		const res = makeRes();
+		await handler(makeReq('does-not-exist'), res.res);
+
+		expect(res.statusCode).toBe(404);
+		expect(deps.syncQueue.size()).toBe(0);
+		// No job row was inserted.
+		const count = db.prepare(`SELECT COUNT(*) AS c FROM rag_jobs`).get() as { c: number };
+		expect(count.c).toBe(0);
+	});
+
+	it('recoverOrphanedJobs marks pending and running jobs as failed at boot', async () => {
+		const db = makeDb();
+		insertSource(db);
+
+		// Seed three jobs: pending, running, completed. Only the first two
+		// should be touched by the recovery sweep.
+		const now = '2026-01-01T00:00:00.000Z';
+		db.prepare(
+			`INSERT INTO rag_jobs (id, source_id, status, progress, started_at) VALUES (?, ?, ?, 0, ?)`,
+		).run('job-pending', 'src-1', 'pending', now);
+		db.prepare(
+			`INSERT INTO rag_jobs (id, source_id, status, progress, started_at) VALUES (?, ?, ?, 0.5, ?)`,
+		).run('job-running', 'src-1', 'running', now);
+		db.prepare(
+			`INSERT INTO rag_jobs (id, source_id, status, progress, started_at, finished_at) VALUES (?, ?, ?, 1, ?, ?)`,
+		).run('job-completed', 'src-1', 'completed', now, now);
+
+		const changed = recoverOrphanedJobs(db);
+		expect(changed).toBe(2);
+
+		const pending = db
+			.prepare<[string], { status: string; error: string | null; finished_at: string | null }>(
+				`SELECT status, error, finished_at FROM rag_jobs WHERE id = ?`,
+			)
+			.get('job-pending');
+		expect(pending?.status).toBe('failed');
+		expect(pending?.error).toBe('orphaned (server restart)');
+		expect(pending?.finished_at).not.toBeNull();
+
+		const running = db
+			.prepare<[string], { status: string; error: string | null }>(
+				`SELECT status, error FROM rag_jobs WHERE id = ?`,
+			)
+			.get('job-running');
+		expect(running?.status).toBe('failed');
+		expect(running?.error).toBe('orphaned (server restart)');
+
+		// Completed jobs must NOT be touched.
+		const completed = db
+			.prepare<[string], { status: string; error: string | null }>(
+				`SELECT status, error FROM rag_jobs WHERE id = ?`,
+			)
+			.get('job-completed');
+		expect(completed?.status).toBe('completed');
+		expect(completed?.error).toBeNull();
 	});
 });

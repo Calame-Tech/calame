@@ -61,6 +61,11 @@ export type { DocumentParser, ParsedDocument } from './parsers/types.js';
 export { IngestionPipeline } from './pipeline/ingest.js';
 export type { IngestionPipelineDeps, IngestDocumentInput } from './pipeline/ingest.js';
 
+// ---------- Jobs ----------
+export { SyncQueue, recoverOrphanedJobs } from './jobs/sync-queue.js';
+export type { SyncQueueDeps } from './jobs/sync-queue.js';
+export { runSyncJob } from './routes/rag-index.js';
+
 // ---------- Source Adapter ----------
 export { buildDocumentSourceAdapter } from './source-adapter.js';
 export type {

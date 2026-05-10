@@ -132,8 +132,264 @@ async function walkConnector(
 }
 
 /**
+ * Execute a sync job end-to-end against a source. The job row MUST already
+ * exist in `rag_jobs` (status `'pending'`); this function transitions it to
+ * `'running'`, walks the connector, ingests / skips / GCs documents, and
+ * finally writes the terminal state (`'completed'` | `'failed'`).
+ *
+ * Never throws — failures are persisted on the job row and reported via the
+ * audit hook. Designed to be called from a background worker (see
+ * {@link SyncQueue}); callers MUST NOT use the return value to decide HTTP
+ * status, since by the time this resolves the HTTP 202 has already been sent.
+ *
+ * Tests can call this directly to drive the full sync pipeline against a fake
+ * connector + pipeline.
+ */
+export async function runSyncJob(
+	deps: RagRouteDeps,
+	sourceId: string,
+	jobId: string,
+): Promise<void> {
+	try {
+		const row = deps.db
+			.prepare<[string], SourceRow>(`SELECT * FROM rag_sources WHERE id = ?`)
+			.get(sourceId);
+		if (!row) {
+			// Source vanished between enqueue and worker pick-up. Mark the job
+			// failed and bail.
+			deps.db
+				.prepare(
+					`UPDATE rag_jobs SET status = 'failed', error = ?, finished_at = ? WHERE id = ?`,
+				)
+				.run(`Source "${sourceId}" not found.`, new Date().toISOString(), jobId);
+			deps.onAudit?.({
+				type: 'rag.sync.failed',
+				payload: { sourceId, jobId, error: 'source not found' },
+				timestamp: new Date().toISOString(),
+			});
+			return;
+		}
+		const source = rowToSource(row);
+
+		const connector = deps.resolveConnector?.(source.type);
+		if (!connector) {
+			const msg =
+				`Connector for source type "${source.type}" is not installed. ` +
+				`Install @calame-ee/rag-connectors or wait until the connector lands.`;
+			deps.db
+				.prepare(
+					`UPDATE rag_jobs SET status = 'failed', error = ?, finished_at = ? WHERE id = ?`,
+				)
+				.run(msg, new Date().toISOString(), jobId);
+			deps.onAudit?.({
+				type: 'rag.sync.failed',
+				payload: { sourceId, jobId, error: msg },
+				timestamp: new Date().toISOString(),
+			});
+			return;
+		}
+
+		let config: Record<string, unknown>;
+		try {
+			config = JSON.parse(deps.decryptConfig(row.config_encrypted)) as Record<string, unknown>;
+		} catch (err: unknown) {
+			const m = err instanceof Error ? err.message : String(err);
+			deps.db
+				.prepare(
+					`UPDATE rag_jobs SET status = 'failed', error = ?, finished_at = ? WHERE id = ?`,
+				)
+				.run(`Failed to decrypt source configuration: ${m}`, new Date().toISOString(), jobId);
+			deps.onAudit?.({
+				type: 'rag.sync.failed',
+				payload: { sourceId, jobId, error: m },
+				timestamp: new Date().toISOString(),
+			});
+			return;
+		}
+
+		// Transition pending → running. We do this once we have all the inputs
+		// we need; if the source / connector / config lookup failed above we
+		// leave the row at its terminal `failed` state without ever flipping to
+		// running, which keeps the UI accurate.
+		const startedAt = new Date().toISOString();
+		deps.db
+			.prepare(`UPDATE rag_jobs SET status = 'running', started_at = ? WHERE id = ?`)
+			.run(startedAt, jobId);
+
+		deps.onAudit?.({
+			type: 'rag.sync.started',
+			payload: { sourceId, jobId },
+			timestamp: startedAt,
+		});
+
+		let entries: Awaited<ReturnType<typeof walkConnector>>;
+		try {
+			entries = await walkConnector(connector, config, source.id);
+		} catch (err: unknown) {
+			const m = err instanceof Error ? err.message : String(err);
+			deps.db
+				.prepare(
+					`UPDATE rag_jobs SET status = 'failed', error = ?, finished_at = ? WHERE id = ?`,
+				)
+				.run(m, new Date().toISOString(), jobId);
+			deps.onAudit?.({
+				type: 'rag.sync.failed',
+				payload: { sourceId, jobId, error: m },
+				timestamp: new Date().toISOString(),
+			});
+			return;
+		}
+
+		deps.db
+			.prepare(`UPDATE rag_jobs SET total_documents = ? WHERE id = ?`)
+			.run(entries.length, jobId);
+
+		let processed = 0;
+		let failures = 0;
+		let skippedByEtag = 0;
+		let gcDeleted = 0;
+		let lastError: string | null = null;
+		for (const { doc, folder } of entries) {
+			try {
+				// Etag pre-fetch fast-path: if the connector reports a non-empty
+				// etag and our indexed copy has the same etag (and is not
+				// soft-deleted), skip both the network fetch and the ingest.
+				// Without this, the pipeline only short-circuits on sha256
+				// AFTER the buffer has been fetched — wasteful for S3/HTTP.
+				const docEtag = doc.etag ?? null;
+				if (docEtag !== null && docEtag !== '') {
+					const existing = lookupExistingDoc(deps.db, source.id, doc.path);
+					if (
+						existing !== null &&
+						existing.deletedAt === null &&
+						existing.etag === docEtag
+					) {
+						skippedByEtag++;
+						processed++;
+						deps.db
+							.prepare(
+								`UPDATE rag_jobs SET processed_documents = ?, progress = ?, skipped_by_etag = ? WHERE id = ?`,
+							)
+							.run(
+								processed,
+								entries.length === 0 ? 1 : processed / entries.length,
+								skippedByEtag,
+								jobId,
+							);
+						continue;
+					}
+				}
+
+				const fetched = await connector.fetchDocument(config, source.id, doc.id);
+				const buffer = await streamToBuffer(fetched.stream);
+				await deps.pipeline.ingestDocument({
+					source,
+					folder,
+					path: doc.path,
+					mimeType: fetched.mimeType,
+					buffer,
+					etag: docEtag,
+				});
+			} catch (err: unknown) {
+				failures++;
+				lastError = err instanceof Error ? err.message : String(err);
+			}
+			processed++;
+			deps.db
+				.prepare(
+					`UPDATE rag_jobs SET processed_documents = ?, progress = ?, skipped_by_etag = ? WHERE id = ?`,
+				)
+				.run(
+					processed,
+					entries.length === 0 ? 1 : processed / entries.length,
+					skippedByEtag,
+					jobId,
+				);
+		}
+
+		// GC pass: any document tracked under this source whose path is no
+		// longer reported by the connector listing is treated as removed at
+		// the source and soft-deleted. We do this UNCONDITIONALLY for the
+		// MVP because `walkConnector` either returns a complete listing or
+		// throws (which is handled above and aborts the sync before this
+		// point). Limitation: if we ever add support for partial walks
+		// (e.g. continue-on-folder-error), this GC must become conditional
+		// on "the listing is known to be complete" — otherwise an outage on
+		// a single subfolder would soft-delete every doc under it.
+		interface IndexedDocRow {
+			id: string;
+			path: string;
+		}
+		const indexedRows = deps.db
+			.prepare<[string], IndexedDocRow>(
+				`SELECT id, path FROM rag_documents WHERE source_id = ? AND deleted_at IS NULL`,
+			)
+			.all(source.id);
+		const seenPaths = new Set(entries.map((e) => e.doc.path));
+		for (const row of indexedRows) {
+			if (!seenPaths.has(row.path)) {
+				try {
+					deps.pipeline.markDocumentDeleted(row.id);
+					gcDeleted++;
+				} catch (err: unknown) {
+					failures++;
+					lastError = err instanceof Error ? err.message : String(err);
+				}
+			}
+		}
+
+		const finalStatus: RagJobStatus = failures === 0 ? 'completed' : 'failed';
+		const finishedAt = new Date().toISOString();
+		deps.db
+			.prepare(
+				`UPDATE rag_jobs
+				 SET status = ?, finished_at = ?, error = ?, progress = 1,
+				     skipped_by_etag = ?, gc_deleted = ?
+				 WHERE id = ?`,
+			)
+			.run(
+				finalStatus,
+				finishedAt,
+				failures > 0 ? `${failures}/${entries.length} failed; last: ${lastError}` : null,
+				skippedByEtag,
+				gcDeleted,
+				jobId,
+			);
+		deps.db
+			.prepare(`UPDATE rag_sources SET last_sync_at = ? WHERE id = ?`)
+			.run(finishedAt, sourceId);
+
+		deps.onAudit?.({
+			type: failures === 0 ? 'rag.sync.completed' : 'rag.sync.partial',
+			payload: {
+				sourceId,
+				jobId,
+				total: entries.length,
+				processed,
+				skippedByEtag,
+				gcDeleted,
+				failures,
+			},
+			timestamp: finishedAt,
+		});
+	} catch (error: unknown) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
+		deps.db
+			.prepare(`UPDATE rag_jobs SET status = 'failed', error = ?, finished_at = ? WHERE id = ?`)
+			.run(message, new Date().toISOString(), jobId);
+		deps.onAudit?.({
+			type: 'rag.sync.failed',
+			payload: { sourceId, jobId, error: message },
+			timestamp: new Date().toISOString(),
+		});
+	}
+}
+
+/**
  * Routes:
- *  - POST /api/rag/sources/:id/sync — kick off a (synchronous, MVP) re-index.
+ *  - POST /api/rag/sources/:id/sync — enqueue a background sync. Returns 202
+ *    with the freshly inserted (pending) job. The actual work runs on the
+ *    queue's single worker; clients poll /api/rag/jobs to track progress.
  *  - GET  /api/rag/jobs              — list recent jobs, newest first.
  */
 export function registerRagIndexRoutes(app: Express, deps: RagRouteDeps): void {
@@ -159,11 +415,10 @@ export function registerRagIndexRoutes(app: Express, deps: RagRouteDeps): void {
 		}
 	});
 
-	app.post('/api/rag/sources/:id/sync', async (req: Request, res: Response) => {
+	app.post('/api/rag/sources/:id/sync', (req: Request, res: Response) => {
 		const id = String(req.params['id'] ?? '');
-		const jobId = nanoid();
-		const startedAt = new Date().toISOString();
 		try {
+			// 1. Source must exist — otherwise 404.
 			const row = deps.db
 				.prepare<[string], SourceRow>(`SELECT * FROM rag_sources WHERE id = ?`)
 				.get(id);
@@ -171,208 +426,47 @@ export function registerRagIndexRoutes(app: Express, deps: RagRouteDeps): void {
 				sendError(res, 404, `Source "${id}" not found.`);
 				return;
 			}
-			const source = rowToSource(row);
 
-			const connector = deps.resolveConnector?.(source.type);
-			if (!connector) {
-				sendError(
-					res,
-					501,
-					`Connector for source type "${source.type}" is not installed. ` +
-						`Install @calame-ee/rag-connectors or wait until the connector lands.`,
-				);
-				return;
-			}
-
-			let config: Record<string, unknown>;
-			try {
-				config = JSON.parse(deps.decryptConfig(row.config_encrypted)) as Record<string, unknown>;
-			} catch (err: unknown) {
-				const m = err instanceof Error ? err.message : String(err);
-				sendError(res, 500, `Failed to decrypt source configuration: ${m}`);
-				return;
-			}
-
+			// 2. Insert a `pending` job. We do this BEFORE asking the queue so
+			//    the row exists by the time the worker (which may run on the
+			//    next microtask) picks it up.
+			const jobId = nanoid();
+			const now = new Date().toISOString();
 			deps.db
 				.prepare(
 					`INSERT INTO rag_jobs
 					 (id, source_id, status, progress, total_documents, processed_documents, started_at)
-					 VALUES (?, ?, 'running', 0, 0, 0, ?)`,
+					 VALUES (?, ?, 'pending', 0, 0, 0, ?)`,
 				)
-				.run(jobId, id, startedAt);
+				.run(jobId, id, now);
 
-			deps.onAudit?.({
-				type: 'rag.sync.started',
-				payload: { sourceId: id, jobId },
-				timestamp: startedAt,
-			});
-
-			let entries: Awaited<ReturnType<typeof walkConnector>>;
-			try {
-				entries = await walkConnector(connector, config, source.id);
-			} catch (err: unknown) {
-				const m = err instanceof Error ? err.message : String(err);
-				deps.db
-					.prepare(
-						`UPDATE rag_jobs SET status = 'failed', error = ?, finished_at = ? WHERE id = ?`,
-					)
-					.run(m, new Date().toISOString(), jobId);
-				deps.onAudit?.({
-					type: 'rag.sync.failed',
-					payload: { sourceId: id, jobId, error: m },
-					timestamp: new Date().toISOString(),
-				});
-				sendError(res, 500, `Failed to enumerate source documents: ${m}`);
+			// 3. Try to enqueue. Returns false when a sync for this source is
+			//    already running OR queued — in that case we DELETE the row we
+			//    just inserted (so we don't leave a phantom 'pending' entry the
+			//    UI would chase forever) and answer 409.
+			const accepted = deps.syncQueue.enqueue(id, jobId);
+			if (!accepted) {
+				deps.db.prepare(`DELETE FROM rag_jobs WHERE id = ?`).run(jobId);
+				sendError(res, 409, 'Sync already in progress for this source.');
 				return;
 			}
 
-			deps.db
-				.prepare(`UPDATE rag_jobs SET total_documents = ? WHERE id = ?`)
-				.run(entries.length, jobId);
-
-			let processed = 0;
-			let failures = 0;
-			let skippedByEtag = 0;
-			let gcDeleted = 0;
-			let lastError: string | null = null;
-			for (const { doc, folder } of entries) {
-				try {
-					// Etag pre-fetch fast-path: if the connector reports a non-empty
-					// etag and our indexed copy has the same etag (and is not
-					// soft-deleted), skip both the network fetch and the ingest.
-					// Without this, the pipeline only short-circuits on sha256
-					// AFTER the buffer has been fetched — wasteful for S3/HTTP.
-					const docEtag = doc.etag ?? null;
-					if (docEtag !== null && docEtag !== '') {
-						const existing = lookupExistingDoc(deps.db, source.id, doc.path);
-						if (
-							existing !== null &&
-							existing.deletedAt === null &&
-							existing.etag === docEtag
-						) {
-							skippedByEtag++;
-							processed++;
-							deps.db
-								.prepare(
-									`UPDATE rag_jobs SET processed_documents = ?, progress = ?, skipped_by_etag = ? WHERE id = ?`,
-								)
-								.run(
-									processed,
-									entries.length === 0 ? 1 : processed / entries.length,
-									skippedByEtag,
-									jobId,
-								);
-							continue;
-						}
-					}
-
-					const fetched = await connector.fetchDocument(config, source.id, doc.id);
-					const buffer = await streamToBuffer(fetched.stream);
-					await deps.pipeline.ingestDocument({
-						source,
-						folder,
-						path: doc.path,
-						mimeType: fetched.mimeType,
-						buffer,
-						etag: docEtag,
-					});
-				} catch (err: unknown) {
-					failures++;
-					lastError = err instanceof Error ? err.message : String(err);
-				}
-				processed++;
-				deps.db
-					.prepare(
-						`UPDATE rag_jobs SET processed_documents = ?, progress = ?, skipped_by_etag = ? WHERE id = ?`,
-					)
-					.run(
-						processed,
-						entries.length === 0 ? 1 : processed / entries.length,
-						skippedByEtag,
-						jobId,
-					);
-			}
-
-			// GC pass: any document tracked under this source whose path is no
-			// longer reported by the connector listing is treated as removed at
-			// the source and soft-deleted. We do this UNCONDITIONALLY for the
-			// MVP because `walkConnector` either returns a complete listing or
-			// throws (which is handled above and aborts the sync before this
-			// point). Limitation: if we ever add support for partial walks
-			// (e.g. continue-on-folder-error), this GC must become conditional
-			// on "the listing is known to be complete" — otherwise an outage on
-			// a single subfolder would soft-delete every doc under it.
-			interface IndexedDocRow {
-				id: string;
-				path: string;
-			}
-			const indexedRows = deps.db
-				.prepare<[string], IndexedDocRow>(
-					`SELECT id, path FROM rag_documents WHERE source_id = ? AND deleted_at IS NULL`,
-				)
-				.all(source.id);
-			const seenPaths = new Set(entries.map((e) => e.doc.path));
-			for (const row of indexedRows) {
-				if (!seenPaths.has(row.path)) {
-					try {
-						deps.pipeline.markDocumentDeleted(row.id);
-						gcDeleted++;
-					} catch (err: unknown) {
-						failures++;
-						lastError = err instanceof Error ? err.message : String(err);
-					}
-				}
-			}
-
-			const finalStatus: RagJobStatus = failures === 0 ? 'completed' : 'failed';
-			const finishedAt = new Date().toISOString();
-			deps.db
-				.prepare(
-					`UPDATE rag_jobs
-					 SET status = ?, finished_at = ?, error = ?, progress = 1,
-					     skipped_by_etag = ?, gc_deleted = ?
-					 WHERE id = ?`,
-				)
-				.run(
-					finalStatus,
-					finishedAt,
-					failures > 0 ? `${failures}/${entries.length} failed; last: ${lastError}` : null,
-					skippedByEtag,
-					gcDeleted,
-					jobId,
-				);
-			deps.db
-				.prepare(`UPDATE rag_sources SET last_sync_at = ? WHERE id = ?`)
-				.run(finishedAt, id);
-
 			deps.onAudit?.({
-				type: failures === 0 ? 'rag.sync.completed' : 'rag.sync.partial',
-				payload: {
-					sourceId: id,
-					jobId,
-					total: entries.length,
-					processed,
-					skippedByEtag,
-					gcDeleted,
-					failures,
-				},
-				timestamp: finishedAt,
+				type: 'rag.sync.queued',
+				payload: { sourceId: id, jobId },
+				timestamp: now,
 			});
 
-			const final = deps.db
+			// 4. Read back the inserted row and return it. The status is still
+			//    `'pending'` here — the worker will flip it to `'running'`
+			//    asynchronously. UI polling on GET /api/rag/jobs will see the
+			//    transition.
+			const inserted = deps.db
 				.prepare<[string], JobRow>(`SELECT * FROM rag_jobs WHERE id = ?`)
 				.get(jobId);
-			res.status(200).json({ job: final ? rowToJob(final) : null });
+			res.status(202).json({ job: inserted ? rowToJob(inserted) : null });
 		} catch (error: unknown) {
 			const message = error instanceof Error ? error.message : 'Unknown error';
-			deps.db
-				.prepare(`UPDATE rag_jobs SET status = 'failed', error = ?, finished_at = ? WHERE id = ?`)
-				.run(message, new Date().toISOString(), jobId);
-			deps.onAudit?.({
-				type: 'rag.sync.failed',
-				payload: { sourceId: id, jobId, error: message },
-				timestamp: new Date().toISOString(),
-			});
 			sendError(res, 500, message);
 		}
 	});

@@ -5,6 +5,7 @@
 import type { Database as BetterSqlite3Database } from 'better-sqlite3';
 import type { EmbeddingClient, VectorStore } from '../types.js';
 import type { IngestionPipeline } from '../pipeline/ingest.js';
+import type { SyncQueue } from '../jobs/sync-queue.js';
 
 /** Audit hook entry — matches the shape used by the host's audit log. */
 export interface RagAuditEntry {
@@ -85,6 +86,13 @@ export interface RagRouteDeps {
 	 * instances via this lookup.
 	 */
 	resolveConnector?: (type: string) => ConnectorLike | null;
+	/**
+	 * FIFO queue used by `POST /api/rag/sources/:id/sync` to schedule background
+	 * sync jobs. The host wires a single shared instance (one queue per
+	 * process) so deduping by `sourceId` works across all concurrent HTTP
+	 * requests.
+	 */
+	syncQueue: SyncQueue;
 	/** Optional audit hook called on success and failure. */
 	onAudit?: (entry: RagAuditEntry) => void;
 }

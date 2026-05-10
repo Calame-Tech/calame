@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Calame Tech inc. Licensed under the Business Source License 1.1.
 // See ee/LICENSE.BUSL at the root of the ee/ directory for terms.
 
-// TODO: export S3Connector (Phase 3), HttpConnector (Phase 3)
+// TODO: export HttpConnector (Phase 3)
 export type {
   DocumentSourceConfig,
   DocumentSourceConnector,
@@ -13,5 +13,8 @@ export type {
 
 export { LocalFolderConnector, DocumentNotFoundError } from './local-folder.js';
 export type { LocalFolderConfig } from './local-folder.js';
+
+export { S3Connector, S3DocumentNotFoundError } from './s3.js';
+export type { S3Config } from './s3.js';
 
 export { PathEscapeError, deterministicId, matchGlobs, safeResolveUnderRoot, streamSha256 } from './utils.js';

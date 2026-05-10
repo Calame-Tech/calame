@@ -17,6 +17,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.726.0",
     "@calame-ee/rag-core": "workspace:*",
     "mime-types": "^2.1.35",
     "minimatch": "^10.0.1"
@@ -31,6 +32,7 @@
     "@types/better-sqlite3": "^7.6.12",
     "@types/mime-types": "^2.1.4",
     "@types/minimatch": "^5.1.2",
+    "aws-sdk-client-mock": "^4.1.0",
     "better-sqlite3": "^12.8.0",
     "typescript": "~5.7.0",
     "vitest": "^2.1.0"

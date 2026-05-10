@@ -3,7 +3,7 @@ import HelpTip from './HelpTip.js';
 
 type Provider = 'anthropic' | 'openrouter' | 'custom';
 type ClassifierProvider = 'anthropic' | 'openrouter' | 'custom';
-type AiCapability = 'chat' | 'embeddings';
+type AiCapability = 'chat' | 'embeddings' | 'rerank';
 
 interface MaskedAiSetting {
   name: string;
@@ -15,6 +15,7 @@ interface MaskedAiSetting {
   configured: boolean;
   capabilities?: AiCapability[];
   embeddingModel?: string;
+  rerankModel?: string;
 }
 
 interface AiConfigDisplay {
@@ -76,6 +77,8 @@ export default function AiSettings() {
   const [capChat, setCapChat] = useState(true);
   const [capEmbeddings, setCapEmbeddings] = useState(false);
   const [embeddingModel, setEmbeddingModel] = useState('');
+  const [capRerank, setCapRerank] = useState(false);
+  const [rerankModel, setRerankModel] = useState('');
 
   // LLM Router state — global, independent of individual AI settings
   const [routerEnabled, setRouterEnabled] = useState(false);
@@ -133,11 +136,12 @@ export default function AiSettings() {
     setTestResult(null);
   };
 
-  /** Build the capabilities array from the two checkboxes. */
+  /** Build the capabilities array from the three checkboxes. */
   const buildCapabilities = (): AiCapability[] => {
     const caps: AiCapability[] = [];
     if (capChat) caps.push('chat');
     if (capEmbeddings) caps.push('embeddings');
+    if (capRerank) caps.push('rerank');
     return caps;
   };
 
@@ -154,6 +158,8 @@ export default function AiSettings() {
     setCapChat(true);
     setCapEmbeddings(false);
     setEmbeddingModel('');
+    setCapRerank(false);
+    setRerankModel('');
     resetForm();
   };
 
@@ -180,6 +186,8 @@ export default function AiSettings() {
     setCapChat(caps.includes('chat'));
     setCapEmbeddings(caps.includes('embeddings'));
     setEmbeddingModel(s.embeddingModel ?? '');
+    setCapRerank(caps.includes('rerank'));
+    setRerankModel(s.rerankModel ?? '');
     resetForm();
   };
 
@@ -218,6 +226,10 @@ export default function AiSettings() {
       setFormError("Le modèle d'embeddings est requis lorsque la capacité Embeddings est activée.");
       return;
     }
+    if (capRerank && !rerankModel.trim()) {
+      setFormError('Rerank model is required when the rerank capability is enabled.');
+      return;
+    }
 
     setSaving(true);
     try {
@@ -232,6 +244,7 @@ export default function AiSettings() {
         // Capabilities — tells the backend which features this setting provides.
         capabilities,
         embeddingModel: capEmbeddings ? embeddingModel.trim() || undefined : undefined,
+        rerankModel: capRerank ? rerankModel.trim() || undefined : undefined,
         // LLM Router fields are global but still transported here for backward-compat
         routerEnabled,
         classifierProvider: routerEnabled ? classifierProvider : undefined,
@@ -564,6 +577,52 @@ export default function AiSettings() {
               )}
             </div>
           </div>
+
+          {/* Rerank capability */}
+          <div className="flex items-start gap-3">
+            <div className="relative mt-0.5">
+              <input
+                id="cap-rerank"
+                type="checkbox"
+                checked={capRerank}
+                onChange={(e) => {
+                  setCapRerank(e.target.checked);
+                  if (!e.target.checked) setRerankModel('');
+                }}
+                className="rounded border-gray-600 bg-gray-700 text-os-500 focus:ring-os-500/30"
+              />
+            </div>
+            <div className="flex-1">
+              <div className="flex items-center gap-2">
+                <label htmlFor="cap-rerank" className="text-sm text-gray-200 cursor-pointer">
+                  Rerank
+                </label>
+              </div>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Used by RAG hybrid search to re-order results for better relevance (Cohere API). When a
+                valid rerank setting is configured, it activates automatically — no extra toggle needed.
+              </p>
+              {capRerank && (
+                <div className="mt-2">
+                  <label className="text-xs text-gray-400">
+                    Rerank model <span className="text-red-400">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={rerankModel}
+                    onChange={(e) => setRerankModel(e.target.value)}
+                    placeholder="rerank-multilingual-v3.0"
+                    className="input-editorial w-full text-sm mt-1"
+                  />
+                  <p className="text-xs text-gray-600 mt-1">
+                    Cohere model name.{' '}
+                    <code className="text-gray-500">rerank-multilingual-v3.0</code> works for FR/EN mixed
+                    corpora. <code className="text-gray-500">rerank-english-v3.0</code> is English-only.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -736,12 +795,12 @@ export default function AiSettings() {
                       const caps = s.capabilities ?? ['chat'];
                       const hasChat = caps.includes('chat');
                       const hasEmb = caps.includes('embeddings');
-                      const label =
-                        hasChat && hasEmb
-                          ? 'Chat + Embeddings'
-                          : hasEmb
-                            ? 'Embeddings'
-                            : 'Chat';
+                      const hasRerank = caps.includes('rerank');
+                      const parts: string[] = [];
+                      if (hasChat) parts.push('Chat');
+                      if (hasEmb) parts.push('Embeddings');
+                      if (hasRerank) parts.push('Rerank');
+                      const label = parts.length > 0 ? parts.join(' + ') : 'Chat';
                       return (
                         <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-os-500/10 text-os-300 ring-1 ring-os-500/20">
                           {label}

@@ -97,6 +97,10 @@ export interface RagJob {
   progress: number;
   totalDocuments: number;
   processedDocuments: number;
+  /** Documents skipped pre-fetch because their source-side etag matched the indexed copy. */
+  skippedByEtag: number;
+  /** Documents soft-deleted by the GC pass because they were absent from the source listing. */
+  gcDeleted: number;
   error: string | null;
   startedAt: string;
   finishedAt: string | null;

@@ -3,6 +3,7 @@
 // See ee/LICENSE.BUSL at the root of the ee/ directory for terms.
 
 import type { Express, Request, Response } from 'express';
+import type { Database as BetterSqlite3Database } from 'better-sqlite3';
 import { nanoid } from 'nanoid';
 import type { RagFolder, RagJob, RagJobStatus, RagSource, RagSourceType } from '../types.js';
 import type { ConnectorLike, RagRouteDeps } from './types.js';
@@ -26,9 +27,22 @@ interface JobRow {
 	progress: number;
 	total_documents: number;
 	processed_documents: number;
+	skipped_by_etag: number;
+	gc_deleted: number;
 	error: string | null;
 	started_at: string;
 	finished_at: string | null;
+}
+
+/**
+ * Mini shape used by the etag fast-path. Intentionally NOT reusing
+ * `DocumentRow` from `pipeline/ingest.ts` (private to the pipeline) — only the
+ * two columns we need to decide whether to skip a fetch.
+ */
+interface ExistingDocLookupRow {
+	id: string;
+	etag: string | null;
+	deleted_at: string | null;
 }
 
 function rowToSource(row: SourceRow): RagSource {
@@ -53,6 +67,8 @@ function rowToJob(row: JobRow): RagJob {
 		progress: row.progress,
 		totalDocuments: row.total_documents,
 		processedDocuments: row.processed_documents,
+		skippedByEtag: row.skipped_by_etag,
+		gcDeleted: row.gc_deleted,
 		error: row.error,
 		startedAt: row.started_at,
 		finishedAt: row.finished_at,
@@ -70,6 +86,25 @@ async function streamToBuffer(stream: NodeJS.ReadableStream): Promise<Buffer> {
 		chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : (chunk as Buffer));
 	}
 	return Buffer.concat(chunks);
+}
+
+/**
+ * Look up the indexed copy of a document by `(source_id, path)`. Returns the
+ * minimal shape required by the etag fast-path: the id, the previously
+ * recorded etag and the soft-delete marker. Returns `null` when no row exists.
+ */
+function lookupExistingDoc(
+	db: BetterSqlite3Database,
+	sourceId: string,
+	path: string,
+): { etag: string | null; deletedAt: string | null } | null {
+	const row = db
+		.prepare<[string, string], ExistingDocLookupRow>(
+			`SELECT id, etag, deleted_at FROM rag_documents WHERE source_id = ? AND path = ?`,
+		)
+		.get(sourceId, path);
+	if (!row) return null;
+	return { etag: row.etag, deletedAt: row.deleted_at };
 }
 
 /** Recursively walk a connector to enumerate every document under a source. */
@@ -197,9 +232,40 @@ export function registerRagIndexRoutes(app: Express, deps: RagRouteDeps): void {
 
 			let processed = 0;
 			let failures = 0;
+			let skippedByEtag = 0;
+			let gcDeleted = 0;
 			let lastError: string | null = null;
 			for (const { doc, folder } of entries) {
 				try {
+					// Etag pre-fetch fast-path: if the connector reports a non-empty
+					// etag and our indexed copy has the same etag (and is not
+					// soft-deleted), skip both the network fetch and the ingest.
+					// Without this, the pipeline only short-circuits on sha256
+					// AFTER the buffer has been fetched — wasteful for S3/HTTP.
+					const docEtag = doc.etag ?? null;
+					if (docEtag !== null && docEtag !== '') {
+						const existing = lookupExistingDoc(deps.db, source.id, doc.path);
+						if (
+							existing !== null &&
+							existing.deletedAt === null &&
+							existing.etag === docEtag
+						) {
+							skippedByEtag++;
+							processed++;
+							deps.db
+								.prepare(
+									`UPDATE rag_jobs SET processed_documents = ?, progress = ?, skipped_by_etag = ? WHERE id = ?`,
+								)
+								.run(
+									processed,
+									entries.length === 0 ? 1 : processed / entries.length,
+									skippedByEtag,
+									jobId,
+								);
+							continue;
+						}
+					}
+
 					const fetched = await connector.fetchDocument(config, source.id, doc.id);
 					const buffer = await streamToBuffer(fetched.stream);
 					await deps.pipeline.ingestDocument({
@@ -208,7 +274,7 @@ export function registerRagIndexRoutes(app: Express, deps: RagRouteDeps): void {
 						path: doc.path,
 						mimeType: fetched.mimeType,
 						buffer,
-						etag: doc.etag ?? null,
+						etag: docEtag,
 					});
 				} catch (err: unknown) {
 					failures++;
@@ -217,21 +283,62 @@ export function registerRagIndexRoutes(app: Express, deps: RagRouteDeps): void {
 				processed++;
 				deps.db
 					.prepare(
-						`UPDATE rag_jobs SET processed_documents = ?, progress = ? WHERE id = ?`,
+						`UPDATE rag_jobs SET processed_documents = ?, progress = ?, skipped_by_etag = ? WHERE id = ?`,
 					)
-					.run(processed, entries.length === 0 ? 1 : processed / entries.length, jobId);
+					.run(
+						processed,
+						entries.length === 0 ? 1 : processed / entries.length,
+						skippedByEtag,
+						jobId,
+					);
+			}
+
+			// GC pass: any document tracked under this source whose path is no
+			// longer reported by the connector listing is treated as removed at
+			// the source and soft-deleted. We do this UNCONDITIONALLY for the
+			// MVP because `walkConnector` either returns a complete listing or
+			// throws (which is handled above and aborts the sync before this
+			// point). Limitation: if we ever add support for partial walks
+			// (e.g. continue-on-folder-error), this GC must become conditional
+			// on "the listing is known to be complete" — otherwise an outage on
+			// a single subfolder would soft-delete every doc under it.
+			interface IndexedDocRow {
+				id: string;
+				path: string;
+			}
+			const indexedRows = deps.db
+				.prepare<[string], IndexedDocRow>(
+					`SELECT id, path FROM rag_documents WHERE source_id = ? AND deleted_at IS NULL`,
+				)
+				.all(source.id);
+			const seenPaths = new Set(entries.map((e) => e.doc.path));
+			for (const row of indexedRows) {
+				if (!seenPaths.has(row.path)) {
+					try {
+						deps.pipeline.markDocumentDeleted(row.id);
+						gcDeleted++;
+					} catch (err: unknown) {
+						failures++;
+						lastError = err instanceof Error ? err.message : String(err);
+					}
+				}
 			}
 
 			const finalStatus: RagJobStatus = failures === 0 ? 'completed' : 'failed';
 			const finishedAt = new Date().toISOString();
 			deps.db
 				.prepare(
-					`UPDATE rag_jobs SET status = ?, finished_at = ?, error = ?, progress = 1 WHERE id = ?`,
+					`UPDATE rag_jobs
+					 SET status = ?, finished_at = ?, error = ?, progress = 1,
+					     skipped_by_etag = ?, gc_deleted = ?
+					 WHERE id = ?`,
 				)
 				.run(
 					finalStatus,
 					finishedAt,
 					failures > 0 ? `${failures}/${entries.length} failed; last: ${lastError}` : null,
+					skippedByEtag,
+					gcDeleted,
 					jobId,
 				);
 			deps.db
@@ -240,7 +347,15 @@ export function registerRagIndexRoutes(app: Express, deps: RagRouteDeps): void {
 
 			deps.onAudit?.({
 				type: failures === 0 ? 'rag.sync.completed' : 'rag.sync.partial',
-				payload: { sourceId: id, jobId, total: entries.length, failures },
+				payload: {
+					sourceId: id,
+					jobId,
+					total: entries.length,
+					processed,
+					skippedByEtag,
+					gcDeleted,
+					failures,
+				},
 				timestamp: finishedAt,
 			});
 

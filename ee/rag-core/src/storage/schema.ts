@@ -13,7 +13,7 @@ export interface RagMigrationDb {
 	raw: BetterSqlite3Database;
 }
 
-const CURRENT_RAG_SCHEMA_VERSION = 2;
+const CURRENT_RAG_SCHEMA_VERSION = 3;
 
 /** Returns true if a column exists on a table. */
 function hasColumn(db: BetterSqlite3Database, table: string, column: string): boolean {
@@ -129,6 +129,8 @@ export function runRagMigrations(db: RagMigrationDb): void {
 			progress REAL NOT NULL DEFAULT 0,
 			total_documents INTEGER NOT NULL DEFAULT 0,
 			processed_documents INTEGER NOT NULL DEFAULT 0,
+			skipped_by_etag INTEGER NOT NULL DEFAULT 0,
+			gc_deleted INTEGER NOT NULL DEFAULT 0,
 			error TEXT,
 			started_at TEXT NOT NULL DEFAULT (datetime('now')),
 			finished_at TEXT,
@@ -158,6 +160,16 @@ export function runRagMigrations(db: RagMigrationDb): void {
 		// routes/rag-sources.ts for context.
 		addColumnIfMissing(raw, 'rag_sources', 'embedding_dimensions', 'INTEGER NOT NULL DEFAULT 0');
 		setRagSchemaVersion(raw, 2);
+	}
+
+	if (current < 3) {
+		// v3 — extend rag_jobs with incremental-sync counters: `skipped_by_etag`
+		// (docs whose etag matched the indexed copy and were skipped pre-fetch)
+		// and `gc_deleted` (docs absent from the source listing and soft-deleted
+		// by the GC pass). Both default to 0 so existing rows remain valid.
+		addColumnIfMissing(raw, 'rag_jobs', 'skipped_by_etag', 'INTEGER NOT NULL DEFAULT 0');
+		addColumnIfMissing(raw, 'rag_jobs', 'gc_deleted', 'INTEGER NOT NULL DEFAULT 0');
+		setRagSchemaVersion(raw, 3);
 	}
 
 	// Future migrations slot here, each gated on `current < N`.

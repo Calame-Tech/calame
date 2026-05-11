@@ -30,6 +30,12 @@ export interface RagSourcePublic {
 	 * Always present in API responses for clarity, even when `null`.
 	 */
 	pollingIntervalSeconds: number | null;
+	/**
+	 * Multi-tenancy id — Phase A always `'default'`. Surfaced on the public
+	 * API today purely as informational metadata; future UI can decide to hide
+	 * it while only the default tenant exists.
+	 */
+	tenantId: string;
 	createdAt: string;
 	updatedAt: string;
 	lastSyncAt?: string;

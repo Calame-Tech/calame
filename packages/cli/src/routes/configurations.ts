@@ -1,8 +1,9 @@
-import type { Express } from 'express';
+import type { Express, Request } from 'express';
 import type { AppState } from '../state.js';
 import type { CalameDatabase } from '../database.js';
 import type { ServeConfiguration } from '@calame/core';
 import { upgradeConfigurationShape } from '@calame/core';
+import { getTenantId } from '../tenancy.js';
 
 interface ConfigurationsFileData {
   configurations: Record<string, ServeConfiguration>;
@@ -67,17 +68,24 @@ function readConfigurationsFile(db: CalameDatabase): ConfigurationsFileData {
  * we write empty JSON fallbacks for them to avoid constraint violations.
  * The full unified blob is stored in `sources_scopes` (migration v10) so that
  * Phase 5 data survives the read round-trip without going through synthesis.
+ *
+ * Phase A multi-tenancy (migration v12): `tenant_id` is bound explicitly even
+ * though the column carries DEFAULT 'default'. The request is threaded through
+ * so Phase B can swap `getTenantId` for the auth-derived value without
+ * touching this site.
  */
 function writeConfigurationRow(
   db: CalameDatabase,
   name: string,
   cfg: ConfigurationsFileData['configurations'][string],
+  req?: Request,
 ): void {
   db.raw
     .prepare(
       `INSERT OR REPLACE INTO configurations
-         (name, label, connections, selected_tables, table_options, column_masking, sources_scopes)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+         (name, label, connections, selected_tables, table_options, column_masking,
+          sources_scopes, tenant_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       name,
@@ -89,6 +97,7 @@ function writeConfigurationRow(
       cfg.columnMasking !== undefined ? JSON.stringify(cfg.columnMasking) : null,
       // Unified blob: always written so reads prefer it over the legacy reconstruction.
       JSON.stringify(cfg),
+      getTenantId(req),
     );
 }
 
@@ -174,7 +183,7 @@ export function registerConfigurationsRoute(app: Express, state: AppState): void
         label: configLabel,
       });
 
-      writeConfigurationRow(db, name, upgraded);
+      writeConfigurationRow(db, name, upgraded, req);
 
       res.json({ success: true, name, overwritten });
     } catch (error: unknown) {

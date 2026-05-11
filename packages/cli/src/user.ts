@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import type { Database, Statement } from 'better-sqlite3';
 import type { CalameDatabase } from './database.js';
 import { hashToken, verifyTokenHash, hashPassword, verifyPassword, encrypt, decrypt, getSecretKey } from './crypto.js';
+import { DEFAULT_TENANT_ID } from './tenancy.js';
 
 export type UserRole = 'admin' | 'user';
 export type UserStatus = 'active' | 'disabled' | 'invited';
@@ -127,9 +128,11 @@ export class UserManager {
 
     this.stmtInsertUser = this.db.prepare(`
       INSERT INTO users (id, name, email, role, status, token_hash, token_encrypted, password_hash,
-        created_at, last_active_at, disabled_at, disabled_reason, onboarding_code, onboarding_expires_at)
+        created_at, last_active_at, disabled_at, disabled_reason, onboarding_code, onboarding_expires_at,
+        tenant_id)
       VALUES (@id, @name, @email, @role, @status, @token_hash, @token_encrypted, @password_hash,
-        @created_at, @last_active_at, @disabled_at, @disabled_reason, @onboarding_code, @onboarding_expires_at)
+        @created_at, @last_active_at, @disabled_at, @disabled_reason, @onboarding_code, @onboarding_expires_at,
+        @tenant_id)
     `);
 
     this.stmtUpdateUser = this.db.prepare(`
@@ -193,7 +196,7 @@ export class UserManager {
     };
   }
 
-  /** Convert a UserEntry to the named params for stmtInsertUser / stmtUpdateUser. */
+  /** Convert a UserEntry to the named params for stmtUpdateUser. */
   private toParams(entry: UserEntry): Record<string, unknown> {
     return {
       id: entry.id,
@@ -212,6 +215,21 @@ export class UserManager {
       onboarding_expires_at: entry.onboardingExpiresAt,
       // oidc_subject is not in the INSERT statement (added by migration v3) — do not include here
     };
+  }
+
+  /**
+   * INSERT-only params. Adds `tenant_id` on top of `toParams` since the
+   * UPDATE statement does NOT carry that column (it's append-only at the
+   * INSERT boundary in Phase A) — better-sqlite3 binds named params
+   * strictly, so the two statements need distinct shapes.
+   *
+   * Phase A multi-tenancy — `UserManager` doesn't have an Express request
+   * in scope (it's called from /api/users which already resolved auth), so
+   * every fresh user lands under the literal default. Phase B will surface
+   * a per-request tenant via the route layer.
+   */
+  private toInsertParams(entry: UserEntry): Record<string, unknown> {
+    return { ...this.toParams(entry), tenant_id: DEFAULT_TENANT_ID };
   }
 
   /** Sync profile access rows for a user (delete all, re-insert). */
@@ -278,7 +296,7 @@ export class UserManager {
     };
 
     const insertAll = this.db.transaction(() => {
-      this.stmtInsertUser.run(this.toParams(entry));
+      this.stmtInsertUser.run(this.toInsertParams(entry));
       if (entry.customAttributes) {
         this.setCustomAttributes(id, entry.customAttributes);
       }
@@ -519,7 +537,7 @@ export class UserManager {
       customAttributes: null,
     };
 
-    this.stmtInsertUser.run(this.toParams(entry));
+    this.stmtInsertUser.run(this.toInsertParams(entry));
     return { ...entry, _plaintextToken: plaintextToken };
   }
 

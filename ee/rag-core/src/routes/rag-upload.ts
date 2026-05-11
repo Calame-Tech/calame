@@ -15,6 +15,7 @@ interface SourceRow {
 	config_encrypted: string;
 	embedding_setting_name: string;
 	embedding_model_version: string;
+	tenant_id: string;
 	created_at: string;
 	updated_at: string;
 	last_sync_at: string | null;
@@ -28,6 +29,8 @@ function rowToSource(row: SourceRow): RagSource {
 		configEncrypted: row.config_encrypted,
 		embeddingSettingName: row.embedding_setting_name,
 		embeddingModelVersion: row.embedding_model_version,
+		// Defensive `?? 'default'` for fixtures that bypass the migration.
+		tenantId: row.tenant_id ?? 'default',
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 		...(row.last_sync_at !== null ? { lastSyncAt: row.last_sync_at } : {}),

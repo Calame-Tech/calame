@@ -15,6 +15,7 @@ interface SourceRow {
 	config_encrypted: string;
 	embedding_setting_name: string;
 	embedding_model_version: string;
+	tenant_id: string;
 	created_at: string;
 	updated_at: string;
 	last_sync_at: string | null;
@@ -30,6 +31,7 @@ interface JobRow {
 	skipped_by_etag: number;
 	gc_deleted: number;
 	error: string | null;
+	tenant_id: string;
 	started_at: string;
 	finished_at: string | null;
 }
@@ -53,6 +55,10 @@ function rowToSource(row: SourceRow): RagSource {
 		configEncrypted: row.config_encrypted,
 		embeddingSettingName: row.embedding_setting_name,
 		embeddingModelVersion: row.embedding_model_version,
+		// Defensive `?? 'default'` for fixtures that hand-roll rows without
+		// going through `runRagMigrations` — projections lands as undefined
+		// at runtime when the column isn't present.
+		tenantId: row.tenant_id ?? 'default',
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 		...(row.last_sync_at !== null ? { lastSyncAt: row.last_sync_at } : {}),
@@ -70,6 +76,7 @@ function rowToJob(row: JobRow): RagJob {
 		skippedByEtag: row.skipped_by_etag,
 		gcDeleted: row.gc_deleted,
 		error: row.error,
+		tenantId: row.tenant_id ?? 'default',
 		startedAt: row.started_at,
 		finishedAt: row.finished_at,
 	};
@@ -112,6 +119,7 @@ async function walkConnector(
 	connector: ConnectorLike,
 	config: Record<string, unknown>,
 	sourceId: string,
+	tenantId: string,
 ): Promise<Array<{ doc: Awaited<ReturnType<ConnectorLike['listDocuments']>>[number]; folder: RagFolder | null }>> {
 	const out: Array<{ doc: Awaited<ReturnType<ConnectorLike['listDocuments']>>[number]; folder: RagFolder | null }> = [];
 
@@ -123,7 +131,10 @@ async function walkConnector(
 		}
 		const subfolders = await connector.listFolders(config, sourceId, folderArg);
 		for (const sf of subfolders) {
-			await visit(sf);
+			// Connectors don't know about tenancy; the folder inherits the
+			// parent source's tenant. This keeps the pipeline downstream from
+			// having to defensively check `?? 'default'` at every consumer.
+			await visit({ ...sf, tenantId });
 		}
 	}
 
@@ -224,7 +235,7 @@ export async function runSyncJob(
 
 		let entries: Awaited<ReturnType<typeof walkConnector>>;
 		try {
-			entries = await walkConnector(connector, config, source.id);
+			entries = await walkConnector(connector, config, source.id, source.tenantId);
 		} catch (err: unknown) {
 			const m = err instanceof Error ? err.message : String(err);
 			deps.db
@@ -497,15 +508,23 @@ export function registerRagIndexRoutes(app: Express, deps: RagRouteDeps): void {
 			// 2. Insert a `pending` job. We do this BEFORE asking the queue so
 			//    the row exists by the time the worker (which may run on the
 			//    next microtask) picks it up.
+			//
+			//    The job inherits its tenant from the parent source — that's
+			//    the authoritative value for any background work that follows.
+			//    `req` is also passed to `getTenantId` so Phase B can switch
+			//    to request-driven resolution without touching this call site.
 			const jobId = nanoid();
 			const now = new Date().toISOString();
+			const jobTenantId =
+				row.tenant_id ?? (deps.getTenantId ? deps.getTenantId(req) : 'default');
 			deps.db
 				.prepare(
 					`INSERT INTO rag_jobs
-					 (id, source_id, status, progress, total_documents, processed_documents, started_at)
-					 VALUES (?, ?, 'pending', 0, 0, 0, ?)`,
+					 (id, source_id, status, progress, total_documents, processed_documents,
+					  tenant_id, started_at)
+					 VALUES (?, ?, 'pending', 0, 0, 0, ?, ?)`,
 				)
-				.run(jobId, id, now);
+				.run(jobId, id, jobTenantId, now);
 
 			// 3. Try to enqueue. Returns false when a sync for this source is
 			//    already running OR queued — in that case we DELETE the row we

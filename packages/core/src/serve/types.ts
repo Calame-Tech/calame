@@ -31,6 +31,15 @@ export interface ServeConfiguration {
   label: string;
 
   /**
+   * Multi-tenancy (Phase A) — see migration v12 in `packages/cli/src/migration.ts`.
+   * Always `'default'` today; the host writes the column on every INSERT but no
+   * route filters by it yet. Optional in the type so in-memory test fixtures
+   * (which don't go through the migrator) keep compiling. Once Phase B lands
+   * and route-level scoping is enabled, this will become required.
+   */
+  tenantId?: string;
+
+  /**
    * Source ids active in this configuration. Phase 2+ canonical replacement for
    * the legacy `connections` array. When both are present, `sources` wins; the
    * migrator reconciles older shapes on read.
@@ -112,6 +121,14 @@ export interface ResolvedScopeFilter {
 export interface ServeProfile {
   name: string;
   label: string;
+  /**
+   * Multi-tenancy (Phase A) — see migration v12 in `packages/cli/src/migration.ts`.
+   * Always `'default'` today; the host writes the column on every INSERT but no
+   * route filters by it yet. Optional in the type so in-memory test fixtures
+   * (which don't go through the migrator) keep compiling. Once Phase B lands
+   * and route-level scoping is enabled, this will become required.
+   */
+  tenantId?: string;
   /**
    * Controls how MCP tool responses are formatted.
    * - 'friendly' (default): column names are replaced with human-readable labels,

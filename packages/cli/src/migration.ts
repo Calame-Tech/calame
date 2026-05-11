@@ -1,4 +1,5 @@
 import type { CalameDatabase } from './database.js';
+import { DEFAULT_TENANT_ID } from './tenancy.js';
 
 /**
  * Placeholder for future schema migrations.
@@ -11,6 +12,14 @@ import type { CalameDatabase } from './database.js';
 function hasColumn(db: CalameDatabase, table: string, column: string): boolean {
   const cols = db.raw.pragma(`table_info(${table})`) as Array<{ name: string }>;
   return cols.some((c) => c.name === column);
+}
+
+/** Check if a table exists on the SQLite schema. */
+function hasTable(db: CalameDatabase, name: string): boolean {
+  const row = db.raw
+    .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name = ?`)
+    .get(name) as { name: string } | undefined;
+  return row !== undefined;
 }
 
 /** Add a column only if it doesn't already exist (idempotent ALTER TABLE). */
@@ -131,5 +140,72 @@ export function runMigrations(db: CalameDatabase): void {
     // post-processes hybrid-search candidates. Nullable — rerank is opt-in.
     addColumnIfMissing(db, 'ai_settings', 'rerank_model', 'TEXT');
     db.setSchemaVersion(11);
+  }
+
+  if (currentVersion < 12) {
+    // Version 12: Multi-tenancy foundation (Phase A).
+    //
+    // Adds a `tenant_id TEXT NOT NULL DEFAULT 'default'` column to every
+    // host-side table that holds per-tenant configuration. Existing rows
+    // transparently migrate under the literal 'default' tenant. NO route
+    // enforces tenant filtering yet — this migration is intentionally additive
+    // so it can be reverted by an `ALTER TABLE … DROP COLUMN tenant_id` on
+    // each table.
+    //
+    // Phase B will resolve the tenant from `req.auth` (or an `X-Tenant-Id`
+    // header) via `getTenantId(req)` and wire `WHERE tenant_id = ?` clauses
+    // into every read path. The indexes below exist now so that filtering
+    // doesn't kill query performance when it eventually lands.
+    //
+    // The companion RAG-side migration (`ee/rag-core/src/storage/schema.ts`
+    // v5→v6) covers the `rag_*` tables.
+    const hostTables = [
+      'profiles',
+      'configurations',
+      'ai_settings',
+      'tokens',
+      'users',
+    ] as const;
+    const tenantType = `TEXT NOT NULL DEFAULT '${DEFAULT_TENANT_ID}'`;
+    for (const table of hostTables) {
+      if (hasTable(db, table)) {
+        addColumnIfMissing(db, table, 'tenant_id', tenantType);
+      }
+    }
+
+    // Compound `(tenant_id, name)` indexes on the two name-keyed tables.
+    // Intentionally NON-UNIQUE in Phase A: tenants are not yet enforced at
+    // the route layer, and `profiles`/`configurations` already enforce
+    // uniqueness on `name` alone via their PRIMARY KEY. Once Phase B enables
+    // route-level scoping, the future migration that flips the PK can also
+    // promote this index to UNIQUE — at which point names will be allowed to
+    // collide across tenant boundaries.
+    if (hasTable(db, 'profiles')) {
+      db.raw.exec(
+        `CREATE INDEX IF NOT EXISTS idx_profiles_tenant_key ON profiles(tenant_id, key)`,
+      );
+    }
+    if (hasTable(db, 'configurations')) {
+      db.raw.exec(
+        `CREATE INDEX IF NOT EXISTS idx_configurations_tenant_name ON configurations(tenant_id, name)`,
+      );
+    }
+    if (hasTable(db, 'ai_settings')) {
+      db.raw.exec(
+        `CREATE INDEX IF NOT EXISTS idx_ai_settings_tenant ON ai_settings(tenant_id)`,
+      );
+    }
+    if (hasTable(db, 'tokens')) {
+      db.raw.exec(
+        `CREATE INDEX IF NOT EXISTS idx_tokens_tenant ON tokens(tenant_id)`,
+      );
+    }
+    if (hasTable(db, 'users')) {
+      db.raw.exec(
+        `CREATE INDEX IF NOT EXISTS idx_users_tenant ON users(tenant_id)`,
+      );
+    }
+
+    db.setSchemaVersion(12);
   }
 }

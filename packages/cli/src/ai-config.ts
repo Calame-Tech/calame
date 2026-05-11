@@ -1,5 +1,6 @@
 import type { Database, Statement } from 'better-sqlite3';
 import type { CalameDatabase } from './database.js';
+import { DEFAULT_TENANT_ID } from './tenancy.js';
 
 export type AiProvider = 'anthropic' | 'openrouter' | 'custom';
 
@@ -141,8 +142,14 @@ export class AiSettingsManager {
     this.stmtList = this.db.prepare(`SELECT * FROM ai_settings ORDER BY created_at ASC, name ASC`);
     this.stmtGet = this.db.prepare(`SELECT * FROM ai_settings WHERE name = ?`);
     this.stmtInsert = this.db.prepare(
-      `INSERT INTO ai_settings (name, label, provider, api_key, model, base_url, capabilities, embedding_model, embedding_dimensions, rerank_model)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      // Phase A multi-tenancy — explicit binding even though the column has
+      // DEFAULT 'default'. AiSettingsManager doesn't have a request in scope
+      // (it's instantiated at boot), so we always bind the helper-resolved
+      // default. Phase B will surface the request-derived tenant from the
+      // /api/ai-settings route before this method is called.
+      `INSERT INTO ai_settings (name, label, provider, api_key, model, base_url, capabilities,
+                                embedding_model, embedding_dimensions, rerank_model, tenant_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     this.stmtUpdate = this.db.prepare(
       `UPDATE ai_settings SET label = ?, provider = ?, api_key = ?, model = ?, base_url = ?,
@@ -192,6 +199,7 @@ export class AiSettingsManager {
       setting.embeddingModel ?? null,
       setting.embeddingDimensions ?? null,
       setting.rerankModel ?? null,
+      DEFAULT_TENANT_ID,
     );
   }
 

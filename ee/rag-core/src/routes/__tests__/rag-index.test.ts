@@ -106,6 +106,7 @@ function insertSource(
 		configEncrypted: '{}',
 		embeddingSettingName: 'test-embedding',
 		embeddingModelVersion: 'mock-1',
+		tenantId: 'default',
 		createdAt: '2026-01-01T00:00:00.000Z',
 		updatedAt: '2026-01-01T00:00:00.000Z',
 		...overrides,
@@ -304,6 +305,7 @@ function readJob(db: BetterSqlite3Database, sourceId: string): RagJob {
 		skippedByEtag: row['skipped_by_etag'] as number,
 		gcDeleted: row['gc_deleted'] as number,
 		error: row['error'] as string | null,
+		tenantId: (row['tenant_id'] as string | null) ?? 'default',
 		startedAt: row['started_at'] as string,
 		finishedAt: row['finished_at'] as string | null,
 	};

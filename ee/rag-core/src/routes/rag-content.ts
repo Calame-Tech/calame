@@ -12,6 +12,7 @@ interface FolderRow {
 	parent_id: string | null;
 	path: string;
 	name: string;
+	tenant_id: string;
 	created_at: string;
 }
 
@@ -25,6 +26,7 @@ interface DocumentRow {
 	size: number;
 	hash: string;
 	etag: string | null;
+	tenant_id: string;
 	last_indexed_at: string;
 	deleted_at: string | null;
 }
@@ -36,6 +38,7 @@ interface ChunkRow {
 	text: string;
 	token_count: number;
 	embedding_dimensions: number;
+	tenant_id: string;
 }
 
 function rowToFolder(row: FolderRow): RagFolder {
@@ -45,6 +48,8 @@ function rowToFolder(row: FolderRow): RagFolder {
 		parentId: row.parent_id,
 		path: row.path,
 		name: row.name,
+		// Defensive `?? 'default'` for fixtures that bypass the migration.
+		tenantId: row.tenant_id ?? 'default',
 		createdAt: row.created_at,
 	};
 }
@@ -60,6 +65,7 @@ function rowToDocument(row: DocumentRow): RagDocument {
 		size: row.size,
 		hash: row.hash,
 		etag: row.etag,
+		tenantId: row.tenant_id ?? 'default',
 		lastIndexedAt: row.last_indexed_at,
 		deletedAt: row.deleted_at,
 	};

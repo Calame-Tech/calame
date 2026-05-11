@@ -24,6 +24,7 @@ const makeFolder = (overrides?: Partial<RagFolder>): RagFolder => ({
   parentId: null,
   path: 'docs/faq',
   name: 'faq',
+  tenantId: 'default',
   createdAt: '2026-01-01T00:00:00.000Z',
   ...overrides,
 });
@@ -38,6 +39,7 @@ const makeDocument = (overrides?: Partial<RagDocument>): RagDocument => ({
   size: 1024,
   hash: 'abc123',
   etag: null,
+  tenantId: 'default',
   lastIndexedAt: '2026-01-01T00:00:00.000Z',
   deletedAt: null,
   ...overrides,

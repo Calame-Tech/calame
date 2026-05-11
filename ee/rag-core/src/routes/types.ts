@@ -3,6 +3,7 @@
 // See ee/LICENSE.BUSL at the root of the ee/ directory for terms.
 
 import type { Database as BetterSqlite3Database } from 'better-sqlite3';
+import type { Request } from 'express';
 import type { EmbeddingClient, VectorStore } from '../types.js';
 import type { IngestionPipeline } from '../pipeline/ingest.js';
 import type { SyncQueue } from '../jobs/sync-queue.js';
@@ -109,6 +110,18 @@ export interface RagRouteDeps {
 	 * stays in sync with the persisted source set.
 	 */
 	watchManager: WatchManager;
+	/**
+	 * Resolve the multi-tenant id for the supplied request (Phase A: always
+	 * `'default'`). Wired by the host so `ee/rag-core` can stay decoupled
+	 * from `packages/cli/src/tenancy.ts`. Routes pass `req` through; non-
+	 * request contexts (background workers, schedulers) call this without
+	 * an argument to obtain the default.
+	 *
+	 * The handler is optional so tests that build deps inline keep working —
+	 * when absent, the routes fall back to the literal `'default'` so
+	 * INSERTs still bind the column explicitly.
+	 */
+	getTenantId?: (req?: Request) => string;
 	/** Optional audit hook called on success and failure. */
 	onAudit?: (entry: RagAuditEntry) => void;
 }

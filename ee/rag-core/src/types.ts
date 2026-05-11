@@ -42,10 +42,24 @@ export interface RagSource {
    * means "manual sync only".
    */
   pollingIntervalSeconds?: number | null;
+  /**
+   * Multi-tenancy foundation (Phase A) — see migration v6 in
+   * `storage/schema.ts`. Always `'default'` today; will be resolved from the
+   * authenticated request in Phase B. Child rows (`rag_folders`,
+   * `rag_documents`, `rag_chunks`, `rag_jobs`) inherit this value at INSERT
+   * time so a future `WHERE tenant_id = ?` filter can be applied uniformly.
+   */
+  tenantId: string;
 }
 
 /**
  * A logical folder inside a source. Hierarchical via `parentId`.
+ *
+ * Note on `tenantId`: optional so connectors (`ee/rag-connectors`) can
+ * construct `RagFolder` instances without knowing about tenancy. The host
+ * enriches the object with `tenantId` inherited from the parent source at
+ * the storage boundary; downstream code reads the value off the SQLite row
+ * (or via `rowToFolder`) where it is always present after migration v6.
  */
 export interface RagFolder {
   id: string;
@@ -55,11 +69,19 @@ export interface RagFolder {
   path: string;
   name: string;
   createdAt: string;
+  /**
+   * Multi-tenancy (Phase A) — inherited from the parent source. Optional in
+   * the type so connector-built instances don't need to set it; the host
+   * enriches it before persisting.
+   */
+  tenantId?: string;
 }
 
 /**
  * A document tracked by the RAG layer. Soft-deleted via `deletedAt` to preserve
  * audit history.
+ *
+ * See {@link RagFolder} for the rationale behind the optional `tenantId`.
  */
 export interface RagDocument {
   id: string;
@@ -75,6 +97,12 @@ export interface RagDocument {
   etag: string | null;
   lastIndexedAt: string;
   deletedAt: string | null;
+  /**
+   * Multi-tenancy (Phase A) — inherited from the parent source. Optional in
+   * the type so connector-built instances don't need to set it; the host
+   * enriches it before persisting.
+   */
+  tenantId?: string;
 }
 
 /**
@@ -89,6 +117,8 @@ export interface RagChunk {
   text: string;
   tokenCount: number;
   embeddingDimensions: number;
+  /** Multi-tenancy (Phase A) — inherited from the parent source. Optional. */
+  tenantId?: string;
 }
 
 export type RagJobStatus = 'pending' | 'running' | 'completed' | 'failed';
@@ -111,6 +141,8 @@ export interface RagJob {
   error: string | null;
   startedAt: string;
   finishedAt: string | null;
+  /** Multi-tenancy (Phase A) — inherited from the parent source. Optional. */
+  tenantId?: string;
 }
 
 /**

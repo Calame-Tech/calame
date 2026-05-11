@@ -463,9 +463,178 @@ describe('schema migration — v4 idempotence', () => {
 		const ver = db
 			.prepare(`SELECT version FROM rag_schema_version WHERE key = 'rag'`)
 			.get() as { version: number };
-		// v5 added the FTS5 mirror — the migration is no-op on this fixture
-		// (rag_chunks isn't seeded) but the version still advances.
-		expect(ver.version).toBe(5);
+		// v5 added the FTS5 mirror, v6 added tenant_id — the migration is
+		// no-op on this fixture's tables that aren't seeded, but the version
+		// still advances to head (6).
+		expect(ver.version).toBe(6);
+	});
+});
+
+describe('schema migration — v6 tenant_id', () => {
+	function hasIndex(db: BetterSqlite3Database, name: string): boolean {
+		const row = db
+			.prepare(`SELECT name FROM sqlite_master WHERE type='index' AND name = ?`)
+			.get(name) as { name: string } | undefined;
+		return row !== undefined;
+	}
+
+	it('adds tenant_id column to every RAG table on a fresh DB', () => {
+		const db = makeDb();
+		const tables = ['rag_sources', 'rag_folders', 'rag_documents', 'rag_chunks', 'rag_jobs'];
+		for (const t of tables) {
+			const cols = db.pragma(`table_info(${t})`) as Array<{ name: string }>;
+			expect(cols.some((c) => c.name === 'tenant_id')).toBe(true);
+		}
+	});
+
+	it('creates the per-table tenant indexes', () => {
+		const db = makeDb();
+		const expected = [
+			'idx_rag_sources_tenant',
+			'idx_rag_folders_tenant',
+			'idx_rag_documents_tenant',
+			'idx_rag_chunks_tenant',
+			'idx_rag_jobs_tenant',
+		];
+		for (const name of expected) {
+			expect(hasIndex(db, name)).toBe(true);
+		}
+	});
+
+	it('upgrade path — v5 DB without the column gets it added by v6, existing rows default to "default"', () => {
+		const db = new Database(':memory:');
+		// Build a v5-shape DB by hand: every RAG table with the v5 column
+		// set (no tenant_id yet) plus the version stamp.
+		db.exec(`
+			CREATE TABLE rag_sources (
+				id TEXT PRIMARY KEY,
+				name TEXT NOT NULL,
+				type TEXT NOT NULL,
+				config_encrypted TEXT NOT NULL,
+				embedding_setting_name TEXT NOT NULL,
+				embedding_model_version TEXT NOT NULL,
+				embedding_dimensions INTEGER NOT NULL DEFAULT 0,
+				polling_interval_seconds INTEGER,
+				created_at TEXT NOT NULL DEFAULT (datetime('now')),
+				updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+				last_sync_at TEXT
+			);
+			CREATE TABLE rag_folders (
+				id TEXT PRIMARY KEY,
+				source_id TEXT NOT NULL,
+				parent_id TEXT,
+				path TEXT NOT NULL,
+				name TEXT NOT NULL,
+				created_at TEXT NOT NULL DEFAULT (datetime('now'))
+			);
+			CREATE TABLE rag_documents (
+				id TEXT PRIMARY KEY,
+				source_id TEXT NOT NULL,
+				folder_id TEXT,
+				path TEXT NOT NULL,
+				name TEXT NOT NULL,
+				mime_type TEXT NOT NULL,
+				size INTEGER NOT NULL,
+				hash TEXT NOT NULL,
+				etag TEXT,
+				last_indexed_at TEXT NOT NULL DEFAULT (datetime('now')),
+				deleted_at TEXT
+			);
+			CREATE TABLE rag_chunks (
+				id TEXT PRIMARY KEY,
+				document_id TEXT NOT NULL,
+				position INTEGER NOT NULL,
+				text TEXT NOT NULL,
+				token_count INTEGER NOT NULL,
+				embedding_dimensions INTEGER NOT NULL,
+				created_at TEXT NOT NULL DEFAULT (datetime('now'))
+			);
+			CREATE TABLE rag_jobs (
+				id TEXT PRIMARY KEY,
+				source_id TEXT NOT NULL,
+				status TEXT NOT NULL,
+				progress REAL NOT NULL DEFAULT 0,
+				total_documents INTEGER NOT NULL DEFAULT 0,
+				processed_documents INTEGER NOT NULL DEFAULT 0,
+				skipped_by_etag INTEGER NOT NULL DEFAULT 0,
+				gc_deleted INTEGER NOT NULL DEFAULT 0,
+				error TEXT,
+				started_at TEXT NOT NULL DEFAULT (datetime('now')),
+				finished_at TEXT
+			);
+			CREATE TABLE rag_schema_version (key TEXT PRIMARY KEY, version INTEGER NOT NULL);
+			INSERT INTO rag_schema_version (key, version) VALUES ('rag', 5);
+			INSERT INTO rag_sources (id, name, type, config_encrypted, embedding_setting_name, embedding_model_version)
+				VALUES ('s-legacy', 'legacy', 'local', '{}', 'test', 'mock-1');
+		`);
+
+		// Pre-condition: tenant_id column absent on every table.
+		const tables = ['rag_sources', 'rag_folders', 'rag_documents', 'rag_chunks', 'rag_jobs'];
+		for (const t of tables) {
+			const cols = db.pragma(`table_info(${t})`) as Array<{ name: string }>;
+			expect(cols.some((c) => c.name === 'tenant_id')).toBe(false);
+		}
+
+		runRagMigrations({ raw: db });
+
+		// Post-condition: tenant_id column present everywhere; legacy row
+		// inherits the literal default.
+		for (const t of tables) {
+			const cols = db.pragma(`table_info(${t})`) as Array<{ name: string }>;
+			expect(cols.some((c) => c.name === 'tenant_id')).toBe(true);
+		}
+		const legacy = db
+			.prepare(`SELECT tenant_id FROM rag_sources WHERE id = ?`)
+			.get('s-legacy') as { tenant_id: string };
+		expect(legacy.tenant_id).toBe('default');
+
+		// Version stamp updated to head.
+		const ver = db
+			.prepare(`SELECT version FROM rag_schema_version WHERE key = 'rag'`)
+			.get() as { version: number };
+		expect(ver.version).toBe(6);
+	});
+
+	it('is idempotent — re-running runRagMigrations does not duplicate the column or throw', () => {
+		const db = makeDb();
+		// Already migrated once in makeDb. Run twice more and confirm a
+		// single tenant_id column per table.
+		runRagMigrations({ raw: db });
+		runRagMigrations({ raw: db });
+
+		const tables = ['rag_sources', 'rag_folders', 'rag_documents', 'rag_chunks', 'rag_jobs'];
+		for (const t of tables) {
+			const cols = db.pragma(`table_info(${t})`) as Array<{ name: string }>;
+			expect(cols.filter((c) => c.name === 'tenant_id')).toHaveLength(1);
+		}
+	});
+
+	it('fresh POST /api/rag/sources writes tenant_id = "default" on the row (backward-compat)', async () => {
+		const db = makeDb();
+		const captured = makeCapturedApp();
+		const build = makeDeps(db);
+		registerRagSourcesRoutes(captured.app, build.deps);
+
+		const handler = captured.post('/api/rag/sources');
+		const req = makeReq({
+			body: {
+				name: 'TenantA source',
+				type: 'local',
+				config: { rootPath: '/tmp/x' },
+				embeddingSettingName: 'test',
+			},
+		});
+		const res = makeRes();
+		await handler(req, res.res);
+		expect(res.statusCode).toBe(201);
+
+		const body = res.body as { source: { id: string; tenantId: string } };
+		expect(body.source.tenantId).toBe('default');
+
+		const row = db
+			.prepare(`SELECT tenant_id FROM rag_sources WHERE id = ?`)
+			.get(body.source.id) as { tenant_id: string };
+		expect(row.tenant_id).toBe('default');
 	});
 });
 

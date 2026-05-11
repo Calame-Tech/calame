@@ -3,6 +3,7 @@ import type { AppState } from '../state.js';
 import type { CalameDatabase } from '../database.js';
 import { z } from 'zod';
 import { upgradeProfileShape } from '@calame/core';
+import { getTenantId } from '../tenancy.js';
 
 export interface ProfileWarning {
   profile: string;
@@ -146,9 +147,13 @@ export function registerProfilesRoute(app: Express, state: AppState): void {
         }
       }
 
+      // Phase A multi-tenancy — bind `tenant_id` explicitly even though the
+      // column carries DEFAULT 'default'. The current `profiles` row is keyed
+      // by the literal 'main' regardless of tenant; Phase B will reshape the
+      // PK to `(tenant_id, key)` so several tenants can coexist.
       db.raw
-        .prepare("INSERT OR REPLACE INTO profiles (key, data) VALUES ('main', ?)")
-        .run(JSON.stringify(data));
+        .prepare("INSERT OR REPLACE INTO profiles (key, data, tenant_id) VALUES ('main', ?, ?)")
+        .run(JSON.stringify(data), getTenantId(req));
 
       // Invalidate tool schema cache for all saved profiles so the next chat turn re-fetches tools
       const { invalidateToolSchemaCache } = await import('../chat-engine.js');
@@ -282,9 +287,10 @@ export function registerProfilesRoute(app: Express, state: AppState): void {
 
       data.profiles[profileName].responseMode = mode;
 
+      // Phase A multi-tenancy — same shape as the /save endpoint.
       db.raw
-        .prepare("INSERT OR REPLACE INTO profiles (key, data) VALUES ('main', ?)")
-        .run(JSON.stringify(data));
+        .prepare("INSERT OR REPLACE INTO profiles (key, data, tenant_id) VALUES ('main', ?, ?)")
+        .run(JSON.stringify(data), getTenantId(req));
 
       // Reflect the update in AppState if the profile is currently loaded
       if (state.serveProfiles[profileName]) {

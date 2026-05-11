@@ -22,6 +22,7 @@ import { settingSupports } from './ai-config.js';
 import { deriveKeyFromEnv, encryptString, decryptString } from './crypto.js';
 import { sourceAdapterRegistry } from '@calame/core';
 import { parseRateLimitEnv } from './rag-rate-limits.js';
+import { DEFAULT_TENANT_ID } from './tenancy.js';
 
 /**
  * Public shape of the RAG runtime stored on `AppState.ragRuntime`. All fields
@@ -428,6 +429,11 @@ export async function initRagRuntime(
           syncQueue: rt.syncQueue,
           pollScheduler: rt.pollScheduler,
           watchManager: rt.watchManager,
+          // Background worker — no request in scope, so we let the helper
+          // fall through to its argument-less call. Phase A always returns
+          // 'default'; Phase B will be context-aware when the worker carries
+          // its own tenant binding.
+          getTenantId: () => DEFAULT_TENANT_ID,
           onAudit: (entry) => {
             log.info(`[rag-audit] ${entry.type} ${JSON.stringify(entry.payload)}`);
           },
@@ -448,17 +454,28 @@ export async function initRagRuntime(
   // queue rejects (already running / queued for the same source). Sharing
   // one lambda keeps the INSERT/enqueue/DELETE logic in a single place and
   // ensures both trigger paths go through the same SyncQueue dedupe.
+  //
+  // The job inherits its tenant from the parent source — there's no request
+  // here (scheduler / watcher triggers run out-of-band) so we look up the
+  // column directly. Defensive `?? DEFAULT_TENANT_ID` covers freshly upgraded
+  // DBs whose source row was written before the v6 migration ran.
   const triggerSync = (sourceId: string): string | null => {
     const jobId = randomUUID();
     const now = new Date().toISOString();
+    const sourceRow = db.raw
+      .prepare<[string], { tenant_id: string | null }>(
+        `SELECT tenant_id FROM rag_sources WHERE id = ?`,
+      )
+      .get(sourceId);
+    const tenantId = sourceRow?.tenant_id ?? DEFAULT_TENANT_ID;
     db.raw
       .prepare(
         `INSERT INTO rag_jobs
          (id, source_id, status, progress, total_documents, processed_documents,
-          skipped_by_etag, gc_deleted, started_at)
-         VALUES (?, ?, 'pending', 0, 0, 0, 0, 0, ?)`,
+          skipped_by_etag, gc_deleted, tenant_id, started_at)
+         VALUES (?, ?, 'pending', 0, 0, 0, 0, 0, ?, ?)`,
       )
-      .run(jobId, sourceId, now);
+      .run(jobId, sourceId, tenantId, now);
     const accepted = syncQueue.enqueue(sourceId, jobId);
     if (!accepted) {
       // Queue rejected — sync already active for this source. Clean up
@@ -543,6 +560,7 @@ export async function initRagRuntime(
       parent_id: string | null;
       path: string;
       name: string;
+      tenant_id: string | null;
       created_at: string;
     }
     interface RagDocumentRow {
@@ -555,6 +573,7 @@ export async function initRagRuntime(
       size: number;
       hash: string;
       etag: string | null;
+      tenant_id: string | null;
       last_indexed_at: string;
       deleted_at: string | null;
     }
@@ -592,6 +611,10 @@ export async function initRagRuntime(
           parentId: r.parent_id,
           path: r.path,
           name: r.name,
+          // Defensive `?? DEFAULT_TENANT_ID` for fixtures that bypass the
+          // RAG-side migration (the column may be absent on legacy DBs that
+          // haven't replayed `runRagMigrations` yet).
+          tenantId: r.tenant_id ?? DEFAULT_TENANT_ID,
           createdAt: r.created_at,
         }));
       },
@@ -623,6 +646,7 @@ export async function initRagRuntime(
           size: r.size,
           hash: r.hash,
           etag: r.etag,
+          tenantId: r.tenant_id ?? DEFAULT_TENANT_ID,
           lastIndexedAt: r.last_indexed_at,
           deletedAt: r.deleted_at,
         }));
@@ -650,6 +674,7 @@ export async function initRagRuntime(
             size: row.size,
             hash: row.hash,
             etag: row.etag,
+            tenantId: row.tenant_id ?? DEFAULT_TENANT_ID,
             lastIndexedAt: row.last_indexed_at,
             deletedAt: row.deleted_at,
           },

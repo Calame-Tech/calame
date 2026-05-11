@@ -9,6 +9,15 @@ import type { RagSourceType } from '../types.js';
 import type { RagSourcePublic } from './api-types.js';
 import type { RagAuditEntry, RagRouteDeps } from './types.js';
 
+/**
+ * Resolve the tenant id for a request, falling back to the literal
+ * `'default'` when the host hasn't wired a resolver (e.g. test deps).
+ * Kept local to keep `ee/rag-core` decoupled from `packages/cli`.
+ */
+function resolveTenantId(deps: RagRouteDeps, req?: Request): string {
+	return deps.getTenantId ? deps.getTenantId(req) : 'default';
+}
+
 const SOURCE_TYPES: ReadonlyArray<RagSourceType> = [
 	'local',
 	's3',
@@ -69,6 +78,8 @@ interface SourceRow {
 	embedding_model_version: string;
 	embedding_dimensions: number;
 	polling_interval_seconds: number | null;
+	/** Phase A multi-tenancy column — always `'default'` until Phase B lands. */
+	tenant_id: string;
 	created_at: string;
 	updated_at: string;
 	last_sync_at: string | null;
@@ -104,6 +115,10 @@ function rowToSource(row: SourceRow, deps: RagRouteDeps): RagSourcePublic {
 		embeddingModelVersion: row.embedding_model_version,
 		embeddingDimensions: row.embedding_dimensions,
 		pollingIntervalSeconds: row.polling_interval_seconds,
+		// Defensive `?? 'default'` covers test fixtures that hand-roll a row
+		// without going through `runRagMigrations` — the column doesn't exist
+		// there yet, so the projection lands as `undefined` at runtime.
+		tenantId: row.tenant_id ?? 'default',
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 		...(row.last_sync_at !== null ? { lastSyncAt: row.last_sync_at } : {}),
@@ -236,14 +251,18 @@ export function registerRagSourcesRoutes(app: Express, deps: RagRouteDeps): void
 			// `pollingIntervalSeconds` may be omitted (undefined) or explicitly null.
 			// Both map to NULL in SQL — better-sqlite3 binds JS `null` to SQL NULL.
 			const pollingInterval = parsed.data.pollingIntervalSeconds ?? null;
+			// Phase A multi-tenancy — explicit > implicit, even though the column
+			// has DEFAULT 'default'. Future Phase B will read the value from the
+			// authenticated request; the call site doesn't change.
+			const tenantId = resolveTenantId(deps, req);
 			deps.db
 				.prepare(
 					`INSERT INTO rag_sources
 					 (id, name, type, config_encrypted, embedding_setting_name,
 					  embedding_model_version, embedding_dimensions,
-					  polling_interval_seconds,
+					  polling_interval_seconds, tenant_id,
 					  created_at, updated_at)
-					 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+					 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 				)
 				.run(
 					id,
@@ -254,6 +273,7 @@ export function registerRagSourcesRoutes(app: Express, deps: RagRouteDeps): void
 					resolved.embeddingModel,
 					resolved.dimensions,
 					pollingInterval,
+					tenantId,
 					now,
 					now,
 				);

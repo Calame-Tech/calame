@@ -54,6 +54,7 @@ interface DocumentRow {
 	size: number;
 	hash: string;
 	etag: string | null;
+	tenant_id: string;
 	last_indexed_at: string;
 	deleted_at: string | null;
 }
@@ -69,6 +70,8 @@ function rowToDocument(row: DocumentRow): RagDocument {
 		size: row.size,
 		hash: row.hash,
 		etag: row.etag,
+		// Defensive `?? 'default'` for fixtures that bypass the migration.
+		tenantId: row.tenant_id ?? 'default',
 		lastIndexedAt: row.last_indexed_at,
 		deletedAt: row.deleted_at,
 	};
@@ -149,6 +152,11 @@ export class IngestionPipeline {
 
 		const dimensions = this.embeddingClient.dimensions;
 		const now = new Date().toISOString();
+		// Phase A multi-tenancy — the document inherits the parent source's
+		// tenant. Defensive fallback to `'default'` covers callers (mostly
+		// tests) that built a `RagSource` object before the `tenantId` field
+		// existed.
+		const tenantId: string = input.source.tenantId ?? 'default';
 
 		// Reuse id when updating; new id otherwise.
 		const documentId = existing ? existing.id : nanoid();
@@ -184,8 +192,9 @@ export class IngestionPipeline {
 				this.db
 					.prepare(
 						`INSERT INTO rag_documents
-						 (id, source_id, folder_id, path, name, mime_type, size, hash, etag, last_indexed_at, deleted_at)
-						 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+						 (id, source_id, folder_id, path, name, mime_type, size, hash, etag,
+						  tenant_id, last_indexed_at, deleted_at)
+						 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
 					)
 					.run(
 						documentId,
@@ -197,14 +206,16 @@ export class IngestionPipeline {
 						size,
 						hash,
 						input.etag ?? null,
+						tenantId,
 						now,
 					);
 			}
 
 			const insertChunk = this.db.prepare(
 				`INSERT INTO rag_chunks
-				 (id, document_id, position, text, token_count, embedding_dimensions, created_at)
-				 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+				 (id, document_id, position, text, token_count, embedding_dimensions,
+				  tenant_id, created_at)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 			);
 
 			for (let i = 0; i < chunks.length; i++) {
@@ -223,6 +234,7 @@ export class IngestionPipeline {
 					chunk.text,
 					chunk.tokenCount,
 					dimensions,
+					tenantId,
 					now,
 				);
 				this.vectorStore.upsert(chunkId, Float32Array.from(embedding));

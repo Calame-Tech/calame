@@ -62,7 +62,9 @@ describe('profiles routes', () => {
       // Verify data is in SQLite. Phase 5: the migrator drops legacy fields
       // from the persisted shape, so the same data lives under
       // `scopes[sourceId].selectedTables` instead of `selectedTables`.
-      const row = db.raw.prepare("SELECT data FROM profiles WHERE key = 'main'").get() as { data: string };
+      const row = db.raw
+        .prepare("SELECT data, tenant_id FROM profiles WHERE key = 'main'")
+        .get() as { data: string; tenant_id: string };
       const saved = JSON.parse(row.data);
       expect(saved.profiles.finance.label).toBe('Finance');
       expect(saved.profiles.finance.selectedTables).toBeUndefined();
@@ -71,6 +73,8 @@ describe('profiles routes', () => {
         'id',
         'amount',
       ]);
+      // Phase A multi-tenancy — every fresh save must land under 'default'.
+      expect(row.tenant_id).toBe('default');
     });
 
     it('should return error when profiles data is missing', async () => {

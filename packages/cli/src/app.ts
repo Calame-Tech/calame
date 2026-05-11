@@ -60,6 +60,7 @@ import { legacyPathDeprecationMiddleware } from './routes/source-aliases.js';
 import { TokenRateLimiter } from './rate-limiter.js';
 import { createSecretsProvider } from './secrets.js';
 import { LlmRouter } from './llm-router.js';
+import { getTenantId } from './tenancy.js';
 
 export function createApp(
   stateOrOptions?: AppState | { state?: AppState; config?: AppConfig; logger?: Logger },
@@ -288,6 +289,10 @@ export function createApp(
       syncQueue: rt.syncQueue,
       pollScheduler: rt.pollScheduler,
       watchManager: rt.watchManager,
+      // Phase A multi-tenancy bridge — `ee/rag-core` MUST NOT import from
+      // `packages/cli`, so we wire the resolver here. Phase B will swap the
+      // helper to read from `req.auth` without touching this site.
+      getTenantId,
       onAudit: (entry: { type: string; payload: unknown; timestamp: string }) => {
         log.info(`[rag-audit] ${entry.type} ${JSON.stringify(entry.payload)}`);
       },

@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import type { Database, Statement } from 'better-sqlite3';
 import type { CalameDatabase } from './database.js';
 import { hashToken, verifyTokenHash, encrypt, getSecretKey } from './crypto.js';
+import { DEFAULT_TENANT_ID } from './tenancy.js';
 
 export interface TokenEntry {
   id: string;
@@ -53,8 +54,15 @@ export class TokenManager {
     this.db = database.raw;
 
     this.stmtInsert = this.db.prepare(
-      `INSERT INTO tokens (id, token_hash, profile_name, label, created_at, last_used_at, token_encrypted)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      // Phase A multi-tenancy — explicit binding even though the column has
+      // DEFAULT 'default'. The TokenManager doesn't have access to an
+      // Express request here (it's called from /api/tokens which already
+      // resolved auth), so we delegate to the helper which always returns
+      // 'default' today; Phase B will swap this for the request-derived
+      // tenant at the route layer.
+      `INSERT INTO tokens (id, token_hash, profile_name, label, created_at,
+                           last_used_at, token_encrypted, tenant_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     this.stmtSelectAll = this.db.prepare(`SELECT * FROM tokens`);
     this.stmtSelectByProfile = this.db.prepare(`SELECT * FROM tokens WHERE profile_name = ?`);
@@ -98,6 +106,7 @@ export class TokenManager {
       entry.createdAt,
       null,
       tokenEncrypted,
+      DEFAULT_TENANT_ID,
     );
     return { ...entry, _plaintextToken: plaintextToken };
   }

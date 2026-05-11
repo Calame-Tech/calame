@@ -166,6 +166,24 @@ describe('configurations routes', () => {
 
       expect(row.label).toBe('no-label');
     });
+
+    it('writes tenant_id = "default" on the row (Phase A multi-tenancy)', async () => {
+      // Backward-compat assertion: every fresh INSERT must land under the
+      // Phase A default tenant. If this flips, somewhere in the write path
+      // started reading the request's tenant — which would be Phase B
+      // territory and must be done deliberately.
+      await request(app)
+        .post('/api/configurations')
+        .set('Cookie', cookie)
+        .send({ name: 'tenant-check', connections: ['db1'], selectedTables: { t: ['id'] } })
+        .expect(200);
+
+      const row = db.raw
+        .prepare('SELECT tenant_id FROM configurations WHERE name = ?')
+        .get('tenant-check') as { tenant_id: string };
+
+      expect(row.tenant_id).toBe('default');
+    });
   });
 
   // ---------------------------------------------------------------------------

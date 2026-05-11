@@ -13,7 +13,19 @@ export interface RagMigrationDb {
 	raw: BetterSqlite3Database;
 }
 
-const CURRENT_RAG_SCHEMA_VERSION = 5;
+const CURRENT_RAG_SCHEMA_VERSION = 6;
+
+/**
+ * Default tenant id used by Phase A of the multi-tenancy rollout. The column is
+ * present on every RAG table from v6 onwards but no route enforces tenant
+ * scoping yet — every existing row and every fresh INSERT goes under this
+ * literal. Phase B will resolve the value from the authenticated request and
+ * filter SELECTs.
+ *
+ * Kept here (and not imported from `packages/cli/src/tenancy.ts`) to avoid
+ * cross-package dependency cycles — `ee/rag-core` MUST NOT depend on the host.
+ */
+const DEFAULT_TENANT_ID = 'default';
 
 /** Returns true if a column exists on a table. */
 function hasColumn(db: BetterSqlite3Database, table: string, column: string): boolean {
@@ -149,6 +161,11 @@ export function runRagMigrations(db: RagMigrationDb): void {
 		// v1 baseline. Note: `embedding_dimensions` is added in v2 — but for fresh
 		// databases we include it directly in v1's CREATE so we don't need an ALTER
 		// in v2 below. The v2 migration only handles upgrades from a v1 DB.
+		// `tenant_id` (added at v6) is included in the v1 baseline DDL so fresh
+		// installs don't have to walk the upgrade path. Existing v1..v5 databases
+		// pick it up via `addColumnIfMissing` in the v6 branch below. The default
+		// value 'default' matches DEFAULT_TENANT_ID — every row written before
+		// the auth-integrated phase lands implicitly under that tenant.
 		raw.exec(`CREATE TABLE IF NOT EXISTS rag_sources (
 			id TEXT PRIMARY KEY,
 			name TEXT NOT NULL,
@@ -158,6 +175,7 @@ export function runRagMigrations(db: RagMigrationDb): void {
 			embedding_model_version TEXT NOT NULL,
 			embedding_dimensions INTEGER NOT NULL DEFAULT 0,
 			polling_interval_seconds INTEGER,
+			tenant_id TEXT NOT NULL DEFAULT '${DEFAULT_TENANT_ID}',
 			created_at TEXT NOT NULL DEFAULT (datetime('now')),
 			updated_at TEXT NOT NULL DEFAULT (datetime('now')),
 			last_sync_at TEXT
@@ -169,6 +187,7 @@ export function runRagMigrations(db: RagMigrationDb): void {
 			parent_id TEXT,
 			path TEXT NOT NULL,
 			name TEXT NOT NULL,
+			tenant_id TEXT NOT NULL DEFAULT '${DEFAULT_TENANT_ID}',
 			created_at TEXT NOT NULL DEFAULT (datetime('now')),
 			FOREIGN KEY (source_id) REFERENCES rag_sources(id) ON DELETE CASCADE,
 			FOREIGN KEY (parent_id) REFERENCES rag_folders(id) ON DELETE CASCADE
@@ -184,6 +203,7 @@ export function runRagMigrations(db: RagMigrationDb): void {
 			size INTEGER NOT NULL,
 			hash TEXT NOT NULL,
 			etag TEXT,
+			tenant_id TEXT NOT NULL DEFAULT '${DEFAULT_TENANT_ID}',
 			last_indexed_at TEXT NOT NULL DEFAULT (datetime('now')),
 			deleted_at TEXT,
 			FOREIGN KEY (source_id) REFERENCES rag_sources(id) ON DELETE CASCADE,
@@ -197,6 +217,7 @@ export function runRagMigrations(db: RagMigrationDb): void {
 			text TEXT NOT NULL,
 			token_count INTEGER NOT NULL,
 			embedding_dimensions INTEGER NOT NULL,
+			tenant_id TEXT NOT NULL DEFAULT '${DEFAULT_TENANT_ID}',
 			created_at TEXT NOT NULL DEFAULT (datetime('now')),
 			FOREIGN KEY (document_id) REFERENCES rag_documents(id) ON DELETE CASCADE
 		)`);
@@ -211,6 +232,7 @@ export function runRagMigrations(db: RagMigrationDb): void {
 			skipped_by_etag INTEGER NOT NULL DEFAULT 0,
 			gc_deleted INTEGER NOT NULL DEFAULT 0,
 			error TEXT,
+			tenant_id TEXT NOT NULL DEFAULT '${DEFAULT_TENANT_ID}',
 			started_at TEXT NOT NULL DEFAULT (datetime('now')),
 			finished_at TEXT,
 			FOREIGN KEY (source_id) REFERENCES rag_sources(id) ON DELETE CASCADE
@@ -227,6 +249,16 @@ export function runRagMigrations(db: RagMigrationDb): void {
 		);
 		raw.exec(`CREATE INDEX IF NOT EXISTS idx_rag_chunks_document ON rag_chunks(document_id)`);
 		raw.exec(`CREATE INDEX IF NOT EXISTS idx_rag_jobs_source ON rag_jobs(source_id)`);
+
+		// Tenant indexes — created here so fresh DBs are ready for the
+		// upcoming WHERE tenant_id = ? filters without an extra migration.
+		// Non-unique by design: future tenants will be allowed to host sources
+		// with names that collide across tenant boundaries.
+		raw.exec(`CREATE INDEX IF NOT EXISTS idx_rag_sources_tenant ON rag_sources(tenant_id)`);
+		raw.exec(`CREATE INDEX IF NOT EXISTS idx_rag_folders_tenant ON rag_folders(tenant_id)`);
+		raw.exec(`CREATE INDEX IF NOT EXISTS idx_rag_documents_tenant ON rag_documents(tenant_id)`);
+		raw.exec(`CREATE INDEX IF NOT EXISTS idx_rag_chunks_tenant ON rag_chunks(tenant_id)`);
+		raw.exec(`CREATE INDEX IF NOT EXISTS idx_rag_jobs_tenant ON rag_jobs(tenant_id)`);
 
 		// FTS5 mirror + triggers — created at v1 for fresh DBs so we don't run
 		// the v5 migration path on never-used installs. Pre-v5 DBs that upgrade
@@ -277,6 +309,46 @@ export function runRagMigrations(db: RagMigrationDb): void {
 		// (e.g. after a partial earlier upgrade) is safe.
 		createFtsTableAndTriggers(raw);
 		setRagSchemaVersion(raw, 5);
+	}
+
+	if (current < 6) {
+		// v6 — multi-tenancy foundation (Phase A).
+		//
+		// Adds a `tenant_id TEXT NOT NULL DEFAULT 'default'` column to every
+		// RAG table so existing rows transparently migrate under the literal
+		// 'default' tenant. NO route enforces tenant filtering yet — this
+		// migration is intentionally additive so it can be reverted by a
+		// simple `ALTER TABLE … DROP COLUMN tenant_id` on each table.
+		//
+		// Phase B will resolve the tenant from the authenticated request and
+		// wire `WHERE tenant_id = ?` clauses into every read path. The indexes
+		// below exist now so that filtering doesn't kill query performance
+		// when it eventually lands.
+		//
+		// Idempotent: `addColumnIfMissing` skips the ALTER when the column is
+		// already present (e.g. fresh installs that picked up the column from
+		// the v1 baseline DDL above).
+		const ragTables = [
+			'rag_sources',
+			'rag_folders',
+			'rag_documents',
+			'rag_chunks',
+			'rag_jobs',
+		] as const;
+		for (const table of ragTables) {
+			if (hasTable(raw, table)) {
+				addColumnIfMissing(
+					raw,
+					table,
+					'tenant_id',
+					`TEXT NOT NULL DEFAULT '${DEFAULT_TENANT_ID}'`,
+				);
+				raw.exec(
+					`CREATE INDEX IF NOT EXISTS idx_${table}_tenant ON ${table}(tenant_id)`,
+				);
+			}
+		}
+		setRagSchemaVersion(raw, 6);
 	}
 
 	// Future migrations slot here, each gated on `current < N`.

@@ -19,6 +19,7 @@
     "@calame-ee/rag-connectors": "workspace:*",
     "@calame-ee/rag-core": "workspace:*",
     "@calame-ee/rag-gdrive": "workspace:*",
+    "@calame-ee/rag-microsoft": "workspace:*",
     "@calame-ee/rag-notion": "workspace:*",
     "@calame-ee/sso": "workspace:*",
     "@calame/connectors": "workspace:*",

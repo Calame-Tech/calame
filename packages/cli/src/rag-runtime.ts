@@ -150,6 +150,22 @@ export async function initRagRuntime(
     );
   }
 
+  // Microsoft 365 connectors (SharePoint today, OneDrive / Outlook / Teams
+  // potentially later) live in @calame-ee/rag-microsoft. Pulls in the Graph
+  // SDK + @azure/identity (~20MB of types); lazy-loaded so apache-only
+  // installs that don't need M365 skip the cost. When absent, `sharepoint`
+  // sources fall through resolveConnector and the route layer answers 501.
+  type RagMicrosoftModule = typeof import('@calame-ee/rag-microsoft');
+  let ragMicrosoft: RagMicrosoftModule | null = null;
+  try {
+    ragMicrosoft = await import('@calame-ee/rag-microsoft');
+  } catch {
+    log.warn(
+      '@calame-ee/rag-microsoft not installed — sharepoint sources will be unavailable. ' +
+        'Install the package and restart to enable Microsoft 365 ingestion.',
+    );
+  }
+
   // Run schema migrations against the host's SQLite DB.
   try {
     ragCore.runRagMigrations({ raw: db.raw });
@@ -302,10 +318,10 @@ export async function initRagRuntime(
   });
 
   // Build a connector resolver. Phase 1 wired `local`; Phase 3 adds `s3` and
-  // `http`. Phase 3+ adds `gdrive` and `notion` (each in a separate package —
-  // see the `ragGdrive` / `ragNotion` lazy-imports above). Other types
-  // (sharepoint, git, …) still return null so the route layer can answer 501
-  // with a clear message.
+  // `http`. Phase 3+ adds `gdrive`, `notion`, and `sharepoint` (each in a
+  // separate package — see the `ragGdrive` / `ragNotion` / `ragMicrosoft`
+  // lazy-imports above). Other types (gsheets, git, …) still return null so
+  // the route layer can answer 501 with a clear message.
   const resolveConnector = (type: string): ConnectorLike | null => {
     if (type === 'gdrive') {
       if (!ragGdrive) return null;
@@ -314,6 +330,10 @@ export async function initRagRuntime(
     if (type === 'notion') {
       if (!ragNotion) return null;
       return new ragNotion.NotionConnector() as unknown as ConnectorLike;
+    }
+    if (type === 'sharepoint') {
+      if (!ragMicrosoft) return null;
+      return new ragMicrosoft.SharePointConnector() as unknown as ConnectorLike;
     }
     if (!ragConnectors) return null;
     if (type === 'local') {

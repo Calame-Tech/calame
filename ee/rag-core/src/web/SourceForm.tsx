@@ -64,7 +64,7 @@ const SOURCE_TYPES: readonly SourceTypeMeta[] = [
   { value: 'http', label: 'HTTP / URL', available: true },
   { value: 'gdrive', label: 'Google Drive', available: true },
   { value: 'gsheets', label: 'Google Sheets', available: false },
-  { value: 'sharepoint', label: 'SharePoint', available: false },
+  { value: 'sharepoint', label: 'SharePoint', available: true },
   { value: 'notion', label: 'Notion', available: true },
   { value: 'git', label: 'Git', available: false },
 ];
@@ -112,6 +112,18 @@ interface NotionConfig {
   apiKey: string;
   rootIds?: string[];
   includeArchived?: boolean;
+}
+
+interface SharePointConfig {
+  tenantId: string;
+  clientId: string;
+  clientSecret: string;
+  siteUrl: string;
+  driveName?: string;
+  rootFolderPath?: string;
+  recursive?: boolean;
+  includeMimeTypes?: string[];
+  excludeMimeTypes?: string[];
 }
 
 /**
@@ -350,6 +362,29 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
     extractBool(initial?.config, 'includeArchived'),
   );
 
+  // ---- sharepoint fields ----
+  // The client secret is sensitive — never pre-fill in edit mode. Same pattern
+  // as the S3 secretAccessKey: blank field on edit means "keep current".
+  const [spTenantId, setSpTenantId] = useState(extractStr(initial?.config, 'tenantId'));
+  const [spClientId, setSpClientId] = useState(extractStr(initial?.config, 'clientId'));
+  const [spClientSecret, setSpClientSecret] = useState('');
+  const [spSiteUrl, setSpSiteUrl] = useState(extractStr(initial?.config, 'siteUrl'));
+  const [spDriveName, setSpDriveName] = useState(extractStr(initial?.config, 'driveName'));
+  const [spRootFolderPath, setSpRootFolderPath] = useState(
+    extractStr(initial?.config, 'rootFolderPath'),
+  );
+  const [spRecursive, setSpRecursive] = useState<boolean>(() => {
+    if (!initial?.config) return true;
+    return initial.config.recursive === false ? false : true;
+  });
+  const [spIncludeMimes, setSpIncludeMimes] = useState(
+    extractGlobsAsText(initial?.config, 'includeMimeTypes'),
+  );
+  const [spExcludeMimes, setSpExcludeMimes] = useState(
+    extractGlobsAsText(initial?.config, 'excludeMimeTypes'),
+  );
+  const [spShowAdvanced, setSpShowAdvanced] = useState(false);
+
   // ---- ui state ----
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -428,6 +463,16 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
           return "La clé Notion doit commencer par `secret_` ou `ntn_`.";
         }
       }
+    }
+
+    if (type === 'sharepoint') {
+      if (!spTenantId.trim()) return "L'ID du tenant Azure AD est requis.";
+      if (!spClientId.trim()) return "L'ID de l'application (client ID) est requis.";
+      // In edit mode the secret may be left blank (means "unchanged").
+      if (!isEditing && !spClientSecret) {
+        return 'Le client secret de l\'application est requis.';
+      }
+      if (!spSiteUrl.trim()) return "L'URL du site SharePoint est requise.";
     }
 
     if (!embeddingSettingName) {
@@ -537,6 +582,34 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
     return config;
   };
 
+  const buildSharePointConfig = (): SharePointConfig => {
+    // Re-inject the existing clientSecret when editing and the field is blank
+    // (same pattern as S3 secretAccessKey).
+    let clientSecret = spClientSecret;
+    if (!clientSecret && isEditing) {
+      const existing = initial?.config?.['clientSecret'];
+      if (typeof existing === 'string' && existing.length > 0) {
+        clientSecret = existing;
+      }
+    }
+    const config: SharePointConfig = {
+      tenantId: spTenantId.trim(),
+      clientId: spClientId.trim(),
+      clientSecret,
+      siteUrl: spSiteUrl.trim(),
+    };
+    if (spDriveName.trim()) config.driveName = spDriveName.trim();
+    if (spRootFolderPath.trim()) config.rootFolderPath = spRootFolderPath.trim();
+    // Only send `recursive` when it differs from the default (true) — keeps
+    // the persisted config minimal.
+    if (spRecursive === false) config.recursive = false;
+    const inc = parseLines(spIncludeMimes);
+    if (inc.length > 0) config.includeMimeTypes = inc;
+    const exc = parseLines(spExcludeMimes);
+    if (exc.length > 0) config.excludeMimeTypes = exc;
+    return config;
+  };
+
   const buildConfig = (): Record<string, unknown> => {
     if (type === 's3') {
       const cfg = buildS3Config();
@@ -560,6 +633,9 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
     }
     if (type === 'notion') {
       return buildNotionConfig() as unknown as Record<string, unknown>;
+    }
+    if (type === 'sharepoint') {
+      return buildSharePointConfig() as unknown as Record<string, unknown>;
     }
     return buildLocalConfig() as unknown as Record<string, unknown>;
   };
@@ -1380,6 +1456,221 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                 Désactivé par défaut. Activez pour indexer les pages déplacées vers la corbeille.
               </HelperText>
             </label>
+          </div>
+
+          {/* Test button */}
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => void handleTest()}
+              disabled={testing || saving}
+              className="px-3 py-2 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-300 text-sm font-medium transition-all duration-200 disabled:opacity-50"
+            >
+              {testing ? 'Test…' : 'Tester la connexion'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* SharePoint config                                                    */}
+      {/* ------------------------------------------------------------------ */}
+      {type === 'sharepoint' && (
+        <div className="space-y-4">
+          {/* Setup helper — admin-facing onboarding steps. */}
+          <div className="p-3 rounded-lg bg-os-950/30 border border-os-900/40 text-xs text-gray-400 space-y-1">
+            <p className="font-medium text-gray-300">Préparation de l'application Azure AD</p>
+            <ol className="list-decimal list-inside space-y-0.5 ml-1">
+              <li>
+                Enregistrer une application dans Azure AD (
+                <span className="font-mono-plex">portal.azure.com</span> → App registrations).
+              </li>
+              <li>
+                Ajouter la permission <span className="font-mono-plex">Application</span> :{' '}
+                <span className="font-mono-plex">Sites.Read.All</span> (large) ou{' '}
+                <span className="font-mono-plex">Sites.Selected</span> (portée par site).
+              </li>
+              <li>
+                Cliquer «&nbsp;Grant admin consent&nbsp;» pour activer la permission au niveau du
+                tenant.
+              </li>
+              <li>
+                Sous «&nbsp;Certificates &amp; secrets&nbsp;», créer un client secret et le copier
+                (affiché une seule fois).
+              </li>
+              <li>Renseigner tenantId, clientId et le secret ci-dessous.</li>
+            </ol>
+          </div>
+
+          {/* Tenant + client IDs */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <FieldLabel htmlFor="sp-tenant-id" required>
+                Tenant ID
+              </FieldLabel>
+              <input
+                id="sp-tenant-id"
+                type="text"
+                value={spTenantId}
+                onChange={(e) => setSpTenantId(e.target.value)}
+                placeholder="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+                className="input-editorial w-full text-sm mt-1 font-mono-plex"
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <HelperText>GUID du tenant Azure AD.</HelperText>
+            </div>
+            <div>
+              <FieldLabel htmlFor="sp-client-id" required>
+                Client ID
+              </FieldLabel>
+              <input
+                id="sp-client-id"
+                type="text"
+                value={spClientId}
+                onChange={(e) => setSpClientId(e.target.value)}
+                placeholder="ffffffff-1111-2222-3333-444444444444"
+                className="input-editorial w-full text-sm mt-1 font-mono-plex"
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <HelperText>GUID de l'application enregistrée.</HelperText>
+            </div>
+          </div>
+
+          {/* Client secret */}
+          <div>
+            <FieldLabel htmlFor="sp-client-secret" required={!isEditing}>
+              Client secret
+            </FieldLabel>
+            <input
+              id="sp-client-secret"
+              type="password"
+              value={spClientSecret}
+              onChange={(e) => setSpClientSecret(e.target.value)}
+              placeholder={isEditing ? '(inchangé)' : '••••••••••••••••••••'}
+              className="input-editorial w-full text-sm mt-1 font-mono-plex"
+              autoComplete="new-password"
+              spellCheck={false}
+            />
+            {isEditing && (
+              <HelperText>Laissez vide pour conserver le secret existant.</HelperText>
+            )}
+          </div>
+
+          {/* Site URL */}
+          <div>
+            <FieldLabel htmlFor="sp-site-url" required>
+              URL du site SharePoint
+            </FieldLabel>
+            <input
+              id="sp-site-url"
+              type="text"
+              value={spSiteUrl}
+              onChange={(e) => setSpSiteUrl(e.target.value)}
+              placeholder="https://contoso.sharepoint.com/sites/intranet"
+              className="input-editorial w-full text-sm mt-1 font-mono-plex"
+              autoComplete="off"
+              spellCheck={false}
+            />
+            <HelperText>
+              URL complète (
+              <span className="font-mono-plex">https://contoso.sharepoint.com/sites/...</span>) ou
+              forme hôte-relative (
+              <span className="font-mono-plex">contoso.sharepoint.com:/sites/...</span>).
+            </HelperText>
+          </div>
+
+          {/* Recursive */}
+          <div className="flex items-start gap-2">
+            <input
+              id="sp-recursive"
+              type="checkbox"
+              checked={spRecursive}
+              onChange={(e) => setSpRecursive(e.target.checked)}
+              className="mt-0.5 accent-os-500 focus:ring-2 focus:ring-os-500"
+            />
+            <label htmlFor="sp-recursive" className="text-sm text-gray-400 select-none">
+              Indexer récursivement les sous-dossiers
+              <HelperText>Désactivez pour n'indexer que le dossier racine.</HelperText>
+            </label>
+          </div>
+
+          {/* Advanced section */}
+          <div className="border border-white/5 rounded-lg overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setSpShowAdvanced((v) => !v)}
+              className="w-full flex items-center justify-between px-3 py-2.5 text-xs text-gray-400 hover:text-gray-300 hover:bg-white/[0.03] transition-colors"
+              aria-expanded={spShowAdvanced}
+            >
+              <span className="font-medium">Avancé (drive, sous-dossier, filtres mime)</span>
+              <span aria-hidden="true" className="text-gray-600">
+                {spShowAdvanced ? '▲' : '▼'}
+              </span>
+            </button>
+
+            {spShowAdvanced && (
+              <div className="px-3 pb-4 pt-1 space-y-3 border-t border-white/5">
+                <div>
+                  <FieldLabel htmlFor="sp-drive-name">Nom du Document Library</FieldLabel>
+                  <input
+                    id="sp-drive-name"
+                    type="text"
+                    value={spDriveName}
+                    onChange={(e) => setSpDriveName(e.target.value)}
+                    placeholder="Documents"
+                    className="input-editorial w-full text-sm mt-1"
+                  />
+                  <HelperText>
+                    Par défaut : la bibliothèque «&nbsp;Documents&nbsp;» principale du site.
+                  </HelperText>
+                </div>
+
+                <div>
+                  <FieldLabel htmlFor="sp-root-path">Sous-dossier racine</FieldLabel>
+                  <input
+                    id="sp-root-path"
+                    type="text"
+                    value={spRootFolderPath}
+                    onChange={(e) => setSpRootFolderPath(e.target.value)}
+                    placeholder="/Shared Documents/Projects"
+                    className="input-editorial w-full text-sm mt-1 font-mono-plex"
+                  />
+                  <HelperText>
+                    Chemin à l'intérieur du drive (ex. <span className="font-mono-plex">/Shared
+                    Documents/Projects</span>). Laissez vide pour indexer toute la bibliothèque.
+                  </HelperText>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <FieldLabel htmlFor="sp-include-mimes">Include mime types</FieldLabel>
+                    <textarea
+                      id="sp-include-mimes"
+                      value={spIncludeMimes}
+                      onChange={(e) => setSpIncludeMimes(e.target.value)}
+                      placeholder={'application/pdf\napplication/vnd.openxmlformats-officedocument.wordprocessingml.document'}
+                      rows={3}
+                      className="input-editorial w-full text-sm mt-1 font-mono-plex resize-y"
+                    />
+                    <HelperText>Un mime type par ligne. Vide = tout inclure.</HelperText>
+                  </div>
+                  <div>
+                    <FieldLabel htmlFor="sp-exclude-mimes">Exclude mime types</FieldLabel>
+                    <textarea
+                      id="sp-exclude-mimes"
+                      value={spExcludeMimes}
+                      onChange={(e) => setSpExcludeMimes(e.target.value)}
+                      placeholder={'image/png\napplication/x-zip-compressed'}
+                      rows={3}
+                      className="input-editorial w-full text-sm mt-1 font-mono-plex resize-y"
+                    />
+                    <HelperText>Un mime type par ligne.</HelperText>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Test button */}

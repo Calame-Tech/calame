@@ -1,0 +1,36 @@
+{
+  "name": "@calame-ee/rag-microsoft",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Calame Enterprise RAG Microsoft 365 connectors (SharePoint via Microsoft Graph, client credentials flow). Licensed under BUSL 1.1.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "node ../../node_modules/typescript/bin/tsc",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@azure/identity": "^4.4.1",
+    "@microsoft/microsoft-graph-client": "^3.0.7",
+    "mime-types": "^2.1.35"
+  },
+  "peerDependencies": {
+    "@calame-ee/rag-connectors": "workspace:*",
+    "@calame-ee/rag-core": "workspace:*"
+  },
+  "devDependencies": {
+    "@calame-ee/rag-connectors": "workspace:*",
+    "@calame-ee/rag-core": "workspace:*",
+    "@types/mime-types": "^2.1.4",
+    "typescript": "~5.7.0",
+    "vitest": "^2.1.0"
+  },
+  "license": "BUSL-1.1"
+}

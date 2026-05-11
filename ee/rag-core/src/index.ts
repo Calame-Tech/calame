@@ -33,9 +33,17 @@ export {
 	chunkPlainText,
 	chunkMarkdown,
 	chunkCsv,
+	chunkCode,
 	countTokens,
 } from './chunker/index.js';
-export type { Chunk, ChunkOptions, Chunker } from './chunker/index.js';
+export type {
+	Chunk,
+	ChunkOptions,
+	Chunker,
+	CodeChunkOptions,
+	CodeChunkExtraOptions,
+	PickChunkerHints,
+} from './chunker/index.js';
 // Legacy aliases — keep external consumers building until the next major.
 export { chunkText } from './chunker/token-chunker.js';
 export type { TokenChunk, TokenChunkOptions } from './chunker/token-chunker.js';
@@ -63,8 +71,15 @@ export {
 	markdownParser,
 	csvParser,
 	htmlParser,
+	codeParser,
+	detectLanguageFromFilename,
 } from './parsers/index.js';
-export type { DocumentParser, ParsedDocument } from './parsers/types.js';
+export type {
+	DocumentParser,
+	ParsedDocument,
+	ParsedDocumentFormat,
+	CodeLanguage,
+} from './parsers/types.js';
 
 // ---------- Pipeline ----------
 export { IngestionPipeline } from './pipeline/ingest.js';

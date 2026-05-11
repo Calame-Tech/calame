@@ -24,16 +24,34 @@ describe('pickChunker(format)', () => {
 		expect(pickChunker('')).toBe(chunkPlainText);
 	});
 
+	it('returns a working code chunker for format="code" with language hint', () => {
+		const chunker = pickChunker('code', { language: 'typescript', filename: 'a.ts' });
+		const chunks = chunker('export function foo() {\n  return 1;\n}\n', { maxTokens: 512 });
+		expect(chunks).toHaveLength(1);
+		expect(chunks[0]!.text).toContain('// Language: typescript');
+		expect(chunks[0]!.text).toContain('function foo');
+	});
+
+	it('falls back to plain chunking for format="code" without a language', () => {
+		const chunker = pickChunker('code');
+		const chunks = chunker('hello world', { maxTokens: 512 });
+		expect(chunks).toHaveLength(1);
+		// No preamble because we degraded to plain.
+		expect(chunks[0]!.text).not.toContain('// Language:');
+	});
+
 	it('produces a shape-compatible Chunk[] regardless of which chunker is picked', () => {
 		const markdownChunker = pickChunker('markdown');
 		const csvChunker = pickChunker('csv');
 		const plainChunker = pickChunker('plain');
+		const codeChunker = pickChunker('code', { language: 'python', filename: 'a.py' });
 
 		const mdChunks = markdownChunker('# Hi\n\nBody.', { maxTokens: 512 });
 		const csvChunks = csvChunker('a, b\na: 1, b: 2', { maxTokens: 512 });
 		const plainChunks = plainChunker('Hello world.', { maxTokens: 512 });
+		const codeChunks = codeChunker('def hi():\n    return 1\n', { maxTokens: 512 });
 
-		for (const set of [mdChunks, csvChunks, plainChunks]) {
+		for (const set of [mdChunks, csvChunks, plainChunks, codeChunks]) {
 			for (const chunk of set) {
 				expect(chunk).toHaveProperty('position');
 				expect(chunk).toHaveProperty('text');

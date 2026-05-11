@@ -125,11 +125,18 @@ export class IngestionPipeline {
 		}
 
 		// Parse + chunk + embed BEFORE we touch the DB so we don't leave it half-written.
-		const parser = getParserForMimeType(input.mimeType);
-		const parsed = await parser(input.buffer);
+		// Pass the source-relative path so the dispatcher can route generic
+		// `text/plain` to the code parser when the extension is recognized.
+		const parser = getParserForMimeType(input.mimeType, input.path);
+		const parsed = await parser(input.buffer, input.path);
 		// Pick the chunker that matches the parser's declared format. Falls
 		// back to the plain chunker when the parser omits a format hint.
-		const chunker = pickChunker(parsed.format);
+		// For `code`, the chunker also needs the detected language and the
+		// filename so it can emit a language-appropriate preamble.
+		const chunker = pickChunker(parsed.format, {
+			language: parsed.language,
+			filename: parsed.filename ?? deriveDocumentName(input.path),
+		});
 		const chunks = chunker(parsed.text, this.chunkOptions);
 		const embeddings: number[][] =
 			chunks.length > 0 ? await this.embeddingClient.embed(chunks.map((c) => c.text)) : [];

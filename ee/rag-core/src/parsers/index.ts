@@ -7,6 +7,8 @@ import * as docxParser from './docx.js';
 import * as markdownParser from './markdown.js';
 import * as csvParser from './csv.js';
 import * as htmlParser from './html.js';
+import * as codeParser from './code.js';
+import { CODE_MIME_TYPES, hasCodeExtension } from './code.js';
 import type { DocumentParser, ParsedDocument } from './types.js';
 
 /** Thrown when no parser is registered for a given MIME type. */
@@ -33,17 +35,50 @@ const MIME_MAP: Record<string, DocumentParser> = {
 	'text/plain': parsePlainText,
 };
 
+// Add the code-specific MIME types up-front so they short-circuit the
+// `text/plain` fallback.
+for (const mime of CODE_MIME_TYPES) {
+	MIME_MAP[mime] = codeParser.parse;
+}
+
+function normalizeMimeType(mime: string): string {
+	return mime.split(';')[0]?.trim().toLowerCase() ?? '';
+}
+
 /**
  * Resolve a parser for a MIME type. The lookup is case-insensitive and ignores
  * any `; charset=...` suffix.
  *
- * @throws {UnsupportedMimeTypeError} for unknown / unsupported MIME types.
+ * When the MIME type resolves to the generic `text/plain` (or is omitted /
+ * unrecognized but the filename has a known source-code extension), the
+ * dispatcher routes to the code parser instead. This lets a `.py` file
+ * uploaded with MIME `text/plain` still benefit from the structure-aware
+ * code chunker.
+ *
+ * @throws {UnsupportedMimeTypeError} for unknown / unsupported MIME types
+ *   when no filename hint can rescue the lookup.
  */
-export function getParserForMimeType(mime: string): DocumentParser {
-	const normalized = mime.split(';')[0]?.trim().toLowerCase() ?? '';
-	const parser = MIME_MAP[normalized];
-	if (!parser) throw new UnsupportedMimeTypeError(mime);
-	return parser;
+export function getParserForMimeType(mime: string, filename?: string): DocumentParser {
+	const normalized = normalizeMimeType(mime);
+
+	// Direct hit on the MIME map.
+	const direct = MIME_MAP[normalized];
+	if (direct) {
+		// Special case: `text/plain` is the most common upload type, but a file
+		// with a recognized code extension should be parsed as code so the
+		// structure-aware chunker kicks in.
+		if (normalized === 'text/plain' && hasCodeExtension(filename)) {
+			return codeParser.parse;
+		}
+		return direct;
+	}
+
+	// Unknown MIME, but the filename has a known code extension → code parser.
+	if (hasCodeExtension(filename)) {
+		return codeParser.parse;
+	}
+
+	throw new UnsupportedMimeTypeError(mime);
 }
 
 /** Returns the list of MIME types this build supports. Useful for UI hints. */
@@ -51,5 +86,11 @@ export function listSupportedMimeTypes(): string[] {
 	return Object.keys(MIME_MAP);
 }
 
-export type { DocumentParser, ParsedDocument, ParsedDocumentFormat } from './types.js';
-export { pdfParser, docxParser, markdownParser, csvParser, htmlParser };
+export type {
+	DocumentParser,
+	ParsedDocument,
+	ParsedDocumentFormat,
+	CodeLanguage,
+} from './types.js';
+export { pdfParser, docxParser, markdownParser, csvParser, htmlParser, codeParser };
+export { detectLanguageFromFilename } from './code.js';

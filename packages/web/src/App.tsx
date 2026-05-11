@@ -2683,7 +2683,7 @@ function McpDetailView({
               >
                 <RagAccessSelector
                   profileName={profile.name}
-                  initialScopes={profile.scopes as unknown as Record<string, ScopeSelection>}
+                  initialScopes={(profile.scopes ?? {}) as unknown as Record<string, ScopeSelection>}
                   initialSources={profile.sources ?? []}
                   onSaved={(newScopes, newSources) => {
                     // Update local profile state — do NOT call persistProfiles here.

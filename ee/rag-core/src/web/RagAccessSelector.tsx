@@ -471,11 +471,14 @@ function FolderRow({
 
 export default function RagAccessSelector({
   profileName,
-  initialScopes,
+  initialScopes: rawInitialScopes,
   initialSources,
   onSaved,
   onCancel,
 }: RagAccessSelectorProps) {
+  // Defensive: a profile with no scopes yet passes `undefined` from the host.
+  // Coerce to {} so `initialScopes[source.id]` lookups never throw.
+  const initialScopes = rawInitialScopes ?? {};
   const [sourceNodes, setSourceNodes] = useState<SourceNode[]>([]);
   const [folderMap, setFolderMap] = useState<FolderMap>({});
   const [loading, setLoading] = useState(true);

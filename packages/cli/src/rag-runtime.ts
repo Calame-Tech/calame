@@ -781,11 +781,37 @@ export async function initRagRuntime(
       log.info('RAG: CALAME_RAG_RERANK=off — rerank disabled by env flag.');
     }
 
+    // -----------------------------------------------------------------------
+    // PII masking config (Phase 5 / Tranche 3)
+    //
+    // Parses CALAME_RAG_PII_MASK into a typed RagPiiMaskingConfig. The parser
+    // is "safe-by-default": undefined / 'on' / typo → enabled with mode=replace
+    // and the default category set (email, phone, credit_card, ip_address,
+    // ssn). Only 'off' or 'none' actually disable masking.
+    //
+    // We pass the SAME config to every adapter — global behaviour. Per-source
+    // overrides are deferred to a later phase (would require a UI flag on the
+    // source CRUD).
+    // -----------------------------------------------------------------------
+    const piiMasking = ragCore.parseRagPiiConfig(process.env.CALAME_RAG_PII_MASK);
+    if (piiMasking.enabled) {
+      log.info(
+        `RAG PII masking: enabled (mode=${piiMasking.mode}, categories=${piiMasking.categories.join(',')}).`,
+      );
+    } else {
+      log.warn(
+        'RAG PII masking: DISABLED (CALAME_RAG_PII_MASK=off). Chunk text and full ' +
+          'document content are returned to the LLM verbatim. Not recommended for ' +
+          'regulated industries.',
+      );
+    }
+
     // Build and register the adapter.
     const deps: import('@calame-ee/rag-core').DocumentAdapterDeps = {
       resolveConnector,
       searchIndex,
       storage,
+      piiMasking,
     };
 
     const documentAdapter = ragCore.buildDocumentSourceAdapter(deps, 'local', 'Local folder');

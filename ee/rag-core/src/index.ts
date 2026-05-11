@@ -93,6 +93,10 @@ export type {
 	DocumentStorage,
 } from './source-adapter.js';
 
+// ---------- PII Masking ----------
+export { parseRagPiiConfig, maskSearchResult } from './pii-masking.js';
+export type { RagPiiMaskingConfig } from './pii-masking.js';
+
 // ---------- Search ----------
 export { HybridSearchIndex, escapeFtsQuery } from './search/hybrid-search.js';
 export type { HybridSearchDeps } from './search/hybrid-search.js';

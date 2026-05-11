@@ -39,8 +39,10 @@ import type {
   DocumentFolderInfo,
   DocumentItemInfo,
   AuditLogEntry,
+  PiiCategory,
 } from '@calame/core';
 import type { RagFolder, RagDocument, RagSearchResult } from './types.js';
+import { maskSearchResult, type RagPiiMaskingConfig } from './pii-masking.js';
 
 // ---------------------------------------------------------------------------
 // Public config type
@@ -133,6 +135,15 @@ export interface DocumentAdapterDeps {
   searchIndex: DocumentSearchIndex;
   /** Read-side accessors over the SQLite-backed RAG tables. */
   storage: DocumentStorage;
+  /**
+   * Optional PII-masking config applied to chunk text and full-document text
+   * before they are returned to the LLM. When `undefined`, masking is
+   * skipped entirely (no scan, no audit counts). Hosts that DO build a
+   * config should pass {@link parseRagPiiConfig} (or equivalent) — that
+   * helper already enforces the "safe-by-default" behaviour expected for
+   * regulated industries.
+   */
+  piiMasking?: RagPiiMaskingConfig;
 }
 
 // ---------------------------------------------------------------------------
@@ -383,19 +394,26 @@ export function buildDocumentSourceAdapter(
       // Shorthand for audit logging. durationMs is measured from the provided
       // startTime (Date.now() at handler entry) so the entry reflects actual
       // async execution time rather than a hard-coded 0.
+      //
+      // `piiRedacted`, when present, is the aggregate count map produced by
+      // {@link maskSearchResult} / {@link applyPiiMasking}. We log COUNTS only
+      // — never the redacted values — so audit logs stay safe to ship to any
+      // SIEM. Pass `undefined` (or an empty map) to omit the field.
       const audit = (
         tool: string,
         args: Record<string, unknown>,
         resultSummary: string,
         result: 'success' | 'error' = 'success',
         startTime: number = Date.now(),
+        piiRedacted?: Partial<Record<PiiCategory, number>>,
       ): void => {
+        const hasRedactions = piiRedacted && Object.keys(piiRedacted).length > 0;
         const entry: AuditLogEntry = {
           id: nanoid(),
           timestamp: new Date().toISOString(),
           profileName: ctx.profileName,
           toolName: `${ns}${tool}`,
-          toolArgs: args,
+          toolArgs: hasRedactions ? { ...args, piiRedacted } : args,
           result,
           resultSummary,
           durationMs: Date.now() - startTime,
@@ -466,8 +484,33 @@ export function buildDocumentSourceAdapter(
             };
           });
 
-          const response = { chunks: cappedChunks };
-          audit('rag_search', { query: args.query, topK }, `${cappedChunks.length} chunks returned`, 'success', t0);
+          // Apply PII masking BEFORE shipping the chunks to the LLM. Order
+          // matters: we cap THEN mask so the mask's placeholder labels are
+          // not themselves truncated mid-token. Masking is a structural
+          // no-op when piiMasking is undefined or `enabled: false`.
+          let piiRedacted: Partial<Record<PiiCategory, number>> | undefined;
+          let outChunks = cappedChunks;
+          if (deps.piiMasking?.enabled) {
+            // `maskSearchResult` accepts a RagSearchResult-shaped object;
+            // our `cappedChunks` carries an extra `truncated` field, which
+            // the function preserves via spread. Cast at the boundary.
+            const masked = maskSearchResult(
+              { chunks: cappedChunks as unknown as RagSearchResult['chunks'] },
+              deps.piiMasking,
+            );
+            outChunks = masked.result.chunks as unknown as typeof cappedChunks;
+            piiRedacted = masked.redactionCounts;
+          }
+
+          const response = { chunks: outChunks };
+          audit(
+            'rag_search',
+            { query: args.query, topK },
+            `${outChunks.length} chunks returned`,
+            'success',
+            t0,
+            piiRedacted,
+          );
 
           return {
             content: [{ type: 'text', text: JSON.stringify(response) }],
@@ -730,12 +773,43 @@ export function buildDocumentSourceAdapter(
           }
 
           const { text: capped, truncated } = capDocText(text);
+
+          // Apply PII masking to the full-document text BEFORE returning it
+          // to the LLM. Same fast-path as rag_search: when piiMasking is
+          // undefined or `enabled: false`, this is a structural no-op.
+          let finalText = capped;
+          let piiRedacted: Partial<Record<PiiCategory, number>> | undefined;
+          if (deps.piiMasking?.enabled) {
+            // Lazy import would be cleaner but `applyPiiMasking` is already
+            // pulled in transitively via maskSearchResult; importing it at
+            // the top of the file keeps the tree-shaker happy and avoids a
+            // dynamic require in a hot path.
+            const masked = maskSearchResult(
+              {
+                chunks: [
+                  {
+                    text: capped,
+                    score: 0,
+                    sourceId: doc.sourceId,
+                    folder: '',
+                    fileName: doc.name,
+                    position: 0,
+                    documentId: doc.id,
+                  },
+                ],
+              },
+              deps.piiMasking,
+            );
+            finalText = masked.result.chunks[0]?.text ?? capped;
+            piiRedacted = masked.redactionCounts;
+          }
+
           const response = {
             id: doc.id,
             name: doc.name,
             mimeType: doc.mimeType,
             size: doc.size,
-            text: capped,
+            text: finalText,
             truncated,
           };
 
@@ -745,6 +819,7 @@ export function buildDocumentSourceAdapter(
             `${doc.size} bytes, truncated=${truncated}`,
             'success',
             t0,
+            piiRedacted,
           );
           return {
             content: [{ type: 'text', text: JSON.stringify(response) }],

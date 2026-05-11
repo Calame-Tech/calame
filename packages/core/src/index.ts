@@ -36,6 +36,12 @@ export type {
   GlobalMaskingRule,
 } from './pii/types.js';
 export { detectColumnPii, detectTablePii } from './pii/detector.js';
+export {
+  scanTextForPii,
+  applyPiiMasking,
+  DEFAULT_TEXT_PII_CATEGORIES,
+} from './pii/text-scanner.js';
+export type { PiiSpan, TextMaskingMode } from './pii/text-scanner.js';
 
 // Sources — abstract adapter system
 export * from './sources/index.js';

@@ -62,7 +62,7 @@ const SOURCE_TYPES: readonly SourceTypeMeta[] = [
   { value: 'local', label: 'Local (dossier)', available: true },
   { value: 's3', label: 'S3 / R2 / MinIO', available: true },
   { value: 'http', label: 'HTTP / URL', available: true },
-  { value: 'gdrive', label: 'Google Drive', available: false },
+  { value: 'gdrive', label: 'Google Drive', available: true },
   { value: 'gsheets', label: 'Google Sheets', available: false },
   { value: 'sharepoint', label: 'SharePoint', available: false },
   { value: 'notion', label: 'Notion', available: false },
@@ -97,6 +97,54 @@ interface HttpConfig {
   allowedHosts?: string[];
   includeGlobs?: string[];
   excludeGlobs?: string[];
+}
+
+interface GDriveConfig {
+  serviceAccountKey: Record<string, unknown>;
+  rootFolderId: string;
+  impersonateAs?: string;
+  recursive?: boolean;
+  includeMimeTypes?: string[];
+  excludeMimeTypes?: string[];
+}
+
+/**
+ * Result of validating a pasted Service Account JSON. We surface a friendly
+ * message rather than `JSON.parse` exceptions so the admin sees what's wrong
+ * (and we never leak the parser's internal positional message).
+ */
+interface ServiceAccountKeyValidation {
+  /** Parsed object on success; null on failure. */
+  key: Record<string, unknown> | null;
+  /** Service account email pulled from the key (helper hint in the UI). */
+  clientEmail: string | null;
+  /** Human-readable error, or null when the key parses & has the required fields. */
+  error: string | null;
+}
+
+function validateServiceAccountKey(raw: string): ServiceAccountKeyValidation {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return { key: null, clientEmail: null, error: null };
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return { key: null, clientEmail: null, error: 'JSON invalide.' };
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { key: null, clientEmail: null, error: "Doit être un objet JSON." };
+  }
+  const obj = parsed as Record<string, unknown>;
+  const email = typeof obj.client_email === 'string' ? obj.client_email : null;
+  if (!email) {
+    return { key: null, clientEmail: null, error: 'Champ `client_email` manquant.' };
+  }
+  if (typeof obj.private_key !== 'string' || obj.private_key.length === 0) {
+    return { key: null, clientEmail: email, error: 'Champ `private_key` manquant.' };
+  }
+  return { key: obj, clientEmail: email, error: null };
 }
 
 /** Split a multi-line textarea value into trimmed, non-empty lines. */
@@ -254,6 +302,37 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
     return parseLines(httpUrls).filter((u) => !isValidHttpUrl(u));
   }, [httpMode, httpUrls]);
 
+  // ---- gdrive fields ----
+  // The Service Account JSON is sensitive; we never pre-fill the textarea.
+  // In edit mode the user leaves it blank to "keep the existing key" — same
+  // pattern as the S3 secretAccessKey field. The decrypted config returned
+  // from GET still carries the key so buildConfig() can re-inject it on save.
+  const [gdriveServiceAccountKey, setGdriveServiceAccountKey] = useState('');
+  const [gdriveRootFolderId, setGdriveRootFolderId] = useState(
+    extractStr(initial?.config, 'rootFolderId'),
+  );
+  const [gdriveImpersonateAs, setGdriveImpersonateAs] = useState(
+    extractStr(initial?.config, 'impersonateAs'),
+  );
+  const [gdriveRecursive, setGdriveRecursive] = useState<boolean>(() => {
+    if (!initial?.config) return true;
+    return initial.config.recursive === false ? false : true;
+  });
+  const [gdriveIncludeMimes, setGdriveIncludeMimes] = useState(
+    extractGlobsAsText(initial?.config, 'includeMimeTypes'),
+  );
+  const [gdriveExcludeMimes, setGdriveExcludeMimes] = useState(
+    extractGlobsAsText(initial?.config, 'excludeMimeTypes'),
+  );
+  const [gdriveShowAdvanced, setGdriveShowAdvanced] = useState(false);
+
+  // Live-validate the pasted JSON so we can show the service account email
+  // (so the user knows whom to share the folder with) and a clear error.
+  const gdriveKeyValidation = useMemo(
+    () => validateServiceAccountKey(gdriveServiceAccountKey),
+    [gdriveServiceAccountKey],
+  );
+
   // ---- ui state ----
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -306,6 +385,18 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
         if (!httpSitemapUrl.trim()) return "L'URL du sitemap est requise.";
         if (!isValidHttpUrl(httpSitemapUrl.trim()))
           return "L'URL du sitemap doit être une URL http(s):// valide.";
+      }
+    }
+
+    if (type === 'gdrive') {
+      if (!gdriveRootFolderId.trim()) return "L'ID du dossier Google Drive est requis.";
+      // In edit mode the JSON textarea may be left blank (means "keep current").
+      if (!isEditing && !gdriveServiceAccountKey.trim()) {
+        return 'Collez la clé JSON du Service Account.';
+      }
+      // If the user pasted something, it must validate.
+      if (gdriveServiceAccountKey.trim() && gdriveKeyValidation.error) {
+        return `Service Account JSON invalide : ${gdriveKeyValidation.error}`;
       }
     }
 
@@ -365,6 +456,40 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
     return config;
   };
 
+  const buildGDriveConfig = (): GDriveConfig => {
+    // When the JSON is blank in edit mode, re-inject the previously-saved key
+    // (decrypted by the GET endpoint and present in initial.config) so the
+    // PATCH payload doesn't wipe it. Same pattern as the S3 secretAccessKey.
+    let key: Record<string, unknown> | null = gdriveKeyValidation.key;
+    if (!key && isEditing) {
+      const existing = initial?.config?.['serviceAccountKey'];
+      if (existing && typeof existing === 'object' && !Array.isArray(existing)) {
+        key = existing as Record<string, unknown>;
+      } else if (typeof existing === 'string' && existing.length > 0) {
+        try {
+          key = JSON.parse(existing) as Record<string, unknown>;
+        } catch {
+          // Surface as validation error rather than crashing — but the
+          // validate() call above already gates on `gdriveKeyValidation.error`.
+          key = null;
+        }
+      }
+    }
+    const config: GDriveConfig = {
+      serviceAccountKey: key ?? {},
+      rootFolderId: gdriveRootFolderId.trim(),
+    };
+    if (gdriveImpersonateAs.trim()) config.impersonateAs = gdriveImpersonateAs.trim();
+    // Only send `recursive` when it differs from the default (true) — keeps
+    // the persisted config minimal.
+    if (gdriveRecursive === false) config.recursive = false;
+    const inc = parseLines(gdriveIncludeMimes);
+    if (inc.length > 0) config.includeMimeTypes = inc;
+    const exc = parseLines(gdriveExcludeMimes);
+    if (exc.length > 0) config.excludeMimeTypes = exc;
+    return config;
+  };
+
   const buildConfig = (): Record<string, unknown> => {
     if (type === 's3') {
       const cfg = buildS3Config();
@@ -382,6 +507,9 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
     }
     if (type === 'http') {
       return buildHttpConfig() as unknown as Record<string, unknown>;
+    }
+    if (type === 'gdrive') {
+      return buildGDriveConfig() as unknown as Record<string, unknown>;
     }
     return buildLocalConfig() as unknown as Record<string, unknown>;
   };
@@ -931,6 +1059,177 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                       className="input-editorial w-full text-sm mt-1 font-mono-plex resize-y"
                     />
                     <HelperText>Une glob par ligne.</HelperText>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Test button */}
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => void handleTest()}
+              disabled={testing || saving}
+              className="px-3 py-2 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-300 text-sm font-medium transition-all duration-200 disabled:opacity-50"
+            >
+              {testing ? 'Test…' : 'Tester la connexion'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Google Drive config                                                  */}
+      {/* ------------------------------------------------------------------ */}
+      {type === 'gdrive' && (
+        <div className="space-y-4">
+          {/* Setup helper — admin-facing onboarding steps. */}
+          <div className="p-3 rounded-lg bg-os-950/30 border border-os-900/40 text-xs text-gray-400 space-y-1">
+            <p className="font-medium text-gray-300">Préparation du Service Account</p>
+            <ol className="list-decimal list-inside space-y-0.5 ml-1">
+              <li>Créer un Service Account dans Google Cloud Console.</li>
+              <li>Activer l'API Google Drive sur le projet.</li>
+              <li>Générer et télécharger la clé JSON du Service Account.</li>
+              <li>
+                Partager le dossier Drive avec l'email du Service Account
+                (champ <span className="font-mono-plex">client_email</span> de la clé JSON,
+                accès Viewer suffisant).
+              </li>
+            </ol>
+          </div>
+
+          {/* Service Account JSON */}
+          <div>
+            <FieldLabel htmlFor="gdrive-key" required={!isEditing}>
+              Clé JSON du Service Account
+            </FieldLabel>
+            <textarea
+              id="gdrive-key"
+              value={gdriveServiceAccountKey}
+              onChange={(e) => setGdriveServiceAccountKey(e.target.value)}
+              placeholder={
+                isEditing
+                  ? '(inchangé — laissez vide pour conserver la clé existante)'
+                  : '{ "type": "service_account", "client_email": "...", "private_key": "...", ... }'
+              }
+              rows={7}
+              autoComplete="off"
+              spellCheck={false}
+              className={`input-editorial w-full text-xs mt-1 font-mono-plex resize-y ${
+                gdriveKeyValidation.error ? 'border-red-600/60' : ''
+              }`}
+            />
+            {gdriveKeyValidation.error && (
+              <p className="text-xs text-red-400 mt-1">
+                {gdriveKeyValidation.error}
+              </p>
+            )}
+            {gdriveKeyValidation.clientEmail && !gdriveKeyValidation.error && (
+              <p className="text-xs text-green-400 mt-1">
+                Service Account détecté :{' '}
+                <span className="font-mono-plex">{gdriveKeyValidation.clientEmail}</span>
+              </p>
+            )}
+            {isEditing && (
+              <HelperText>Laissez vide pour conserver la clé enregistrée.</HelperText>
+            )}
+          </div>
+
+          {/* Root folder ID */}
+          <div>
+            <FieldLabel htmlFor="gdrive-root" required>
+              ID du dossier racine
+            </FieldLabel>
+            <input
+              id="gdrive-root"
+              type="text"
+              value={gdriveRootFolderId}
+              onChange={(e) => setGdriveRootFolderId(e.target.value)}
+              placeholder="1A2B3C4D5E6F7G8H9I0J"
+              className="input-editorial w-full text-sm mt-1 font-mono-plex"
+              autoComplete="off"
+            />
+            <HelperText>
+              Dans l'URL{' '}
+              <span className="font-mono-plex">drive.google.com/drive/folders/</span>
+              <span className="font-mono-plex font-semibold text-gray-400">&lt;cet ID&gt;</span>.
+              Le dossier doit être partagé avec le Service Account.
+            </HelperText>
+          </div>
+
+          {/* Recursive checkbox */}
+          <div className="flex items-start gap-2">
+            <input
+              id="gdrive-recursive"
+              type="checkbox"
+              checked={gdriveRecursive}
+              onChange={(e) => setGdriveRecursive(e.target.checked)}
+              className="mt-0.5 accent-os-500 focus:ring-2 focus:ring-os-500"
+            />
+            <label htmlFor="gdrive-recursive" className="text-sm text-gray-400 select-none">
+              Indexer récursivement les sous-dossiers
+              <HelperText>Désactivez pour n'indexer que le dossier racine.</HelperText>
+            </label>
+          </div>
+
+          {/* Advanced section */}
+          <div className="border border-white/5 rounded-lg overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setGdriveShowAdvanced((v) => !v)}
+              className="w-full flex items-center justify-between px-3 py-2.5 text-xs text-gray-400 hover:text-gray-300 hover:bg-white/[0.03] transition-colors"
+              aria-expanded={gdriveShowAdvanced}
+            >
+              <span className="font-medium">Avancé (impersonation, filtres mime)</span>
+              <span aria-hidden="true" className="text-gray-600">
+                {gdriveShowAdvanced ? '▲' : '▼'}
+              </span>
+            </button>
+
+            {gdriveShowAdvanced && (
+              <div className="px-3 pb-4 pt-1 space-y-3 border-t border-white/5">
+                <div>
+                  <FieldLabel htmlFor="gdrive-impersonate">Impersonate as</FieldLabel>
+                  <input
+                    id="gdrive-impersonate"
+                    type="text"
+                    value={gdriveImpersonateAs}
+                    onChange={(e) => setGdriveImpersonateAs(e.target.value)}
+                    placeholder="user@example.com"
+                    className="input-editorial w-full text-sm mt-1"
+                    autoComplete="off"
+                  />
+                  <HelperText>
+                    Délégation à l'échelle du domaine (Domain-wide delegation) uniquement.
+                    Laissez vide dans la plupart des cas.
+                  </HelperText>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <FieldLabel htmlFor="gdrive-include-mimes">Include mime types</FieldLabel>
+                    <textarea
+                      id="gdrive-include-mimes"
+                      value={gdriveIncludeMimes}
+                      onChange={(e) => setGdriveIncludeMimes(e.target.value)}
+                      placeholder={'application/pdf\napplication/vnd.google-apps.document'}
+                      rows={3}
+                      className="input-editorial w-full text-sm mt-1 font-mono-plex resize-y"
+                    />
+                    <HelperText>Un mime type par ligne. Vide = tout inclure.</HelperText>
+                  </div>
+                  <div>
+                    <FieldLabel htmlFor="gdrive-exclude-mimes">Exclude mime types</FieldLabel>
+                    <textarea
+                      id="gdrive-exclude-mimes"
+                      value={gdriveExcludeMimes}
+                      onChange={(e) => setGdriveExcludeMimes(e.target.value)}
+                      placeholder={'application/vnd.google-apps.drawing\nimage/png'}
+                      rows={3}
+                      className="input-editorial w-full text-sm mt-1 font-mono-plex resize-y"
+                    />
+                    <HelperText>Un mime type par ligne.</HelperText>
                   </div>
                 </div>
               </div>

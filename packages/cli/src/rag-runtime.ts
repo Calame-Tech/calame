@@ -120,6 +120,22 @@ export async function initRagRuntime(
     log.warn('@calame-ee/rag-connectors not installed — local source sync will return 501.');
   }
 
+  // Google Drive connector lives in its own EE package because the `googleapis`
+  // dep is heavy (~100MB with types). Pre-load it conditionally so apache-only
+  // installs (or installs that don't need GDrive) skip the cost. When the
+  // package is absent, `gdrive` sources will fall through `resolveConnector`
+  // and the route layer answers 501.
+  type RagGdriveModule = typeof import('@calame-ee/rag-gdrive');
+  let ragGdrive: RagGdriveModule | null = null;
+  try {
+    ragGdrive = await import('@calame-ee/rag-gdrive');
+  } catch {
+    log.warn(
+      '@calame-ee/rag-gdrive not installed — gdrive sources will be unavailable. ' +
+        'Install the package and restart to enable Google Drive ingestion.',
+    );
+  }
+
   // Run schema migrations against the host's SQLite DB.
   try {
     ragCore.runRagMigrations({ raw: db.raw });
@@ -272,9 +288,14 @@ export async function initRagRuntime(
   });
 
   // Build a connector resolver. Phase 1 wired `local`; Phase 3 adds `s3` and
-  // `http`. Other types (gdrive, sharepoint, …) still return null so the
-  // route layer can answer 501 with a clear message.
+  // `http`. Phase 3+ adds `gdrive` (from a separate package — see
+  // `ragGdrive` lazy-import above). Other types (sharepoint, notion, git, …)
+  // still return null so the route layer can answer 501 with a clear message.
   const resolveConnector = (type: string): ConnectorLike | null => {
+    if (type === 'gdrive') {
+      if (!ragGdrive) return null;
+      return new ragGdrive.GDriveConnector() as unknown as ConnectorLike;
+    }
     if (!ragConnectors) return null;
     if (type === 'local') {
       return new ragConnectors.LocalFolderConnector() as unknown as ConnectorLike;

@@ -18,6 +18,7 @@
     "@anthropic-ai/sdk": "^0.39.0",
     "@calame-ee/rag-connectors": "workspace:*",
     "@calame-ee/rag-core": "workspace:*",
+    "@calame-ee/rag-gdrive": "workspace:*",
     "@calame-ee/sso": "workspace:*",
     "@calame/connectors": "workspace:*",
     "@calame/core": "workspace:*",

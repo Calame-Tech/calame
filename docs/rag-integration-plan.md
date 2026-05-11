@@ -222,6 +222,30 @@ MOD packages/cli/src/routes/profile-scopes.ts              (JSDoc enrichi sur GE
 MOD ee/rag-core/src/web/RagAccessSelector.tsx              (JSDoc sur handleToggleDocument, ~13 lignes)
 ```
 
+### ✅ Livré 2026-05-11 — Test E2E RAG ingest → search → MCP (`ee/rag-core/src/__tests__/rag-e2e.test.ts`)
+
+Ferme la priorité #4 « Tests E2E manquants » (priorité haute, cf. liste précédente ligne 389). Couvre la chaîne complète qui restait sans test d'intégration : pipeline d'ingestion réel → SQLite réelle → `DocumentSearchIndex` → handler MCP `rag_search` → masquage PII → audit log.
+
+**3 tests** (24 fichiers / 348 tests verts, +3 vs. 345) :
+
+- **Path A — ingest .txt + search** : `pipeline.ingestDocument(...)` (driver direct, mirror exact de `rag-upload.ts:183`) puis appel du handler MCP `rag_search` capturé via mock `McpServer`. Vérifie chunks/documentId/fileName/text et audit entry `result: 'success'`.
+- **Path B — PII masking enabled** : document avec 2 emails, `parseRagPiiConfig(undefined)` (default-on safe-by-default). Vérifie que la réponse ne contient plus `support@example.com` mais `[EMAIL]`, que les chunks SQL **gardent** l'email verbatim (masking response-time only), et que l'audit a `piiRedacted.email >= 2`.
+- **Path C — allowList scope** : 2 documents dans 2 dossiers (`docs/public`, `docs/internal`), profile avec `allowedFolders: ['docs/public']`. Vérifie que `rag_search` retourne uniquement les chunks du dossier autorisé alors que la requête SQL sous-jacente en aurait sorti des deux.
+
+**Choix de scope documentés en tête du fichier** :
+
+- **Bypass de la couche multipart `rag-upload.ts`** : formidable exige un vrai HTTP stream et `ee/rag-core` ne dépend pas de supertest. Le test invoque `pipeline.ingestDocument` directement — c'est le seul appel non-trivial que fait le handler upload après le parsing multipart (cf. `rag-upload.ts:183-192`).
+- **`SqliteVecStore` remplacé par une `Map`** : le loader natif sqlite-vec est flaky en dev (NODE_MODULE_VERSION mismatches). Fake conforme au contrat `VectorStore` de `types.ts:181-186`.
+- **`EmbeddingClient` déterministe char-freq, dim=16, L2-normalisé** : queries identiques → vecteurs identiques, tri stable, zéro flakiness.
+- **`DocumentStorage` + `DocumentSearchIndex`** : closures sur la SQLite réelle, mirror exact des closures host `packages/cli/src/rag-runtime.ts:684-800` (storage) et `:842-923` (legacy vector-only branch).
+
+**Pourquoi ce test ferme spécifiquement le gap mentionné dans la liste précédente** :
+- Aurait détecté le bug `sourceId` placeholder du commit `781fca4` : le test #1 vérifie `documentId === doc.id` via le JOIN SQL, donc une décorrélation entre les sources du profile et `state.connections` aurait fait remonter une assertion `expect(chunks).toHaveLength(0)`.
+- Aurait détecté la régression #5 du shakedown Phase 1.5 (« /sync était un stub ») : `pipeline.ingestDocument` est appelé pour de vrai, transactional, avec embed + persist + vector upsert.
+- Aurait détecté la régression PII (#7 de la liste précédente) si le default safe-by-default régressait à `enabled: false` — le test #2 force `piiRedacted.email >= 2`.
+
+**QA review** : score 10/10, aucun bloquant. Voir séquence ci-dessus.
+
 ### ✅ Livré 2026-05-08 — Polish UX `ragDisabledReason` (commit `d774228`)
 
 Priorité #2 de la "Prochaine session" précédente.
@@ -386,7 +410,7 @@ Quand on a démarré pour tester en vrai, plusieurs choses cassaient. Voici les 
    - Smoke test manuel E2E : profile → KB scope → save → MCP server expose `rag_search` filtré sur les dossiers/docs cochés (cas allowAll + allowList)
    - Vérifier qu'au save le `RagAccessSelector` POST bien sur `/api/profiles/:name/scopes` et que le preview en bas du composant se rafraîchit immédiatement après le save (pas de stale UI)
    - Commit & QA review via `opensmith-qa-reviewer`
-4. **Tests E2E manquants** : un test qui crée une source RAG, upload un fichier, fait un `rag_search` via le MCP server. Aurait évité plusieurs fixes runtime ET le bug `sourceId` placeholder. **Priorité haute** — la confiance dans la chain RAG repose dessus. Désormais aussi un test E2E sur le `RagAccessSelector` (cocher folder → save → preview affiche le bon count).
+4. ~~**Tests E2E manquants**~~ → ✅ **livré 2026-05-11** (cf. section dédiée ci-dessus, `ee/rag-core/src/__tests__/rag-e2e.test.ts`). Couvre ingest → search → MCP → PII → allowList. Reste à faire : un test E2E sur le `RagAccessSelector` côté UI (cocher folder → save → preview affiche le bon count) — niveau de priorité ré-évalué à **moyen** (la chaîne backend critique est désormais couverte).
 5. **Phase 5 du plan unifié — Cleanup** (3/4 livré 2026-05-09, voir section dédiée) :
    - ✅ ~~Ajouter ESLint rule `no-cross-license-import`~~ → livré (cible RAG uniquement, SSO reporté)
    - ✅ ~~JSDoc enrichi GET /preview + commentaire bascule auto-include/strict~~ → livré

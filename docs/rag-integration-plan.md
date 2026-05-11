@@ -411,12 +411,12 @@ Quand on a démarré pour tester en vrai, plusieurs choses cassaient. Voici les 
    - Vérifier qu'au save le `RagAccessSelector` POST bien sur `/api/profiles/:name/scopes` et que le preview en bas du composant se rafraîchit immédiatement après le save (pas de stale UI)
    - Commit & QA review via `opensmith-qa-reviewer`
 4. ~~**Tests E2E manquants**~~ → ✅ **livré 2026-05-11** (cf. section dédiée ci-dessus, `ee/rag-core/src/__tests__/rag-e2e.test.ts`). Couvre ingest → search → MCP → PII → allowList. Reste à faire : un test E2E sur le `RagAccessSelector` côté UI (cocher folder → save → preview affiche le bon count) — niveau de priorité ré-évalué à **moyen** (la chaîne backend critique est désormais couverte).
-5. **Phase 5 du plan unifié — Cleanup** (3/4 livré 2026-05-09, voir section dédiée) :
+5. **Phase 5 du plan unifié — Cleanup** (4/5 livré 2026-05-11, voir section dédiée) :
    - ✅ ~~Ajouter ESLint rule `no-cross-license-import`~~ → livré (cible RAG uniquement, SSO reporté)
    - ✅ ~~JSDoc enrichi GET /preview + commentaire bascule auto-include/strict~~ → livré
    - 📋 **Retirer les `@deprecated` fields de `ServeProfile`** : audit révèle 166 call sites encore actifs. Tranche dédiée 1-2 jours, plan d'attaque détaillé dans la section "🚧 En cours 2026-05-09 — Phase 5"
    - 📋 Drop alias middleware `/api/connections/*` et `/api/rag/*` après une release avec header `Sunset` (≥ 2026-Q3)
-   - 📋 Migrer les value imports statiques `@calame-ee/sso` de `packages/cli/src/app.ts` et `packages/web/` en dynamic imports (étendre la rule cross-license à `@calame-ee/*` au lieu de seulement `@calame-ee/rag-*`)
+   - ✅ ~~Migrer les value imports statiques `@calame-ee/sso`~~ → **livré 2026-05-11** (commit `90ae706`). `packages/cli/src/sso-runtime.ts` (NEW, mirror exact de `rag-runtime.ts`) lazy-load `@calame-ee/sso` et stash les classes sur `AppState.ssoRuntime`. `app.ts` et `oauth.ts` consomment via le runtime, register les routes OIDC sous `if (appState.ssoRuntime)`. Frontend : 5 composants SSO (`OidcSettings`, `ProfileSsoNotice`, `DataScopingSection`, `SsoLoginButton`, `ChatSsoLogin`) en `React.lazy` + `Suspense` avec fallback gracieux. **Rule ESLint étendue** : `@calame-ee/rag-*` → `@calame-ee/*` (uniforme), test files exclus (`__tests__/**`, `*.test.ts(x)`). 1577 tests verts sur 11 packages, QA score 9.5/10.
    - 📋 Décider du sort de `ConnectionManager.tsx` standalone : encore utilisé via le tab `databases` de `SourcesPage` mais plus comme view top-level
 6. **Sync async (Phase 4 plan original)** : passer la sync `LocalFolderConnector` en mode background job + queue. Toujours pertinent pour gros corpora.
 7. **Connecteurs externes (Phase 3 plan original)** : `S3Connector`, `HttpConnector` dans `ee/rag-connectors`. Important pour passer du POC à un vrai usage. Bénéficie maintenant de l'UI `SourcesPage` qui peut accueillir n'importe quel kind via `AddSourceModal`.

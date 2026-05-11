@@ -292,14 +292,14 @@ export default function ChatPanel({ selectedTables, activeProfiles }: ChatPanelP
                   msg.content
                 ) : (
                   <>
-                    {msg.streaming && !msg.content && !currentText ? (
+                    {msg.streaming && !msg.content ? (
                       <span className="inline-flex gap-1 items-center h-4">
                         <span className="w-1 h-1 rounded-full bg-gray-400 animate-bounce [animation-delay:-0.3s]" />
                         <span className="w-1 h-1 rounded-full bg-gray-400 animate-bounce [animation-delay:-0.15s]" />
                         <span className="w-1 h-1 rounded-full bg-gray-400 animate-bounce" />
                       </span>
                     ) : (
-                      <MarkdownMessage content={msg.content || (msg.streaming ? currentText : '')} />
+                      <MarkdownMessage content={msg.content} />
                     )}
                     {msg.streaming && toolStatus && (
                       <p className="text-xs text-gray-500 mt-1 italic">{toolStatus}</p>

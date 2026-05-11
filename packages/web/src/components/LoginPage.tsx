@@ -1,6 +1,19 @@
-import { useState } from 'react';
+import { useState, lazy, Suspense } from 'react';
 import { apiFetch } from '../lib/api.js';
-import { SsoLoginButton } from '@calame-ee/sso/web';
+
+/**
+ * Lazy-loaded SSO login button. Deferred so the Apache bundle never statically
+ * imports the BUSL chunk. Renders nothing when the ee package is absent.
+ */
+const SsoLoginButton = lazy(() =>
+  import('@calame-ee/sso/web')
+    .then((m) => ({ default: m.SsoLoginButton }))
+    .catch(() => ({
+      default: function SsoLoginButtonUnavailable() {
+        return null;
+      },
+    })),
+);
 
 interface LoginPageProps {
   onAdminLogin: () => void;
@@ -72,7 +85,9 @@ export default function LoginPage({ onAdminLogin, onUserLogin }: LoginPageProps)
         </div>
 
         {/* SSO button — self-hides when OIDC is not configured */}
-        <SsoLoginButton />
+        <Suspense fallback={null}>
+          <SsoLoginButton />
+        </Suspense>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>

@@ -8,6 +8,7 @@ import type { WriteQueue } from './write-queue.js';
 import type { AiSettingsManager } from './ai-config.js';
 import type { SmtpConfigManager } from './smtp-config.js';
 import type { OidcConfigManager } from '@calame-ee/sso';
+import type { SsoRuntime } from './sso-runtime.js';
 import type { AppConfig } from './config.js';
 import type { Logger } from './logger.js';
 import type { EmailService } from './email.js';
@@ -46,6 +47,8 @@ export class AppState {
   private _llmRouter: LlmRouter | null = null;
   private _ragRuntime: RagRuntime | undefined = undefined;
   private _ragDisabledReason: string | null = null;
+  private _ssoRuntime: SsoRuntime | undefined = undefined;
+  private _ssoDisabledReason: string | null = null;
 
   // --- Multi-connection API ---
 
@@ -361,5 +364,25 @@ export class AppState {
 
   set ragDisabledReason(value: string | null) {
     this._ragDisabledReason = value;
+  }
+
+  // --- SSO runtime (optional, lazy-loaded from @calame-ee/sso) ---
+
+  get ssoRuntime(): SsoRuntime | undefined {
+    return this._ssoRuntime;
+  }
+
+  set ssoRuntime(value: SsoRuntime | undefined) {
+    this._ssoRuntime = value;
+  }
+
+  /** Human-readable reason why the SSO runtime failed to initialize, or `null`
+   *  when SSO is enabled or has not been attempted yet. */
+  get ssoDisabledReason(): string | null {
+    return this._ssoDisabledReason;
+  }
+
+  set ssoDisabledReason(value: string | null) {
+    this._ssoDisabledReason = value;
   }
 }

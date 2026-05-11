@@ -15,7 +15,48 @@ import WelcomePage from './components/WelcomePage.js';
 import AiSettings from './components/AiSettings.js';
 import AiSettingsAssignment from './components/AiSettingsAssignment.js';
 import SmtpSettings from './components/SmtpSettings.js';
-import { OidcSettings, ProfileSsoNotice, DataScopingSection } from '@calame-ee/sso/web';
+/**
+ * Lazy-loaded SSO components from the ee package. Deferred so the main Apache
+ * bundle never statically imports the BUSL chunk — the SSO module is only
+ * fetched at runtime when the relevant UI section is rendered.
+ */
+const OidcSettings = lazy(() =>
+  import('@calame-ee/sso/web')
+    .then((m) => ({ default: m.OidcSettings }))
+    .catch(() => ({
+      default: function OidcSettingsUnavailable() {
+        return (
+          <div className="p-6 text-sm text-gray-400 text-center">
+            Les fonctionnalités SSO ne sont pas disponibles sur cette instance.
+          </div>
+        );
+      },
+    })),
+);
+
+const ProfileSsoNotice = lazy(() =>
+  import('@calame-ee/sso/web')
+    .then((m) => ({ default: m.ProfileSsoNotice }))
+    .catch(() => ({
+      default: function ProfileSsoNoticeUnavailable() {
+        return null;
+      },
+    })),
+);
+
+const DataScopingSection = lazy(() =>
+  import('@calame-ee/sso/web')
+    .then((m) => ({ default: m.DataScopingSection }))
+    .catch(() => ({
+      default: function DataScopingSectionUnavailable() {
+        return (
+          <div className="p-6 text-sm text-gray-400 text-center">
+            Les fonctionnalités de scoping ne sont pas disponibles sur cette instance.
+          </div>
+        );
+      },
+    })),
+);
 import ProfilePreview from './components/ProfilePreview.js';
 import MetricsDashboard from './components/MetricsDashboard.js';
 import ChatEntryPage from './components/ChatEntryPage.js';
@@ -2140,7 +2181,11 @@ function McpDetailView({
           )}
 
           {/* SSO info — rendered only when authMode is 'sso' */}
-          {(profile.authMode ?? 'token') === 'sso' && <ProfileSsoNotice />}
+          {(profile.authMode ?? 'token') === 'sso' && (
+            <Suspense fallback={null}>
+              <ProfileSsoNotice />
+            </Suspense>
+          )}
 
           {/* External auth config */}
           {(profile.authMode ?? 'token') === 'external' && (
@@ -2563,11 +2608,17 @@ function McpDetailView({
       )}
 
       {activeSection === 'scoping' && (
-        <DataScopingSection
-          profile={profile}
-          configurations={configurations}
-          onScopeRulesChange={handleScopeRulesChange}
-        />
+        <Suspense
+          fallback={
+            <div className="p-6 text-sm text-gray-500 italic">Chargement…</div>
+          }
+        >
+          <DataScopingSection
+            profile={profile}
+            configurations={configurations}
+            onScopeRulesChange={handleScopeRulesChange}
+          />
+        </Suspense>
       )}
 
       {activeSection === 'tokens' && (
@@ -3491,7 +3542,11 @@ function SettingsPage({
         <Card padded={true} key={activeTab} className="animate-fade-in-up">
           {activeTab === 'ai' && <AiSettings />}
           {activeTab === 'email' && <SmtpSettings />}
-          {activeTab === 'sso' && <OidcSettings availableProfiles={[...allProfileNames]} />}
+          {activeTab === 'sso' && (
+            <Suspense fallback={<div className="p-6 text-sm text-gray-500 italic">Chargement…</div>}>
+              <OidcSettings availableProfiles={[...allProfileNames]} />
+            </Suspense>
+          )}
         </Card>
       </div>
 
@@ -3499,7 +3554,11 @@ function SettingsPage({
       <Card padded={true} key={`mobile-${activeTab}`} className="animate-fade-in-up md:hidden">
         {activeTab === 'ai' && <AiSettings />}
         {activeTab === 'email' && <SmtpSettings />}
-        {activeTab === 'sso' && <OidcSettings availableProfiles={[...allProfileNames]} />}
+        {activeTab === 'sso' && (
+          <Suspense fallback={<div className="p-6 text-sm text-gray-500 italic">Chargement…</div>}>
+            <OidcSettings availableProfiles={[...allProfileNames]} />
+          </Suspense>
+        )}
       </Card>
     </div>
   );

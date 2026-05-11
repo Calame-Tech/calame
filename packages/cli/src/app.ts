@@ -17,12 +17,7 @@ import { AuditLog } from './audit.js';
 import { CalameDatabase } from './database.js';
 import { AiSettingsManager } from './ai-config.js';
 import { SmtpConfigManager } from './smtp-config.js';
-import {
-  OidcConfigManager,
-  registerOidcAuthRoutes,
-  registerOidcSettingsRoute,
-  type OidcSessionDeps,
-} from '@calame-ee/sso';
+import type { OidcSessionDeps } from '@calame-ee/sso';
 import { EmailService, isSmtpConfigured } from './email.js';
 import { loadYamlConfig } from './yaml-config.js';
 import type { AppConfig } from './config.js';
@@ -119,8 +114,11 @@ export function createApp(
   if (!appState.smtpConfigManager) {
     appState.smtpConfigManager = new SmtpConfigManager(appState.db);
   }
-  if (!appState.oidcConfigManager) {
-    appState.oidcConfigManager = new OidcConfigManager(appState.db);
+  // OidcConfigManager is instantiated only when the EE SSO runtime is loaded.
+  // When @calame-ee/sso is absent, oidcConfigManager stays undefined and OIDC
+  // routes are not registered (see below).
+  if (!appState.oidcConfigManager && appState.ssoRuntime) {
+    appState.oidcConfigManager = new appState.ssoRuntime.OidcConfigManager(appState.db);
   }
   if (!appState.rateLimiter) {
     appState.rateLimiter = new TokenRateLimiter();
@@ -211,9 +209,10 @@ export function createApp(
   // OAuth routes must be registered early (before SPA fallback)
   registerOAuthRoutes(app, appState);
 
-  // OIDC auth routes — always registered before admin session middleware (callback is public).
+  // OIDC auth routes — registered iff ssoRuntime is loaded (i.e. @calame-ee/sso is installed).
   // Each handler calls buildOidcProvider() at request time and returns 503 when not configured,
-  // so routes are safe to expose unconditionally — no restart needed after OIDC is enabled via UI.
+  // so routes are safe to expose unconditionally once the EE package is present — no restart
+  // needed after OIDC is enabled via the settings UI.
   const ssoDeps: OidcSessionDeps = {
     createSession,
     setSessionCookie,
@@ -229,7 +228,9 @@ export function createApp(
       return row?.password_hash ?? null;
     },
   };
-  registerOidcAuthRoutes(app, appState, ssoDeps);
+  if (appState.ssoRuntime) {
+    appState.ssoRuntime.registerOidcAuthRoutes(app, appState, ssoDeps);
+  }
 
   // Per-profile OAuth routes — registered before admin session middleware (callbacks are public).
   registerProfileOAuthRoutes(app, appState);
@@ -267,7 +268,9 @@ export function createApp(
   registerUsersRoute(app, appState);
   registerAiSettingsRoute(app, appState);
   registerSmtpSettingsRoute(app, appState);
-  registerOidcSettingsRoute(app, appState, ssoDeps);
+  if (appState.ssoRuntime) {
+    appState.ssoRuntime.registerOidcSettingsRoute(app, appState, ssoDeps);
+  }
   registerMetricsRoute(app, appState);
   registerProfilePreviewRoute(app, appState);
   registerTenantsRoutes(app, appState);

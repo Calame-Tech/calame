@@ -17,6 +17,7 @@ import { loadConfig, validateConfig } from './config.js';
 import { createLogger } from './logger.js';
 import { gracefulShutdown } from './shutdown.js';
 import { initRagRuntime } from './rag-runtime.js';
+import { initSsoRuntime } from './sso-runtime.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -91,6 +92,14 @@ runMigrations(appState.db);
 // AiSettingsManager must exist before initRagRuntime so RAG can resolve
 // embedding settings. Pre-create it here; createApp will reuse the instance.
 appState.aiSettingsManager = new AiSettingsManager(appState.db);
+
+// Initialize the optional SSO runtime BEFORE createApp so the route layer can
+// register OIDC routes synchronously. When @calame-ee/sso is missing this is a
+// no-op and createApp simply skips SSO route registration.
+await initSsoRuntime(appState, appState.db, {
+  info: (msg: string) => logger.info(msg, { component: 'sso' }),
+  warn: (msg: string) => logger.warn(msg, { component: 'sso' }),
+});
 
 // Initialize the optional RAG runtime BEFORE createApp so the route layer can
 // register `/api/rag/*` synchronously. When @calame-ee/rag-core is missing

@@ -1,9 +1,26 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { apiFetch, getCurrentTenant } from '../lib/api.js';
 import { buildMcpPath } from '../lib/mcp-url.js';
 import type { AuthMode } from '../types/schema.js';
 import DarkSelect from './ui/DarkSelect.js';
-import { ChatSsoLogin } from '@calame-ee/sso/web';
+
+/**
+ * Lazy-loaded SSO login screen for chat entry. Deferred so the Apache bundle
+ * never statically imports the BUSL chunk.
+ */
+const ChatSsoLogin = lazy(() =>
+  import('@calame-ee/sso/web')
+    .then((m) => ({ default: m.ChatSsoLogin }))
+    .catch(() => ({
+      default: function ChatSsoLoginUnavailable() {
+        return (
+          <div className="p-6 text-sm text-gray-400 text-center">
+            Les fonctionnalités SSO ne sont pas disponibles sur cette instance.
+          </div>
+        );
+      },
+    })),
+);
 import { useChatStream } from '../hooks/useChatStream.js';
 import type { UsageInfo } from '../hooks/useChatStream.js';
 import MarkdownMessage from './MarkdownMessage.js';
@@ -836,7 +853,11 @@ export default function ChatEntryPage({ profileName }: ChatEntryPageProps) {
       return <CalameLoginForm profile={profile} onSuccess={handleAuthSuccess} />;
 
     case 'sso':
-      return <ChatSsoLogin profile={profile} />;
+      return (
+        <Suspense fallback={<div className="p-6 text-sm text-gray-500 italic">Chargement…</div>}>
+          <ChatSsoLogin profile={profile} />
+        </Suspense>
+      );
 
     case 'oauth':
       return <OAuthLoginForm profile={profile} />;

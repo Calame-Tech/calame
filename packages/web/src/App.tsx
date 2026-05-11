@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo, useEffect, lazy, Suspense } from 'react';
+import { apiFetch } from './lib/api.js';
 import { Button, Card, PageHeader, Eyebrow, KpiCard, EmptyState, Breadcrumb } from './components/ui/index.js';
 import Sidebar from './components/Sidebar.js';
 import HelpTip from './components/HelpTip.js';
@@ -139,7 +140,7 @@ function arraysToSets(sel: Record<string, string[]>): Record<string, Set<string>
  * chained .then()).
  */
 function persistProfiles(profiles: Record<string, Record<string, unknown>>): Promise<Response> {
-  return fetch('/api/profiles/save', {
+  return apiFetch('/api/profiles/save', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ profiles }),
@@ -219,9 +220,9 @@ export default function App() {
       try {
         // Always check both admin and user auth status and health (for ragEnabled).
         const [adminRes, userRes, healthRes] = await Promise.all([
-          fetch('/api/auth/status', { credentials: 'include' }),
-          fetch('/api/auth/user-status', { credentials: 'include' }),
-          fetch('/health').catch(() => null),
+          apiFetch('/api/auth/status', { credentials: 'include' }),
+          apiFetch('/api/auth/user-status', { credentials: 'include' }),
+          apiFetch('/health').catch(() => null),
         ]);
 
         if (healthRes?.ok) {
@@ -303,7 +304,7 @@ export default function App() {
     (async () => {
       // 1. Fetch connections and schemas
       try {
-        const res = await fetch('/api/connections', { credentials: 'include' });
+        const res = await apiFetch('/api/connections', { credentials: 'include' });
         const data = await res.json();
         if (data.success && data.connections) {
           const loadedConns: NamedConnection[] = Object.entries(data.connections).map(
@@ -325,7 +326,7 @@ export default function App() {
             Record<string, unknown>,
           ][]) {
             if (info.connected && (info.tableCount as number) > 0) {
-              const schemaRes = await fetch(`/api/schema/${name}`, { credentials: 'include' });
+              const schemaRes = await apiFetch(`/api/schema/${name}`, { credentials: 'include' });
               const schemaData = await schemaRes.json();
               const schema = schemaData.schema ?? schemaData;
               if (schema.tables) {
@@ -340,7 +341,7 @@ export default function App() {
 
       // 2. Fetch configurations
       try {
-        const configRes = await fetch('/api/configurations', { credentials: 'include' });
+        const configRes = await apiFetch('/api/configurations', { credentials: 'include' });
         const configData = await configRes.json();
         if (configData.success && configData.configurations) {
           const configs: Configuration[] = Object.entries(
@@ -354,7 +355,7 @@ export default function App() {
 
       // 3. Fetch profiles
       try {
-        const res = await fetch('/api/profiles/load', { credentials: 'include' });
+        const res = await apiFetch('/api/profiles/load', { credentials: 'include' });
         const data = await res.json();
         if (data.found && data.profiles) {
           const loaded: Record<string, Omit<Profile, 'name'>> = data.profiles;
@@ -390,7 +391,7 @@ export default function App() {
   // Fetch serve status — shared between the 5s poller and the ServePanel action callback
   const fetchServeStatus = useCallback(async () => {
     try {
-      const res = await fetch('/api/serve/status', { credentials: 'include' });
+      const res = await apiFetch('/api/serve/status', { credentials: 'include' });
       const data = await res.json();
       if (data.success !== false) {
         setServeStatus({
@@ -423,7 +424,7 @@ export default function App() {
     if (!authenticated || isUserPage) return;
     const fetchRecent = async () => {
       try {
-        const res = await fetch('/api/audit?limit=10&offset=0', { credentials: 'include' });
+        const res = await apiFetch('/api/audit?limit=10&offset=0', { credentials: 'include' });
         const data = await res.json();
         if (data.success !== false && data.entries) {
           setRecentActivity(data.entries);
@@ -488,7 +489,7 @@ export default function App() {
   const handleScanPii = useCallback(async () => {
     setScanning(true);
     try {
-      const res = await fetch('/api/pii/scan', { method: 'POST' });
+      const res = await apiFetch('/api/pii/scan', { method: 'POST' });
       const data = await res.json();
       if (data.detections) {
         setPiiDetections(data.detections);
@@ -579,7 +580,7 @@ export default function App() {
 
       // Stop the profile if active
       try {
-        await fetch('/api/serve/stop', {
+        await apiFetch('/api/serve/stop', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ profiles: [profileToDelete.name] }),
@@ -633,7 +634,7 @@ export default function App() {
   // Configuration CRUD handlers
   const handleConfigurationSave = useCallback(async (config: Configuration): Promise<boolean> => {
     try {
-      const res = await fetch('/api/configurations', {
+      const res = await apiFetch('/api/configurations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(config),
@@ -650,7 +651,7 @@ export default function App() {
           return [...prev, config];
         });
         // Silently refresh active MCP servers so they pick up the new configuration
-        fetch('/api/serve/refresh', { method: 'POST' }).catch(() => {});
+        apiFetch('/api/serve/refresh', { method: 'POST' }).catch(() => {});
         return true;
       }
       return false;
@@ -661,7 +662,7 @@ export default function App() {
 
   const handleConfigurationDelete = useCallback(async (name: string) => {
     try {
-      const res = await fetch(`/api/configurations/${encodeURIComponent(name)}`, {
+      const res = await apiFetch(`/api/configurations/${encodeURIComponent(name)}`, {
         method: 'DELETE',
       });
       const data = await res.json();
@@ -751,7 +752,7 @@ export default function App() {
   /** Logout handler — extracted from the old header for reuse in Sidebar footer */
   const handleLogout = async () => {
     try {
-      await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+      await apiFetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
     } catch {
       /* ignore network errors */
     }
@@ -1578,7 +1579,7 @@ function McpDetailView({
       // Save profiles first so the backend knows about new profiles
       await saveProfiles();
 
-      const res = await fetch('/api/serve/start', {
+      const res = await apiFetch('/api/serve/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1601,7 +1602,7 @@ function McpDetailView({
     setTogglingProfile(true);
     setError(null);
     try {
-      const res = await fetch('/api/serve/stop', {
+      const res = await apiFetch('/api/serve/stop', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ profiles: [profile.name] }),
@@ -1628,7 +1629,7 @@ function McpDetailView({
     setRefreshing(true);
     setError(null);
     try {
-      const res = await fetch('/api/serve/refresh', { method: 'POST' });
+      const res = await apiFetch('/api/serve/refresh', { method: 'POST' });
       const data = await res.json();
       if (data.success === false) {
         setError(data.message || 'Failed to refresh.');
@@ -1654,7 +1655,7 @@ function McpDetailView({
 
       // Persist to backend and refresh active MCP servers
       persistProfiles(buildProfilesData(updated))
-        .then(() => fetch('/api/serve/refresh', { method: 'POST' }))
+        .then(() => apiFetch('/api/serve/refresh', { method: 'POST' }))
         .catch(() => {});
 
       return updated;
@@ -1671,7 +1672,7 @@ function McpDetailView({
     setResponseModeError(null);
     const newMode = isRawMode ? 'friendly' : 'raw';
     try {
-      const res = await fetch(`/api/profiles/${encodeURIComponent(profileName)}/response-mode`, {
+      const res = await apiFetch(`/api/profiles/${encodeURIComponent(profileName)}/response-mode`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',

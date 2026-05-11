@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from './ui/index.js';
+import WorkspaceSwitcher from './WorkspaceSwitcher.js';
 
 type NavigablePage =
   | 'dashboard'
@@ -354,6 +355,9 @@ export default function Sidebar({
               </p>
             </div>
           </div>
+
+          {/* Workspace switcher — always visible, subtle when on 'default' */}
+          <WorkspaceSwitcher className="mt-3" />
         </div>
 
         {/* Navigation sections — flex-1 so user footer is pushed to the bottom */}

@@ -5,6 +5,24 @@
 import { useState, useEffect, useRef } from 'react';
 import HelpTip from '../../../../packages/web/src/components/HelpTip.js';
 
+/**
+ * Tenant header injection. Duplicated from `packages/web/src/lib/api.ts` to
+ * respect the cross-license import rule (BUSL packages can't value-import from
+ * Apache `packages/*`). The localStorage key and regex MUST stay in lockstep
+ * with the host helper.
+ */
+const TENANT_STORAGE_KEY = 'calame.tenant';
+const TENANT_ID_REGEX = /^[A-Za-z0-9_-]{1,64}$/;
+
+function tenantHeaders(): Record<string, string> {
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') return {};
+  const stored = localStorage.getItem(TENANT_STORAGE_KEY);
+  if (stored && TENANT_ID_REGEX.test(stored) && stored !== 'default') {
+    return { 'X-Tenant-Id': stored };
+  }
+  return {};
+}
+
 interface OidcConfig {
   enabled: boolean;
   issuerUrl: string;
@@ -64,7 +82,10 @@ export default function OidcSettings({ availableProfiles = [] }: OidcSettingsPro
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch('/api/oidc-settings', { credentials: 'include' });
+        const res = await fetch('/api/oidc-settings', {
+          credentials: 'include',
+          headers: tenantHeaders(),
+        });
         const data = await res.json();
         if (data.success && data.config) {
           const cfg = data.config as OidcConfig;
@@ -119,7 +140,7 @@ export default function OidcSettings({ availableProfiles = [] }: OidcSettingsPro
     try {
       const res = await fetch('/api/oidc-settings/reveal', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...tenantHeaders() },
         credentials: 'include',
         body: JSON.stringify({ password: revealPassword }),
       });
@@ -166,7 +187,7 @@ export default function OidcSettings({ availableProfiles = [] }: OidcSettingsPro
     try {
       const res = await fetch('/api/oidc-settings', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...tenantHeaders() },
         credentials: 'include',
         body: JSON.stringify(buildPayload()),
       });

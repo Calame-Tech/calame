@@ -1,4 +1,5 @@
 import React, { useState, useEffect, Suspense } from 'react';
+import { apiFetch } from '../lib/api.js';
 import type { NamedConnection, DatabaseSchema } from '../types/schema.js';
 import ConnectionManager from './ConnectionManager.js';
 import AddSourceModal from './AddSourceModal.js';
@@ -33,7 +34,7 @@ export interface SourcesPageProps {
 /** Fetch count of RAG sources so the KB tab badge stays accurate */
 async function fetchRagSourceCount(): Promise<number> {
   try {
-    const res = await fetch('/api/rag/sources', { credentials: 'include' });
+    const res = await apiFetch('/api/rag/sources', { credentials: 'include' });
     if (!res.ok) return 0;
     const data = (await res.json()) as { sources?: unknown[] };
     return data.sources?.length ?? 0;

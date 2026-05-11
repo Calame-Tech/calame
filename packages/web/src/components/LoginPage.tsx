@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { apiFetch } from '../lib/api.js';
 import { SsoLoginButton } from '@calame-ee/sso/web';
 
 interface LoginPageProps {
@@ -19,7 +20,7 @@ export default function LoginPage({ onAdminLogin, onUserLogin }: LoginPageProps)
 
     try {
       // Try admin login first
-      const adminRes = await fetch('/api/auth/login', {
+      const adminRes = await apiFetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -34,7 +35,7 @@ export default function LoginPage({ onAdminLogin, onUserLogin }: LoginPageProps)
 
       // If not admin (403), try user login
       if (adminRes.status === 403 || adminRes.status === 401) {
-        const userRes = await fetch('/api/auth/user-login', {
+        const userRes = await apiFetch('/api/auth/user-login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',

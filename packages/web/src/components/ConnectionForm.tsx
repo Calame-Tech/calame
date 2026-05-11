@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { apiFetch } from '../lib/api.js';
 import type { DatabaseSchema, DatabaseType, SslConfig } from '../types/schema.js';
 
 interface ConnectionFormProps {
@@ -75,7 +76,7 @@ export default function ConnectionForm({
         : undefined;
 
     try {
-      const connectRes = await fetch('/api/connect', {
+      const connectRes = await apiFetch('/api/connect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ connectionString, databaseType, sslConfig }),
@@ -90,7 +91,7 @@ export default function ConnectionForm({
 
       setMessage('Connection successful! Fetching schema...');
 
-      const schemaRes = await fetch('/api/schema');
+      const schemaRes = await apiFetch('/api/schema');
       const schemaRaw = await schemaRes.json();
       const schemaData: DatabaseSchema = schemaRaw.schema ?? schemaRaw;
       const count = connectData.tableCount ?? schemaData.tables.length;

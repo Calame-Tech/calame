@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { apiFetch } from '../lib/api.js';
 import type {
   DatabaseSchema,
   DatabaseType,
@@ -127,7 +128,7 @@ export default function ConnectionManager({
   // ── Fetch connection statuses ────────────────────────────────────
   const fetchStatuses = useCallback(async () => {
     try {
-      const res = await fetch('/api/connections');
+      const res = await apiFetch('/api/connections');
       const data = await res.json();
       if (data.success && data.connections) {
         setStatuses(data.connections as Record<string, ConnectionStatus>);
@@ -379,7 +380,7 @@ export default function ConnectionManager({
         });
       }
 
-      const res = await fetch('/api/connections', {
+      const res = await apiFetch('/api/connections', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -399,7 +400,7 @@ export default function ConnectionManager({
       }
 
       // Re-fetch all connections from backend to stay in sync
-      const allRes = await fetch('/api/connections');
+      const allRes = await apiFetch('/api/connections');
       const allData = await allRes.json();
       if (allData.success && allData.connections) {
         const allConns: NamedConnection[] = Object.entries(allData.connections).map(
@@ -463,7 +464,7 @@ export default function ConnectionManager({
       const data = await res.json();
       if (data.success) {
         // Re-fetch all connections from backend to stay in sync
-        const allRes = await fetch('/api/connections');
+        const allRes = await apiFetch('/api/connections');
         const allData = await allRes.json();
         if (allData.success && allData.connections) {
           const allConns: NamedConnection[] = Object.entries(allData.connections).map(

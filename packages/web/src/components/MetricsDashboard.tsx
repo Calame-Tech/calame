@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { apiFetch } from '../lib/api.js';
 import type { MetricsSummary, PoolStats } from '../types/schema.js';
 import HelpTip from './HelpTip.js';
 import { Eyebrow } from './ui/Eyebrow.js';
@@ -459,8 +460,8 @@ export default function MetricsDashboard() {
   const fetchMetrics = useCallback(async () => {
     try {
       const [metricsRes, poolRes] = await Promise.all([
-        fetch(`/api/metrics/summary?period=${period}`, { credentials: 'include' }),
-        fetch('/api/metrics/pool', { credentials: 'include' }),
+        apiFetch(`/api/metrics/summary?period=${period}`, { credentials: 'include' }),
+        apiFetch('/api/metrics/pool', { credentials: 'include' }),
       ]);
 
       if (metricsRes.ok) {

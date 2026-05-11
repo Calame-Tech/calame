@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { apiFetch } from '../lib/api.js';
 import type { Profile, TokenEntry } from '../types/schema.js';
 import HelpTip from './HelpTip.js';
 
@@ -34,7 +35,7 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/tokens');
+      const res = await apiFetch('/api/tokens');
       const data = await res.json();
       if (data.success !== false) {
         setTokens(data.tokens ?? []);
@@ -57,7 +58,7 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
     setGenerating(true);
     setError(null);
     try {
-      const res = await fetch('/api/tokens/generate', {
+      const res = await apiFetch('/api/tokens/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ profileName, label: newLabel.trim() }),

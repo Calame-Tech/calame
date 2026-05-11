@@ -259,12 +259,9 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
 
   const refreshAiSettings = useCallback(async (): Promise<void> => {
     try {
-      const res = await fetch('/api/ai-settings', { credentials: 'include' });
-      if (!res.ok) return;
-      const data = (await res.json()) as {
-        success?: boolean;
-        settings?: AiSettingOption[];
-      };
+      const data = await apiGet<{ success?: boolean; settings?: AiSettingOption[] }>(
+        '/api/ai-settings',
+      );
       if (data.success && Array.isArray(data.settings)) {
         setAiSettings(data.settings);
       }

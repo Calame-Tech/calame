@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo } from 'react';
+import { apiFetch } from '../lib/api.js';
 import type { AuthMode, Config, Profile, ServeStatus } from '../types/schema.js';
 import {
   getProfileTableNames,
@@ -91,7 +92,7 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
       setTogglingProfile(profileName);
       setError(null);
       try {
-        const res = await fetch('/api/serve/start', {
+        const res = await apiFetch('/api/serve/start', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -121,7 +122,7 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
       setTogglingProfile(profileName);
       setError(null);
       try {
-        const res = await fetch('/api/serve/stop', {
+        const res = await apiFetch('/api/serve/stop', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ profiles: [profileName] }),
@@ -146,7 +147,7 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
     setStoppingAll(true);
     setError(null);
     try {
-      const res = await fetch('/api/serve/stop', { method: 'POST' });
+      const res = await apiFetch('/api/serve/stop', { method: 'POST' });
       const data = await res.json();
       if (data.success === false) {
         setError(data.message || 'Failed to stop all servers.');

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { apiFetch } from '../lib/api.js';
 import type { UserEntry, AccessMode, Profile } from '../types/schema.js';
 import HelpTip from './HelpTip.js';
 
@@ -462,7 +463,7 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
     }
 
     try {
-      const res = await fetch('/api/users', {
+      const res = await apiFetch('/api/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -642,7 +643,7 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
       }
       if (!Array.isArray(parsed)) { setError('Expected a JSON array of user objects.'); setImporting(false); return; }
 
-      const res = await fetch('/api/users/import', {
+      const res = await apiFetch('/api/users/import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',

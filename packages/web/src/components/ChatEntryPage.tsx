@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { apiFetch } from '../lib/api.js';
 import type { AuthMode } from '../types/schema.js';
 import DarkSelect from './ui/DarkSelect.js';
 import { ChatSsoLogin } from '@calame-ee/sso/web';
@@ -227,7 +228,7 @@ function TokenLoginForm({
     setLoading(true);
 
     try {
-      const res = await fetch('/api/chat-auth/token', {
+      const res = await apiFetch('/api/chat-auth/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -322,7 +323,7 @@ function CalameLoginForm({
     setLoading(true);
 
     try {
-      const res = await fetch('/api/auth/user-login', {
+      const res = await apiFetch('/api/auth/user-login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -429,7 +430,7 @@ function ExternalLoginForm({
     setError('');
     setLoading(true);
     try {
-      const res = await fetch('/api/chat-auth/token', {
+      const res = await apiFetch('/api/chat-auth/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -534,7 +535,7 @@ function OAuthLoginForm({ profile }: { profile: ChatProfile }) {
 function ChatView({ profile, onLogout }: { profile: ChatProfile; onLogout: () => void }) {
   const handleLogout = async () => {
     try {
-      await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+      await apiFetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
     } catch {
       // Ignore errors — clear local state anyway
     }
@@ -627,7 +628,7 @@ export default function ChatEntryPage({ profileName }: ChatEntryPageProps) {
         const urlToken = urlParams.get('token');
         if (urlToken) {
           try {
-            const tokenRes = await fetch('/api/chat-auth/token', {
+            const tokenRes = await apiFetch('/api/chat-auth/token', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               credentials: 'include',
@@ -648,7 +649,7 @@ export default function ChatEntryPage({ profileName }: ChatEntryPageProps) {
 
       // 3. Check if already authenticated
       try {
-        const statusRes = await fetch('/api/auth/user-status', { credentials: 'include' });
+        const statusRes = await apiFetch('/api/auth/user-status', { credentials: 'include' });
         const statusData = await statusRes.json();
 
         if (statusData.success && statusData.authenticated) {
@@ -734,7 +735,7 @@ export default function ChatEntryPage({ profileName }: ChatEntryPageProps) {
   if (pageState.step === 'denied') {
     const handleSignOut = async () => {
       try {
-        await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+        await apiFetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
       } catch {
         // Ignore network errors — reload regardless so the user can start fresh
       }

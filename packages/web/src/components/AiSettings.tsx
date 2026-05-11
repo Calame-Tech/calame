@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { apiFetch } from '../lib/api.js';
 import HelpTip from './HelpTip.js';
 
 type Provider = 'anthropic' | 'openrouter' | 'custom';
@@ -103,7 +104,7 @@ export default function AiSettings() {
 
   const refresh = useCallback(async () => {
     try {
-      const res = await fetch('/api/ai-settings', { credentials: 'include' });
+      const res = await apiFetch('/api/ai-settings', { credentials: 'include' });
       const data = await res.json();
       if (data.success) {
         setSettings((data.settings ?? []) as MaskedAiSetting[]);
@@ -311,7 +312,7 @@ export default function AiSettings() {
         await refresh();
       } else {
         // No `name` yet → fall back to the legacy single-config endpoint, which writes to 'default'.
-        await fetch('/api/ai-settings', {
+        await apiFetch('/api/ai-settings', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
@@ -322,7 +323,7 @@ export default function AiSettings() {
             baseUrl: baseUrl || undefined,
           }),
         });
-        const res = await fetch('/api/ai-settings/test', { method: 'POST', credentials: 'include' });
+        const res = await apiFetch('/api/ai-settings/test', { method: 'POST', credentials: 'include' });
         const data = await res.json();
         setTestResult(
           data.success
@@ -377,7 +378,7 @@ export default function AiSettings() {
     setSaving(true);
     try {
       const fallback = settings[0];
-      await fetch('/api/ai-settings', {
+      await apiFetch('/api/ai-settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',

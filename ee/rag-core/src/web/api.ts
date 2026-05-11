@@ -12,6 +12,30 @@ import type { RagSourcePublic } from '../routes/api-types.js';
 import type { RagUsageResponse } from '../routes/rag-usage.js';
 
 /**
+ * Tenant header injection. Duplicated from `packages/web/src/lib/api.ts` to
+ * respect the cross-license import rule (BUSL packages can't value-import from
+ * Apache `packages/*`). The localStorage key and regex MUST stay in lockstep
+ * with the host helper.
+ */
+const TENANT_STORAGE_KEY = 'calame.tenant';
+const TENANT_ID_REGEX = /^[A-Za-z0-9_-]{1,64}$/;
+
+function getCurrentTenant(): string {
+	if (typeof window === 'undefined' || typeof localStorage === 'undefined') return 'default';
+	const stored = localStorage.getItem(TENANT_STORAGE_KEY);
+	if (stored && TENANT_ID_REGEX.test(stored)) return stored;
+	return 'default';
+}
+
+function withTenantHeader(init?: RequestInit): RequestInit {
+	const tenant = getCurrentTenant();
+	if (tenant === 'default') return init ?? {};
+	const headers = new Headers(init?.headers);
+	headers.set('X-Tenant-Id', tenant);
+	return { ...init, headers };
+}
+
+/**
  * Thrown when an API call returns a non-2xx response. Carries the HTTP status
  * so callers can render specific UX (e.g. 401 → re-auth) and a human message
  * extracted from the JSON body when available.
@@ -62,30 +86,36 @@ async function parseJson<T>(res: Response): Promise<T> {
 const JSON_HEADERS = { 'Content-Type': 'application/json' } as const;
 
 export async function apiGet<T>(url: string): Promise<T> {
-	const res = await fetch(url, { method: 'GET' });
+	const res = await fetch(url, withTenantHeader({ method: 'GET' }));
 	return parseJson<T>(res);
 }
 
 export async function apiPost<T>(url: string, body?: unknown): Promise<T> {
-	const res = await fetch(url, {
-		method: 'POST',
-		headers: body === undefined ? undefined : JSON_HEADERS,
-		body: body === undefined ? undefined : JSON.stringify(body),
-	});
+	const res = await fetch(
+		url,
+		withTenantHeader({
+			method: 'POST',
+			headers: body === undefined ? undefined : JSON_HEADERS,
+			body: body === undefined ? undefined : JSON.stringify(body),
+		}),
+	);
 	return parseJson<T>(res);
 }
 
 export async function apiPatch<T>(url: string, body: unknown): Promise<T> {
-	const res = await fetch(url, {
-		method: 'PATCH',
-		headers: JSON_HEADERS,
-		body: JSON.stringify(body),
-	});
+	const res = await fetch(
+		url,
+		withTenantHeader({
+			method: 'PATCH',
+			headers: JSON_HEADERS,
+			body: JSON.stringify(body),
+		}),
+	);
 	return parseJson<T>(res);
 }
 
 export async function apiDelete<T>(url: string): Promise<T> {
-	const res = await fetch(url, { method: 'DELETE' });
+	const res = await fetch(url, withTenantHeader({ method: 'DELETE' }));
 	return parseJson<T>(res);
 }
 
@@ -94,10 +124,13 @@ export async function apiDelete<T>(url: string): Promise<T> {
  * a `FormData` instance — do NOT set Content-Type manually.
  */
 export async function apiUpload<T>(url: string, formData: FormData): Promise<T> {
-	const res = await fetch(url, {
-		method: 'POST',
-		body: formData,
-	});
+	const res = await fetch(
+		url,
+		withTenantHeader({
+			method: 'POST',
+			body: formData,
+		}),
+	);
 	return parseJson<T>(res);
 }
 

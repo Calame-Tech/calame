@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { apiFetch } from '../lib/api.js';
 import type { AccessMode } from '../types/schema.js';
 import UserChatPanel from './UserChatPanel.js';
 
@@ -42,7 +43,7 @@ export default function UserDashboard({ onLogout }: { onLogout: () => void }) {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch('/api/auth/user-tokens', { credentials: 'include' });
+        const res = await apiFetch('/api/auth/user-tokens', { credentials: 'include' });
         const data = await res.json();
         if (data.success) {
           setUser(data.user);
@@ -76,7 +77,7 @@ export default function UserDashboard({ onLogout }: { onLogout: () => void }) {
     setRevealLoading(true);
     setRevealError('');
     try {
-      const res = await fetch('/api/auth/user-reveal-token', {
+      const res = await apiFetch('/api/auth/user-reveal-token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -101,7 +102,7 @@ export default function UserDashboard({ onLogout }: { onLogout: () => void }) {
     if (!confirm('Regenerate your token? Your current token will stop working immediately. You will need to update your MCP client configuration.')) return;
     setError('');
     try {
-      const res = await fetch('/api/auth/user-regenerate-token', {
+      const res = await apiFetch('/api/auth/user-regenerate-token', {
         method: 'POST',
         credentials: 'include',
       });
@@ -120,7 +121,7 @@ export default function UserDashboard({ onLogout }: { onLogout: () => void }) {
     e.preventDefault();
     setPwMessage('');
     try {
-      const res = await fetch('/api/auth/user-change-password', {
+      const res = await apiFetch('/api/auth/user-change-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -141,7 +142,7 @@ export default function UserDashboard({ onLogout }: { onLogout: () => void }) {
   };
 
   const handleLogout = async () => {
-    await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+    await apiFetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
     onLogout();
   };
 

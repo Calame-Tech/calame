@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { apiFetch } from '../lib/api.js';
 import type { PendingWriteQuery } from '../types/schema.js';
 
 interface PendingQueriesProps {
@@ -38,7 +39,7 @@ export default function PendingQueries({ onPendingCountChange }: PendingQueriesP
 
   const fetchPendingCount = useCallback(async () => {
     try {
-      const res = await fetch('/api/write-queue/count');
+      const res = await apiFetch('/api/write-queue/count');
       const data = await res.json();
       if (data.success !== false && onPendingCountChange) {
         onPendingCountChange(data.pending ?? 0);

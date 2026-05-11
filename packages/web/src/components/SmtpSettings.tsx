@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { apiFetch } from '../lib/api.js';
 import HelpTip from './HelpTip.js';
 
 interface SmtpConfig {
@@ -34,7 +35,7 @@ export default function SmtpSettings() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch('/api/smtp-settings', { credentials: 'include' });
+        const res = await apiFetch('/api/smtp-settings', { credentials: 'include' });
         const data = await res.json();
         if (data.success && data.config) {
           const cfg = data.config as SmtpConfig;
@@ -58,7 +59,7 @@ export default function SmtpSettings() {
     setRevealStatus('loading');
     setRevealError('');
     try {
-      const res = await fetch('/api/smtp-settings/reveal', {
+      const res = await apiFetch('/api/smtp-settings/reveal', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -97,7 +98,7 @@ export default function SmtpSettings() {
     setSaving(true);
     setSaveResult(null);
     try {
-      const res = await fetch('/api/smtp-settings', {
+      const res = await apiFetch('/api/smtp-settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -122,7 +123,7 @@ export default function SmtpSettings() {
     setTesting(true);
     setTestResult(null);
     try {
-      const res = await fetch('/api/smtp-settings/test', {
+      const res = await apiFetch('/api/smtp-settings/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',

@@ -385,29 +385,96 @@ export async function runSyncJob(
 	}
 }
 
+/** Valid terminal + transient job statuses, used to validate `?status=` query values. */
+const VALID_JOB_STATUSES: ReadonlySet<RagJobStatus> = new Set([
+	'pending',
+	'running',
+	'completed',
+	'failed',
+]);
+
+/**
+ * Parse the `?status=` query value into a concrete list of `RagJobStatus`
+ * values, applying the synthetic `active` alias (`pending` + `running`).
+ *
+ * Rules:
+ *  - Accepts a single value (`?status=active`) or a CSV (`?status=pending,running`).
+ *  - The `active` token expands to `['pending', 'running']`.
+ *  - Unknown tokens are silently dropped (defensive — never crash on bad input).
+ *  - If EVERY token is invalid the function returns `[]`, signalling "no filter
+ *    on status" rather than "match nothing" (so an `?status=garbage` query
+ *    still returns all jobs).
+ *  - Returns deduplicated values to avoid `IN ('pending','pending')` noise.
+ */
+function parseStatusFilter(raw: unknown): RagJobStatus[] {
+	if (typeof raw !== 'string' || raw.length === 0) return [];
+	const out = new Set<RagJobStatus>();
+	for (const token of raw.split(',')) {
+		const t = token.trim().toLowerCase();
+		if (t === 'active') {
+			out.add('pending');
+			out.add('running');
+			continue;
+		}
+		if ((VALID_JOB_STATUSES as ReadonlySet<string>).has(t)) {
+			out.add(t as RagJobStatus);
+		}
+	}
+	return Array.from(out);
+}
+
+/** Clamp `?limit=` to the allowed [1, 200] window with a default of 50. */
+function parseLimit(raw: unknown): number {
+	if (typeof raw !== 'string' || raw.length === 0) return 50;
+	const n = Number.parseInt(raw, 10);
+	if (!Number.isFinite(n)) return 50;
+	if (n < 1) return 1;
+	if (n > 200) return 200;
+	return n;
+}
+
 /**
  * Routes:
  *  - POST /api/rag/sources/:id/sync — enqueue a background sync. Returns 202
  *    with the freshly inserted (pending) job. The actual work runs on the
  *    queue's single worker; clients poll /api/rag/jobs to track progress.
  *  - GET  /api/rag/jobs              — list recent jobs, newest first.
+ *    Query string:
+ *      - sourceId=X            — restrict to a single source.
+ *      - status=active         — alias for pending+running.
+ *      - status=completed      — only completed.
+ *      - status=failed         — only failed.
+ *      - status=pending,running (CSV) — any of the listed statuses.
+ *      - limit=N               — 1..200, default 50.
+ *    Unknown status tokens are dropped silently; the route never 400s on bad
+ *    query input.
  */
 export function registerRagIndexRoutes(app: Express, deps: RagRouteDeps): void {
 	app.get('/api/rag/jobs', (req: Request, res: Response) => {
 		try {
 			const sourceId = req.query['sourceId'];
-			let rows: JobRow[];
+			const statusList = parseStatusFilter(req.query['status']);
+			const limit = parseLimit(req.query['limit']);
+
+			// Build the WHERE clause dynamically with parameterized values — never
+			// concatenate user input into the SQL string. `where` and `params`
+			// stay in lock-step so the placeholders line up with the bindings.
+			const where: string[] = [];
+			const params: unknown[] = [];
 			if (typeof sourceId === 'string' && sourceId.length > 0) {
-				rows = deps.db
-					.prepare<[string], JobRow>(
-						`SELECT * FROM rag_jobs WHERE source_id = ? ORDER BY started_at DESC LIMIT 50`,
-					)
-					.all(sourceId);
-			} else {
-				rows = deps.db
-					.prepare<[], JobRow>(`SELECT * FROM rag_jobs ORDER BY started_at DESC LIMIT 50`)
-					.all();
+				where.push('source_id = ?');
+				params.push(sourceId);
 			}
+			if (statusList.length > 0) {
+				where.push(`status IN (${statusList.map(() => '?').join(',')})`);
+				params.push(...statusList);
+			}
+
+			const whereClause = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
+			const sql = `SELECT * FROM rag_jobs ${whereClause} ORDER BY started_at DESC LIMIT ?`;
+			params.push(limit);
+
+			const rows = deps.db.prepare<unknown[], JobRow>(sql).all(...params);
 			res.json({ jobs: rows.map(rowToJob) });
 		} catch (error: unknown) {
 			const message = error instanceof Error ? error.message : 'Unknown error';

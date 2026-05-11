@@ -28,12 +28,18 @@ type SyncHandler = (req: Request, res: Response) => void | Promise<void>;
 interface CapturedApp {
 	app: Express;
 	getSyncHandler(): SyncHandler;
+	getJobsHandler(): SyncHandler;
 }
 
 function makeCapturedApp(): CapturedApp {
 	let syncHandler: SyncHandler | null = null;
+	let jobsHandler: SyncHandler | null = null;
 	const app = {
-		get: vi.fn(),
+		get: vi.fn((path: string, handler: SyncHandler) => {
+			if (path === '/api/rag/jobs') {
+				jobsHandler = handler;
+			}
+		}),
 		post: vi.fn((path: string, handler: SyncHandler) => {
 			if (path === '/api/rag/sources/:id/sync') {
 				syncHandler = handler;
@@ -45,6 +51,10 @@ function makeCapturedApp(): CapturedApp {
 		getSyncHandler() {
 			if (!syncHandler) throw new Error('sync handler was not registered');
 			return syncHandler;
+		},
+		getJobsHandler() {
+			if (!jobsHandler) throw new Error('jobs handler was not registered');
+			return jobsHandler;
 		},
 	};
 }
@@ -738,5 +748,133 @@ describe('registerRagIndexRoutes — background sync (HTTP 202 + queue)', () => 
 			.get('job-completed');
 		expect(completed?.status).toBe('completed');
 		expect(completed?.error).toBeNull();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Tests — GET /api/rag/jobs query filter: status= and limit=. Drive the
+// captured GET handler directly (no HTTP server). The fixture seeds a known
+// mix of jobs across two sources so each filter combination is unambiguous.
+// ---------------------------------------------------------------------------
+
+/**
+ * Insert a job row directly, bypassing the queue. Used by the GET-filter
+ * tests below — we don't care about pipeline state here, only about the
+ * shape of the SQL filter the route builds.
+ */
+function insertJobRow(
+	db: BetterSqlite3Database,
+	job: {
+		id: string;
+		sourceId: string;
+		status: RagJob['status'];
+		startedAt?: string;
+		finishedAt?: string | null;
+	},
+): void {
+	db.prepare(
+		`INSERT INTO rag_jobs
+		 (id, source_id, status, progress, total_documents, processed_documents, started_at, finished_at)
+		 VALUES (?, ?, ?, 0, 0, 0, ?, ?)`,
+	).run(
+		job.id,
+		job.sourceId,
+		job.status,
+		job.startedAt ?? new Date().toISOString(),
+		job.finishedAt ?? null,
+	);
+}
+
+function makeJobsReq(query: Record<string, string>): Request {
+	return { params: {}, query } as unknown as Request;
+}
+
+describe('GET /api/rag/jobs — status= and limit= filters', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	function setup(): { db: BetterSqlite3Database; captured: CapturedApp } {
+		const db = makeDb();
+		insertSource(db, { id: 'src-A' });
+		insertSource(db, { id: 'src-B' });
+		// 2 pending, 1 running, 2 completed, 1 failed — 6 total across 2 sources.
+		insertJobRow(db, { id: 'j1', sourceId: 'src-A', status: 'pending', startedAt: '2026-01-01T00:00:01Z' });
+		insertJobRow(db, { id: 'j2', sourceId: 'src-A', status: 'running', startedAt: '2026-01-01T00:00:02Z' });
+		insertJobRow(db, { id: 'j3', sourceId: 'src-A', status: 'completed', startedAt: '2026-01-01T00:00:03Z' });
+		insertJobRow(db, { id: 'j4', sourceId: 'src-B', status: 'pending', startedAt: '2026-01-01T00:00:04Z' });
+		insertJobRow(db, { id: 'j5', sourceId: 'src-B', status: 'completed', startedAt: '2026-01-01T00:00:05Z' });
+		insertJobRow(db, { id: 'j6', sourceId: 'src-B', status: 'failed', startedAt: '2026-01-01T00:00:06Z' });
+		const connector = makeConnector([]);
+		const pipeline = makePipelineMock();
+		const captured = makeCapturedApp();
+		const deps = makeDeps(db, connector, pipeline);
+		registerRagIndexRoutes(captured.app, deps);
+		return { db, captured };
+	}
+
+	async function callJobs(captured: CapturedApp, query: Record<string, string>): Promise<RagJob[]> {
+		const handler = captured.getJobsHandler();
+		const res = makeRes();
+		await handler(makeJobsReq(query), res.res);
+		expect(res.statusCode).toBe(200);
+		return (res.body as { jobs: RagJob[] }).jobs;
+	}
+
+	it('?status=active expands to pending+running across all sources', async () => {
+		const { captured } = setup();
+		const jobs = await callJobs(captured, { status: 'active' });
+		// 3 active rows: j1, j2, j4. Sorted started_at DESC so j4 first.
+		expect(jobs.map((j) => j.id)).toEqual(['j4', 'j2', 'j1']);
+		expect(jobs.every((j) => j.status === 'pending' || j.status === 'running')).toBe(true);
+	});
+
+	it('?status=completed,failed (CSV) returns exactly those two terminal statuses', async () => {
+		const { captured } = setup();
+		const jobs = await callJobs(captured, { status: 'completed,failed' });
+		// j3 completed, j5 completed, j6 failed — three rows.
+		expect(jobs.map((j) => j.id).sort()).toEqual(['j3', 'j5', 'j6']);
+		expect(jobs.every((j) => j.status === 'completed' || j.status === 'failed')).toBe(true);
+	});
+
+	it('?status=invalid is silently ignored — route returns ALL jobs unfiltered', async () => {
+		const { captured } = setup();
+		const jobs = await callJobs(captured, { status: 'invalid' });
+		// All 6 seeded jobs come back.
+		expect(jobs).toHaveLength(6);
+	});
+
+	it('?status=pending,bogus drops the unknown token but keeps pending', async () => {
+		const { captured } = setup();
+		const jobs = await callJobs(captured, { status: 'pending,bogus' });
+		// Only the two pending rows (j1, j4) — bogus is dropped, pending kept.
+		expect(jobs.map((j) => j.id).sort()).toEqual(['j1', 'j4']);
+	});
+
+	it('?limit caps the result set: 2 → 2 rows, 999 → at most 200, missing → default 50', async () => {
+		const { captured } = setup();
+
+		const two = await callJobs(captured, { limit: '2' });
+		expect(two).toHaveLength(2);
+
+		const giant = await callJobs(captured, { limit: '999' });
+		// Only 6 jobs seeded; the cap at 200 is enforced internally but visible
+		// row count is bounded by what exists. Asserting on the SQL bind isn't
+		// possible from here, so we assert the cap doesn't reject the request.
+		expect(giant).toHaveLength(6);
+
+		const dflt = await callJobs(captured, {});
+		expect(dflt).toHaveLength(6);
+
+		const zero = await callJobs(captured, { limit: '0' });
+		// limit=0 is clamped to 1, not "no rows" — we want at least one row.
+		expect(zero).toHaveLength(1);
+	});
+
+	it('?sourceId combines with ?status=active to narrow further', async () => {
+		const { captured } = setup();
+		const jobs = await callJobs(captured, { sourceId: 'src-A', status: 'active' });
+		// Only A's active jobs: j1, j2.
+		expect(jobs.map((j) => j.id).sort()).toEqual(['j1', 'j2']);
 	});
 });

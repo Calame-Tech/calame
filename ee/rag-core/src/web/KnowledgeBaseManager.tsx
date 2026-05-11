@@ -16,6 +16,7 @@ import SourceForm, { type AiSettingOption } from './SourceForm.js';
 import FolderTreeView from './FolderTreeView.js';
 import DocumentUploader from './DocumentUploader.js';
 import IngestionStatusCard from './IngestionStatusCard.js';
+import SyncHistoryPanel from './SyncHistoryPanel.js';
 import {
   useActiveSyncJobs,
   formatRelativeTime,
@@ -171,6 +172,10 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
   const [aiSettings, setAiSettings] = useState<AiSettingOption[]>([]);
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
+  // When true, the main view is replaced by the global sync history panel.
+  // We toggle in-place (no modal) because the panel is a full content view —
+  // consistent with how SourceForm is rendered above the source list.
+  const [showHistory, setShowHistory] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
@@ -309,6 +314,18 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
     }
   };
 
+  // When the history panel is open we render it as a full replacement view —
+  // the header / source list / detail panel are all suppressed. The panel
+  // provides its own "← Retour" affordance that flips `showHistory` back.
+  if (showHistory) {
+    return (
+      <SyncHistoryPanel
+        sources={sources}
+        onClose={() => setShowHistory(false)}
+      />
+    );
+  }
+
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -320,6 +337,14 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowHistory(true)}
+            className="px-3 py-1.5 rounded-lg text-sm bg-gray-700/40 hover:bg-gray-700/60 text-gray-200 transition-colors"
+            title="Voir l'historique complet des synchronisations"
+          >
+            Historique de sync
+          </button>
           <button
             type="button"
             onClick={() => setShowCreateForm((v) => !v)}

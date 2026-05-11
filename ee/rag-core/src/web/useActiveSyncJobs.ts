@@ -56,7 +56,16 @@ export function useActiveSyncJobs(
 
   const fetchJobs = useCallback(async (): Promise<void> => {
     try {
-      const data = await apiGet<RagJobListResponse>('/api/rag/jobs');
+      // Narrow the poll to the only two job classes the badge cares about:
+      // - active (pending+running): drives the "in progress" indicator
+      // - failed: drives the "last failed" badge
+      // This cuts the response from ~50 rows (the previous default LIMIT)
+      // to typically <10 even on a busy install. `limit=100` is generous
+      // for both classes combined and never truncates active jobs in
+      // practice.
+      const data = await apiGet<RagJobListResponse>(
+        '/api/rag/jobs?status=active,failed&limit=100',
+      );
       if (cancelledRef.current) return;
 
       const jobs = data.jobs ?? [];

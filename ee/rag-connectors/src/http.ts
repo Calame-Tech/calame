@@ -8,7 +8,11 @@ import { minimatch } from 'minimatch';
 
 import type { RagDocument, RagFolder, RagSourceType } from '@calame-ee/rag-core';
 
-import type { DocumentSourceConfig, DocumentSourceConnector } from './types.js';
+import type {
+  DocumentSourceConfig,
+  DocumentSourceConnector,
+  RateLimiterLike,
+} from './types.js';
 import { deterministicId } from './utils.js';
 
 /**
@@ -418,6 +422,38 @@ function deriveName(url: URL): string {
 export class HttpConnector implements DocumentSourceConnector {
   readonly type: RagSourceType = 'http';
 
+  /**
+   * Optional rate limiter wired by the host at runtime. Each outbound
+   * fetch acquires one token from the `('http', host)` bucket — keyed on the
+   * URL's host so two HTTP sources hitting different domains have
+   * independent quotas, and a single greedy source hitting `example.com`
+   * doesn't starve another that also targets `example.com`.
+   */
+  #rateLimiter: RateLimiterLike | undefined;
+
+  setRateLimiter(limiter: RateLimiterLike | undefined): void {
+    this.#rateLimiter = limiter;
+  }
+
+  /**
+   * Internal helper: acquire a token then `timedFetch`. Centralizes the
+   * rate-limit-before-network sequencing so we don't repeat it at every call
+   * site. The credentialKey is the host so per-target throttling works
+   * regardless of which source kicked off the request.
+   */
+  async #limitedFetch(url: string, opts: FetchOptions): Promise<Response> {
+    let host = '';
+    try {
+      host = new URL(url).host;
+    } catch {
+      // Fall back to the raw url string — malformed URLs are caller bugs
+      // but we still want to throttle them so we don't burst on garbage.
+      host = url;
+    }
+    await this.#rateLimiter?.acquire('http', host);
+    return timedFetch(url, opts);
+  }
+
   async testConnection(rawConfig: DocumentSourceConfig): Promise<void> {
     const config = narrowConfig(rawConfig);
     const userAgent = config.userAgent ?? DEFAULT_USER_AGENT;
@@ -425,14 +461,14 @@ export class HttpConnector implements DocumentSourceConnector {
 
     if (config.urls && config.urls.length > 0) {
       const first = config.urls[0]!;
-      const response = await timedFetch(first, { method: 'HEAD', userAgent, timeoutMs });
+      const response = await this.#limitedFetch(first, { method: 'HEAD', userAgent, timeoutMs });
       assertOkOrSurface(response, first);
       return;
     }
 
     // sitemapUrl path
     const sitemap = config.sitemapUrl!;
-    const response = await timedFetch(sitemap, { method: 'GET', userAgent, timeoutMs });
+    const response = await this.#limitedFetch(sitemap, { method: 'GET', userAgent, timeoutMs });
     assertOkOrSurface(response, sitemap);
     const text = await response.text();
     const locs = parseSitemapLocs(text);
@@ -484,7 +520,7 @@ export class HttpConnector implements DocumentSourceConnector {
       // returning an empty list would mask a misconfigured source from the
       // admin (especially when the admin only supplied `sitemapUrl` and no
       // static `urls`).
-      const response = await timedFetch(config.sitemapUrl, {
+      const response = await this.#limitedFetch(config.sitemapUrl, {
         method: 'GET',
         userAgent,
         timeoutMs,
@@ -516,7 +552,7 @@ export class HttpConnector implements DocumentSourceConnector {
     for (const { url, parsed } of filtered) {
       let response: Response;
       try {
-        response = await timedFetch(url, { method: 'HEAD', userAgent, timeoutMs });
+        response = await this.#limitedFetch(url, { method: 'HEAD', userAgent, timeoutMs });
       } catch {
         // Network / timeout — skip this URL.
         continue;
@@ -578,7 +614,7 @@ export class HttpConnector implements DocumentSourceConnector {
       );
     }
 
-    const response = await timedFetch(url, { method: 'GET', userAgent, timeoutMs });
+    const response = await this.#limitedFetch(url, { method: 'GET', userAgent, timeoutMs });
     if (response.status === 404) {
       throw new HttpDocumentNotFoundError(docId);
     }

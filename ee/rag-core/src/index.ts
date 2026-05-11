@@ -96,6 +96,12 @@ export type {
 	WatchAuditEntry,
 	WatchableConnector,
 } from './jobs/watch-manager.js';
+export { RateLimiter, DEFAULT_LIMITS } from './jobs/rate-limiter.js';
+export type {
+	RateLimit,
+	RateLimiterDeps,
+	RateLimitAuditEntry,
+} from './jobs/rate-limiter.js';
 export { runSyncJob } from './routes/rag-index.js';
 
 // ---------- Source Adapter ----------

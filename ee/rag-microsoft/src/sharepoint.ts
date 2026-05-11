@@ -17,6 +17,7 @@ import type { RagDocument, RagFolder, RagSourceType } from '@calame-ee/rag-core'
 import type {
   DocumentSourceConfig,
   DocumentSourceConnector,
+  RateLimiterLike,
 } from '@calame-ee/rag-connectors';
 
 // ---------------------------------------------------------------------------
@@ -561,6 +562,30 @@ export class SharePointConnector implements DocumentSourceConnector {
 
   static readonly MAX_CACHED_CLIENTS = 16;
 
+  /**
+   * Optional rate limiter wired by the host at runtime. Microsoft Graph's
+   * documented limit is 10 000 requests / 10 min / app / tenant — we throttle
+   * to 15 req/sec by default (with a 50-token burst) via `DEFAULT_LIMITS.sharepoint`.
+   * Each Graph call (`/sites`, `/drives`, `/items`, `/content`) acquires one
+   * token from the `('sharepoint', clientCacheKey)` bucket before the SDK
+   * sends the request.
+   */
+  #rateLimiter: RateLimiterLike | undefined;
+
+  setRateLimiter(limiter: RateLimiterLike | undefined): void {
+    this.#rateLimiter = limiter;
+  }
+
+  /**
+   * Acquire one token scoped to the credential triple. Token key matches the
+   * client cache key so two sources sharing creds also share a bucket
+   * (matches Graph's per-app-per-tenant quota model).
+   */
+  async #acquireToken(config: SharePointConfig): Promise<void> {
+    if (!this.#rateLimiter) return;
+    await this.#rateLimiter.acquire('sharepoint', clientCacheKey(config));
+  }
+
   /** Test-only accessor that exposes the current LRU cache size. */
   __cacheSizeForTests(): number {
     return this.#clientCache.size;
@@ -572,6 +597,7 @@ export class SharePointConnector implements DocumentSourceConnector {
 
     let site: GraphSite;
     try {
+      await this.#acquireToken(config);
       site = (await client.api(`/sites/${config.siteUrl}`).get()) as GraphSite;
     } catch (err: unknown) {
       throw mapTestConnectionError(err, config.siteUrl);
@@ -582,6 +608,7 @@ export class SharePointConnector implements DocumentSourceConnector {
 
     let drives: GraphCollection<GraphDrive>;
     try {
+      await this.#acquireToken(config);
       drives = (await client.api(`/sites/${site.id}/drives`).get()) as GraphCollection<GraphDrive>;
     } catch (err: unknown) {
       throw mapTestConnectionError(err, config.siteUrl);
@@ -629,7 +656,7 @@ export class SharePointConnector implements DocumentSourceConnector {
     const resolved = await this.#resolveDrive(client, config);
     const parentItemId = parent ? parent.id : resolved.rootItemId;
 
-    const items = await this.#listChildren(client, resolved, parentItemId);
+    const items = await this.#listChildren(client, resolved, parentItemId, config);
 
     const folders: RagFolder[] = [];
     for (const item of items) {
@@ -657,7 +684,7 @@ export class SharePointConnector implements DocumentSourceConnector {
     const resolved = await this.#resolveDrive(client, config);
     const parentItemId = folder ? folder.id : resolved.rootItemId;
 
-    const items = await this.#listChildren(client, resolved, parentItemId);
+    const items = await this.#listChildren(client, resolved, parentItemId, config);
 
     const docs: RagDocument[] = [];
     for (const item of items) {
@@ -710,6 +737,7 @@ export class SharePointConnector implements DocumentSourceConnector {
     //    on the /content response — depends on the underlying CDN headers).
     let meta: GraphDriveItem;
     try {
+      await this.#acquireToken(config);
       meta = (await client
         .api(`/sites/${resolved.siteId}/drives/${resolved.driveId}/items/${itemId}`)
         .get()) as GraphDriveItem;
@@ -735,6 +763,7 @@ export class SharePointConnector implements DocumentSourceConnector {
     //    body arrives as a Node Readable (no full-buffer materialization).
     let stream: Readable;
     try {
+      await this.#acquireToken(config);
       const body = await client
         .api(`/sites/${resolved.siteId}/drives/${resolved.driveId}/items/${itemId}/content`)
         .responseType(ResponseType.STREAM)
@@ -816,6 +845,7 @@ export class SharePointConnector implements DocumentSourceConnector {
       site = siteOverride;
     } else {
       try {
+        await this.#acquireToken(config);
         site = (await client.api(`/sites/${config.siteUrl}`).get()) as GraphSite;
       } catch (err: unknown) {
         throw mapTestConnectionError(err, config.siteUrl);
@@ -831,6 +861,7 @@ export class SharePointConnector implements DocumentSourceConnector {
       driveList = drivesOverride;
     } else {
       try {
+        await this.#acquireToken(config);
         const drives = (await client
           .api(`/sites/${site.id}/drives`)
           .get()) as GraphCollection<GraphDrive>;
@@ -864,6 +895,7 @@ export class SharePointConnector implements DocumentSourceConnector {
       // Graph supports path-based addressing on the drive: GET
       // /sites/{site}/drives/{drive}/root:/{path}  → driveItem
       try {
+        await this.#acquireToken(config);
         const item = (await client
           .api(`/sites/${site.id}/drives/${drive.id}/root:${config.rootFolderPath}`)
           .get()) as GraphDriveItem;
@@ -886,6 +918,7 @@ export class SharePointConnector implements DocumentSourceConnector {
     } else {
       // Drive root — fetch once to get its id.
       try {
+        await this.#acquireToken(config);
         const item = (await client
           .api(`/sites/${site.id}/drives/${drive.id}/root`)
           .get()) as GraphDriveItem;
@@ -911,12 +944,15 @@ export class SharePointConnector implements DocumentSourceConnector {
 
   /**
    * Drain a `/items/{id}/children` listing across pages, returning every
-   * child (folders + files). Caller filters on `folder` vs `file`.
+   * child (folders + files). Caller filters on `folder` vs `file`. The
+   * `config` is threaded purely so we can acquire a rate-limit token per
+   * page request — the listing itself is config-agnostic.
    */
   async #listChildren(
     client: Client,
     resolved: ResolvedDrive,
     parentItemId: string,
+    config: SharePointConfig,
   ): Promise<GraphDriveItem[]> {
     const items: GraphDriveItem[] = [];
     let nextLink: string | undefined;
@@ -930,6 +966,7 @@ export class SharePointConnector implements DocumentSourceConnector {
       firstCall = false;
       let resp: GraphCollection<GraphDriveItem>;
       try {
+        await this.#acquireToken(config);
         resp = (await client.api(path).get()) as GraphCollection<GraphDriveItem>;
       } catch (err: unknown) {
         const e = asGraphError(err);

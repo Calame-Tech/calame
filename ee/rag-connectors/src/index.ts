@@ -5,6 +5,7 @@
 export type {
   DocumentSourceConfig,
   DocumentSourceConnector,
+  RateLimiterLike,
   Unsubscribe,
   WatchEvent,
   WebhookHandle,

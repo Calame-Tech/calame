@@ -845,3 +845,65 @@ describe('NotionConnector type discriminator', () => {
     expect(c.type).toBe('notion');
   });
 });
+
+// ===========================================================================
+// Rate-limiter wiring
+// ===========================================================================
+
+describe('NotionConnector rate limiter', () => {
+  it('does not throttle when no limiter is wired (backwards-compatible)', async () => {
+    mockedNotion.users.me.mockResolvedValue({ id: 'u-1' });
+    const connector = new NotionConnector();
+    await expect(connector.testConnection(baseConfig)).resolves.toBeUndefined();
+    expect(mockedNotion.users.me).toHaveBeenCalledTimes(1);
+  });
+
+  it('invokes acquire("notion", hash(apiKey)) before each SDK call', async () => {
+    mockedNotion.users.me.mockResolvedValue({ id: 'u-1' });
+    mockedNotion.search.mockResolvedValue({ results: [], has_more: false });
+
+    const acquireCalls: Array<{ type: string; credentialKey: string }> = [];
+    const fakeLimiter = {
+      acquire: async (type: string, credentialKey: string): Promise<number> => {
+        acquireCalls.push({ type, credentialKey });
+        return 0;
+      },
+    };
+
+    const connector = new NotionConnector();
+    connector.setRateLimiter(fakeLimiter);
+
+    await connector.testConnection(baseConfig);
+    // No rootIds → falls through to `search`.
+    await connector.listFolders(baseConfig, 'src-rl');
+
+    // testConnection → 1 users.me; listFolders → 1 search (one page, no
+    // `has_more`). Two acquires total.
+    expect(acquireCalls).toHaveLength(2);
+    expect(acquireCalls.every((c) => c.type === 'notion')).toBe(true);
+    // credentialKey is a hash of the apiKey — not the raw key.
+    expect(acquireCalls[0]?.credentialKey).not.toBe(baseConfig.apiKey);
+    expect(acquireCalls[0]?.credentialKey).toMatch(/^[0-9a-f]+$/);
+    // Same apiKey → same hash.
+    expect(acquireCalls[0]?.credentialKey).toBe(acquireCalls[1]?.credentialKey);
+  });
+
+  it('different api keys produce different bucket keys', async () => {
+    mockedNotion.users.me.mockResolvedValue({ id: 'u-1' });
+
+    const seen = new Set<string>();
+    const fakeLimiter = {
+      acquire: async (_type: string, credentialKey: string): Promise<number> => {
+        seen.add(credentialKey);
+        return 0;
+      },
+    };
+
+    const connector = new NotionConnector();
+    connector.setRateLimiter(fakeLimiter);
+
+    await connector.testConnection({ apiKey: 'secret_ONE' });
+    await connector.testConnection({ apiKey: 'secret_TWO' });
+    expect(seen.size).toBe(2);
+  });
+});

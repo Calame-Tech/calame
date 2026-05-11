@@ -21,6 +21,17 @@
  * propagates failures via {@link RerankerError} so the wrapper can log them.
  */
 
+import { createHash } from 'node:crypto';
+
+/**
+ * Minimal duck-typed shape of a {@link RateLimiter} — duplicated to avoid a
+ * circular import. The Cohere reranker only needs `acquire` to throttle
+ * outbound calls; the full limiter surface lives in `../jobs/rate-limiter.ts`.
+ */
+export interface RateLimiterLike {
+  acquire(type: string, credentialKey: string, n?: number): Promise<number>;
+}
+
 /** Input to {@link Reranker.rerank}. */
 export interface RerankerInput {
   /** Natural-language search query. */
@@ -120,6 +131,19 @@ export class CohereReranker implements Reranker {
   readonly #baseUrl: string;
   readonly #timeoutMs: number;
 
+  /**
+   * Optional rate limiter wired by the host at runtime. Cohere trial keys
+   * are capped at 10 req/min; production keys are 1000+/min — we throttle
+   * to a conservative 1/sec by default (see `DEFAULT_LIMITS.cohere`).
+   * Every `rerank` call acquires one token from the
+   * `('cohere', hash(apiKey))` bucket before issuing the HTTP request.
+   */
+  #rateLimiter: RateLimiterLike | undefined;
+
+  setRateLimiter(limiter: RateLimiterLike | undefined): void {
+    this.#rateLimiter = limiter;
+  }
+
   constructor(config: CohereRerankerConfig) {
     if (!config.apiKey) {
       throw new Error('CohereReranker: apiKey is required');
@@ -151,6 +175,15 @@ export class CohereReranker implements Reranker {
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.#timeoutMs);
+
+    // Rate-limit BEFORE constructing the controller would be slightly cleaner,
+    // but it would skew the timeout window: we'd start the timer before
+    // potentially sleeping for the rate-limit wait. The order chosen here
+    // keeps the timeout aligned with the actual network call.
+    if (this.#rateLimiter) {
+      const credentialKey = createHash('sha256').update(this.#apiKey).digest('hex').slice(0, 32);
+      await this.#rateLimiter.acquire('cohere', credentialKey);
+    }
 
     let response: Response;
     try {

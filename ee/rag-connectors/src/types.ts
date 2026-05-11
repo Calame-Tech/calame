@@ -36,6 +36,20 @@ export interface WebhookHandle {
 }
 
 /**
+ * Minimal duck-typed shape of a {@link import('@calame-ee/rag-core').RateLimiter}
+ * — duplicated here to keep the dependency direction one-way (rag-connectors
+ * → rag-core, never back). Connectors only ever call `acquire`; the rest of
+ * the limiter surface (inspect, reset, …) is internal to rag-core.
+ *
+ * `acquire` returns the number of milliseconds the call had to wait for
+ * tokens (0 when no wait was needed). Connectors don't currently inspect the
+ * return value, but it's surfaced so future telemetry can attribute latency.
+ */
+export interface RateLimiterLike {
+  acquire(type: string, credentialKey: string, n?: number): Promise<number>;
+}
+
+/**
  * Connector contract for a document source. Mirrors the shape of
  * `DatabaseConnector` (`packages/connectors/src/types.ts`) so the same mental
  * model applies. See `docs/rag-integration-plan.md` §4.1.

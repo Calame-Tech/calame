@@ -13,6 +13,7 @@ import type {
   SyncQueue,
   PollScheduler,
   WatchManager,
+  RateLimiter,
 } from '@calame-ee/rag-core';
 import { randomUUID } from 'node:crypto';
 import type { CalameDatabase } from './database.js';
@@ -20,6 +21,7 @@ import type { AiSettingsManager } from './ai-config.js';
 import { settingSupports } from './ai-config.js';
 import { deriveKeyFromEnv, encryptString, decryptString } from './crypto.js';
 import { sourceAdapterRegistry } from '@calame/core';
+import { parseRateLimitEnv } from './rag-rate-limits.js';
 
 /**
  * Public shape of the RAG runtime stored on `AppState.ragRuntime`. All fields
@@ -65,6 +67,14 @@ export interface RagRuntime {
    * scheduler so per-source dedupe is preserved across both trigger paths.
    */
   watchManager: WatchManager;
+  /**
+   * Per-(type, credentialKey) token-bucket rate limiter shared by every
+   * connector singleton (and the Cohere reranker). Built once at boot and
+   * threaded into each connector via `setRateLimiter` before the connector
+   * is returned from `resolveConnector`. Prevents bursts from the
+   * polling / watch / queue paths from saturating upstream API quotas.
+   */
+  rateLimiter: RateLimiter;
   /** Reference to the loaded @calame-ee/rag-core module — used to register routes. */
   ragCore: typeof import('@calame-ee/rag-core');
 }
@@ -317,33 +327,71 @@ export async function initRagRuntime(
     embeddingClient: defaultEmbeddingClient ?? makeUnconfiguredEmbeddingClient(dimension),
   });
 
+  // Token-bucket rate limiter shared by every connector singleton (and the
+  // Cohere reranker further down). DEFAULT_LIMITS encodes conservative
+  // per-provider quotas; `parseRateLimitEnv` layers in any
+  // `CALAME_RAG_RATE_LIMIT_<TYPE>` env overrides the operator supplied.
+  // Audit events flow through the same `[rag-audit]` log line as the other
+  // job primitives so a single tail covers throttling, polling, and syncs.
+  const rateLimitOverrides = parseRateLimitEnv(process.env, log);
+  if (Object.keys(rateLimitOverrides).length > 0) {
+    log.info(
+      `RAG rate limits overridden via env: ${Object.entries(rateLimitOverrides)
+        .map(([t, v]) => `${t}=${v.refillPerSec}/s/${v.capacity}`)
+        .join(', ')}`,
+    );
+  }
+  const rateLimiter = new ragCore.RateLimiter({
+    limits: rateLimitOverrides,
+    onAudit: (event) => {
+      log.info(`[rag-audit] ${event.type} ${JSON.stringify(event.payload)}`);
+    },
+  });
+
   // Build a connector resolver. Phase 1 wired `local`; Phase 3 adds `s3` and
   // `http`. Phase 3+ adds `gdrive`, `notion`, and `sharepoint` (each in a
   // separate package — see the `ragGdrive` / `ragNotion` / `ragMicrosoft`
   // lazy-imports above). Other types (gsheets, git, …) still return null so
   // the route layer can answer 501 with a clear message.
+  //
+  // Every remote-API connector is wrapped with `setRateLimiter(rateLimiter)`
+  // before returning so the queue / poller / watcher trigger paths all share
+  // one process-wide bucket per (type, credential). `local` is filesystem-only
+  // and skips the wiring — no upstream quota to honor.
+  const withRateLimiter = <T extends { setRateLimiter?: (l: RateLimiter | undefined) => void }>(
+    connector: T,
+  ): T => {
+    if (typeof connector.setRateLimiter === 'function') {
+      connector.setRateLimiter(rateLimiter);
+    }
+    return connector;
+  };
+
   const resolveConnector = (type: string): ConnectorLike | null => {
     if (type === 'gdrive') {
       if (!ragGdrive) return null;
-      return new ragGdrive.GDriveConnector() as unknown as ConnectorLike;
+      return withRateLimiter(new ragGdrive.GDriveConnector()) as unknown as ConnectorLike;
     }
     if (type === 'notion') {
       if (!ragNotion) return null;
-      return new ragNotion.NotionConnector() as unknown as ConnectorLike;
+      return withRateLimiter(new ragNotion.NotionConnector()) as unknown as ConnectorLike;
     }
     if (type === 'sharepoint') {
       if (!ragMicrosoft) return null;
-      return new ragMicrosoft.SharePointConnector() as unknown as ConnectorLike;
+      return withRateLimiter(
+        new ragMicrosoft.SharePointConnector(),
+      ) as unknown as ConnectorLike;
     }
     if (!ragConnectors) return null;
     if (type === 'local') {
+      // No rate limit needed — local filesystem has no upstream quota.
       return new ragConnectors.LocalFolderConnector() as unknown as ConnectorLike;
     }
     if (type === 's3') {
-      return new ragConnectors.S3Connector() as unknown as ConnectorLike;
+      return withRateLimiter(new ragConnectors.S3Connector()) as unknown as ConnectorLike;
     }
     if (type === 'http') {
-      return new ragConnectors.HttpConnector() as unknown as ConnectorLike;
+      return withRateLimiter(new ragConnectors.HttpConnector()) as unknown as ConnectorLike;
     }
     return null;
   };
@@ -471,6 +519,7 @@ export async function initRagRuntime(
     syncQueue,
     pollScheduler,
     watchManager,
+    rateLimiter,
     ragCore,
   };
   ragRuntimeRef.current = state.ragRuntime;
@@ -763,7 +812,9 @@ export async function initRagRuntime(
     const rerankFlag = process.env.CALAME_RAG_RERANK;
     const rerankEnabled = rerankFlag !== 'off';
 
-    const reranker = rerankEnabled ? resolveCohereReranker(aiSettingsManager, ragCore, log) : null;
+    const reranker = rerankEnabled
+      ? resolveCohereReranker(aiSettingsManager, ragCore, log, rateLimiter)
+      : null;
 
     const searchIndex: import('@calame-ee/rag-core').DocumentSearchIndex = reranker
       ? new ragCore.RerankingSearchIndex({
@@ -873,6 +924,7 @@ function resolveCohereReranker(
   aiSettingsManager: AiSettingsManager,
   ragCore: typeof import('@calame-ee/rag-core'),
   log: { info: (msg: string) => void; warn: (msg: string) => void },
+  rateLimiter: RateLimiter | null,
 ): import('@calame-ee/rag-core').Reranker | null {
   const settings = aiSettingsManager.listSettings();
   for (const setting of settings) {
@@ -886,11 +938,18 @@ function resolveCohereReranker(
       continue;
     }
     try {
-      return new ragCore.CohereReranker({
+      const reranker = new ragCore.CohereReranker({
         apiKey: setting.apiKey,
         model: setting.rerankModel,
         baseUrl: setting.baseUrl,
       });
+      // Share the runtime rate limiter so the `cohere` bucket throttles
+      // every rerank call across the process — keeps trial-tier keys
+      // (10 req/min) safe and avoids 429s under load.
+      if (rateLimiter) {
+        reranker.setRateLimiter(rateLimiter);
+      }
+      return reranker;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       log.warn(`Failed to build CohereReranker from "${setting.name}": ${msg}`);

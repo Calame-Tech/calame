@@ -16,7 +16,11 @@ import {
 
 import type { RagDocument, RagFolder, RagSourceType } from '@calame-ee/rag-core';
 
-import type { DocumentSourceConfig, DocumentSourceConnector } from './types.js';
+import type {
+  DocumentSourceConfig,
+  DocumentSourceConnector,
+  RateLimiterLike,
+} from './types.js';
 import { deterministicId, matchGlobs } from './utils.js';
 
 /**
@@ -268,6 +272,24 @@ export class S3Connector implements DocumentSourceConnector {
   static readonly MAX_CACHED_CLIENTS = 16;
 
   /**
+   * Optional rate limiter wired by the host at runtime. Each S3 API call
+   * (`HeadBucket`, `ListObjectsV2`, `GetObject`, ...) acquires one token from
+   * the `('s3', clientCacheKey)` bucket before sending the SDK command.
+   * `undefined` means no limiting — preserves the pre-Phase-X behavior so
+   * callers that build the connector directly (tests, custom integrations)
+   * see no change.
+   */
+  #rateLimiter: RateLimiterLike | undefined;
+
+  /**
+   * Setter-injected to keep the connector singleton-friendly. The host calls
+   * this once per `resolveConnector` invocation; tests can pass a stub.
+   */
+  setRateLimiter(limiter: RateLimiterLike | undefined): void {
+    this.#rateLimiter = limiter;
+  }
+
+  /**
    * Test-only accessor that exposes the current size of the LRU client
    * cache. Not part of the public API — guarded by an `__` prefix.
    * @internal
@@ -280,6 +302,7 @@ export class S3Connector implements DocumentSourceConnector {
     const config = narrowConfig(rawConfig);
     const client = this.#getClient(config);
     try {
+      await this.#rateLimiter?.acquire('s3', clientCacheKey(config));
       await client.send(new HeadBucketCommand({ Bucket: config.bucket }));
     } catch (err: unknown) {
       throw mapS3Error(err, config.bucket);
@@ -298,6 +321,7 @@ export class S3Connector implements DocumentSourceConnector {
     const folders: RagFolder[] = [];
     let continuationToken: string | undefined;
     do {
+      await this.#rateLimiter?.acquire('s3', clientCacheKey(config));
       const out = await client.send(
         new ListObjectsV2Command({
           Bucket: config.bucket,
@@ -350,6 +374,7 @@ export class S3Connector implements DocumentSourceConnector {
     const documents: RagDocument[] = [];
     let continuationToken: string | undefined;
     do {
+      await this.#rateLimiter?.acquire('s3', clientCacheKey(config));
       const out = await client.send(
         new ListObjectsV2Command({
           Bucket: config.bucket,
@@ -415,6 +440,7 @@ export class S3Connector implements DocumentSourceConnector {
     const client = this.#getClient(config);
     let response;
     try {
+      await this.#rateLimiter?.acquire('s3', clientCacheKey(config));
       response = await client.send(
         new GetObjectCommand({ Bucket: config.bucket, Key: key }),
       );

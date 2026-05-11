@@ -12,6 +12,7 @@ import type { RagDocument, RagFolder, RagSourceType } from '@calame-ee/rag-core'
 import type {
   DocumentSourceConfig,
   DocumentSourceConnector,
+  RateLimiterLike,
 } from '@calame-ee/rag-connectors';
 
 // ---------------------------------------------------------------------------
@@ -279,15 +280,19 @@ function clientCacheKey(config: GDriveConfig): string {
 
 /**
  * Drain a `files.list` query across pages and return all matching files.
- * Each page is fetched serially with the previous `nextPageToken`.
+ * Each page is fetched serially with the previous `nextPageToken`. The
+ * optional `beforeCall` hook is awaited before every page fetch — used by
+ * the connector to acquire a rate-limit token per page request.
  */
 async function listAllFiles(
   drive: drive_v3.Drive,
   params: drive_v3.Params$Resource$Files$List,
+  beforeCall?: () => Promise<void>,
 ): Promise<drive_v3.Schema$File[]> {
   const all: drive_v3.Schema$File[] = [];
   let pageToken: string | undefined;
   do {
+    if (beforeCall) await beforeCall();
     const resp = await drive.files.list({ ...params, pageToken });
     const data = resp.data ?? {};
     if (Array.isArray(data.files)) {
@@ -434,6 +439,29 @@ export class GDriveConnector implements DocumentSourceConnector {
 
   static readonly MAX_CACHED_CLIENTS = 16;
 
+  /**
+   * Optional rate limiter wired by the host at runtime. Drive's published
+   * cap is 1000 queries per 100s per user (= 10/sec) — we throttle to a
+   * conservative 8/sec by default (see `DEFAULT_LIMITS.gdrive`). Each
+   * `drive.files.*` round-trip acquires one token from the
+   * `('gdrive', clientCacheKey)` bucket before invoking the SDK.
+   */
+  #rateLimiter: RateLimiterLike | undefined;
+
+  setRateLimiter(limiter: RateLimiterLike | undefined): void {
+    this.#rateLimiter = limiter;
+  }
+
+  /**
+   * Acquire one token from the gdrive bucket scoped to the credential
+   * triple. No-op when `#rateLimiter` is undefined (preserves the prior
+   * behavior for callers that build the connector directly).
+   */
+  async #acquireToken(config: GDriveConfig): Promise<void> {
+    if (!this.#rateLimiter) return;
+    await this.#rateLimiter.acquire('gdrive', clientCacheKey(config));
+  }
+
   /** Test-only accessor that exposes the current LRU cache size. */
   __cacheSizeForTests(): number {
     return this.#clientCache.size;
@@ -447,6 +475,7 @@ export class GDriveConnector implements DocumentSourceConnector {
 
     let resp: { data?: drive_v3.Schema$File };
     try {
+      await this.#acquireToken(config);
       resp = (await drive.files.get({
         fileId: config.rootFolderId,
         fields: 'id, name, mimeType',
@@ -489,13 +518,17 @@ export class GDriveConnector implements DocumentSourceConnector {
       `mimeType = 'application/vnd.google-apps.folder' and ` +
       `trashed = false`;
 
-    const files = await listAllFiles(drive, {
-      q,
-      fields: 'nextPageToken, files(id, name, parents, modifiedTime, createdTime)',
-      pageSize: 1000,
-      supportsAllDrives: true,
-      includeItemsFromAllDrives: true,
-    });
+    const files = await listAllFiles(
+      drive,
+      {
+        q,
+        fields: 'nextPageToken, files(id, name, parents, modifiedTime, createdTime)',
+        pageSize: 1000,
+        supportsAllDrives: true,
+        includeItemsFromAllDrives: true,
+      },
+      () => this.#acquireToken(config),
+    );
 
     const folders: RagFolder[] = [];
     for (const f of files) {
@@ -528,14 +561,18 @@ export class GDriveConnector implements DocumentSourceConnector {
       `mimeType != 'application/vnd.google-apps.folder' and ` +
       `trashed = false`;
 
-    const files = await listAllFiles(drive, {
-      q,
-      fields:
-        'nextPageToken, files(id, name, mimeType, size, md5Checksum, modifiedTime, parents)',
-      pageSize: 1000,
-      supportsAllDrives: true,
-      includeItemsFromAllDrives: true,
-    });
+    const files = await listAllFiles(
+      drive,
+      {
+        q,
+        fields:
+          'nextPageToken, files(id, name, mimeType, size, md5Checksum, modifiedTime, parents)',
+        pageSize: 1000,
+        supportsAllDrives: true,
+        includeItemsFromAllDrives: true,
+      },
+      () => this.#acquireToken(config),
+    );
 
     const docs: RagDocument[] = [];
     for (const f of files) {
@@ -598,6 +635,7 @@ export class GDriveConnector implements DocumentSourceConnector {
     // Look up the mimeType first so we know whether to use export or media.
     let meta: drive_v3.Schema$File;
     try {
+      await this.#acquireToken(config);
       const resp = (await drive.files.get({
         fileId,
         fields: 'id, name, mimeType',
@@ -620,6 +658,7 @@ export class GDriveConnector implements DocumentSourceConnector {
       if (!exportMime) {
         throw new UnsupportedGDriveMimeTypeError(originalMime);
       }
+      await this.#acquireToken(config);
       const exportResp = await drive.files.export(
         { fileId, mimeType: exportMime },
         { responseType: 'stream' },
@@ -630,6 +669,7 @@ export class GDriveConnector implements DocumentSourceConnector {
 
     // Binary file — stream via alt=media.
     try {
+      await this.#acquireToken(config);
       const mediaResp = await drive.files.get(
         { fileId, alt: 'media', supportsAllDrives: true },
         { responseType: 'stream' },

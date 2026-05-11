@@ -511,3 +511,67 @@ describe('S3Connector LRU client cache', () => {
     expect(__testing.getClientCacheSize(connector)).toBe(16);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Rate-limiter wiring
+// ---------------------------------------------------------------------------
+
+describe('S3Connector rate limiter', () => {
+  it('does not call any limiter when none is injected (backwards-compatible)', async () => {
+    // The connector default is `setRateLimiter`-not-called: it must still
+    // function with no observable side effect beyond the SDK calls.
+    s3Mock.on(HeadBucketCommand).resolves({});
+    const connector = new S3Connector();
+    await expect(connector.testConnection(baseConfig)).resolves.toBeUndefined();
+  });
+
+  it('invokes acquire("s3", ...) before each SDK send when a limiter is wired', async () => {
+    s3Mock.on(HeadBucketCommand).resolves({});
+    s3Mock.on(ListObjectsV2Command).resolves({
+      CommonPrefixes: [{ Prefix: 'docs/' }],
+    });
+
+    const acquireCalls: Array<{ type: string; credentialKey: string }> = [];
+    const fakeLimiter = {
+      acquire: async (type: string, credentialKey: string): Promise<number> => {
+        acquireCalls.push({ type, credentialKey });
+        return 0;
+      },
+    };
+
+    const connector = new S3Connector();
+    connector.setRateLimiter(fakeLimiter);
+
+    await connector.testConnection(baseConfig);
+    await connector.listFolders(baseConfig, 'src-rl');
+
+    // testConnection → 1 HeadBucket, listFolders → 1 ListObjectsV2 (no
+    // pagination in this fixture). Two acquires total.
+    expect(acquireCalls).toHaveLength(2);
+    expect(acquireCalls[0]?.type).toBe('s3');
+    // The credentialKey should be a deterministic hash of the credential
+    // triple — two calls with the same config yield the same key.
+    expect(acquireCalls[0]?.credentialKey).toBe(acquireCalls[1]?.credentialKey);
+    expect(acquireCalls[0]?.credentialKey).toMatch(/^[0-9a-f]+$/);
+  });
+
+  it('clearing the limiter via setRateLimiter(undefined) disables throttling', async () => {
+    s3Mock.on(HeadBucketCommand).resolves({});
+    let calls = 0;
+    const fakeLimiter = {
+      acquire: async (): Promise<number> => {
+        calls++;
+        return 0;
+      },
+    };
+    const connector = new S3Connector();
+    connector.setRateLimiter(fakeLimiter);
+    await connector.testConnection(baseConfig);
+    expect(calls).toBe(1);
+
+    connector.setRateLimiter(undefined);
+    await connector.testConnection(baseConfig);
+    // No additional acquire — the limiter has been detached.
+    expect(calls).toBe(1);
+  });
+});

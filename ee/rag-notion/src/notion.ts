@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Calame Tech inc. Licensed under the Business Source License 1.1.
 // See ee/LICENSE.BUSL at the root of the ee/ directory for terms.
 
+import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
 
 import { Client, APIResponseError, APIErrorCode } from '@notionhq/client';
@@ -10,6 +11,7 @@ import type { RagDocument, RagFolder, RagSourceType } from '@calame-ee/rag-core'
 import type {
   DocumentSourceConfig,
   DocumentSourceConnector,
+  RateLimiterLike,
 } from '@calame-ee/rag-connectors';
 
 // ---------------------------------------------------------------------------
@@ -545,10 +547,34 @@ export class NotionConnector implements DocumentSourceConnector {
   // signing, no token exchange). Adding a cache is a small follow-up if the
   // admin reports load.
 
+  /**
+   * Optional rate limiter wired by the host at runtime. Notion's published
+   * cap is 3 req/sec averaged with a small burst; we throttle to that by
+   * default (see `DEFAULT_LIMITS.notion`). Each SDK call (`users.me`,
+   * `databases.query`, `blocks.children.list`, `search`, …) acquires one
+   * token from the `('notion', hash(apiKey))` bucket before invoking.
+   */
+  #rateLimiter: RateLimiterLike | undefined;
+
+  setRateLimiter(limiter: RateLimiterLike | undefined): void {
+    this.#rateLimiter = limiter;
+  }
+
+  /**
+   * Acquire one token scoped to the API key. We hash the key so we don't
+   * keep the plaintext credential alive on the bucket map.
+   */
+  async #acquireToken(apiKey: string): Promise<void> {
+    if (!this.#rateLimiter) return;
+    const credentialKey = createHash('sha256').update(apiKey).digest('hex').slice(0, 32);
+    await this.#rateLimiter.acquire('notion', credentialKey);
+  }
+
   async testConnection(rawConfig: DocumentSourceConfig): Promise<void> {
     const config = narrowConfig(rawConfig);
     const notion = new Client({ auth: config.apiKey });
     try {
+      await this.#acquireToken(config.apiKey);
       await notion.users.me({});
     } catch (err: unknown) {
       const status = readErrorStatus(err);
@@ -583,6 +609,7 @@ export class NotionConnector implements DocumentSourceConnector {
       for (const id of config.rootIds) {
         const dashed = denormalizeId(id);
         try {
+          await this.#acquireToken(config.apiKey);
           const db = await notion.databases.retrieve({ database_id: dashed });
           if ('title' in db && Array.isArray((db as { title?: unknown }).title)) {
             folders.push(this.#dbToFolder(db, sourceId));
@@ -617,6 +644,7 @@ export class NotionConnector implements DocumentSourceConnector {
       if (startCursor !== undefined) args.start_cursor = startCursor;
       let resp;
       try {
+        await this.#acquireToken(config.apiKey);
         resp = await notion.search(args);
       } catch (err: unknown) {
         throw mapNotionError(err);
@@ -665,6 +693,7 @@ export class NotionConnector implements DocumentSourceConnector {
         if (startCursor !== undefined) args.start_cursor = startCursor;
         let resp;
         try {
+          await this.#acquireToken(config.apiKey);
           resp = await notion.databases.query(args);
         } catch (err: unknown) {
           throw mapNotionError(err);
@@ -685,6 +714,7 @@ export class NotionConnector implements DocumentSourceConnector {
       for (const id of config.rootIds) {
         const dashed = denormalizeId(id);
         try {
+          await this.#acquireToken(config.apiKey);
           const page = await notion.pages.retrieve({ page_id: dashed });
           if (!isPageResult(page)) continue;
           if (page.archived && !config.includeArchived) continue;
@@ -719,6 +749,7 @@ export class NotionConnector implements DocumentSourceConnector {
       if (startCursor !== undefined) args.start_cursor = startCursor;
       let resp;
       try {
+        await this.#acquireToken(config.apiKey);
         resp = await notion.search(args);
       } catch (err: unknown) {
         throw mapNotionError(err);
@@ -750,7 +781,13 @@ export class NotionConnector implements DocumentSourceConnector {
 
     let blocks: BlockWithChildren[];
     try {
-      blocks = await this.#fetchBlockTree(notion, pageId, 0, config.maxBlockDepth ?? 5);
+      blocks = await this.#fetchBlockTree(
+        notion,
+        pageId,
+        0,
+        config.maxBlockDepth ?? 5,
+        config.apiKey,
+      );
     } catch (err: unknown) {
       throw mapNotionError(err, docId);
     }
@@ -772,6 +809,7 @@ export class NotionConnector implements DocumentSourceConnector {
     blockId: string,
     currentDepth: number,
     maxDepth: number,
+    apiKey: string,
   ): Promise<BlockWithChildren[]> {
     const collected: BlockWithChildren[] = [];
     let startCursor: string | undefined;
@@ -779,6 +817,7 @@ export class NotionConnector implements DocumentSourceConnector {
       type ListArgs = { block_id: string; page_size: number; start_cursor?: string };
       const args: ListArgs = { block_id: blockId, page_size: 100 };
       if (startCursor !== undefined) args.start_cursor = startCursor;
+      await this.#acquireToken(apiKey);
       const resp = await notion.blocks.children.list(args);
       for (const raw of resp.results) {
         // PartialBlockObjectResponse only has `id` / `object` — skip those:
@@ -799,6 +838,7 @@ export class NotionConnector implements DocumentSourceConnector {
             block.id,
             currentDepth + 1,
             maxDepth,
+            apiKey,
           );
         }
         collected.push(block);

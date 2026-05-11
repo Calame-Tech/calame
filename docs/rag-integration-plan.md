@@ -381,8 +381,8 @@ Quand on a démarré pour tester en vrai, plusieurs choses cassaient. Voici les 
 - **Sync synchrone bloquante** : OK pour tester, pas pour de gros corpora. Phase 4 du plan original — **toujours pendant**.
 - **Connecteurs externes absents** : seul `LocalFolderConnector`. S3/HTTP/GDrive — **toujours pendant**, Phase 3 du plan original (= ce qui suit dans ce document).
 - **Watch incrémental absent** (`chokidar`, polling) : Phase 4 du plan original — **toujours pendant**.
-- **PII detection non appliquée** sur les chunks (cf. §12 question 5) : décision toujours non tranchée. À discuter à la prochaine session.
-- **Tests E2E manquants** : pas de test qui upload un fichier puis fait `rag_search` end-to-end. Aurait évité plusieurs fixes runtime ; aurait évité aussi le bug `sourceId` placeholder du commit `781fca4`.
+- ~~**PII detection non appliquée** sur les chunks (cf. §12 question 5)~~ → ✅ **résolu** par le commit `423c81a` (« mask PII in chunks before returning to LLM »). Décision actée : on applique le **même** `applyPiiMasking` que les colonnes DB (vient de `@calame/core`, partagé via `ee/rag-core/src/pii-masking.ts`). Masking en réponse MCP (pas en ingestion) — cohérent avec le pattern DB où la masque est en RESPONSE-time aussi. Couvert par le test E2E Path B (`rag-e2e.test.ts`, commit `6df0fed`) qui vérifie 2 emails masqués + audit `piiRedacted.email >= 2`.
+- ~~**Tests E2E manquants**~~ → ✅ **résolu** par le commit `6df0fed` (`ee/rag-core/src/__tests__/rag-e2e.test.ts`). Couvre ingest → search → MCP → PII → allowList.
 
 ### ✅ Limitations résolues 2026-05-07/09
 
@@ -411,16 +411,16 @@ Quand on a démarré pour tester en vrai, plusieurs choses cassaient. Voici les 
    - Vérifier qu'au save le `RagAccessSelector` POST bien sur `/api/profiles/:name/scopes` et que le preview en bas du composant se rafraîchit immédiatement après le save (pas de stale UI)
    - Commit & QA review via `opensmith-qa-reviewer`
 4. ~~**Tests E2E manquants**~~ → ✅ **livré 2026-05-11** (cf. section dédiée ci-dessus, `ee/rag-core/src/__tests__/rag-e2e.test.ts`). Couvre ingest → search → MCP → PII → allowList. Reste à faire : un test E2E sur le `RagAccessSelector` côté UI (cocher folder → save → preview affiche le bon count) — niveau de priorité ré-évalué à **moyen** (la chaîne backend critique est désormais couverte).
-5. **Phase 5 du plan unifié — Cleanup** (4/5 livré 2026-05-11, voir section dédiée) :
-   - ✅ ~~Ajouter ESLint rule `no-cross-license-import`~~ → livré (cible RAG uniquement, SSO reporté)
+5. **Phase 5 du plan unifié — Cleanup** (5/6 livré 2026-05-11 ; seul reste l'alias middleware bloqué par release schedule) :
+   - ✅ ~~Ajouter ESLint rule `no-cross-license-import`~~ → livré (initialement RAG-only, étendu à `@calame-ee/*` le 2026-05-11)
    - ✅ ~~JSDoc enrichi GET /preview + commentaire bascule auto-include/strict~~ → livré
-   - 📋 **Retirer les `@deprecated` fields de `ServeProfile`** : audit révèle 166 call sites encore actifs. Tranche dédiée 1-2 jours, plan d'attaque détaillé dans la section "🚧 En cours 2026-05-09 — Phase 5"
-   - 📋 Drop alias middleware `/api/connections/*` et `/api/rag/*` après une release avec header `Sunset` (≥ 2026-Q3)
+   - ✅ ~~Retirer les `@deprecated` fields de `ServeProfile`~~ → **livré 2026-05-09** (cf. section "🚧 En cours 2026-05-09 — Phase 5", point 9). Le type `ServeProfile` est purgé : `connections`, `selectedTables`, `tableOptions`, `columnMasking` complètement supprimés ; les 23 call sites sont passés par les accessors `getProfile*` de `packages/core/src/sources/accessors.ts`.
+   - 📋 Drop alias middleware `/api/connections/*` et `/api/rag/*` après une release avec header `Sunset` (≥ 2026-Q3). **Bloqué par release schedule** — pas par du dev work.
    - ✅ ~~Migrer les value imports statiques `@calame-ee/sso`~~ → **livré 2026-05-11** (commit `90ae706`). `packages/cli/src/sso-runtime.ts` (NEW, mirror exact de `rag-runtime.ts`) lazy-load `@calame-ee/sso` et stash les classes sur `AppState.ssoRuntime`. `app.ts` et `oauth.ts` consomment via le runtime, register les routes OIDC sous `if (appState.ssoRuntime)`. Frontend : 5 composants SSO (`OidcSettings`, `ProfileSsoNotice`, `DataScopingSection`, `SsoLoginButton`, `ChatSsoLogin`) en `React.lazy` + `Suspense` avec fallback gracieux. **Rule ESLint étendue** : `@calame-ee/rag-*` → `@calame-ee/*` (uniforme), test files exclus (`__tests__/**`, `*.test.ts(x)`). 1577 tests verts sur 11 packages, QA score 9.5/10.
-   - 📋 Décider du sort de `ConnectionManager.tsx` standalone : encore utilisé via le tab `databases` de `SourcesPage` mais plus comme view top-level
+   - ✅ ~~Décider du sort de `ConnectionManager.tsx` standalone~~ → **acté 2026-05-11** : **on garde** le composant comme corps du tab `databases` de `SourcesPage` (cf. `SourcesPage.tsx:4` + `:195`). Il n'est plus jamais rendu en standalone — la View `{ page: 'connections' }` est conservée comme **alias legacy** qui route via `<SourcesPage currentTab="databases">` (App.tsx:1154-1168) pour ne pas casser les deep-links existants. Pas de rewrite : ConnectionManager fait ~600 lignes de logique DB CRUD bien isolée, l'inline-r dans SourcesPage gonflerait celui-ci sans bénéfice. Décision documentée, pas de code change.
 6. **Sync async (Phase 4 plan original)** : passer la sync `LocalFolderConnector` en mode background job + queue. Toujours pertinent pour gros corpora.
 7. **Connecteurs externes (Phase 3 plan original)** : `S3Connector`, `HttpConnector` dans `ee/rag-connectors`. Important pour passer du POC à un vrai usage. Bénéficie maintenant de l'UI `SourcesPage` qui peut accueillir n'importe quel kind via `AddSourceModal`.
-8. **Décision PII** (cf. §12 question 5) : applique-t-on le PII detector aux chunks avant retour MCP ? Coût vs cohérence avec l'existant DB.
+8. ~~**Décision PII** (cf. §12 question 5)~~ → ✅ **tranchée et livrée** (commit `423c81a` + couverture par le test E2E `rag-e2e.test.ts:Path B`). Réponse : **OUI**, on applique le même PII detector (`applyPiiMasking` de `@calame/core`) aux chunks avant retour MCP. Localisation : `ee/rag-core/src/pii-masking.ts` (wrapper `maskSearchResult`) ; intégration : `ee/rag-core/src/source-adapter.ts:493-503` ; config via env `CALAME_RAG_PII_MASK` (safe-by-default = enabled). Cohérent avec le pattern DB où le masque est également RESPONSE-time (la DB stocke les valeurs brutes, le masquage s'applique sur le résultat de la query avant retour MCP). Audit log expose les counts par catégorie via `piiRedacted`. Coût : ~1 scan regex par chunk au moment du `rag_search` — négligeable (microsecondes par chunk, dominé par le RTT de l'embedding).
 9. **Délivrer un kind `api` ou `stream`** — premier test de l'extensibilité du `SourceAdapter`. HTTP/REST simple ou OpenAPI generator. Marqué TODO dans `SourceSchema` mais jamais essayé concrètement, donc on ne sait pas encore si l'abstraction tient.
 
 ### Fichiers modifiés / créés en récap
@@ -1082,7 +1082,7 @@ Découper pour livrer de la valeur incrémentalement :
 2. **Coût des embeddings** : qui paie ? clé API admin = facture admin. Faut-il un compteur de tokens visible dans l'UI ? un cap configurable ?
 3. **Granularité allowlist** : on supporte les 3 niveaux (source / folder / document) ou on commence par 2 (source + folder) pour simplifier ?
 4. **Audit** : un appel `rag_search` par un LLM doit-il logger la query complète + les chunks retournés ? (RGPD ; cf. ton contexte Québec)
-5. **Vie privée des extraits** : appliquer le même PII detector que les colonnes DB sur le texte des chunks avant retour MCP ? (cohérent avec l'existant, mais coûteux à grande échelle)
+5. ~~**Vie privée des extraits**~~ → ✅ **tranché 2026-05-11** : **OUI**, on applique le **même** `applyPiiMasking` de `@calame/core` que celui utilisé pour les colonnes DB. Implémentation dans `ee/rag-core/src/pii-masking.ts` (wrapper `maskSearchResult`), appliqué en RESPONSE-time dans `source-adapter.ts:493-503`. Config via env `CALAME_RAG_PII_MASK` (safe-by-default). Coût : ~1 scan regex par chunk au moment du `rag_search` — négligeable.
 6. **Limite de taille** : on cap la taille d'un upload local ? (sinon risque de saturer l'instance) Suggestion : 50 MB par fichier, configurable.
 7. **Suppression d'une source** : on garde les chunks orphelins quelques jours pour rollback, ou on hard-delete ? (impact sur les profiles qui la référencent)
 8. **Parsers OCR** : on inclut OCR pour PDF scannés (Tesseract) ? Sinon ces PDF seront indexés vides. Probablement ee/.

@@ -105,9 +105,9 @@ Points positifs relevés : tests fixture SQL réalistes, lazy loading propre ave
 
 **Issues à ouvrir post-commit** :
 
-- Refactor `RagAccessSelector` en sous-composants (`<SourceRow>`, `<FolderTreeNode>`, `<SaveFooter>`) — God Component à 1133 lignes
+- Refactor `RagAccessSelector` en sous-composants (`<SourceRow>`, `<FolderTreeNode>`, `<SaveFooter>`) — God Component à 1133 lignes (toujours pendant ; refactor JSX, distinct du gap de couverture qui est résolu ci-dessous)
 - Clarifier le typing de `TableToolOptions` entre `packages/web/types/schema.ts` et `@calame/core` (cast `unknown` à retirer dans `App.tsx:2624`)
-- Couverture composant pour `RagAccessSelector` (aujourd'hui 0 test sur le composant lui-même, 15 sur les helpers purs)
+- ✅ ~~Couverture composant pour `RagAccessSelector`~~ → **livré 2026-05-11** (commit `74fa152`). Les 2 toggle handlers (`handleToggleFolder`, `handleToggleDocument` — y compris la bascule `auto-include → strict` avec pré-cochage des autres docs) ont été extraits en helpers purs `applyToggleFolder` / `applyToggleDocument` dans `rag-access-state.ts`. 11 nouveaux tests dans `rag-access-state.test.ts` (5 + 6) couvrent : mode switching, pré-cochage à la bascule, strict toggle add/remove, immutabilité, no-op sur folderId inconnu. Trade-off vs `@testing-library/react` + `jsdom` : on garde la dette de zéro JSX-level tests sur le composant lui-même, mais on évite d'ajouter une dep + un setup vitest spécifique. La logique métier est désormais 100 % couverte par 26 tests purs (15 ancien + 11 nouveau).
 
 ### 🚧 En cours 2026-05-09 — Phase 5 du plan unifié : Cleanup (partiel, non commité)
 

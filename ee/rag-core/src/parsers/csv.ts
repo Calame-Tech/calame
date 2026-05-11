@@ -6,10 +6,16 @@ import Papa from 'papaparse';
 import type { ParsedDocument } from './types.js';
 
 /**
- * Parse a CSV buffer into plain text suitable for chunking. Each row is
- * rendered as `Header: value, Header: value, ...` on its own line so that
- * embedding models receive enough context to associate values with column
- * names.
+ * Parse a CSV buffer into a chunker-friendly text representation.
+ *
+ * The output contract is:
+ *   - line 1 = a single header line listing the column names (comma-joined).
+ *   - lines 2..N = one record per line, formatted as `col: value, col: value, …`.
+ *
+ * The CSV chunker reads this structure verbatim: it repeats line 1 in every
+ * emitted chunk and packs as many subsequent lines as fit under `maxTokens`.
+ *
+ * Empty values are skipped per row to keep the embedding signal dense.
  */
 export async function parse(buffer: Buffer): Promise<ParsedDocument> {
 	const csvText = buffer.toString('utf8');
@@ -21,7 +27,9 @@ export async function parse(buffer: Buffer): Promise<ParsedDocument> {
 	const rows = result.data;
 	const columns: string[] = Array.isArray(result.meta.fields) ? result.meta.fields : [];
 
-	const lines: string[] = [];
+	const headerLine = columns.join(', ');
+	const lines: string[] = headerLine.length > 0 ? [headerLine] : [];
+
 	for (const row of rows) {
 		if (!row || typeof row !== 'object') continue;
 		const parts: string[] = [];
@@ -35,6 +43,7 @@ export async function parse(buffer: Buffer): Promise<ParsedDocument> {
 
 	return {
 		text: lines.join('\n'),
+		format: 'csv',
 		metadata: {
 			rowCount: rows.length,
 			columns,

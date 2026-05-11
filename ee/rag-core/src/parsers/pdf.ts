@@ -7,8 +7,14 @@ import type { ParsedDocument } from './types.js';
 
 /**
  * Parse a PDF buffer into plain text using `unpdf` (a modern, dependency-light
- * fork of pdf.js with no native bindings). Pages are joined with a double
- * newline so chunkers can split on paragraph boundaries when desired.
+ * fork of pdf.js with no native bindings).
+ *
+ * `unpdf` does not expose heading / paragraph structure — only page-level
+ * text. We therefore return the result tagged as `'plain'` so the token
+ * chunker is selected. Pages are joined with a double newline so the
+ * downstream paragraph splitter (used by the plain chunker's fallback paths,
+ * and by the markdown chunker when run on heading-less input) still has a
+ * usable section signal.
  */
 export async function parse(buffer: Buffer): Promise<ParsedDocument> {
 	// unpdf expects a Uint8Array, not a Node Buffer slice.
@@ -18,10 +24,14 @@ export async function parse(buffer: Buffer): Promise<ParsedDocument> {
 
 	// `text` is string[] when mergePages is false.
 	const pages: string[] = Array.isArray(result.text) ? result.text : [result.text];
-	const text = pages.map((p) => (typeof p === 'string' ? p : '')).join('\n\n').trim();
+	const normalized = pages
+		.map((p) => (typeof p === 'string' ? p.trim() : ''))
+		.filter((p) => p.length > 0)
+		.join('\n\n');
 
 	return {
-		text,
+		text: normalized,
+		format: 'plain',
 		metadata: { pageCount: pages.length },
 	};
 }

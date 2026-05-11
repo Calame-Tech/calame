@@ -28,6 +28,15 @@ export {
 } from './storage/sqlite-vec-store.js';
 
 // ---------- Chunker ----------
+export {
+	pickChunker,
+	chunkPlainText,
+	chunkMarkdown,
+	chunkCsv,
+	countTokens,
+} from './chunker/index.js';
+export type { Chunk, ChunkOptions, Chunker } from './chunker/index.js';
+// Legacy aliases — keep external consumers building until the next major.
 export { chunkText } from './chunker/token-chunker.js';
 export type { TokenChunk, TokenChunkOptions } from './chunker/token-chunker.js';
 

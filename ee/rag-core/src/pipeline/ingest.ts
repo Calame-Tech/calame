@@ -13,8 +13,12 @@ import type {
 	RagSource,
 	VectorStore,
 } from '../types.js';
-import { chunkText, type TokenChunkOptions } from '../chunker/token-chunker.js';
+import { pickChunker } from '../chunker/index.js';
+import type { ChunkOptions } from '../chunker/types.js';
 import { getParserForMimeType } from '../parsers/index.js';
+
+/** @deprecated Kept for backwards compatibility. Prefer `ChunkOptions`. */
+export type TokenChunkOptions = ChunkOptions;
 
 /** Constructor dependencies for the ingestion pipeline. */
 export interface IngestionPipelineDeps {
@@ -24,8 +28,8 @@ export interface IngestionPipelineDeps {
 	vectorStore: VectorStore;
 	/** Embedding client used to produce vectors for new chunks. */
 	embeddingClient: EmbeddingClient;
-	/** Optional chunker overrides (maxTokens / overlap). */
-	chunkOptions?: TokenChunkOptions;
+	/** Optional chunker overrides (maxTokens / overlap / minTokens). */
+	chunkOptions?: ChunkOptions;
 }
 
 /** Inputs to {@link IngestionPipeline.ingestDocument}. */
@@ -88,7 +92,7 @@ export class IngestionPipeline {
 	private readonly db: BetterSqlite3Database;
 	private readonly vectorStore: VectorStore;
 	private readonly embeddingClient: EmbeddingClient;
-	private readonly chunkOptions: TokenChunkOptions | undefined;
+	private readonly chunkOptions: ChunkOptions | undefined;
 
 	constructor(deps: IngestionPipelineDeps) {
 		this.db = deps.db;
@@ -123,7 +127,10 @@ export class IngestionPipeline {
 		// Parse + chunk + embed BEFORE we touch the DB so we don't leave it half-written.
 		const parser = getParserForMimeType(input.mimeType);
 		const parsed = await parser(input.buffer);
-		const chunks = chunkText(parsed.text, this.chunkOptions);
+		// Pick the chunker that matches the parser's declared format. Falls
+		// back to the plain chunker when the parser omits a format hint.
+		const chunker = pickChunker(parsed.format);
+		const chunks = chunker(parsed.text, this.chunkOptions);
 		const embeddings: number[][] =
 			chunks.length > 0 ? await this.embeddingClient.embed(chunks.map((c) => c.text)) : [];
 

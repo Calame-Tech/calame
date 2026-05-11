@@ -19,7 +19,7 @@ export class UnsupportedMimeTypeError extends Error {
 
 /** Identity parser used for `text/plain` — buffer is already valid UTF-8 text. */
 async function parsePlainText(buffer: Buffer): Promise<ParsedDocument> {
-	return { text: buffer.toString('utf8') };
+	return { text: buffer.toString('utf8'), format: 'plain' };
 }
 
 const MIME_MAP: Record<string, DocumentParser> = {
@@ -51,5 +51,5 @@ export function listSupportedMimeTypes(): string[] {
 	return Object.keys(MIME_MAP);
 }
 
-export type { DocumentParser, ParsedDocument } from './types.js';
+export type { DocumentParser, ParsedDocument, ParsedDocumentFormat } from './types.js';
 export { pdfParser, docxParser, markdownParser, csvParser, htmlParser };

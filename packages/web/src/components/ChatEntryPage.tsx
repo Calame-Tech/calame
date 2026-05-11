@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { apiFetch } from '../lib/api.js';
+import { apiFetch, getCurrentTenant } from '../lib/api.js';
+import { buildMcpPath } from '../lib/mcp-url.js';
 import type { AuthMode } from '../types/schema.js';
 import DarkSelect from './ui/DarkSelect.js';
 import { ChatSsoLogin } from '@calame-ee/sso/web';
@@ -519,7 +520,7 @@ function OAuthLoginForm({ profile }: { profile: ChatProfile }) {
         <p className="text-sm text-gray-500 mb-8">Sign in to access this chat.</p>
 
         <a
-          href={`/mcp/${encodeURIComponent(profile.name)}/oauth/login?redirect=${encodeURIComponent(redirectUrl)}`}
+          href={`${buildMcpPath(profile.name, getCurrentTenant())}/oauth/login?redirect=${encodeURIComponent(redirectUrl)}`}
           className="inline-flex items-center justify-center w-full py-2.5 px-4 rounded-lg bg-gray-700 hover:bg-gray-600 text-sm font-medium text-white transition-colors focus:outline-none focus:ring-2 focus:ring-gray-500"
         >
           Sign in with {providerLabel}

@@ -12,6 +12,12 @@ export interface TokenEntry {
   label: string;
   createdAt: string;
   lastUsedAt?: string;
+  /**
+   * Tenant id that owns this token. Populated by `verifyToken` so a caller
+   * (e.g. the MCP route handler) can compare it to the tenant carried in
+   * the URL and reject the request when they don't match.
+   */
+  tenantId?: string;
 }
 
 export interface TokenStore {
@@ -27,6 +33,7 @@ interface TokenRow {
   created_at: string;
   last_used_at: string | null;
   token_encrypted: string | null;
+  tenant_id: string | null;
 }
 
 function rowToEntry(row: TokenRow): TokenEntry {
@@ -37,6 +44,7 @@ function rowToEntry(row: TokenRow): TokenEntry {
     label: row.label,
     createdAt: row.created_at,
     lastUsedAt: row.last_used_at ?? undefined,
+    tenantId: row.tenant_id ?? undefined,
   };
 }
 

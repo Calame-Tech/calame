@@ -1,5 +1,6 @@
 import { useState, useCallback, useMemo, useEffect, lazy, Suspense } from 'react';
-import { apiFetch } from './lib/api.js';
+import { apiFetch, getCurrentTenant } from './lib/api.js';
+import { buildMcpPath } from './lib/mcp-url.js';
 import { Button, Card, PageHeader, Eyebrow, KpiCard, EmptyState, Breadcrumb } from './components/ui/index.js';
 import Sidebar from './components/Sidebar.js';
 import HelpTip from './components/HelpTip.js';
@@ -1571,7 +1572,13 @@ function McpDetailView({
 
   const profileStatus = serveStatus.profileStatuses?.[profile.name];
   const isActive = profileStatus?.active === true;
-  const basePath = profileStatus?.endpoint ?? `/mcp/${profile.name}`;
+  // Tenant-qualified path when the current workspace is non-default — the
+  // backend's `profileStatus.endpoint` is a default-tenant string so we
+  // override it here for other workspaces (matches ServePanel.tsx).
+  const _tenant = getCurrentTenant();
+  const basePath = _tenant === 'default'
+    ? (profileStatus?.endpoint ?? `/mcp/${profile.name}`)
+    : buildMcpPath(profile.name, _tenant);
   const endpoint = `${window.location.origin}${basePath}`;
 
   // Count effective tables from configurations

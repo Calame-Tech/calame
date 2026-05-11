@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo } from 'react';
-import { apiFetch } from '../lib/api.js';
+import { apiFetch, getCurrentTenant } from '../lib/api.js';
 import type { AuthMode, Config, Profile, ServeStatus } from '../types/schema.js';
 import {
   getProfileTableNames,
@@ -8,6 +8,7 @@ import {
   getProfileTableOptions,
   getProfileColumnMasking,
 } from '../lib/profile-accessors.js';
+import { buildMcpPath } from '../lib/mcp-url.js';
 import ChatPanel from './ChatPanel.js';
 import TokenManager from './TokenManager.js';
 import AuditLogViewer from './AuditLogViewer.js';
@@ -186,7 +187,14 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
   if (selectedProfile && detailProfile) {
     const profileStatus = serveStatus.profileStatuses?.[detailProfile.name];
     const isActive = profileStatus?.active === true;
-    const basePath = profileStatus?.endpoint ?? `/mcp/${detailProfile.name}`;
+    // Build the MCP endpoint path on the client so non-default workspaces
+    // surface the tenant-qualified shape (/mcp/<tenant>/<profile>). The
+    // backend's `profileStatus.endpoint` is left as a default-tenant string
+    // and is only used as a fallback for the default workspace.
+    const tenant = getCurrentTenant();
+    const basePath = tenant === 'default'
+      ? (profileStatus?.endpoint ?? `/mcp/${detailProfile.name}`)
+      : buildMcpPath(detailProfile.name, tenant);
     const endpoint = `${window.location.origin}${basePath}`;
     const tableCount = getProfileTableNames(detailProfile).length;
 
@@ -540,7 +548,12 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
         {allProfiles.map((profile) => {
           const profileStatus = serveStatus.profileStatuses?.[profile.name];
           const isActive = profileStatus?.active === true;
-          const basePath = profileStatus?.endpoint ?? `/mcp/${profile.name}`;
+          // Tenant-qualified path for non-default workspaces (same logic as
+          // the detail view above — see comment there for the rationale).
+          const tenant = getCurrentTenant();
+          const basePath = tenant === 'default'
+            ? (profileStatus?.endpoint ?? `/mcp/${profile.name}`)
+            : buildMcpPath(profile.name, tenant);
           const endpoint = `${window.location.origin}${basePath}`;
           const tableCount = getProfileTableNames(profile).length;
           const profileSources = getProfileRelationalSources(profile);

@@ -31,7 +31,112 @@ import {
 } from '@calame/core';
 import { readConfigurationsFile } from './configurations.js';
 import type { ServeConfiguration } from '@calame/core';
+import type { ServeProfile } from '@calame/core';
 import { INTERNAL_CHAT_SECRET } from '../chat-engine.js';
+import { DEFAULT_TENANT_ID } from '../tenancy.js';
+import { buildMcpPath } from '../utils/mcp-url.js';
+
+/**
+ * Tenant id alphabet — kept in sync with `TENANT_ID_RE` in tenancy.ts.
+ * Letters, digits, underscore, hyphen; 1 to 64 chars.
+ *
+ * Defined locally because the MCP routes need to reject malformed tenant
+ * segments with a 400 — `getTenantId` cannot do this because it falls back
+ * silently to `'default'` for forward compatibility.
+ */
+const MCP_TENANT_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+
+/**
+ * Resolve the (tenantId, profileName) pair for an MCP URL.
+ *
+ * Two URL formats are supported:
+ *   - `/mcp/<profileName>`              — legacy, implicitly tenant='default'
+ *   - `/mcp/<tenantId>/<profileName>`   — tenant-qualified
+ *
+ * Ambiguity policy: a single segment is ALWAYS interpreted as legacy
+ * (tenant=default, profile=<seg>). An admin who wants to target a non-default
+ * tenant MUST include the profile name as a second segment — there is no
+ * heuristic that promotes a single segment to a tenant id, even when that
+ * segment happens to match a known tenant.
+ *
+ * Returns `null` when the first segment looks like a tenant-qualified URL but
+ * the tenant id fails the alphabet check — the route handler turns this into
+ * a 400.
+ */
+export function resolveMcpRoute(
+  firstSeg: string,
+  secondSeg: string | undefined,
+): { tenantId: string; profileName: string } | { error: 'invalid_tenant_id' } {
+  if (secondSeg) {
+    // Tenant-qualified form: validate the tenant alphabet.
+    if (!MCP_TENANT_ID_RE.test(firstSeg)) {
+      return { error: 'invalid_tenant_id' };
+    }
+    return { tenantId: firstSeg, profileName: secondSeg };
+  }
+  // Legacy form: always the default tenant.
+  return { tenantId: DEFAULT_TENANT_ID, profileName: firstSeg };
+}
+
+/**
+ * Load a single `ServeProfile` from the DB for the supplied tenant.
+ * Returns `null` when no `profiles` row exists for that tenant, or when the
+ * row exists but does not carry a profile with the requested name.
+ *
+ * For backward compat the AppState in-memory cache (`state.serveProfiles`)
+ * is preferred for the default tenant — that path keeps the existing fast
+ * path unchanged and ensures the legacy URL `/mcp/<profile>` continues to
+ * behave exactly as before Phase B introduced multi-tenancy.
+ */
+function loadServeProfileForTenant(
+  state: AppState,
+  tenantId: string,
+  profileName: string,
+): ServeProfile | null {
+  // Fast path: default tenant uses the in-memory cache populated by
+  // `serve/start` and `serve/refresh`. This preserves all current behaviour
+  // (including the "active" check based on `state.activeProfileNames`).
+  if (tenantId === DEFAULT_TENANT_ID) {
+    return state.serveProfiles[profileName] ?? null;
+  }
+
+  // Non-default tenant: load fresh from the DB. The `profiles` row holds
+  // every profile for that tenant in a single JSON blob.
+  if (!state.db) return null;
+  try {
+    const row = state.db.raw
+      .prepare("SELECT data FROM profiles WHERE key = 'main' AND tenant_id = ?")
+      .get(tenantId) as { data: string } | undefined;
+    if (!row) return null;
+    const parsed = JSON.parse(row.data) as { profiles?: Record<string, unknown> };
+    const raw = parsed.profiles?.[profileName];
+    if (!raw || typeof raw !== 'object') return null;
+    return upgradeProfileShape({ ...(raw as Record<string, unknown>), name: profileName });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Returns `true` when the (tenantId, profileName) pair is currently active.
+ *
+ * For the default tenant we honour the in-memory `state.activeProfileNames`
+ * set (the current single-tenant behaviour). For non-default tenants we
+ * treat every profile that exists in the DB as implicitly active — there is
+ * no per-tenant activation toggle today, and the alternative would be to
+ * silently refuse every cross-tenant MCP request.
+ */
+function isServeProfileActive(
+  state: AppState,
+  tenantId: string,
+  profileName: string,
+): boolean {
+  if (tenantId === DEFAULT_TENANT_ID) {
+    return state.activeProfileNames.has(profileName);
+  }
+  // Non-default tenants: existence in the DB implies active.
+  return true;
+}
 
 // Distinct-values cache. Keyed by `profile|connection|selectedTables-hash|masking-hash`.
 // Built lazily on first MCP request per (profile, config) tuple; reused across
@@ -163,15 +268,30 @@ export function mergeConfigurations(
 
 export function registerServeRoute(app: Express, state: AppState): void {
 
-  // MCP Streamable HTTP endpoint per profile
-  app.post('/mcp/:profileName', async (req: Request, res: Response) => {
-    const profileName = req.params.profileName as string;
+  // MCP Streamable HTTP endpoint per profile.
+  //
+  // Two URL formats are accepted:
+  //   - `/mcp/<profileName>`              — legacy, implicitly tenant='default'
+  //   - `/mcp/<tenantId>/<profileName>`   — tenant-qualified (new)
+  //
+  // The wildcard pattern `/:firstSeg/:secondSeg?` matches both. Disambiguation
+  // is handled by `resolveMcpRoute` — see its docstring for the policy.
+  app.post('/mcp/:firstSeg/:secondSeg?', async (req: Request, res: Response) => {
+    const firstSeg = req.params.firstSeg as string;
+    const secondSeg = req.params.secondSeg as string | undefined;
+
+    const route = resolveMcpRoute(firstSeg, secondSeg);
+    if ('error' in route) {
+      res.status(400).json({ success: false, message: 'Invalid tenant id format.' });
+      return;
+    }
+    const { tenantId, profileName } = route;
 
     try {
       // --- Resolve the profile early to determine auth mode ---
       // NOTE: We read the profile before the full active-profile check so that open/oauth
       // mode profiles can return meaningful errors rather than a generic 503.
-      const earlyProfile = state.serveProfiles[profileName];
+      const earlyProfile = loadServeProfileForTenant(state, tenantId, profileName);
       const authMode = earlyProfile?.authMode ?? 'token';
 
       // Variables populated by whichever auth branch runs
@@ -248,14 +368,16 @@ export function registerServeRoute(app: Express, state: AppState): void {
 
         if (!bearerToken) {
           // Not a JSON client — redirect to OAuth login page for browser flows.
+          // The OAuth login URL is tenant-qualified when the request URL was.
+          const loginUrl = `${buildMcpPath(profileName, tenantId)}/oauth/login`;
           const acceptHeader = req.headers.accept ?? '';
           if (acceptHeader.includes('text/html')) {
-            res.redirect(`/mcp/${encodeURIComponent(profileName)}/oauth/login`);
+            res.redirect(loginUrl);
           } else {
             res.status(401).json({
               success: false,
               message: 'Authentication required.',
-              loginUrl: `/mcp/${encodeURIComponent(profileName)}/oauth/login`,
+              loginUrl,
             });
           }
           return;
@@ -267,6 +389,7 @@ export function registerServeRoute(app: Express, state: AppState): void {
           profileName,
           state,
           req,
+          tenantId,
         );
         if (oauthAuthResult.error) {
           res.status(oauthAuthResult.status).json({ success: false, message: oauthAuthResult.error });
@@ -300,6 +423,7 @@ export function registerServeRoute(app: Express, state: AppState): void {
           profileName,
           state,
           req,
+          tenantId,
         );
         if (tokenAuthResult.error) {
           res.status(tokenAuthResult.status).json({ success: false, message: tokenAuthResult.error });
@@ -330,7 +454,10 @@ export function registerServeRoute(app: Express, state: AppState): void {
       }
 
       // --- Check that this specific profile is active ---
-      if (!state.activeProfileNames.has(profileName)) {
+      // Active = either present in `state.activeProfileNames` (default tenant
+      // fast path) or simply exists in the DB for the requested tenant
+      // (non-default — see `isServeProfileActive` for the rationale).
+      if (!isServeProfileActive(state, tenantId, profileName)) {
         res.status(503).json({ success: false, message: `Profile "${profileName}" is not active.` });
         return;
       }
@@ -339,7 +466,7 @@ export function registerServeRoute(app: Express, state: AppState): void {
       // upgradeProfileShape is idempotent and preserves the legacy fields so that the
       // tool-registration block below (which still reads .selectedTables etc.) keeps working
       // unchanged until Phase 3 replaces it with adapter.registerMcpTools iteration.
-      const rawProfile = state.serveProfiles[profileName];
+      const rawProfile = loadServeProfileForTenant(state, tenantId, profileName);
       if (!rawProfile) {
         res.status(404).json({ success: false, message: `Profile "${profileName}" is not being served.` });
         return;
@@ -358,13 +485,11 @@ export function registerServeRoute(app: Express, state: AppState): void {
           res.status(500).json({ error: 'Database not initialised.' });
           return;
         }
-        // Phase B multi-tenancy: the MCP serve endpoint is consumed by
-        // external clients (Claude Desktop, …) that cannot easily inject
-        // `X-Tenant-Id`. For the MVP we pin the configuration lookup to
-        // the default tenant (the default param of `readConfigurationsFile`)
-        // — Phase C will revisit this once the tenant can be carried in
-        // the profile name segment of the URL or in the OAuth token.
-        const configsFile = readConfigurationsFile(state.db);
+        // Multi-tenancy: the tenant is now carried in the URL — the legacy
+        // `/mcp/<profile>` form resolves to `tenantId='default'` so existing
+        // clients keep behaving as in Phase A/B; the tenant-qualified form
+        // `/mcp/<tenant>/<profile>` looks up configurations under that tenant.
+        const configsFile = readConfigurationsFile(state.db, tenantId);
         // Cast to ServeConfiguration[] — readConfigurationsFile always passes rows through
         // upgradeConfigurationShape which returns ServeConfiguration. The filter(Boolean) is
         // retained to silently skip deleted configurations that are still referenced by the profile.
@@ -519,6 +644,7 @@ export function registerServeRoute(app: Express, state: AppState): void {
           profile,
           state,
           profileName,
+          tenantId,
           profileConnections,
           effectiveSelectedTables,
           effectiveTableOptions,
@@ -594,7 +720,7 @@ export function registerServeRoute(app: Express, state: AppState): void {
             },
             onAuditLog: (entry) => {
               if (state.auditLog) {
-                state.auditLog.addEntry({ ...entry, tokenLabel: resolvedTokenLabel });
+                state.auditLog.addEntry({ ...entry, tokenLabel: resolvedTokenLabel, tenantId });
                 state.auditLog.save().catch(() => {});
               }
             },
@@ -665,7 +791,7 @@ export function registerServeRoute(app: Express, state: AppState): void {
               },
               onAuditLog: (entry) => {
                 if (state.auditLog) {
-                  state.auditLog.addEntry({ ...entry, tokenLabel: resolvedTokenLabel });
+                  state.auditLog.addEntry({ ...entry, tokenLabel: resolvedTokenLabel, tenantId });
                   state.auditLog.save().catch(() => {});
                 }
               },
@@ -698,14 +824,17 @@ export function registerServeRoute(app: Express, state: AppState): void {
     }
   });
 
-  // Handle GET for SSE streams on MCP endpoint
-  app.get('/mcp/:profileName', async (req: Request, res: Response) => {
-    // Stateless mode doesn't support GET SSE streams
+  // Handle GET for SSE streams on MCP endpoint (both URL formats).
+  // OAuth helper paths (e.g. `/mcp/<profile>/oauth/login`) live in
+  // profile-oauth.ts and are registered first in app.ts, so they match ahead
+  // of this catch-all. We reject any remaining GET because stateless mode
+  // doesn't support SSE streams.
+  app.get('/mcp/:firstSeg/:secondSeg?', async (_req: Request, res: Response) => {
     res.status(405).json({ error: 'Method not allowed. Use POST for MCP requests in stateless mode.' });
   });
 
-  // Handle DELETE for session termination (not used in stateless mode)
-  app.delete('/mcp/:profileName', async (req: Request, res: Response) => {
+  // Handle DELETE for session termination (not used in stateless mode).
+  app.delete('/mcp/:firstSeg/:secondSeg?', async (_req: Request, res: Response) => {
     res.status(405).json({ error: 'Method not allowed. Stateless mode does not use sessions.' });
   });
 }
@@ -728,12 +857,20 @@ interface BearerAuthResult {
 /**
  * Verify a Bearer token against both the user manager and the legacy token manager.
  * Returns a structured result so callers can handle errors uniformly.
+ *
+ * The `tenantId` parameter is the tenant resolved from the MCP URL. When set,
+ * legacy tokens are required to match (tokens carry their owning tenant in the
+ * `tokens.tenant_id` column). User-manager tokens are not yet tenant-tagged at
+ * the row level (Phase B did not migrate `users.tenant_id` into the verify
+ * path), so they pass through unchanged — this matches the existing semantics
+ * where any active admin can hit any profile.
  */
 async function verifyBearerToken(
   bearerToken: string,
   profileName: string,
   state: AppState,
   req: Request,
+  tenantId: string = DEFAULT_TENANT_ID,
 ): Promise<BearerAuthResult> {
   const tokenManager = state.tokenManager;
   if (!tokenManager) {
@@ -820,6 +957,23 @@ async function verifyBearerToken(
         allowedTools: null,
       };
     }
+    // Cross-tenant token replay guard. The legacy `tokens` table carries
+    // `tenant_id` since Phase A — when the row's tenant doesn't match the
+    // URL's tenant we surface a 403 rather than authorising a request that
+    // could otherwise serve another tenant's profile rows.
+    //
+    // Tokens issued before Phase A landed have `tenant_id = 'default'` (the
+    // column default), so `/mcp/<profile>` requests with such tokens keep
+    // working unchanged.
+    const tokenTenant = tokenEntry.tenantId ?? DEFAULT_TENANT_ID;
+    if (tokenTenant !== tenantId) {
+      return {
+        error: `Token is not authorized for profile "${profileName}".`,
+        status: 403,
+        allowedTables: null,
+        allowedTools: null,
+      };
+    }
     authenticatedProfileName = tokenEntry.profileName;
     rateLimitId = tokenEntry.id;
     await tokenManager.save();
@@ -861,6 +1015,8 @@ interface RegisterAdaptersOptions {
   profile: import('@calame/core').ServeProfile;
   state: AppState;
   profileName: string;
+  /** Tenant id resolved from the MCP URL — flows into every audit entry. */
+  tenantId: string;
   profileConnections: ConnectionState[];
   effectiveSelectedTables: Record<string, string[]>;
   effectiveTableOptions: Record<string, TableToolOptions> | undefined;
@@ -1022,6 +1178,7 @@ async function registerToolsViaAdapters(opts: RegisterAdaptersOptions): Promise<
     profile,
     state,
     profileName,
+    tenantId,
     profileConnections,
     effectiveSelectedTables,
     effectiveTableOptions,
@@ -1187,7 +1344,7 @@ async function registerToolsViaAdapters(opts: RegisterAdaptersOptions): Promise<
       responseMode,
       onAuditLog: (entry: AuditLogEntry) => {
         if (state.auditLog) {
-          state.auditLog.addEntry({ ...entry, tokenLabel: resolvedTokenLabel });
+          state.auditLog.addEntry({ ...entry, tokenLabel: resolvedTokenLabel, tenantId });
           state.auditLog.save().catch(() => {});
         }
       },
@@ -1276,7 +1433,7 @@ async function registerToolsViaAdapters(opts: RegisterAdaptersOptions): Promise<
       },
       onAuditLog: (entry) => {
         if (state.auditLog) {
-          state.auditLog.addEntry({ ...entry, tokenLabel: resolvedTokenLabel });
+          state.auditLog.addEntry({ ...entry, tokenLabel: resolvedTokenLabel, tenantId });
           state.auditLog.save().catch(() => {});
         }
       },

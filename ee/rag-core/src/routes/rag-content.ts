@@ -6,6 +6,14 @@ import type { Express, Request, Response } from 'express';
 import type { RagDocument, RagFolder } from '../types.js';
 import type { RagRouteDeps } from './types.js';
 
+/**
+ * Resolve the tenant id for a request, falling back to the literal
+ * `'default'` when the host hasn't wired a resolver (e.g. test deps).
+ */
+function resolveTenantId(deps: RagRouteDeps, req?: Request): string {
+	return deps.getTenantId ? deps.getTenantId(req) : 'default';
+}
+
 interface FolderRow {
 	id: string;
 	source_id: string;
@@ -81,36 +89,45 @@ function sendError(res: Response, status: number, message: string): void {
  *  - GET /api/rag/sources/:id/folders        list folders for a source
  *  - GET /api/rag/sources/:id/documents      list (non-deleted) documents
  *  - GET /api/rag/documents/:id              full document metadata + reconstructed text
+ *
+ * Phase B multi-tenancy: every read path binds the parent source's tenant
+ * into the visibility check. Cross-tenant sources resolve as 404, so the
+ * existence of folders/documents under another tenant is never leaked.
  */
 /**
- * Returns true when the parent source exists AND is not soft-deleted.
- * Used by every listing handler to refuse to expose folders / documents
- * of a source that the admin removed from the UI — the row may still be
- * in `rag_sources` waiting for the 7-day cleanup cron, but to API
- * consumers the source is gone.
+ * Returns true when the parent source exists, is not soft-deleted AND
+ * belongs to the supplied tenant. Used by every listing handler to refuse
+ * to expose folders / documents of a source the caller doesn't own.
  */
-function isSourceVisible(deps: RagRouteDeps, sourceId: string): boolean {
+function isSourceVisible(deps: RagRouteDeps, sourceId: string, tenantId: string): boolean {
 	const row = deps.db
-		.prepare<[string], { deleted_at: string | null }>(
-			`SELECT deleted_at FROM rag_sources WHERE id = ?`,
+		.prepare<[string, string], { deleted_at: string | null }>(
+			`SELECT deleted_at FROM rag_sources WHERE id = ? AND tenant_id = ?`,
 		)
-		.get(sourceId);
+		.get(sourceId, tenantId);
 	return row !== undefined && row.deleted_at === null;
 }
 
 export function registerRagContentRoutes(app: Express, deps: RagRouteDeps): void {
 	app.get('/api/rag/sources/:id/folders', (req: Request, res: Response) => {
 		try {
+			const tenantId = resolveTenantId(deps, req);
 			const id = String(req.params['id'] ?? '');
-			if (!isSourceVisible(deps, id)) {
+			if (!isSourceVisible(deps, id, tenantId)) {
 				sendError(res, 404, `Source "${id}" not found.`);
 				return;
 			}
+			// `source_id` is already gated by the parent-source tenant check above,
+			// so binding `tenant_id` on the JOIN-less query is redundant but kept
+			// for defence-in-depth (and to keep the audit-trail of every read
+			// path passing through the tenant filter).
 			const rows = deps.db
-				.prepare<[string], FolderRow>(
-					`SELECT * FROM rag_folders WHERE source_id = ? ORDER BY path ASC`,
+				.prepare<[string, string], FolderRow>(
+					`SELECT * FROM rag_folders
+					 WHERE source_id = ? AND tenant_id = ?
+					 ORDER BY path ASC`,
 				)
-				.all(id);
+				.all(id, tenantId);
 			res.json({ folders: rows.map(rowToFolder) });
 		} catch (error: unknown) {
 			const message = error instanceof Error ? error.message : 'Unknown error';
@@ -120,8 +137,9 @@ export function registerRagContentRoutes(app: Express, deps: RagRouteDeps): void
 
 	app.get('/api/rag/sources/:id/documents', (req: Request, res: Response) => {
 		try {
+			const tenantId = resolveTenantId(deps, req);
 			const id = String(req.params['id'] ?? '');
-			if (!isSourceVisible(deps, id)) {
+			if (!isSourceVisible(deps, id, tenantId)) {
 				sendError(res, 404, `Source "${id}" not found.`);
 				return;
 			}
@@ -130,20 +148,20 @@ export function registerRagContentRoutes(app: Express, deps: RagRouteDeps): void
 			let rows: DocumentRow[];
 			if (typeof folder === 'string' && folder.length > 0) {
 				rows = deps.db
-					.prepare<[string, string], DocumentRow>(
+					.prepare<[string, string, string], DocumentRow>(
 						`SELECT * FROM rag_documents
-						 WHERE source_id = ? AND folder_id = ? AND deleted_at IS NULL
+						 WHERE source_id = ? AND folder_id = ? AND tenant_id = ? AND deleted_at IS NULL
 						 ORDER BY path ASC`,
 					)
-					.all(id, folder);
+					.all(id, folder, tenantId);
 			} else {
 				rows = deps.db
-					.prepare<[string], DocumentRow>(
+					.prepare<[string, string], DocumentRow>(
 						`SELECT * FROM rag_documents
-						 WHERE source_id = ? AND deleted_at IS NULL
+						 WHERE source_id = ? AND tenant_id = ? AND deleted_at IS NULL
 						 ORDER BY path ASC`,
 					)
-					.all(id);
+					.all(id, tenantId);
 			}
 			res.json({ documents: rows.map(rowToDocument) });
 		} catch (error: unknown) {
@@ -154,26 +172,34 @@ export function registerRagContentRoutes(app: Express, deps: RagRouteDeps): void
 
 	app.get('/api/rag/documents/:id', (req: Request, res: Response) => {
 		try {
+			const tenantId = resolveTenantId(deps, req);
 			const id = String(req.params['id'] ?? '');
+			// Bind the tenant on the document lookup so a cross-tenant document
+			// id resolves as 404 directly.
 			const row = deps.db
-				.prepare<[string], DocumentRow>(`SELECT * FROM rag_documents WHERE id = ?`)
-				.get(id);
+				.prepare<[string, string], DocumentRow>(
+					`SELECT * FROM rag_documents WHERE id = ? AND tenant_id = ?`,
+				)
+				.get(id, tenantId);
 			if (!row) {
 				sendError(res, 404, `Document "${id}" not found.`);
 				return;
 			}
 			// Refuse to surface a document whose parent source is soft-deleted —
 			// it would leak data that should be invisible until the source is
-			// restored (or hard-deleted by the cleanup cron).
-			if (!isSourceVisible(deps, row.source_id)) {
+			// restored (or hard-deleted by the cleanup cron). The visibility
+			// check also re-applies the tenant filter for defence-in-depth.
+			if (!isSourceVisible(deps, row.source_id, tenantId)) {
 				sendError(res, 404, `Document "${id}" not found.`);
 				return;
 			}
 			const chunks = deps.db
-				.prepare<[string], ChunkRow>(
-					`SELECT * FROM rag_chunks WHERE document_id = ? ORDER BY position ASC`,
+				.prepare<[string, string], ChunkRow>(
+					`SELECT * FROM rag_chunks
+					 WHERE document_id = ? AND tenant_id = ?
+					 ORDER BY position ASC`,
 				)
-				.all(id);
+				.all(id, tenantId);
 			const text = chunks.map((c) => c.text).join('\n');
 			res.json({
 				document: rowToDocument(row),

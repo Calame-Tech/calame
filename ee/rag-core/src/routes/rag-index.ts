@@ -9,6 +9,14 @@ import type { RagFolder, RagJob, RagJobStatus, RagSource, RagSourceType } from '
 import type { ConnectorLike, RagRouteDeps } from './types.js';
 import { EmbeddingCapExceededError } from '../jobs/embedding-cap.js';
 
+/**
+ * Resolve the tenant id for a request, falling back to the literal
+ * `'default'` when the host hasn't wired a resolver (e.g. test deps).
+ */
+function resolveTenantId(deps: RagRouteDeps, req?: Request): string {
+	return deps.getTenantId ? deps.getTenantId(req) : 'default';
+}
+
 interface SourceRow {
 	id: string;
 	name: string;
@@ -553,6 +561,7 @@ function parseLimit(raw: unknown): number {
 export function registerRagIndexRoutes(app: Express, deps: RagRouteDeps): void {
 	app.get('/api/rag/jobs', (req: Request, res: Response) => {
 		try {
+			const tenantId = resolveTenantId(deps, req);
 			const sourceId = req.query['sourceId'];
 			const statusList = parseStatusFilter(req.query['status']);
 			const limit = parseLimit(req.query['limit']);
@@ -565,8 +574,13 @@ export function registerRagIndexRoutes(app: Express, deps: RagRouteDeps): void {
 			// sources from the history panel. `OR s.id IS NULL` covers the rare
 			// race where a job row outlived its source — keeps the row visible
 			// rather than silently dropping it.
-			const where: string[] = ['(s.id IS NULL OR s.deleted_at IS NULL)'];
-			const params: unknown[] = [];
+			//
+			// Phase B multi-tenancy: `j.tenant_id = ?` filters at the job row
+			// level (every job inherits its tenant from the parent source at
+			// INSERT time), so even orphan jobs whose source row vanished
+			// stay scoped to the caller's tenant.
+			const where: string[] = ['(s.id IS NULL OR s.deleted_at IS NULL)', 'j.tenant_id = ?'];
+			const params: unknown[] = [tenantId];
 			if (typeof sourceId === 'string' && sourceId.length > 0) {
 				where.push('j.source_id = ?');
 				params.push(sourceId);
@@ -591,12 +605,17 @@ export function registerRagIndexRoutes(app: Express, deps: RagRouteDeps): void {
 	app.post('/api/rag/sources/:id/sync', (req: Request, res: Response) => {
 		const id = String(req.params['id'] ?? '');
 		try {
-			// 1. Source must exist — otherwise 404. Soft-deleted sources are
-			//    treated the same as missing: restore first if you want to
-			//    re-trigger a sync.
+			const tenantId = resolveTenantId(deps, req);
+			// 1. Source must exist within the caller's tenant — otherwise 404.
+			//    Soft-deleted sources are treated the same as missing: restore
+			//    first if you want to re-trigger a sync. Cross-tenant ids also
+			//    resolve as 404 (the tenant filter is part of the lookup, so a
+			//    foreign source's existence is never leaked).
 			const row = deps.db
-				.prepare<[string], SourceRow>(`SELECT * FROM rag_sources WHERE id = ?`)
-				.get(id);
+				.prepare<[string, string], SourceRow>(
+					`SELECT * FROM rag_sources WHERE id = ? AND tenant_id = ?`,
+				)
+				.get(id, tenantId);
 			if (!row) {
 				sendError(res, 404, `Source "${id}" not found.`);
 				return;
@@ -612,12 +631,11 @@ export function registerRagIndexRoutes(app: Express, deps: RagRouteDeps): void {
 			//
 			//    The job inherits its tenant from the parent source — that's
 			//    the authoritative value for any background work that follows.
-			//    `req` is also passed to `getTenantId` so Phase B can switch
-			//    to request-driven resolution without touching this call site.
+			//    Falling back to the resolved request tenant covers fixtures
+			//    that bypass migration v6 (where `row.tenant_id` is undefined).
 			const jobId = nanoid();
 			const now = new Date().toISOString();
-			const jobTenantId =
-				row.tenant_id ?? (deps.getTenantId ? deps.getTenantId(req) : 'default');
+			const jobTenantId = row.tenant_id ?? tenantId;
 			deps.db
 				.prepare(
 					`INSERT INTO rag_jobs

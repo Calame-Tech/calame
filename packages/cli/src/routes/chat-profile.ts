@@ -14,6 +14,7 @@ import type { Express } from 'express';
 import type { AppState } from '../state.js';
 import type { ServeProfile } from '@calame/core';
 import { upgradeProfileShape } from '@calame/core';
+import { DEFAULT_TENANT_ID } from '../tenancy.js';
 
 /** Shape of the response profile object. */
 interface ChatProfileInfo {
@@ -37,9 +38,13 @@ async function loadProfileFromDb(
   if (!state.db) return null;
 
   try {
+    // Phase B multi-tenancy: this is a PUBLIC endpoint consumed by login
+    // pages that cannot inject an `X-Tenant-Id` header. We pin the lookup
+    // to the default tenant for the MVP. Phase C will revisit this when
+    // the session-derived tenant is available before this handler runs.
     const row = state.db.raw
-      .prepare("SELECT data FROM profiles WHERE key = 'main'")
-      .get() as { data: string } | undefined;
+      .prepare("SELECT data FROM profiles WHERE key = 'main' AND tenant_id = ?")
+      .get(DEFAULT_TENANT_ID) as { data: string } | undefined;
 
     if (!row) return null;
 

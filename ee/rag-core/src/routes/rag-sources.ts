@@ -13,6 +13,9 @@ import type { RagAuditEntry, RagRouteDeps } from './types.js';
  * Resolve the tenant id for a request, falling back to the literal
  * `'default'` when the host hasn't wired a resolver (e.g. test deps).
  * Kept local to keep `ee/rag-core` decoupled from `packages/cli`.
+ *
+ * Phase B: every read path binds the resolved value into a
+ * `WHERE tenant_id = ?` clause; cross-tenant ids land as 404.
  */
 function resolveTenantId(deps: RagRouteDeps, req?: Request): string {
 	return deps.getTenantId ? deps.getTenantId(req) : 'default';
@@ -78,7 +81,7 @@ interface SourceRow {
 	embedding_model_version: string;
 	embedding_dimensions: number;
 	polling_interval_seconds: number | null;
-	/** Phase A multi-tenancy column — always `'default'` until Phase B lands. */
+	/** Phase B multi-tenancy column — bound on every read. */
 	tenant_id: string;
 	created_at: string;
 	updated_at: string;
@@ -142,21 +145,25 @@ function sendError(res: Response, status: number, message: string): void {
 }
 
 /**
- * Returns the dimension already in use by existing rag_sources, or `null` when
- * the table is empty. Used to enforce the Phase 1 single-dimension invariant.
+ * Returns the dimension already in use by existing rag_sources within the
+ * supplied tenant, or `null` when the table is empty for that tenant. Used
+ * to enforce the Phase 1 single-dimension invariant — scoped per tenant
+ * since each tenant gets its own population of sources.
  */
-function getCurrentDimension(deps: RagRouteDeps): number | null {
+function getCurrentDimension(deps: RagRouteDeps, tenantId: string): number | null {
 	// Exclude soft-deleted rows so an admin can recover from "stuck on the
 	// wrong dimension" by soft-deleting every existing source and creating a
 	// new one with a different model. Without this clause the Phase 1
 	// single-dimension invariant would keep blocking the new source forever.
 	const row = deps.db
-		.prepare<[], { embedding_dimensions: number }>(
+		.prepare<[string], { embedding_dimensions: number }>(
 			`SELECT embedding_dimensions FROM rag_sources
-			 WHERE embedding_dimensions > 0 AND deleted_at IS NULL
+			 WHERE embedding_dimensions > 0
+			   AND deleted_at IS NULL
+			   AND tenant_id = ?
 			 ORDER BY created_at ASC LIMIT 1`,
 		)
-		.get();
+		.get(tenantId);
 	return row ? row.embedding_dimensions : null;
 }
 
@@ -169,10 +176,15 @@ function getCurrentDimension(deps: RagRouteDeps): number | null {
  *  - PATCH  /api/rag/sources/:id
  *  - DELETE /api/rag/sources/:id
  *  - POST   /api/rag/sources/:id/test
+ *
+ * Phase B multi-tenancy: every read path binds `tenant_id = ?`. Cross-
+ * tenant ids surface as 404 so the existence of the foreign row is not
+ * leaked.
  */
 export function registerRagSourcesRoutes(app: Express, deps: RagRouteDeps): void {
 	app.get('/api/rag/sources', (req: Request, res: Response) => {
 		try {
+			const tenantId = resolveTenantId(deps, req);
 			// `?filter=deleted` returns ONLY soft-deleted sources (UI "Recently deleted" view).
 			// `?includeDeleted=true` returns active AND soft-deleted (admin tooling).
 			// Default: active only — `deleted_at IS NULL`.
@@ -186,13 +198,19 @@ export function registerRagSourcesRoutes(app: Express, deps: RagRouteDeps): void
 
 			let sql: string;
 			if (onlyDeleted) {
-				sql = `SELECT * FROM rag_sources WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC`;
+				sql = `SELECT * FROM rag_sources
+				       WHERE deleted_at IS NOT NULL AND tenant_id = ?
+				       ORDER BY deleted_at DESC`;
 			} else if (showDeleted) {
-				sql = `SELECT * FROM rag_sources ORDER BY created_at ASC`;
+				sql = `SELECT * FROM rag_sources
+				       WHERE tenant_id = ?
+				       ORDER BY created_at ASC`;
 			} else {
-				sql = `SELECT * FROM rag_sources WHERE deleted_at IS NULL ORDER BY created_at ASC`;
+				sql = `SELECT * FROM rag_sources
+				       WHERE deleted_at IS NULL AND tenant_id = ?
+				       ORDER BY created_at ASC`;
 			}
-			const rows = deps.db.prepare(sql).all() as SourceRow[];
+			const rows = deps.db.prepare<[string], SourceRow>(sql).all(tenantId);
 			res.json({ sources: rows.map((r) => rowToSource(r, deps)) });
 		} catch (error: unknown) {
 			const message = error instanceof Error ? error.message : 'Unknown error';
@@ -203,12 +221,17 @@ export function registerRagSourcesRoutes(app: Express, deps: RagRouteDeps): void
 
 	app.get('/api/rag/sources/:id', (req: Request, res: Response) => {
 		try {
+			const tenantId = resolveTenantId(deps, req);
 			const id = String(req.params['id'] ?? '');
 			const includeDeleted = req.query['includeDeleted'];
 			const showDeleted = includeDeleted === 'true' || includeDeleted === '1';
+			// Bind the tenant directly in the SELECT so a row in another tenant
+			// surfaces as 404 (rather than 200 with cross-tenant content).
 			const row = deps.db
-				.prepare<[string], SourceRow>(`SELECT * FROM rag_sources WHERE id = ?`)
-				.get(id);
+				.prepare<[string, string], SourceRow>(
+					`SELECT * FROM rag_sources WHERE id = ? AND tenant_id = ?`,
+				)
+				.get(id, tenantId);
 			if (!row) {
 				sendError(res, 404, `Source "${id}" not found.`);
 				return;
@@ -247,8 +270,12 @@ export function registerRagSourcesRoutes(app: Express, deps: RagRouteDeps): void
 			return;
 		}
 
-		// Phase 1: enforce a single dimension across all rag_sources.
-		const currentDim = getCurrentDimension(deps);
+		// Phase B multi-tenancy — the single-dimension invariant is scoped per
+		// tenant. Each tenant's source population is independent, so a new
+		// tenant can pick a different embedding model without colliding with
+		// the default tenant's invariant.
+		const tenantId = resolveTenantId(deps, req);
+		const currentDim = getCurrentDimension(deps, tenantId);
 		if (currentDim !== null && currentDim !== resolved.dimensions) {
 			const message =
 				`All RAG sources must use embedding models with the same dimension; ` +
@@ -286,10 +313,6 @@ export function registerRagSourcesRoutes(app: Express, deps: RagRouteDeps): void
 			// `pollingIntervalSeconds` may be omitted (undefined) or explicitly null.
 			// Both map to NULL in SQL — better-sqlite3 binds JS `null` to SQL NULL.
 			const pollingInterval = parsed.data.pollingIntervalSeconds ?? null;
-			// Phase A multi-tenancy — explicit > implicit, even though the column
-			// has DEFAULT 'default'. Future Phase B will read the value from the
-			// authenticated request; the call site doesn't change.
-			const tenantId = resolveTenantId(deps, req);
 			deps.db
 				.prepare(
 					`INSERT INTO rag_sources
@@ -313,8 +336,10 @@ export function registerRagSourcesRoutes(app: Express, deps: RagRouteDeps): void
 					now,
 				);
 			const row = deps.db
-				.prepare<[string], SourceRow>(`SELECT * FROM rag_sources WHERE id = ?`)
-				.get(id);
+				.prepare<[string, string], SourceRow>(
+					`SELECT * FROM rag_sources WHERE id = ? AND tenant_id = ?`,
+				)
+				.get(id, tenantId);
 			// Register the scheduler timer when polling is enabled. We do this
 			// AFTER the INSERT succeeded so a failed write doesn't leave a
 			// dangling timer pointing at a nonexistent source.
@@ -349,9 +374,14 @@ export function registerRagSourcesRoutes(app: Express, deps: RagRouteDeps): void
 			return;
 		}
 		try {
+			const tenantId = resolveTenantId(deps, req);
+			// Tenant-scoped lookup — cross-tenant ids land as 404 here too so
+			// PATCH never surfaces "exists" / "doesn't exist" leakage.
 			const existing = deps.db
-				.prepare<[string], SourceRow>(`SELECT * FROM rag_sources WHERE id = ?`)
-				.get(id);
+				.prepare<[string, string], SourceRow>(
+					`SELECT * FROM rag_sources WHERE id = ? AND tenant_id = ?`,
+				)
+				.get(id, tenantId);
 			if (!existing) {
 				sendError(res, 404, `Source "${id}" not found.`);
 				return;
@@ -384,8 +414,8 @@ export function registerRagSourcesRoutes(app: Express, deps: RagRouteDeps): void
 				}
 
 				// Phase 1 single-dimension invariant — also enforced on PATCH that
-				// changes the embedding setting.
-				const currentDim = getCurrentDimension(deps);
+				// changes the embedding setting. Scoped per tenant.
+				const currentDim = getCurrentDimension(deps, tenantId);
 				if (currentDim !== null && currentDim !== resolved.dimensions) {
 					const message =
 						`All RAG sources must use embedding models with the same dimension; ` +
@@ -432,7 +462,7 @@ export function registerRagSourcesRoutes(app: Express, deps: RagRouteDeps): void
 					 SET name = ?, type = ?, config_encrypted = ?, embedding_setting_name = ?,
 					     embedding_model_version = ?, embedding_dimensions = ?,
 					     polling_interval_seconds = ?, updated_at = ?
-					 WHERE id = ?`,
+					 WHERE id = ? AND tenant_id = ?`,
 				)
 				.run(
 					next.name,
@@ -444,6 +474,7 @@ export function registerRagSourcesRoutes(app: Express, deps: RagRouteDeps): void
 					next.polling_interval_seconds,
 					now,
 					id,
+					tenantId,
 				);
 			// Sync the in-process timer registry with whatever value just landed
 			// in the DB. We only re-call upsert when the field actually changed
@@ -453,8 +484,10 @@ export function registerRagSourcesRoutes(app: Express, deps: RagRouteDeps): void
 				deps.pollScheduler.upsert(id, next.polling_interval_seconds);
 			}
 			const row = deps.db
-				.prepare<[string], SourceRow>(`SELECT * FROM rag_sources WHERE id = ?`)
-				.get(id);
+				.prepare<[string, string], SourceRow>(
+					`SELECT * FROM rag_sources WHERE id = ? AND tenant_id = ?`,
+				)
+				.get(id, tenantId);
 			// Refresh the real-time watcher whenever the type or config changed.
 			// The manager replaces the existing watcher in-place — closing the
 			// old chokidar handle and starting a new one — so a rootPath or
@@ -499,13 +532,15 @@ export function registerRagSourcesRoutes(app: Express, deps: RagRouteDeps): void
 	app.delete('/api/rag/sources/:id', (req: Request, res: Response) => {
 		const id = String(req.params['id'] ?? '');
 		try {
+			const tenantId = resolveTenantId(deps, req);
 			// Look up first so we can distinguish "never existed" from
-			// "already soft-deleted" and produce a clear error message.
+			// "already soft-deleted" and produce a clear error message. Cross-
+			// tenant ids never make it past this lookup → 404.
 			const existing = deps.db
-				.prepare<[string], { id: string; deleted_at: string | null }>(
-					`SELECT id, deleted_at FROM rag_sources WHERE id = ?`,
+				.prepare<[string, string], { id: string; deleted_at: string | null }>(
+					`SELECT id, deleted_at FROM rag_sources WHERE id = ? AND tenant_id = ?`,
 				)
-				.get(id);
+				.get(id, tenantId);
 			if (!existing) {
 				sendError(res, 404, `Source "${id}" not found.`);
 				return;
@@ -520,9 +555,10 @@ export function registerRagSourcesRoutes(app: Express, deps: RagRouteDeps): void
 			const now = new Date().toISOString();
 			deps.db
 				.prepare(
-					`UPDATE rag_sources SET deleted_at = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL`,
+					`UPDATE rag_sources SET deleted_at = ?, updated_at = ?
+					 WHERE id = ? AND tenant_id = ? AND deleted_at IS NULL`,
 				)
-				.run(now, now, id);
+				.run(now, now, id, tenantId);
 			// Clear any registered poll timer / watcher. `remove` is idempotent so
 			// calling it on a source that never had polling enabled is a no-op.
 			deps.pollScheduler.remove(id);
@@ -546,9 +582,12 @@ export function registerRagSourcesRoutes(app: Express, deps: RagRouteDeps): void
 	app.post('/api/rag/sources/:id/restore', (req: Request, res: Response) => {
 		const id = String(req.params['id'] ?? '');
 		try {
+			const tenantId = resolveTenantId(deps, req);
 			const existing = deps.db
-				.prepare<[string], SourceRow>(`SELECT * FROM rag_sources WHERE id = ?`)
-				.get(id);
+				.prepare<[string, string], SourceRow>(
+					`SELECT * FROM rag_sources WHERE id = ? AND tenant_id = ?`,
+				)
+				.get(id, tenantId);
 			if (!existing) {
 				sendError(res, 404, `Source "${id}" not found.`);
 				return;
@@ -559,8 +598,11 @@ export function registerRagSourcesRoutes(app: Express, deps: RagRouteDeps): void
 			}
 			const now = new Date().toISOString();
 			deps.db
-				.prepare(`UPDATE rag_sources SET deleted_at = NULL, updated_at = ? WHERE id = ?`)
-				.run(now, id);
+				.prepare(
+					`UPDATE rag_sources SET deleted_at = NULL, updated_at = ?
+					 WHERE id = ? AND tenant_id = ?`,
+				)
+				.run(now, id, tenantId);
 			// Re-register the poll timer and watcher. Both `upsert` methods
 			// are idempotent — they replace any existing state in place —
 			// so calling them here is safe even when the source had its
@@ -574,8 +616,10 @@ export function registerRagSourcesRoutes(app: Express, deps: RagRouteDeps): void
 				configEncrypted: existing.config_encrypted,
 			});
 			const row = deps.db
-				.prepare<[string], SourceRow>(`SELECT * FROM rag_sources WHERE id = ?`)
-				.get(id);
+				.prepare<[string, string], SourceRow>(
+					`SELECT * FROM rag_sources WHERE id = ? AND tenant_id = ?`,
+				)
+				.get(id, tenantId);
 			audit(deps, { type: 'rag.sources.restored', payload: { id } });
 			res.json({ source: row ? rowToSource(row, deps) : null });
 		} catch (error: unknown) {
@@ -601,9 +645,12 @@ export function registerRagSourcesRoutes(app: Express, deps: RagRouteDeps): void
 	app.delete('/api/rag/sources/:id/permanent', (req: Request, res: Response) => {
 		const id = String(req.params['id'] ?? '');
 		try {
+			const tenantId = resolveTenantId(deps, req);
 			const existing = deps.db
-				.prepare<[string], SourceRow>(`SELECT * FROM rag_sources WHERE id = ?`)
-				.get(id);
+				.prepare<[string, string], SourceRow>(
+					`SELECT * FROM rag_sources WHERE id = ? AND tenant_id = ?`,
+				)
+				.get(id, tenantId);
 			if (!existing) {
 				sendError(res, 404, `Source "${id}" not found.`);
 				return;
@@ -639,8 +686,10 @@ export function registerRagSourcesRoutes(app: Express, deps: RagRouteDeps): void
 			// in-memory DBs that DON'T enable FK enforcement — running the
 			// cascade manually inside a single transaction guarantees the
 			// same result regardless of the PRAGMA state and keeps the audit
-			// counts accurate.
-			const cascade = deps.db.transaction((sourceId: string) => {
+			// counts accurate. The final DELETE on rag_sources binds
+			// `tenant_id` defensively so concurrent writers in another tenant
+			// can't observe a partial cascade.
+			const cascade = deps.db.transaction((sourceId: string, tenant: string) => {
 				deps.db
 					.prepare(
 						`DELETE FROM rag_chunks WHERE document_id IN (SELECT id FROM rag_documents WHERE source_id = ?)`,
@@ -649,9 +698,11 @@ export function registerRagSourcesRoutes(app: Express, deps: RagRouteDeps): void
 				deps.db.prepare(`DELETE FROM rag_documents WHERE source_id = ?`).run(sourceId);
 				deps.db.prepare(`DELETE FROM rag_folders WHERE source_id = ?`).run(sourceId);
 				deps.db.prepare(`DELETE FROM rag_jobs WHERE source_id = ?`).run(sourceId);
-				deps.db.prepare(`DELETE FROM rag_sources WHERE id = ?`).run(sourceId);
+				deps.db
+					.prepare(`DELETE FROM rag_sources WHERE id = ? AND tenant_id = ?`)
+					.run(sourceId, tenant);
 			});
-			cascade(id);
+			cascade(id, tenantId);
 
 			audit(deps, {
 				type: 'rag.sources.hard_deleted',
@@ -676,9 +727,12 @@ export function registerRagSourcesRoutes(app: Express, deps: RagRouteDeps): void
 	app.post('/api/rag/sources/:id/test', async (req: Request, res: Response) => {
 		const id = String(req.params['id'] ?? '');
 		try {
+			const tenantId = resolveTenantId(deps, req);
 			const row = deps.db
-				.prepare<[string], SourceRow>(`SELECT * FROM rag_sources WHERE id = ?`)
-				.get(id);
+				.prepare<[string, string], SourceRow>(
+					`SELECT * FROM rag_sources WHERE id = ? AND tenant_id = ?`,
+				)
+				.get(id, tenantId);
 			if (!row) {
 				sendError(res, 404, `Source "${id}" not found.`);
 				return;

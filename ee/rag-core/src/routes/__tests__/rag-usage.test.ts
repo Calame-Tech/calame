@@ -53,8 +53,23 @@ function makeRes(): FakeResponse {
 	return r;
 }
 
-function makeReq(query: Record<string, string> = {}): Request {
-	return { params: {}, query } as unknown as Request;
+function makeReq(
+	query: Record<string, string> = {},
+	headers: Record<string, string> = {},
+): Request {
+	return { params: {}, query, headers } as unknown as Request;
+}
+
+/**
+ * Minimal `getTenantId` resolver matching the Phase B helper in
+ * `packages/cli/src/tenancy.ts`. Mirrored locally so this test file
+ * stays decoupled from the host package.
+ */
+const TENANT_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+function testGetTenantId(req?: Request): string {
+	const value = (req?.headers as Record<string, unknown> | undefined)?.['x-tenant-id'];
+	if (typeof value === 'string' && TENANT_ID_RE.test(value)) return value;
+	return 'default';
 }
 
 function makeDb(): BetterSqlite3Database {
@@ -97,15 +112,21 @@ interface InsertSourceOpts {
 	id?: string;
 	name?: string;
 	model?: string;
+	tenantId?: string;
 }
 
 function insertSource(db: BetterSqlite3Database, opts: InsertSourceOpts = {}): string {
 	const id = opts.id ?? nanoid();
 	db.prepare(
 		`INSERT INTO rag_sources
-		 (id, name, type, config_encrypted, embedding_setting_name, embedding_model_version, embedding_dimensions, created_at, updated_at)
-		 VALUES (?, ?, 'local', '{}', 'test', ?, 16, datetime('now'), datetime('now'))`,
-	).run(id, opts.name ?? `Source ${id.slice(0, 4)}`, opts.model ?? 'text-embedding-3-small');
+		 (id, name, type, config_encrypted, embedding_setting_name, embedding_model_version, embedding_dimensions, tenant_id, created_at, updated_at)
+		 VALUES (?, ?, 'local', '{}', 'test', ?, 16, ?, datetime('now'), datetime('now'))`,
+	).run(
+		id,
+		opts.name ?? `Source ${id.slice(0, 4)}`,
+		opts.model ?? 'text-embedding-3-small',
+		opts.tenantId ?? 'default',
+	);
 	return id;
 }
 
@@ -114,6 +135,7 @@ interface InsertJobOpts {
 	tokens: number;
 	startedAt?: string;
 	status?: 'completed' | 'failed' | 'pending' | 'running';
+	tenantId?: string;
 }
 
 function insertJob(db: BetterSqlite3Database, opts: InsertJobOpts): string {
@@ -123,8 +145,16 @@ function insertJob(db: BetterSqlite3Database, opts: InsertJobOpts): string {
 		`INSERT INTO rag_jobs
 		 (id, source_id, status, progress, total_documents, processed_documents,
 		  skipped_by_etag, gc_deleted, tokens_embedded, tenant_id, started_at, finished_at)
-		 VALUES (?, ?, ?, 1, 1, 1, 0, 0, ?, 'default', ?, ?)`,
-	).run(id, opts.sourceId, opts.status ?? 'completed', opts.tokens, startedAt, startedAt);
+		 VALUES (?, ?, ?, 1, 1, 1, 0, 0, ?, ?, ?, ?)`,
+	).run(
+		id,
+		opts.sourceId,
+		opts.status ?? 'completed',
+		opts.tokens,
+		opts.tenantId ?? 'default',
+		startedAt,
+		startedAt,
+	);
 	return id;
 }
 
@@ -471,5 +501,70 @@ describe('schema migration — v7 tokens_embedded', () => {
 			.prepare(`SELECT version FROM rag_schema_version WHERE key = 'rag'`)
 			.get() as { version: number };
 		expect(ver.version).toBe(8);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Phase B multi-tenancy — cross-tenant isolation tests.
+// ---------------------------------------------------------------------------
+describe('registerRagUsageRoutes — Phase B tenant isolation', () => {
+	let db: BetterSqlite3Database;
+	let captured: ReturnType<typeof makeCapturedApp>;
+	let deps: RagRouteDeps;
+
+	beforeEach(() => {
+		db = makeDb();
+		captured = makeCapturedApp();
+		deps = makeDeps(db, { getTenantId: testGetTenantId });
+		registerRagUsageRoutes(captured.app, deps);
+	});
+
+	it('aggregates only the caller tenant tokens', async () => {
+		// Two sources, two jobs — one per tenant.
+		const acmeSrc = insertSource(db, { name: 'Acme', tenantId: 'acme' });
+		const defSrc = insertSource(db, { name: 'Default' });
+		insertJob(db, { sourceId: acmeSrc, tokens: 500_000, tenantId: 'acme' });
+		insertJob(db, { sourceId: defSrc, tokens: 100_000 });
+
+		// Caller in acme tenant sees only the 500k row.
+		const acmeRes = makeRes();
+		await captured.getUsage()(makeReq({}, { 'x-tenant-id': 'acme' }), acmeRes.res);
+		const acmeBody = acmeRes.body as RagUsageResponse;
+		expect(acmeBody.totalTokens).toBe(500_000);
+		expect(acmeBody.perSource).toHaveLength(1);
+		expect(acmeBody.perSource[0]!.name).toBe('Acme');
+
+		// Default caller (no header) sees only the 100k row.
+		const defaultRes = makeRes();
+		await captured.getUsage()(makeReq(), defaultRes.res);
+		const defaultBody = defaultRes.body as RagUsageResponse;
+		expect(defaultBody.totalTokens).toBe(100_000);
+		expect(defaultBody.perSource).toHaveLength(1);
+		expect(defaultBody.perSource[0]!.name).toBe('Default');
+	});
+
+	it('returns zeros for an unknown tenant', async () => {
+		// Real data exists, but for a different tenant.
+		const src = insertSource(db, { name: 'Default' });
+		insertJob(db, { sourceId: src, tokens: 1_000_000 });
+
+		const res = makeRes();
+		await captured.getUsage()(makeReq({}, { 'x-tenant-id': 'ghost' }), res.res);
+		const body = res.body as RagUsageResponse;
+		expect(body.totalTokens).toBe(0);
+		expect(body.perSource).toHaveLength(0);
+		expect(body.perProvider).toHaveLength(0);
+	});
+
+	it('backward compat: no header → behaves like Phase A (default tenant)', async () => {
+		// Pre-existing default rows must continue to surface without any
+		// header — this is the load-bearing invariant of Phase B.
+		const src = insertSource(db, { name: 'Default' });
+		insertJob(db, { sourceId: src, tokens: 250_000 });
+
+		const res = makeRes();
+		await captured.getUsage()(makeReq(), res.res);
+		const body = res.body as RagUsageResponse;
+		expect(body.totalTokens).toBe(250_000);
 	});
 });

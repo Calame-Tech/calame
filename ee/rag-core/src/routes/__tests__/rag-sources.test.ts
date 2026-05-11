@@ -85,12 +85,35 @@ function makeRes(): FakeResponse {
 	return r;
 }
 
-function makeReq(opts: { params?: Record<string, string>; body?: unknown }): Request {
+function makeReq(opts: {
+	params?: Record<string, string>;
+	body?: unknown;
+	headers?: Record<string, string | string[] | undefined>;
+}): Request {
 	return {
 		params: opts.params ?? {},
 		body: opts.body ?? {},
 		query: {},
+		headers: opts.headers ?? {},
 	} as unknown as Request;
+}
+
+/**
+ * Minimal `getTenantId` resolver mirroring the Phase B helper in
+ * `packages/cli/src/tenancy.ts`. Lives here to avoid pulling the host
+ * package into the rag-core test surface — the regex/validation rules
+ * stay in lock-step with the helper.
+ */
+const TENANT_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+function testGetTenantId(req?: Request): string {
+	const value = (req?.headers as Record<string, unknown> | undefined)?.['x-tenant-id'];
+	if (typeof value === 'string' && TENANT_ID_RE.test(value)) return value;
+	if (Array.isArray(value)) {
+		for (const v of value) {
+			if (typeof v === 'string' && TENANT_ID_RE.test(v)) return v;
+		}
+	}
+	return 'default';
 }
 
 function makeDb(): BetterSqlite3Database {
@@ -1195,6 +1218,223 @@ describe('registerRagSourcesRoutes — permanent delete', () => {
 			delRes.res,
 		);
 		expect(delRes.statusCode).toBe(404);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Phase B multi-tenancy — cross-tenant isolation tests.
+// ---------------------------------------------------------------------------
+describe('registerRagSourcesRoutes — Phase B tenant isolation', () => {
+	let db: BetterSqlite3Database;
+	let captured: CapturedApp;
+	let build: DepsBuild;
+
+	beforeEach(() => {
+		db = makeDb();
+		captured = makeCapturedApp();
+		build = makeDeps(db);
+		// Wire the helper resolver so the route reads tenant from the
+		// `X-Tenant-Id` header on the fake request.
+		build.deps.getTenantId = testGetTenantId;
+		registerRagSourcesRoutes(captured.app, build.deps);
+	});
+
+	it('POST under an explicit tenant tags the row with that tenant', async () => {
+		const res = makeRes();
+		await captured.post('/api/rag/sources')(
+			makeReq({
+				headers: { 'x-tenant-id': 'acme' },
+				body: {
+					name: 'Acme source',
+					type: 'local',
+					config: { rootPath: '/tmp/a' },
+					embeddingSettingName: 'test',
+				},
+			}),
+			res.res,
+		);
+		expect(res.statusCode).toBe(201);
+		const body = res.body as { source: { id: string; tenantId: string } };
+		expect(body.source.tenantId).toBe('acme');
+
+		// Re-read the row directly to confirm persisted tenant_id matches.
+		const row = db
+			.prepare(`SELECT tenant_id FROM rag_sources WHERE id = ?`)
+			.get(body.source.id) as { tenant_id: string };
+		expect(row.tenant_id).toBe('acme');
+	});
+
+	it('GET /api/rag/sources only returns rows for the caller tenant', async () => {
+		// Seed: one source in acme, one in beta, one default.
+		for (const tenant of ['acme', 'beta', 'default']) {
+			const r = makeRes();
+			await captured.post('/api/rag/sources')(
+				makeReq({
+					headers: tenant === 'default' ? {} : { 'x-tenant-id': tenant },
+					body: {
+						name: `Source ${tenant}`,
+						type: 'local',
+						config: { rootPath: `/tmp/${tenant}` },
+						embeddingSettingName: 'test',
+					},
+				}),
+				r.res,
+			);
+			expect(r.statusCode).toBe(201);
+		}
+
+		// acme caller sees only its source.
+		const acmeRes = makeRes();
+		await captured.get('/api/rag/sources')(
+			makeReq({ headers: { 'x-tenant-id': 'acme' } }),
+			acmeRes.res,
+		);
+		const acmeBody = acmeRes.body as { sources: Array<{ name: string; tenantId: string }> };
+		expect(acmeBody.sources).toHaveLength(1);
+		expect(acmeBody.sources[0]!.tenantId).toBe('acme');
+
+		// Default caller sees only the default source.
+		const defaultRes = makeRes();
+		await captured.get('/api/rag/sources')(makeReq({}), defaultRes.res);
+		const defaultBody = defaultRes.body as {
+			sources: Array<{ name: string; tenantId: string }>;
+		};
+		expect(defaultBody.sources).toHaveLength(1);
+		expect(defaultBody.sources[0]!.tenantId).toBe('default');
+	});
+
+	it('GET /api/rag/sources/:id with a foreign-tenant header returns 404', async () => {
+		// Create a row under acme.
+		const createRes = makeRes();
+		await captured.post('/api/rag/sources')(
+			makeReq({
+				headers: { 'x-tenant-id': 'acme' },
+				body: {
+					name: 'Acme source',
+					type: 'local',
+					config: { rootPath: '/tmp/acme' },
+					embeddingSettingName: 'test',
+				},
+			}),
+			createRes.res,
+		);
+		const id = (createRes.body as { source: { id: string } }).source.id;
+
+		// Foreign tenant cannot fetch it.
+		const foreignRes = makeRes();
+		await captured.get('/api/rag/sources/:id')(
+			makeReq({ params: { id }, headers: { 'x-tenant-id': 'beta' } }),
+			foreignRes.res,
+		);
+		expect(foreignRes.statusCode).toBe(404);
+
+		// Owning tenant can.
+		const ownerRes = makeRes();
+		await captured.get('/api/rag/sources/:id')(
+			makeReq({ params: { id }, headers: { 'x-tenant-id': 'acme' } }),
+			ownerRes.res,
+		);
+		expect(ownerRes.statusCode).toBe(200);
+	});
+
+	it('PATCH /api/rag/sources/:id across tenants returns 404 and leaves the row untouched', async () => {
+		const createRes = makeRes();
+		await captured.post('/api/rag/sources')(
+			makeReq({
+				headers: { 'x-tenant-id': 'acme' },
+				body: {
+					name: 'Acme source',
+					type: 'local',
+					config: { rootPath: '/tmp/acme' },
+					embeddingSettingName: 'test',
+				},
+			}),
+			createRes.res,
+		);
+		const id = (createRes.body as { source: { id: string } }).source.id;
+
+		const patchRes = makeRes();
+		await captured.patch('/api/rag/sources/:id')(
+			makeReq({
+				params: { id },
+				headers: { 'x-tenant-id': 'beta' },
+				body: { name: 'pwned' },
+			}),
+			patchRes.res,
+		);
+		expect(patchRes.statusCode).toBe(404);
+
+		// The row's name must NOT have changed.
+		const row = db.prepare(`SELECT name FROM rag_sources WHERE id = ?`).get(id) as {
+			name: string;
+		};
+		expect(row.name).toBe('Acme source');
+	});
+
+	it('DELETE /api/rag/sources/:id across tenants returns 404 and keeps the row active', async () => {
+		const createRes = makeRes();
+		await captured.post('/api/rag/sources')(
+			makeReq({
+				headers: { 'x-tenant-id': 'acme' },
+				body: {
+					name: 'Acme source',
+					type: 'local',
+					config: { rootPath: '/tmp/acme' },
+					embeddingSettingName: 'test',
+				},
+			}),
+			createRes.res,
+		);
+		const id = (createRes.body as { source: { id: string } }).source.id;
+
+		const delRes = makeRes();
+		await captured.delete('/api/rag/sources/:id')(
+			makeReq({ params: { id }, headers: { 'x-tenant-id': 'beta' } }),
+			delRes.res,
+		);
+		expect(delRes.statusCode).toBe(404);
+
+		// Row is still active.
+		const row = db
+			.prepare(`SELECT deleted_at FROM rag_sources WHERE id = ?`)
+			.get(id) as { deleted_at: string | null };
+		expect(row.deleted_at).toBeNull();
+	});
+
+	it('legacy callers (no header) still see the default-tenant rows', async () => {
+		// Seed: one default + one acme source.
+		await captured.post('/api/rag/sources')(
+			makeReq({
+				body: {
+					name: 'Default source',
+					type: 'local',
+					config: { rootPath: '/tmp/d' },
+					embeddingSettingName: 'test',
+				},
+			}),
+			makeRes().res,
+		);
+		await captured.post('/api/rag/sources')(
+			makeReq({
+				headers: { 'x-tenant-id': 'acme' },
+				body: {
+					name: 'Acme source',
+					type: 'local',
+					config: { rootPath: '/tmp/a' },
+					embeddingSettingName: 'test',
+				},
+			}),
+			makeRes().res,
+		);
+
+		// Header-less GET (the pre-Phase-B behaviour) must still see the
+		// default-tenant row — this is the backward-compat invariant.
+		const res = makeRes();
+		await captured.get('/api/rag/sources')(makeReq({}), res.res);
+		const body = res.body as { sources: Array<{ name: string; tenantId: string }> };
+		expect(body.sources).toHaveLength(1);
+		expect(body.sources[0]!.name).toBe('Default source');
+		expect(body.sources[0]!.tenantId).toBe('default');
 	});
 });
 

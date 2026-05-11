@@ -1,6 +1,7 @@
 import type { Express } from 'express';
 import type { AppState } from '../state.js';
 import type { AiCapability, AiProvider, AiSetting } from '../ai-config.js';
+import { getTenantId } from '../tenancy.js';
 
 const VALID_PROVIDERS: ReadonlySet<AiProvider> = new Set(['anthropic', 'openrouter', 'custom']);
 const VALID_CAPABILITIES: ReadonlySet<AiCapability> = new Set(['chat', 'embeddings']);
@@ -144,13 +145,16 @@ async function probeEmbeddingDimensions(
 
 export function registerAiSettingsRoute(app: Express, state: AppState): void {
   /** GET /api/ai-settings — list all settings (api keys masked). */
-  app.get('/api/ai-settings', (_req, res) => {
+  app.get('/api/ai-settings', (req, res) => {
     const mgr = state.aiSettingsManager;
     if (!mgr) {
       res.json({ success: true, settings: [], config: null });
       return;
     }
-    const settings = mgr.listMaskedSettings();
+    // Phase B multi-tenancy — thread the resolved tenant through every
+    // manager call so the listing is scoped to the caller.
+    const tenantId = getTenantId(req);
+    const settings = mgr.listMaskedSettings(tenantId);
     // Backward-compat: also expose `config` (first setting) for older callers.
     res.json({ success: true, settings, config: settings[0] ?? null });
   });
@@ -162,7 +166,7 @@ export function registerAiSettingsRoute(app: Express, state: AppState): void {
       res.status(500).json({ success: false, message: 'AI settings manager not initialized.' });
       return;
     }
-    const setting = mgr.getMaskedSetting(req.params.name);
+    const setting = mgr.getMaskedSetting(req.params.name, getTenantId(req));
     if (!setting) {
       res.status(404).json({ success: false, message: 'Setting not found.' });
       return;
@@ -191,20 +195,25 @@ export function registerAiSettingsRoute(app: Express, state: AppState): void {
       return;
     }
 
+    const tenantId = getTenantId(req);
+
     // Legacy single-config behaviour: no `name` → upsert the 'default' setting.
     if (!body.name) {
       let finalApiKey: string = body.apiKey ?? '';
       if (finalApiKey.includes('***')) {
-        const existing = mgr.getSetting('default');
+        const existing = mgr.getSetting('default', tenantId);
         finalApiKey = existing?.apiKey ?? '';
       }
       try {
-        await mgr.setConfig({
-          provider: body.provider as AiProvider,
-          apiKey: finalApiKey,
-          model: body.model,
-          baseUrl: body.baseUrl,
-        });
+        await mgr.setConfig(
+          {
+            provider: body.provider as AiProvider,
+            apiKey: finalApiKey,
+            model: body.model,
+            baseUrl: body.baseUrl,
+          },
+          tenantId,
+        );
         res.json({ success: true });
       } catch (error: unknown) {
         res.status(500).json({
@@ -241,18 +250,21 @@ export function registerAiSettingsRoute(app: Express, state: AppState): void {
     }
 
     try {
-      mgr.createSetting({
-        name: body.name,
-        label: body.label,
-        provider: body.provider as AiProvider,
-        apiKey: body.apiKey ?? '',
-        model: body.model,
-        baseUrl: body.baseUrl,
-        capabilities: body.capabilities as AiCapability[] | undefined,
-        embeddingModel: body.embeddingModel,
-        embeddingDimensions,
-      });
-      res.json({ success: true, setting: mgr.getMaskedSetting(body.name) });
+      mgr.createSetting(
+        {
+          name: body.name,
+          label: body.label,
+          provider: body.provider as AiProvider,
+          apiKey: body.apiKey ?? '',
+          model: body.model,
+          baseUrl: body.baseUrl,
+          capabilities: body.capabilities as AiCapability[] | undefined,
+          embeddingModel: body.embeddingModel,
+          embeddingDimensions,
+        },
+        tenantId,
+      );
+      res.json({ success: true, setting: mgr.getMaskedSetting(body.name, tenantId) });
     } catch (error: unknown) {
       res.status(400).json({
         success: false,
@@ -268,7 +280,8 @@ export function registerAiSettingsRoute(app: Express, state: AppState): void {
       res.status(500).json({ success: false, message: 'AI settings manager not initialized.' });
       return;
     }
-    const existing = mgr.getSetting(req.params.name);
+    const tenantId = getTenantId(req);
+    const existing = mgr.getSetting(req.params.name, tenantId);
     if (!existing) {
       res.status(404).json({ success: false, message: 'Setting not found.' });
       return;
@@ -311,17 +324,21 @@ export function registerAiSettingsRoute(app: Express, state: AppState): void {
     }
 
     try {
-      mgr.updateSetting(req.params.name, {
-        label: body.label ?? existing.label,
-        provider: body.provider as AiProvider,
-        apiKey: finalApiKey,
-        model: body.model,
-        baseUrl: body.baseUrl,
-        capabilities: body.capabilities as AiCapability[] | undefined,
-        embeddingModel: body.embeddingModel,
-        embeddingDimensions,
-      });
-      res.json({ success: true, setting: mgr.getMaskedSetting(req.params.name) });
+      mgr.updateSetting(
+        req.params.name,
+        {
+          label: body.label ?? existing.label,
+          provider: body.provider as AiProvider,
+          apiKey: finalApiKey,
+          model: body.model,
+          baseUrl: body.baseUrl,
+          capabilities: body.capabilities as AiCapability[] | undefined,
+          embeddingModel: body.embeddingModel,
+          embeddingDimensions,
+        },
+        tenantId,
+      );
+      res.json({ success: true, setting: mgr.getMaskedSetting(req.params.name, tenantId) });
     } catch (error: unknown) {
       res.status(500).json({
         success: false,
@@ -337,22 +354,24 @@ export function registerAiSettingsRoute(app: Express, state: AppState): void {
       res.status(500).json({ success: false, message: 'AI settings manager not initialized.' });
       return;
     }
-    if (!mgr.getSetting(req.params.name)) {
+    const tenantId = getTenantId(req);
+    if (!mgr.getSetting(req.params.name, tenantId)) {
       res.status(404).json({ success: false, message: 'Setting not found.' });
       return;
     }
-    mgr.deleteSetting(req.params.name);
+    mgr.deleteSetting(req.params.name, tenantId);
     res.json({ success: true });
   });
 
   /** POST /api/ai-settings/test — test the legacy default setting (backward-compat). */
-  app.post('/api/ai-settings/test', async (_req, res) => {
+  app.post('/api/ai-settings/test', async (req, res) => {
     const mgr = state.aiSettingsManager;
-    if (!mgr || !mgr.isConfigured()) {
+    const tenantId = getTenantId(req);
+    if (!mgr || !mgr.isConfigured(tenantId)) {
       res.status(400).json({ success: false, message: 'AI is not configured.' });
       return;
     }
-    const setting = mgr.listSettings()[0];
+    const setting = mgr.listSettings(tenantId)[0];
     if (!setting) {
       res.status(400).json({ success: false, message: 'No AI setting found.' });
       return;
@@ -372,7 +391,7 @@ export function registerAiSettingsRoute(app: Express, state: AppState): void {
       res.status(500).json({ success: false, message: 'AI settings manager not initialized.' });
       return;
     }
-    const setting = mgr.getSetting(req.params.name);
+    const setting = mgr.getSetting(req.params.name, getTenantId(req));
     if (!setting) {
       res.status(404).json({ success: false, message: 'Setting not found.' });
       return;

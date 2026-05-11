@@ -9,6 +9,14 @@ import type { Express, Request, Response } from 'express';
 import type { RagSource, RagSourceType } from '../types.js';
 import type { RagRouteDeps } from './types.js';
 
+/**
+ * Resolve the tenant id for a request, falling back to the literal
+ * `'default'` when the host hasn't wired a resolver (e.g. test deps).
+ */
+function resolveTenantId(deps: RagRouteDeps, req?: Request): string {
+	return deps.getTenantId ? deps.getTenantId(req) : 'default';
+}
+
 interface SourceRow {
 	id: string;
 	name: string;
@@ -113,9 +121,14 @@ export function registerRagUploadRoutes(app: Express, deps: RagRouteDeps): void 
 	app.post('/api/rag/sources/:id/upload', async (req: Request, res: Response) => {
 		const id = String(req.params['id'] ?? '');
 		try {
+			const tenantId = resolveTenantId(deps, req);
+			// Tenant-scoped lookup — cross-tenant sources resolve as 404 so an
+			// upload can never land on a row owned by another tenant.
 			const row = deps.db
-				.prepare<[string], SourceRow>(`SELECT * FROM rag_sources WHERE id = ?`)
-				.get(id);
+				.prepare<[string, string], SourceRow>(
+					`SELECT * FROM rag_sources WHERE id = ? AND tenant_id = ?`,
+				)
+				.get(id, tenantId);
 			if (!row) {
 				sendError(res, 404, `Source "${id}" not found.`);
 				return;

@@ -3,7 +3,7 @@ import type { AppState } from '../state.js';
 import type { CalameDatabase } from '../database.js';
 import type { ServeConfiguration } from '@calame/core';
 import { upgradeConfigurationShape } from '@calame/core';
-import { getTenantId } from '../tenancy.js';
+import { DEFAULT_TENANT_ID, getTenantId } from '../tenancy.js';
 
 interface ConfigurationsFileData {
   configurations: Record<string, ServeConfiguration>;
@@ -29,12 +29,24 @@ type ConfigRow = {
  *  Older rows fall back to the legacy columns (connections, selected_tables, …) which the
  *  migrator synthesises into sources/scopes in memory.
  */
-function readConfigurationsFile(db: CalameDatabase): ConfigurationsFileData {
+/**
+ * Read every configuration row for the supplied tenant. Defaults to the
+ * literal `'default'` so callers that haven't been threaded through
+ * Phase B (background jobs, the serve refresh path) continue to see the
+ * single-tenant row set they always saw.
+ *
+ * Phase B multi-tenancy: the WHERE clause filters by tenant so a forged
+ * `name` collision in another tenant cannot surface through this path.
+ */
+function readConfigurationsFile(
+  db: CalameDatabase,
+  tenantId: string = DEFAULT_TENANT_ID,
+): ConfigurationsFileData {
   const rows = db.raw
     .prepare(
-      'SELECT name, label, connections, selected_tables, table_options, column_masking, sources_scopes FROM configurations',
+      'SELECT name, label, connections, selected_tables, table_options, column_masking, sources_scopes FROM configurations WHERE tenant_id = ?',
     )
-    .all() as ConfigRow[];
+    .all(tenantId) as ConfigRow[];
 
   const configurations: ConfigurationsFileData['configurations'] = {};
   for (const row of rows) {
@@ -101,9 +113,19 @@ function writeConfigurationRow(
     );
 }
 
-/** Delete a single configuration from SQLite. */
-function deleteConfigurationRow(db: CalameDatabase, name: string): void {
-  db.raw.prepare('DELETE FROM configurations WHERE name = ?').run(name);
+/**
+ * Delete a single configuration from SQLite. Phase B multi-tenancy: the
+ * delete is scoped to the caller's tenant so a name collision in another
+ * tenant cannot be accidentally dropped.
+ */
+function deleteConfigurationRow(
+  db: CalameDatabase,
+  name: string,
+  tenantId: string = DEFAULT_TENANT_ID,
+): void {
+  db.raw
+    .prepare('DELETE FROM configurations WHERE name = ? AND tenant_id = ?')
+    .run(name, tenantId);
 }
 
 export { readConfigurationsFile };
@@ -119,10 +141,10 @@ export function registerConfigurationsRoute(app: Express, state: AppState): void
   }
 
   // GET /api/configurations — List all configurations
-  app.get('/api/configurations', async (_req, res) => {
+  app.get('/api/configurations', async (req, res) => {
     try {
       const db = await getDb();
-      const fileData = readConfigurationsFile(db);
+      const fileData = readConfigurationsFile(db, getTenantId(req));
       res.json({ success: true, configurations: fileData.configurations });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown error';
@@ -169,8 +191,16 @@ export function registerConfigurationsRoute(app: Express, state: AppState): void
       const configLabel = typeof label === 'string' && label.length > 0 ? label : name;
       const db = await getDb();
 
-      // Check if this is an overwrite
-      const existing = db.raw.prepare('SELECT name FROM configurations WHERE name = ?').get(name);
+      // Phase B multi-tenancy — the existence check is scoped to the
+      // caller's tenant. Two tenants may share a config name without
+      // colliding here (the schema still has a PK on `name` alone, so the
+      // INSERT OR REPLACE would otherwise overwrite the other tenant's
+      // row; a future migration will promote the PK to `(tenant_id, name)`
+      // and this guard becomes structurally redundant).
+      const tenantId = getTenantId(req);
+      const existing = db.raw
+        .prepare('SELECT name FROM configurations WHERE name = ? AND tenant_id = ?')
+        .get(name, tenantId);
       const overwritten = !!existing;
 
       // Normalise through the migrator so that sources/scopes are always populated.
@@ -199,13 +229,16 @@ export function registerConfigurationsRoute(app: Express, state: AppState): void
       const { name } = req.params;
       const db = await getDb();
 
-      const existing = db.raw.prepare('SELECT name FROM configurations WHERE name = ?').get(name);
+      const tenantId = getTenantId(req);
+      const existing = db.raw
+        .prepare('SELECT name FROM configurations WHERE name = ? AND tenant_id = ?')
+        .get(name, tenantId);
       if (!existing) {
         res.status(404).json({ success: false, message: `Configuration "${name}" not found` });
         return;
       }
 
-      deleteConfigurationRow(db, name);
+      deleteConfigurationRow(db, name, tenantId);
 
       res.json({ success: true });
     } catch (error: unknown) {

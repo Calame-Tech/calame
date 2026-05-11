@@ -4,6 +4,7 @@ import type { AppState } from '../state.js';
 import { verifyPassword, decrypt, getSecretKey } from '../crypto.js';
 import { validateSession } from '../session.js';
 import { parseCookies } from '../utils/cookies.js';
+import { getTenantId } from '../tenancy.js';
 
 const generateTokenSchema = z.object({
   profileName: z.string().min(1, 'profileName is required'),
@@ -35,7 +36,7 @@ export function registerTokensRoute(app: Express, state: AppState): void {
         return;
       }
 
-      const entry = tokenManager.generateToken(profileName, label);
+      const entry = tokenManager.generateToken(profileName, label, getTenantId(req));
       await tokenManager.save();
 
       // Return the plaintext token ONCE at creation time — it is never retrievable after this
@@ -56,7 +57,7 @@ export function registerTokensRoute(app: Express, state: AppState): void {
     }
   });
 
-  app.get('/api/tokens', async (_req, res) => {
+  app.get('/api/tokens', async (req, res) => {
     try {
       const tokenManager = state.tokenManager;
       if (!tokenManager) {
@@ -64,7 +65,7 @@ export function registerTokensRoute(app: Express, state: AppState): void {
         return;
       }
 
-      const tokens = tokenManager.getAllTokens();
+      const tokens = tokenManager.getAllTokens(getTenantId(req));
       res.json({ success: true, tokens });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown error';
@@ -82,7 +83,7 @@ export function registerTokensRoute(app: Express, state: AppState): void {
       }
 
       const { id } = req.params;
-      const revoked = tokenManager.revokeToken(id);
+      const revoked = tokenManager.revokeToken(id, getTenantId(req));
       if (!revoked) {
         res.status(404).json({ success: false, message: 'Token not found.' });
         return;
@@ -106,7 +107,7 @@ export function registerTokensRoute(app: Express, state: AppState): void {
       }
 
       const { profileName } = req.params;
-      const tokens = tokenManager.getTokensForProfile(profileName).map((t) => ({
+      const tokens = tokenManager.getTokensForProfile(profileName, getTenantId(req)).map((t) => ({
         id: t.id,
         tokenHash: t.tokenHash.substring(0, 8) + '...',
         profileName: t.profileName,
@@ -177,7 +178,7 @@ export function registerTokensRoute(app: Express, state: AppState): void {
         return;
       }
 
-      const encryptedToken = tokenManager.getEncryptedToken(req.params.id);
+      const encryptedToken = tokenManager.getEncryptedToken(req.params.id, getTenantId(req));
       if (!encryptedToken) {
         res.status(404).json({
           success: false,

@@ -811,3 +811,156 @@ describe('validateProfiles', () => {
     expect(warnings).toEqual([]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase B multi-tenancy — cross-tenant isolation tests.
+// ---------------------------------------------------------------------------
+describe('profiles routes — Phase B tenant isolation', () => {
+  let app: ReturnType<typeof createApp>;
+  let originalCwd: string;
+  let tmpDir: string;
+  let db: CalameDatabase;
+  let cookie: string;
+
+  beforeEach(async () => {
+    originalCwd = process.cwd();
+    tmpDir = path.join(os.tmpdir(), `calame-profiles-tenant-test-${Date.now()}`);
+    await fs.mkdir(tmpDir, { recursive: true });
+    process.chdir(tmpDir);
+
+    const state = new AppState();
+    db = new CalameDatabase(tmpDir);
+    state.db = db;
+    state.userManager = new UserManager(db);
+    app = createApp(state);
+    cookie = await setupAdminAndGetCookie(app);
+  });
+
+  afterEach(async () => {
+    process.chdir(originalCwd);
+    db.close();
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+  });
+
+  it('POST /api/profiles/save tags the row with the caller tenant', async () => {
+    await request(app)
+      .post('/api/profiles/save')
+      .set('Cookie', cookie)
+      .set('X-Tenant-Id', 'acme')
+      .send({
+        profiles: {
+          acmeProfile: { label: 'Acme', selectedTables: {}, tableOptions: {} },
+        },
+      })
+      .expect(200);
+
+    const row = db.raw
+      .prepare("SELECT tenant_id FROM profiles WHERE key = 'main'")
+      .get() as { tenant_id: string };
+    expect(row.tenant_id).toBe('acme');
+  });
+
+  it('GET /api/profiles/load is scoped to the caller tenant', async () => {
+    // Save under acme.
+    await request(app)
+      .post('/api/profiles/save')
+      .set('Cookie', cookie)
+      .set('X-Tenant-Id', 'acme')
+      .send({
+        profiles: {
+          acmeProfile: { label: 'Acme', selectedTables: {}, tableOptions: {} },
+        },
+      })
+      .expect(200);
+
+    // Beta tenant must see "no profiles" (`found: false`), not the acme blob.
+    const betaRes = await request(app)
+      .get('/api/profiles/load')
+      .set('Cookie', cookie)
+      .set('X-Tenant-Id', 'beta')
+      .expect(200);
+    expect(betaRes.body.found).toBe(false);
+
+    // Acme tenant sees its own blob.
+    const acmeRes = await request(app)
+      .get('/api/profiles/load')
+      .set('Cookie', cookie)
+      .set('X-Tenant-Id', 'acme')
+      .expect(200);
+    expect(acmeRes.body.found).toBe(true);
+    expect(acmeRes.body.profiles.acmeProfile).toBeDefined();
+  });
+
+  it('legacy callers (no header) continue to see the default-tenant blob', async () => {
+    // Save without any tenant header — lands under 'default'.
+    await request(app)
+      .post('/api/profiles/save')
+      .set('Cookie', cookie)
+      .send({
+        profiles: {
+          defaultProfile: { label: 'Default', selectedTables: {}, tableOptions: {} },
+        },
+      })
+      .expect(200);
+
+    // Header-less load returns the row exactly as before Phase B.
+    const res = await request(app)
+      .get('/api/profiles/load')
+      .set('Cookie', cookie)
+      .expect(200);
+    expect(res.body.found).toBe(true);
+    expect(res.body.profiles.defaultProfile).toBeDefined();
+
+    // Default row sits under 'default' in storage.
+    const row = db.raw
+      .prepare("SELECT tenant_id FROM profiles WHERE key = 'main'")
+      .get() as { tenant_id: string };
+    expect(row.tenant_id).toBe('default');
+  });
+
+  it('PATCH /api/profiles/:name/response-mode is a 404 across tenants', async () => {
+    // Acme creates a profile.
+    await request(app)
+      .post('/api/profiles/save')
+      .set('Cookie', cookie)
+      .set('X-Tenant-Id', 'acme')
+      .send({
+        profiles: {
+          acmeProfile: { label: 'Acme', selectedTables: {}, tableOptions: {} },
+        },
+      })
+      .expect(200);
+
+    // Beta tries to patch it — must 404 even though the name exists in
+    // another tenant's row.
+    const betaRes = await request(app)
+      .patch('/api/profiles/acmeProfile/response-mode')
+      .set('Cookie', cookie)
+      .set('X-Tenant-Id', 'beta')
+      .send({ mode: 'raw' })
+      .expect(404);
+    expect(betaRes.body.success).toBe(false);
+  });
+
+  it('rejects malformed X-Tenant-Id by falling back to default (no 400)', async () => {
+    // Headers with semicolons / spaces fail the regex; the route falls
+    // back to 'default' rather than erroring. This guarantees a forged
+    // header never crashes the API.
+    await request(app)
+      .post('/api/profiles/save')
+      .set('Cookie', cookie)
+      .set('X-Tenant-Id', "acme'; DROP--")
+      .send({
+        profiles: {
+          safe: { label: 'Safe', selectedTables: {}, tableOptions: {} },
+        },
+      })
+      .expect(200);
+
+    // Row landed under 'default' (the fallback).
+    const row = db.raw
+      .prepare("SELECT tenant_id FROM profiles WHERE key = 'main'")
+      .get() as { tenant_id: string };
+    expect(row.tenant_id).toBe('default');
+  });
+});

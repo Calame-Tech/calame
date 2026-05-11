@@ -8,6 +8,14 @@ import { z } from 'zod';
 import type { RagSearchResult } from '../types.js';
 import type { RagRouteDeps } from './types.js';
 
+/**
+ * Resolve the tenant id for a request, falling back to the literal
+ * `'default'` when the host hasn't wired a resolver (e.g. test deps).
+ */
+function resolveTenantId(deps: RagRouteDeps, req?: Request): string {
+	return deps.getTenantId ? deps.getTenantId(req) : 'default';
+}
+
 const searchSchema = z.object({
 	query: z.string().min(1),
 	topK: z.number().int().positive().max(100).optional(),
@@ -51,24 +59,30 @@ export function registerRagSearchRoutes(app: Express, deps: RagRouteDeps): void 
 			return;
 		}
 		const { query, topK = 10, sourceIds, folderIds, settingName } = parsed.data;
+		const tenantId = resolveTenantId(deps, req);
 
 		try {
 			// Resolve the embedding setting to use for the query vector.
 			// Soft-deleted sources are excluded — searching from a retired
-			// source would mix dangling chunks back into results.
+			// source would mix dangling chunks back into results. The tenant
+			// filter ensures we never reach for a foreign-tenant source even
+			// when the caller pre-supplies its `id` in `sourceIds`.
 			let resolvedSettingName: string | null = settingName ?? null;
 			if (!resolvedSettingName) {
 				const firstSource = sourceIds?.[0]
 					? (deps.db
-							.prepare<[string], { embedding_setting_name: string }>(
-								`SELECT embedding_setting_name FROM rag_sources WHERE id = ? AND deleted_at IS NULL`,
+							.prepare<[string, string], { embedding_setting_name: string }>(
+								`SELECT embedding_setting_name FROM rag_sources
+								 WHERE id = ? AND tenant_id = ? AND deleted_at IS NULL`,
 							)
-							.get(sourceIds[0]) ?? null)
+							.get(sourceIds[0], tenantId) ?? null)
 					: (deps.db
-							.prepare<[], { embedding_setting_name: string }>(
-								`SELECT embedding_setting_name FROM rag_sources WHERE deleted_at IS NULL ORDER BY created_at ASC LIMIT 1`,
+							.prepare<[string], { embedding_setting_name: string }>(
+								`SELECT embedding_setting_name FROM rag_sources
+								 WHERE tenant_id = ? AND deleted_at IS NULL
+								 ORDER BY created_at ASC LIMIT 1`,
 							)
-							.get() ?? null);
+							.get(tenantId) ?? null);
 				if (!firstSource) {
 					sendError(res, 400, 'No source available to derive an embedding setting.');
 					return;
@@ -96,6 +110,12 @@ export function registerRagSearchRoutes(app: Express, deps: RagRouteDeps): void 
 			// out chunks whose parent source has been soft-deleted — their
 			// rows are kept in the DB until the cleanup cron runs but should
 			// never surface in search results.
+			//
+			// Phase B multi-tenancy: `s.tenant_id = ?` ensures the JOIN drops
+			// any chunk whose parent source belongs to another tenant. This
+			// is the load-bearing filter for the search endpoint — even when
+			// the vec0 search returns hits from a foreign tenant (the vector
+			// index is shared per process), they're discarded here.
 			const placeholders = hits.map(() => '?').join(',');
 			const ids = hits.map((h) => h.chunkId);
 			const rows = deps.db
@@ -115,9 +135,10 @@ export function registerRagSearchRoutes(app: Express, deps: RagRouteDeps): void 
 					 LEFT JOIN rag_folders f ON f.id = d.folder_id
 					 WHERE c.id IN (${placeholders})
 					   AND d.deleted_at IS NULL
-					   AND s.deleted_at IS NULL`,
+					   AND s.deleted_at IS NULL
+					   AND s.tenant_id = ?`,
 				)
-				.all(...ids) as ChunkJoinRow[];
+				.all(...ids, tenantId) as ChunkJoinRow[];
 
 			const byId = new Map<string, ChunkJoinRow>();
 			for (const r of rows) byId.set(r.chunk_id, r);

@@ -358,6 +358,12 @@ export function registerServeRoute(app: Express, state: AppState): void {
           res.status(500).json({ error: 'Database not initialised.' });
           return;
         }
+        // Phase B multi-tenancy: the MCP serve endpoint is consumed by
+        // external clients (Claude Desktop, …) that cannot easily inject
+        // `X-Tenant-Id`. For the MVP we pin the configuration lookup to
+        // the default tenant (the default param of `readConfigurationsFile`)
+        // — Phase C will revisit this once the tenant can be carried in
+        // the profile name segment of the URL or in the OAuth token.
         const configsFile = readConfigurationsFile(state.db);
         // Cast to ServeConfiguration[] — readConfigurationsFile always passes rows through
         // upgradeConfigurationShape which returns ServeConfiguration. The filter(Boolean) is

@@ -4,6 +4,7 @@ import type { CalameDatabase } from '../database.js';
 import { z } from 'zod';
 import { upgradeProfileShape, sourceAdapterRegistry } from '@calame/core';
 import type { ScopeSelection } from '@calame/core';
+import { getTenantId } from '../tenancy.js';
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -107,9 +108,11 @@ export function registerProfileScopesRoute(app: Express, state: AppState): void 
     try {
       const db = await getDb();
 
+      // Phase B multi-tenancy — bind tenant on the read AND the rewrite.
+      const tenantId = getTenantId(req);
       const row = db.raw
-        .prepare("SELECT data FROM profiles WHERE key = 'main'")
-        .get() as { data: string } | undefined;
+        .prepare("SELECT data FROM profiles WHERE key = 'main' AND tenant_id = ?")
+        .get(tenantId) as { data: string } | undefined;
 
       if (!row) {
         res.status(404).json({ success: false, message: `Profile "${profileName}" not found.` });
@@ -135,8 +138,8 @@ export function registerProfileScopesRoute(app: Express, state: AppState): void 
       data.profiles[profileName] = upgraded as unknown as Record<string, unknown>;
 
       db.raw
-        .prepare("INSERT OR REPLACE INTO profiles (key, data) VALUES ('main', ?)")
-        .run(JSON.stringify(data));
+        .prepare("INSERT OR REPLACE INTO profiles (key, data, tenant_id) VALUES ('main', ?, ?)")
+        .run(JSON.stringify(data), tenantId);
 
       // Reflect in AppState if this profile is currently loaded.
       if (state.serveProfiles[profileName]) {
@@ -192,9 +195,10 @@ export function registerProfileScopesRoute(app: Express, state: AppState): void 
     try {
       const db = await getDb();
 
+      const tenantId = getTenantId(req);
       const row = db.raw
-        .prepare("SELECT data FROM profiles WHERE key = 'main'")
-        .get() as { data: string } | undefined;
+        .prepare("SELECT data FROM profiles WHERE key = 'main' AND tenant_id = ?")
+        .get(tenantId) as { data: string } | undefined;
 
       if (!row) {
         res.status(404).json({ success: false, message: `Profile "${profileName}" not found.` });
@@ -285,32 +289,35 @@ export function registerProfileScopesRoute(app: Express, state: AppState): void 
           let liveFolderCount = 0;
           let liveChunkCount = 0;
 
+          // Phase B multi-tenancy: every count below binds `tenant_id = ?`
+          // so a forged profile referencing a foreign-tenant source id
+          // surfaces zero rows rather than the foreign tenant's stats.
           if (scope.mode === 'allowAll') {
             // Count every non-deleted document for this source.
             const docRow = ragDb
-              .prepare<[string], { n: number }>(
-                'SELECT COUNT(*) AS n FROM rag_documents WHERE source_id = ? AND deleted_at IS NULL',
+              .prepare<[string, string], { n: number }>(
+                'SELECT COUNT(*) AS n FROM rag_documents WHERE source_id = ? AND tenant_id = ? AND deleted_at IS NULL',
               )
-              .get(sourceId);
+              .get(sourceId, tenantId);
             liveDocCount = docRow?.n ?? 0;
 
             // Count all folders for this source.
             const folderRow = ragDb
-              .prepare<[string], { n: number }>(
-                'SELECT COUNT(*) AS n FROM rag_folders WHERE source_id = ?',
+              .prepare<[string, string], { n: number }>(
+                'SELECT COUNT(*) AS n FROM rag_folders WHERE source_id = ? AND tenant_id = ?',
               )
-              .get(sourceId);
+              .get(sourceId, tenantId);
             liveFolderCount = folderRow?.n ?? 0;
 
             // Count all chunks for this source.
             const chunkRow = ragDb
-              .prepare<[string], { n: number }>(
+              .prepare<[string, string], { n: number }>(
                 `SELECT COUNT(*) AS n
                  FROM rag_chunks c
                  JOIN rag_documents d ON d.id = c.document_id
-                 WHERE d.source_id = ? AND d.deleted_at IS NULL`,
+                 WHERE d.source_id = ? AND d.tenant_id = ? AND d.deleted_at IS NULL`,
               )
-              .get(sourceId);
+              .get(sourceId, tenantId);
             liveChunkCount = chunkRow?.n ?? 0;
           } else {
             // mode === 'allowList': resolve folder-based and explicit-document sets.
@@ -331,11 +338,13 @@ export function registerProfileScopesRoute(app: Express, state: AppState): void 
                    FROM rag_documents d
                    JOIN rag_folders f ON f.id = d.folder_id
                    WHERE d.source_id = ?
+                     AND d.tenant_id = ?
                      AND d.deleted_at IS NULL
                      AND f.source_id = ?
+                     AND f.tenant_id = ?
                      AND f.path IN (${placeholders})`,
                 )
-                .all(sourceId, sourceId, ...allowedFolderPaths);
+                .all(sourceId, tenantId, sourceId, tenantId, ...allowedFolderPaths);
               for (const row of folderDocs) folderDocIds.add(row.id);
             }
 
@@ -346,9 +355,9 @@ export function registerProfileScopesRoute(app: Express, state: AppState): void 
               const existingDocs = ragDb
                 .prepare<string[], { id: string }>(
                   `SELECT id FROM rag_documents
-                   WHERE id IN (${placeholders}) AND deleted_at IS NULL`,
+                   WHERE id IN (${placeholders}) AND tenant_id = ? AND deleted_at IS NULL`,
                 )
-                .all(...allowedDocIds);
+                .all(...allowedDocIds, tenantId);
               for (const row of existingDocs) existingExplicitDocIds.add(row.id);
             }
 
@@ -362,9 +371,9 @@ export function registerProfileScopesRoute(app: Express, state: AppState): void 
               const placeholders = idList.map(() => '?').join(',');
               const chunkRow = ragDb
                 .prepare<string[], { n: number }>(
-                  `SELECT COUNT(*) AS n FROM rag_chunks WHERE document_id IN (${placeholders})`,
+                  `SELECT COUNT(*) AS n FROM rag_chunks WHERE document_id IN (${placeholders}) AND tenant_id = ?`,
                 )
-                .get(...idList);
+                .get(...idList, tenantId);
               liveChunkCount = chunkRow?.n ?? 0;
             }
           }

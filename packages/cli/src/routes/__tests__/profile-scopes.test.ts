@@ -554,12 +554,16 @@ describe('profile-scopes routes', () => {
      * Mirrors `runRagMigrations` so the preview SQL can resolve.
      */
     function setupRagFixtures(): void {
+      // Tables mirror the Phase B shape — `tenant_id` columns default to
+      // 'default' so the existing inserts (which don't bind tenant_id)
+      // continue to land under the same tenant the route resolves to.
       db.raw.exec(`CREATE TABLE IF NOT EXISTS rag_folders (
         id TEXT PRIMARY KEY,
         source_id TEXT NOT NULL,
         parent_id TEXT,
         path TEXT NOT NULL,
         name TEXT NOT NULL,
+        tenant_id TEXT NOT NULL DEFAULT 'default',
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       )`);
       db.raw.exec(`CREATE TABLE IF NOT EXISTS rag_documents (
@@ -572,6 +576,7 @@ describe('profile-scopes routes', () => {
         size INTEGER NOT NULL,
         hash TEXT NOT NULL,
         etag TEXT,
+        tenant_id TEXT NOT NULL DEFAULT 'default',
         last_indexed_at TEXT NOT NULL DEFAULT (datetime('now')),
         deleted_at TEXT
       )`);
@@ -582,6 +587,7 @@ describe('profile-scopes routes', () => {
         text TEXT NOT NULL,
         token_count INTEGER NOT NULL,
         embedding_dimensions INTEGER NOT NULL,
+        tenant_id TEXT NOT NULL DEFAULT 'default',
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       )`);
 

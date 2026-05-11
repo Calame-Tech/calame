@@ -11,6 +11,7 @@ import {
 } from '@calame/core';
 import { mergeConfigurations } from './serve.js';
 import { readConfigurationsFile } from './configurations.js';
+import { getTenantId } from '../tenancy.js';
 
 interface PreviewColumnInfo {
   name: string;
@@ -93,10 +94,13 @@ export function registerProfilePreviewRoute(app: Express, state: AppState): void
         return;
       }
 
-      // Load the profile from the profiles store
+      // Load the profile from the profiles store. Phase B multi-tenancy:
+      // bind the tenant on the lookup so cross-tenant profile names resolve
+      // as 404, not as the other tenant's profile.
+      const tenantId = getTenantId(req);
       const row = state.db.raw
-        .prepare("SELECT data FROM profiles WHERE key = 'main'")
-        .get() as { data: string } | undefined;
+        .prepare("SELECT data FROM profiles WHERE key = 'main' AND tenant_id = ?")
+        .get(tenantId) as { data: string } | undefined;
 
       if (!row) {
         res.status(404).json({ success: false, message: `Profile "${profileName}" not found.` });
@@ -134,7 +138,9 @@ export function registerProfilePreviewRoute(app: Express, state: AppState): void
       let effectiveColumnMasking: Record<string, Record<string, ColumnMasking>> | undefined;
 
       if (profile.configurations && profile.configurations.length > 0) {
-        const configsFile = readConfigurationsFile(state.db);
+        // Phase B multi-tenancy: bind tenant on the configurations read so
+        // a cross-tenant configuration name does not leak into the preview.
+        const configsFile = readConfigurationsFile(state.db, tenantId);
         const resolvedConfigs = profile.configurations
           .map((configName) => configsFile.configurations[configName])
           .filter(Boolean) as ServeConfiguration[];

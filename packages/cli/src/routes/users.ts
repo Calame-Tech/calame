@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { AppState } from '../state.js';
 import type { UserRole, AccessMode, UserProfileAccess } from '../user.js';
 import { EmailService } from '../email.js';
+import { getTenantId } from '../tenancy.js';
 
 const accessModeEnum = z.enum(['mcp', 'chat', 'both']);
 
@@ -39,7 +40,7 @@ export function registerUsersRoute(app: Express, state: AppState): void {
    * GET /api/users — List all users with optional filters.
    * Query params: profileName, role, status, search
    */
-  app.get('/api/users', async (_req, res) => {
+  app.get('/api/users', async (req, res) => {
     try {
       const userManager = state.userManager;
       if (!userManager) {
@@ -47,13 +48,18 @@ export function registerUsersRoute(app: Express, state: AppState): void {
         return;
       }
 
-      const { profileName, role, status, search } = _req.query as Record<string, string | undefined>;
-      const users = userManager.listUsers({
-        profileName,
-        role: role as UserRole | undefined,
-        status: status as 'active' | 'disabled' | 'invited' | undefined,
-        search,
-      });
+      const { profileName, role, status, search } = req.query as Record<string, string | undefined>;
+      // Phase B multi-tenancy — pass the resolved tenant so the listing
+      // is scoped to the caller. Cross-tenant users never surface here.
+      const users = userManager.listUsers(
+        {
+          profileName,
+          role: role as UserRole | undefined,
+          status: status as 'active' | 'disabled' | 'invited' | undefined,
+          search,
+        },
+        getTenantId(req),
+      );
 
       // Return users without sensitive fields
       const sanitized = users.map((u) => ({

@@ -370,15 +370,24 @@ export class UserManager {
     return row ? this.buildEntry(row) : null;
   }
 
-  listUsers(filters?: {
-    profileName?: string;
-    role?: UserRole;
-    status?: UserStatus;
-    search?: string;
-  }): UserEntry[] {
+  /**
+   * List users visible to the supplied tenant. Phase B multi-tenancy:
+   * the tenant filter is always applied, defaulting to the implicit
+   * default so legacy call sites that don't pass a tenant continue to
+   * observe their historic row set.
+   */
+  listUsers(
+    filters?: {
+      profileName?: string;
+      role?: UserRole;
+      status?: UserStatus;
+      search?: string;
+    },
+    tenantId: string = DEFAULT_TENANT_ID,
+  ): UserEntry[] {
     // Build dynamic query
-    const conditions: string[] = [];
-    const params: unknown[] = [];
+    const conditions: string[] = ['u.tenant_id = ?'];
+    const params: unknown[] = [tenantId];
 
     if (filters?.role) {
       conditions.push('u.role = ?');
@@ -398,7 +407,7 @@ export class UserManager {
       params.push(filters.profileName);
     }
 
-    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const where = `WHERE ${conditions.join(' AND ')}`;
     const rows = this.db.prepare(`SELECT * FROM users u ${where}`).all(...params) as UserRow[];
     return rows.map((r) => this.buildEntry(r));
   }

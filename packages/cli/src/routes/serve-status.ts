@@ -1,4 +1,4 @@
-import type { Express } from 'express';
+import type { Express, Request } from 'express';
 import type { AppState } from '../state.js';
 import type { ServeProfile } from '@calame/core';
 import {
@@ -7,19 +7,31 @@ import {
   getConfigurationSelectedTables,
 } from '@calame/core';
 import { readConfigurationsFile } from './configurations.js';
+import { getTenantId } from '../tenancy.js';
 
 export function registerServeStatusRoute(app: Express, state: AppState): void {
   const dataDir = state.config?.dataDir ?? process.cwd();
 
-  /** Load profiles from SQLite into state.serveProfiles (no-op if already loaded). */
-  async function ensureProfilesLoaded(): Promise<void> {
+  /**
+   * Load profiles from SQLite into state.serveProfiles (no-op if already loaded).
+   *
+   * Phase B multi-tenancy: the profile blob is scoped to the caller's
+   * tenant — `state.serveProfiles` is a process-wide cache, so the first
+   * tenant to hit the endpoint after boot determines which blob lands in
+   * memory. Subsequent tenants that pass through `state.serveProfiles`
+   * (e.g. via the MCP endpoint) will observe that blob until `serve/stop`
+   * clears the cache. This matches the MVP choice of pinning MCP to the
+   * default tenant — Phase C will key the cache by tenant.
+   */
+  async function ensureProfilesLoaded(req: Request): Promise<void> {
     if (Object.keys(state.serveProfiles).length > 0) return;
     if (!state.db) return;
 
     try {
+      const tenantId = getTenantId(req);
       const row = state.db.raw
-        .prepare("SELECT data FROM profiles WHERE key = 'main'")
-        .get() as { data: string } | undefined;
+        .prepare("SELECT data FROM profiles WHERE key = 'main' AND tenant_id = ?")
+        .get(tenantId) as { data: string } | undefined;
       if (!row) return;
 
       const parsed = JSON.parse(row.data) as Record<string, unknown>;
@@ -51,9 +63,9 @@ export function registerServeStatusRoute(app: Express, state: AppState): void {
     }
   }
 
-  app.get('/api/serve/status', async (_req, res) => {
+  app.get('/api/serve/status', async (req, res) => {
     try {
-      await ensureProfilesLoaded();
+      await ensureProfilesLoaded(req);
       const profileNames = Object.keys(state.serveProfiles);
       const profileStatuses: Record<string, { active: boolean; endpoint: string }> = {};
       for (const name of profileNames) {
@@ -95,9 +107,10 @@ export function registerServeStatusRoute(app: Express, state: AppState): void {
           const { CalameDatabase } = await import('../database.js');
           state.db = new CalameDatabase(dataDir);
         }
+        const tenantId = getTenantId(req);
         const row = state.db.raw
-          .prepare("SELECT data FROM profiles WHERE key = 'main'")
-          .get() as { data: string } | undefined;
+          .prepare("SELECT data FROM profiles WHERE key = 'main' AND tenant_id = ?")
+          .get(tenantId) as { data: string } | undefined;
         if (!row) {
           res.status(400).json({ success: false, message: 'No profiles found. Create profiles first.' });
           return;
@@ -131,8 +144,10 @@ export function registerServeStatusRoute(app: Express, state: AppState): void {
         });
       }
 
-      // Resolve configurations to get effective selectedTables
-      const configsFile = readConfigurationsFile(state.db!);
+      // Resolve configurations to get effective selectedTables. Phase B
+      // multi-tenancy: bind the caller's tenant so this can't pick up a
+      // configuration row owned by another tenant.
+      const configsFile = readConfigurationsFile(state.db!, getTenantId(req));
       for (const [_name, sp] of Object.entries(serveProfiles)) {
         if (sp.configurations && sp.configurations.length > 0) {
           const mergedTables: Record<string, string[]> = {};
@@ -286,7 +301,7 @@ export function registerServeStatusRoute(app: Express, state: AppState): void {
   });
 
   // Refresh active profiles: re-read profiles and configurations from disk
-  app.post('/api/serve/refresh', async (_req, res) => {
+  app.post('/api/serve/refresh', async (req, res) => {
     try {
       if (state.activeProfileNames.size === 0) {
         res.json({ success: true, refreshed: [] });
@@ -297,9 +312,10 @@ export function registerServeStatusRoute(app: Express, state: AppState): void {
       let profilesData: Record<string, Record<string, unknown>> = {};
       if (state.db) {
         try {
+          const tenantId = getTenantId(req);
           const row = state.db.raw
-            .prepare("SELECT data FROM profiles WHERE key = 'main'")
-            .get() as { data: string } | undefined;
+            .prepare("SELECT data FROM profiles WHERE key = 'main' AND tenant_id = ?")
+            .get(tenantId) as { data: string } | undefined;
           if (row) {
             const parsed = JSON.parse(row.data) as Record<string, unknown>;
             if (parsed.profiles && typeof parsed.profiles === 'object') {
@@ -311,8 +327,12 @@ export function registerServeStatusRoute(app: Express, state: AppState): void {
         }
       }
 
-      // Re-read configurations from SQLite
-      const configsFile = state.db ? readConfigurationsFile(state.db) : { configurations: {} };
+      // Re-read configurations from SQLite. Phase B multi-tenancy: bind
+      // the caller's tenant so the refreshed serve profile is rebuilt from
+      // its own tenant's configuration set.
+      const configsFile = state.db
+        ? readConfigurationsFile(state.db, getTenantId(req))
+        : { configurations: {} };
 
       const refreshedNames: string[] = [];
 

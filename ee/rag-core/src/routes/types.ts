@@ -9,6 +9,7 @@ import type { IngestionPipeline } from '../pipeline/ingest.js';
 import type { SyncQueue } from '../jobs/sync-queue.js';
 import type { PollScheduler } from '../jobs/poll-scheduler.js';
 import type { WatchManager } from '../jobs/watch-manager.js';
+import type { EmbeddingCapConfig } from '../jobs/embedding-cap.js';
 
 /** Audit hook entry — matches the shape used by the host's audit log. */
 export interface RagAuditEntry {
@@ -124,4 +125,12 @@ export interface RagRouteDeps {
 	getTenantId?: (req?: Request) => string;
 	/** Optional audit hook called on success and failure. */
 	onAudit?: (entry: RagAuditEntry) => void;
+	/**
+	 * Optional monthly embedding-token cap config. Wired by the host from the
+	 * `CALAME_RAG_MONTHLY_TOKEN_CAP` env var. The usage route reads this to
+	 * include `cap` in its response so the dashboard can render the progress
+	 * bar / warning banners. When absent the cap section is reported as
+	 * `monthlyTokenCap: 0` (unlimited) so the UI can render a unified shape.
+	 */
+	capConfig?: EmbeddingCapConfig;
 }

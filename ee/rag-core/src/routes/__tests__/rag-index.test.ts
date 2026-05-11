@@ -882,3 +882,89 @@ describe('GET /api/rag/jobs — status= and limit= filters', () => {
 		expect(jobs.map((j) => j.id).sort()).toEqual(['j1', 'j2']);
 	});
 });
+
+// ---------------------------------------------------------------------------
+// Cap-exceeded handling — verify the sync orchestrator surfaces the
+// EmbeddingCapExceededError as a failed job with `reason: 'cap_exceeded'`
+// in the audit payload, and that the GC pass is skipped (otherwise docs
+// we never re-walked would be wrongly soft-deleted).
+// ---------------------------------------------------------------------------
+
+describe('runSyncJob — monthly cap kill-switch', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it('marks the job failed and emits `rag.sync.failed` with reason=cap_exceeded', async () => {
+		const db = makeDb();
+		const source = insertSource(db);
+
+		const connector = makeConnector([
+			{ id: 'doc-a', path: 'a.txt', etag: null },
+			{ id: 'doc-b', path: 'b.txt', etag: null },
+		]);
+		// Pipeline that always throws the cap error on the first ingest.
+		const pipeline = {
+			ingestDocument: vi.fn(async () => {
+				// Lazy import so we don't pull the symbol unless the test runs.
+				const mod = await import('../../jobs/embedding-cap.js');
+				throw new mod.EmbeddingCapExceededError('default', 9_000, 10_000, 5_000);
+			}),
+			markDocumentDeleted: vi.fn(),
+		} as unknown as IngestionPipeline;
+
+		const onAudit = vi.fn();
+		const captured = makeCapturedApp();
+		const deps = makeDeps(db, connector, pipeline, { onAudit });
+		registerRagIndexRoutes(captured.app, deps);
+
+		await runSync(captured, source.id, deps);
+
+		const job = readJob(db, source.id);
+		expect(job.status).toBe('failed');
+		expect(job.error).toContain('cap exceeded');
+		// GC pass must be skipped on cap-exceeded runs.
+		expect(job.gcDeleted).toBe(0);
+		// markDocumentDeleted should NOT have been called, even if seeded
+		// docs no longer match the listing — we don't know if we walked
+		// the full listing successfully when the cap aborted the loop.
+		expect((pipeline as unknown as { markDocumentDeleted: ReturnType<typeof vi.fn> }).markDocumentDeleted).not.toHaveBeenCalled();
+		// Find the terminal audit event.
+		const terminal = onAudit.mock.calls
+			.map(([entry]) => entry as { type: string; payload: Record<string, unknown> })
+			.find((e) => e.type === 'rag.sync.failed' && e.payload['reason'] === 'cap_exceeded');
+		expect(terminal).toBeDefined();
+		expect(terminal?.payload).toMatchObject({
+			sourceId: source.id,
+			reason: 'cap_exceeded',
+		});
+	});
+
+	it('aborts the per-document loop on the first cap error (no further ingest calls)', async () => {
+		const db = makeDb();
+		const source = insertSource(db);
+
+		const connector = makeConnector([
+			{ id: 'doc-a', path: 'a.txt', etag: null },
+			{ id: 'doc-b', path: 'b.txt', etag: null },
+			{ id: 'doc-c', path: 'c.txt', etag: null },
+		]);
+		const ingestDocument = vi.fn(async () => {
+			const mod = await import('../../jobs/embedding-cap.js');
+			throw new mod.EmbeddingCapExceededError('default', 0, 1, 100);
+		});
+		const pipeline = {
+			ingestDocument,
+			markDocumentDeleted: vi.fn(),
+		} as unknown as IngestionPipeline;
+
+		const captured = makeCapturedApp();
+		const deps = makeDeps(db, connector, pipeline);
+		registerRagIndexRoutes(captured.app, deps);
+
+		await runSync(captured, source.id, deps);
+
+		// Only the first doc is attempted; the loop breaks immediately.
+		expect(ingestDocument).toHaveBeenCalledTimes(1);
+	});
+});

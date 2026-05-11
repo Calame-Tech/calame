@@ -293,6 +293,10 @@ export function createApp(
       // `packages/cli`, so we wire the resolver here. Phase B will swap the
       // helper to read from `req.auth` without touching this site.
       getTenantId,
+      // Forward the cap config so the usage route can include the
+      // progress / threshold rollup in its response. The pipeline already
+      // received the same config at construction time inside rag-runtime.
+      capConfig: rt.capConfig,
       onAudit: (entry: { type: string; payload: unknown; timestamp: string }) => {
         log.info(`[rag-audit] ${entry.type} ${JSON.stringify(entry.payload)}`);
       },

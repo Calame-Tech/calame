@@ -63,7 +63,10 @@ function makeDb(): BetterSqlite3Database {
 	return db;
 }
 
-function makeDeps(db: BetterSqlite3Database): RagRouteDeps {
+function makeDeps(
+	db: BetterSqlite3Database,
+	overrides: Partial<RagRouteDeps> = {},
+): RagRouteDeps {
 	return {
 		db,
 		// Usage route only reads from `db`; the other deps are unused but the
@@ -86,6 +89,7 @@ function makeDeps(db: BetterSqlite3Database): RagRouteDeps {
 		pollScheduler: {} as RagRouteDeps['pollScheduler'],
 		watchManager: {} as RagRouteDeps['watchManager'],
 		onAudit: vi.fn(),
+		...overrides,
 	};
 }
 
@@ -276,6 +280,19 @@ describe('registerRagUsageRoutes', () => {
 		expect(body.totalTokens).toBe(500);
 	});
 
+	it('reports cap as monthlyTokenCap=0 when no capConfig is wired', async () => {
+		const handler = captured.getUsage();
+		const res = makeRes();
+		await handler(makeReq(), res.res);
+
+		const body = res.body as RagUsageResponse;
+		expect(body.cap).toBeDefined();
+		expect(body.cap.monthlyTokenCap).toBe(0);
+		expect(body.cap.currentMonthTokens).toBe(0);
+		expect(body.cap.fractionUsed).toBe(0);
+		expect(body.cap.nearingThreshold).toBe(false);
+	});
+
 	it('groups perDay buckets by ISO date prefix', async () => {
 		const srcId = insertSource(db, { name: 'Src', model: 'text-embedding-3-small' });
 		// Two jobs on the same UTC day → one bucket.
@@ -295,6 +312,105 @@ describe('registerRagUsageRoutes', () => {
 		expect(may1?.tokens).toBe(300);
 		// At least two distinct day buckets present overall.
 		expect(body.perDay.length).toBeGreaterThanOrEqual(2);
+	});
+});
+
+describe('registerRagUsageRoutes — cap rollup', () => {
+	function makeAppWithCap(
+		db: BetterSqlite3Database,
+		monthlyTokenCap: number,
+		warningThreshold?: number,
+	): ReturnType<typeof makeCapturedApp> {
+		const captured = makeCapturedApp();
+		const deps = makeDeps(db, {
+			capConfig:
+				warningThreshold === undefined
+					? { monthlyTokenCap }
+					: { monthlyTokenCap, warningThreshold },
+		});
+		registerRagUsageRoutes(captured.app, deps);
+		return captured;
+	}
+
+	it('includes cap progress when a positive cap is wired', async () => {
+		const db = makeDb();
+		const src = insertSource(db);
+		insertJob(db, { sourceId: src, tokens: 200_000 });
+		const captured = makeAppWithCap(db, 1_000_000);
+
+		const res = makeRes();
+		await captured.getUsage()(makeReq(), res.res);
+
+		const body = res.body as RagUsageResponse;
+		expect(body.cap.monthlyTokenCap).toBe(1_000_000);
+		expect(body.cap.currentMonthTokens).toBe(200_000);
+		expect(body.cap.fractionUsed).toBeCloseTo(0.2, 6);
+		expect(body.cap.nearingThreshold).toBe(false);
+		expect(body.cap.warningThreshold).toBe(0.8);
+	});
+
+	it('flags nearingThreshold when fractionUsed crosses the default 0.8', async () => {
+		const db = makeDb();
+		const src = insertSource(db);
+		insertJob(db, { sourceId: src, tokens: 850_000 });
+		const captured = makeAppWithCap(db, 1_000_000);
+
+		const res = makeRes();
+		await captured.getUsage()(makeReq(), res.res);
+
+		const body = res.body as RagUsageResponse;
+		expect(body.cap.fractionUsed).toBeCloseTo(0.85, 6);
+		expect(body.cap.nearingThreshold).toBe(true);
+	});
+
+	it('honors a custom warningThreshold', async () => {
+		const db = makeDb();
+		const src = insertSource(db);
+		insertJob(db, { sourceId: src, tokens: 510_000 });
+		const captured = makeAppWithCap(db, 1_000_000, 0.5);
+
+		const res = makeRes();
+		await captured.getUsage()(makeReq(), res.res);
+
+		const body = res.body as RagUsageResponse;
+		expect(body.cap.warningThreshold).toBe(0.5);
+		expect(body.cap.nearingThreshold).toBe(true);
+	});
+
+	it('reports fractionUsed >= 1 (over the cap) WITHOUT firing nearingThreshold', async () => {
+		const db = makeDb();
+		const src = insertSource(db);
+		insertJob(db, { sourceId: src, tokens: 1_200_000 });
+		const captured = makeAppWithCap(db, 1_000_000);
+
+		const res = makeRes();
+		await captured.getUsage()(makeReq(), res.res);
+
+		const body = res.body as RagUsageResponse;
+		expect(body.cap.fractionUsed).toBeGreaterThanOrEqual(1);
+		// "over the cap" should not double-fire the warning banner — the UI
+		// renders a separate red banner for fractionUsed >= 1.
+		expect(body.cap.nearingThreshold).toBe(false);
+	});
+
+	it('ignores tokens from previous months when computing currentMonthTokens', async () => {
+		const db = makeDb();
+		const src = insertSource(db);
+		const now = new Date();
+		// 6 months ago — should be excluded.
+		const old = new Date(
+			Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 6, 15),
+		).toISOString();
+		insertJob(db, { sourceId: src, tokens: 9_999_999, startedAt: old });
+		insertJob(db, { sourceId: src, tokens: 100_000, startedAt: now.toISOString() });
+
+		const captured = makeAppWithCap(db, 1_000_000);
+
+		const res = makeRes();
+		await captured.getUsage()(makeReq(), res.res);
+
+		const body = res.body as RagUsageResponse;
+		expect(body.cap.currentMonthTokens).toBe(100_000);
 	});
 });
 

@@ -5,6 +5,11 @@
 import type { Express, Request, Response } from 'express';
 import type { RagRouteDeps } from './types.js';
 import { estimateCostUsd, isKnownEmbeddingModel } from '../pricing.js';
+import {
+	getCurrentMonthTokens,
+	resolveWarningThreshold,
+	DEFAULT_CAP_WARNING_THRESHOLD,
+} from '../jobs/embedding-cap.js';
 
 /**
  * Response shape for `GET /api/rag/usage`. Frontend mirrors this in
@@ -35,6 +40,27 @@ export interface RagUsageResponse {
 	}>;
 	/** Echo of the resolved period filter so the UI can render the label. */
 	period: 'month' | 'week' | 'all';
+	/**
+	 * Monthly embedding-token cap state for the request's tenant. Always
+	 * present (never undefined) so the UI can render a unified shape.
+	 *
+	 *  - `monthlyTokenCap === 0`  → unlimited; UI hides the progress widgets.
+	 *  - `fractionUsed`           → `currentMonthTokens / monthlyTokenCap`,
+	 *                              floored at 0, NOT capped at 1 (the UI uses
+	 *                              the raw value to decide "over the cap" vs
+	 *                              "nearing the cap").
+	 *  - `nearingThreshold`       → `fractionUsed >= warningThreshold` AND
+	 *                              `< 1`. The "over the cap" case sets a
+	 *                              separate banner and shouldn't double-fire
+	 *                              the warning.
+	 */
+	cap: {
+		monthlyTokenCap: number;
+		currentMonthTokens: number;
+		fractionUsed: number;
+		nearingThreshold: boolean;
+		warningThreshold: number;
+	};
 }
 
 type Period = 'month' | 'week' | 'all';
@@ -204,6 +230,26 @@ export function registerRagUsageRoutes(app: Express, deps: RagRouteDeps): void {
 			const totalTokens = perProvider.reduce((sum, p) => sum + p.tokens, 0);
 			const totalCostUsd = perProvider.reduce((sum, p) => sum + p.costUsd, 0);
 
+			// Cap rollup — independent of the `?period=` filter (the cap is
+			// always month-to-date by definition). When the host did not
+			// supply a `capConfig` we report `monthlyTokenCap: 0` so the UI
+			// can render a unified shape without conditional access. The
+			// current-month aggregate runs against `rag_jobs` directly via
+			// the cap helper so the rollup matches what the pipeline gate
+			// observes — no risk of UI ↔ enforcement skew.
+			const monthlyTokenCap = deps.capConfig?.monthlyTokenCap ?? 0;
+			const warningThreshold = deps.capConfig
+				? resolveWarningThreshold(deps.capConfig)
+				: DEFAULT_CAP_WARNING_THRESHOLD;
+			const currentMonthTokens =
+				monthlyTokenCap > 0 ? getCurrentMonthTokens(deps.db, tenantId) : 0;
+			const fractionUsed =
+				monthlyTokenCap > 0 ? currentMonthTokens / monthlyTokenCap : 0;
+			const nearingThreshold =
+				monthlyTokenCap > 0 &&
+				fractionUsed >= warningThreshold &&
+				fractionUsed < 1;
+
 			const body: RagUsageResponse = {
 				totalTokens,
 				totalCostUsd,
@@ -211,6 +257,13 @@ export function registerRagUsageRoutes(app: Express, deps: RagRouteDeps): void {
 				perSource,
 				perDay,
 				period,
+				cap: {
+					monthlyTokenCap,
+					currentMonthTokens,
+					fractionUsed,
+					nearingThreshold,
+					warningThreshold,
+				},
 			};
 			res.json(body);
 		} catch (error: unknown) {

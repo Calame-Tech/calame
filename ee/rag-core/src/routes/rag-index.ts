@@ -7,6 +7,7 @@ import type { Database as BetterSqlite3Database } from 'better-sqlite3';
 import { nanoid } from 'nanoid';
 import type { RagFolder, RagJob, RagJobStatus, RagSource, RagSourceType } from '../types.js';
 import type { ConnectorLike, RagRouteDeps } from './types.js';
+import { EmbeddingCapExceededError } from '../jobs/embedding-cap.js';
 
 interface SourceRow {
 	id: string;
@@ -294,6 +295,13 @@ export async function runSyncJob(
 		// the job so the usage endpoint can aggregate per source / period.
 		let tokensEmbeddedThisJob = 0;
 		let lastError: string | null = null;
+		// Sticky flag set when ANY per-document error was an
+		// EmbeddingCapExceededError. Surfaced in the terminal audit event
+		// (`payload.reason = 'cap_exceeded'`) so operators can filter the
+		// audit log without re-parsing the error string. We bubble out of
+		// the per-document loop on the first hit since every subsequent doc
+		// would observe the same condition.
+		let capExceeded = false;
 		for (const { doc, folder } of entries) {
 			try {
 				// Etag pre-fetch fast-path: if the connector reports a non-empty
@@ -344,6 +352,26 @@ export async function runSyncJob(
 			} catch (err: unknown) {
 				failures++;
 				lastError = err instanceof Error ? err.message : String(err);
+				if (err instanceof EmbeddingCapExceededError) {
+					// The cap is process-wide and tenant-scoped — no point
+					// continuing to walk remaining documents in this job
+					// since every one will hit the same gate. Bail early
+					// with the flag set so the terminal audit event can
+					// report `reason: 'cap_exceeded'`.
+					capExceeded = true;
+					processed++;
+					deps.db
+						.prepare(
+							`UPDATE rag_jobs SET processed_documents = ?, progress = ?, skipped_by_etag = ? WHERE id = ?`,
+						)
+						.run(
+							processed,
+							entries.length === 0 ? 1 : processed / entries.length,
+							skippedByEtag,
+							jobId,
+						);
+					break;
+				}
 			}
 			processed++;
 			deps.db
@@ -367,24 +395,32 @@ export async function runSyncJob(
 		// (e.g. continue-on-folder-error), this GC must become conditional
 		// on "the listing is known to be complete" — otherwise an outage on
 		// a single subfolder would soft-delete every doc under it.
+		//
+		// Cap-aborted runs ALSO skip the GC pass: we walked the full source
+		// listing successfully, but the document loop was cut short, so the
+		// docs we never reached would be wrongly flagged as removed. Skipping
+		// the pass preserves their indexed state until the next (post-cap)
+		// sync.
 		interface IndexedDocRow {
 			id: string;
 			path: string;
 		}
-		const indexedRows = deps.db
-			.prepare<[string], IndexedDocRow>(
-				`SELECT id, path FROM rag_documents WHERE source_id = ? AND deleted_at IS NULL`,
-			)
-			.all(source.id);
-		const seenPaths = new Set(entries.map((e) => e.doc.path));
-		for (const row of indexedRows) {
-			if (!seenPaths.has(row.path)) {
-				try {
-					deps.pipeline.markDocumentDeleted(row.id);
-					gcDeleted++;
-				} catch (err: unknown) {
-					failures++;
-					lastError = err instanceof Error ? err.message : String(err);
+		if (!capExceeded) {
+			const indexedRows = deps.db
+				.prepare<[string], IndexedDocRow>(
+					`SELECT id, path FROM rag_documents WHERE source_id = ? AND deleted_at IS NULL`,
+				)
+				.all(source.id);
+			const seenPaths = new Set(entries.map((e) => e.doc.path));
+			for (const row of indexedRows) {
+				if (!seenPaths.has(row.path)) {
+					try {
+						deps.pipeline.markDocumentDeleted(row.id);
+						gcDeleted++;
+					} catch (err: unknown) {
+						failures++;
+						lastError = err instanceof Error ? err.message : String(err);
+					}
 				}
 			}
 		}
@@ -411,18 +447,30 @@ export async function runSyncJob(
 			.prepare(`UPDATE rag_sources SET last_sync_at = ? WHERE id = ?`)
 			.run(finishedAt, sourceId);
 
+		// When the cap kill-switch fired we report `rag.sync.failed`
+		// regardless of how many docs landed before the gate (the run is
+		// not idempotent and the operator needs to know the cap was hit).
+		// `payload.reason: 'cap_exceeded'` lets the audit log be filtered
+		// without re-parsing the error string downstream.
+		const terminalType = capExceeded
+			? 'rag.sync.failed'
+			: failures === 0
+				? 'rag.sync.completed'
+				: 'rag.sync.partial';
+		const terminalPayload: Record<string, unknown> = {
+			sourceId,
+			jobId,
+			total: entries.length,
+			processed,
+			skippedByEtag,
+			gcDeleted,
+			failures,
+			tokensEmbedded: tokensEmbeddedThisJob,
+		};
+		if (capExceeded) terminalPayload['reason'] = 'cap_exceeded';
 		deps.onAudit?.({
-			type: failures === 0 ? 'rag.sync.completed' : 'rag.sync.partial',
-			payload: {
-				sourceId,
-				jobId,
-				total: entries.length,
-				processed,
-				skippedByEtag,
-				gcDeleted,
-				failures,
-				tokensEmbedded: tokensEmbeddedThisJob,
-			},
+			type: terminalType,
+			payload: terminalPayload,
 			timestamp: finishedAt,
 		});
 	} catch (error: unknown) {

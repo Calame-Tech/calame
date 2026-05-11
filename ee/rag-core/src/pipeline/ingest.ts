@@ -16,6 +16,7 @@ import type {
 import { pickChunker } from '../chunker/index.js';
 import type { ChunkOptions } from '../chunker/types.js';
 import { getParserForMimeType } from '../parsers/index.js';
+import { assertWithinCap, type EmbeddingCapConfig } from '../jobs/embedding-cap.js';
 
 /** @deprecated Kept for backwards compatibility. Prefer `ChunkOptions`. */
 export type TokenChunkOptions = ChunkOptions;
@@ -44,6 +45,20 @@ export interface IngestionPipelineDeps {
 	 * no extra round-trip to the provider is needed.
 	 */
 	onTokensEmbedded?: (count: number) => void;
+	/**
+	 * Optional monthly embedding-token cap. When set with `monthlyTokenCap > 0`,
+	 * the pipeline calls {@link assertWithinCap} just BEFORE invoking the
+	 * embedding client. If the pending embed would push the tenant's
+	 * month-to-date total over the cap, the pipeline throws
+	 * {@link EmbeddingCapExceededError} — no provider call is issued and no
+	 * SQL writes occur (the cap check runs before the transaction opens).
+	 *
+	 * The sync orchestrator translates this into a `'failed'` job row with a
+	 * clear `error` message; the UI surfaces it on the source card and the
+	 * sync history panel. Undefined / `monthlyTokenCap <= 0` keeps the
+	 * pre-cap behaviour (unbounded).
+	 */
+	capConfig?: EmbeddingCapConfig;
 }
 
 /** Inputs to {@link IngestionPipeline.ingestDocument}. */
@@ -118,6 +133,7 @@ export class IngestionPipeline {
 	private readonly embeddingClient: EmbeddingClient;
 	private readonly chunkOptions: ChunkOptions | undefined;
 	private readonly onTokensEmbedded: ((count: number) => void) | undefined;
+	private readonly capConfig: EmbeddingCapConfig | undefined;
 
 	constructor(deps: IngestionPipelineDeps) {
 		this.db = deps.db;
@@ -125,6 +141,7 @@ export class IngestionPipeline {
 		this.embeddingClient = deps.embeddingClient;
 		this.chunkOptions = deps.chunkOptions;
 		this.onTokensEmbedded = deps.onTokensEmbedded;
+		this.capConfig = deps.capConfig;
 	}
 
 	/**
@@ -164,6 +181,26 @@ export class IngestionPipeline {
 			filename: parsed.filename ?? deriveDocumentName(input.path),
 		});
 		const chunks = chunker(parsed.text, this.chunkOptions);
+
+		// Monthly embedding-cap gate. Runs BEFORE the provider call so we
+		// never pay for tokens we're about to refuse to persist. The chunker
+		// has already computed `tokenCount` for every chunk via
+		// gpt-tokenizer — accurate enough for cap accounting (the cap is a
+		// kill-switch, not invoice reconciliation). When `capConfig` is
+		// undefined or `monthlyTokenCap <= 0`, `assertWithinCap` is a no-op.
+		// Defensive tenant fallback mirrors the one below (line ~182) so a
+		// caller that built `RagSource` before Phase A still gates against
+		// 'default'.
+		if (this.capConfig && chunks.length > 0) {
+			const attempted = chunks.reduce((sum, c) => sum + c.tokenCount, 0);
+			const tenantForCap: string = input.source.tenantId ?? 'default';
+			assertWithinCap(
+				{ db: this.db, config: this.capConfig },
+				tenantForCap,
+				attempted,
+			);
+		}
+
 		const embeddings: number[][] =
 			chunks.length > 0 ? await this.embeddingClient.embed(chunks.map((c) => c.text)) : [];
 

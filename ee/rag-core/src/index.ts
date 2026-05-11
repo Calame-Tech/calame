@@ -108,6 +108,16 @@ export type {
 	SoftDeleteCleanupResult,
 	SoftDeleteCleanupAuditEntry,
 } from './jobs/soft-delete-cleanup.js';
+export {
+	EmbeddingCapExceededError,
+	assertWithinCap,
+	getCurrentMonthTokens,
+	parseMonthlyCapEnv,
+	currentMonthStartIso,
+	resolveWarningThreshold,
+	DEFAULT_CAP_WARNING_THRESHOLD,
+} from './jobs/embedding-cap.js';
+export type { EmbeddingCapConfig, EmbeddingCapDeps } from './jobs/embedding-cap.js';
 export { runSyncJob } from './routes/rag-index.js';
 
 // ---------- Source Adapter ----------

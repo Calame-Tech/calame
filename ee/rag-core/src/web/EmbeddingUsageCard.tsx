@@ -156,6 +156,26 @@ export default function EmbeddingUsageCard({
 	const topSources = usage.perSource.slice(0, 3);
 	const sparklineValues = usage.perDay.map((d) => d.tokens);
 
+	// Cap rollup — always defined by the contract, but tolerate older
+	// backends (or fixtures that hand-roll the response) by guarding with
+	// optional chaining + a 0 default. The whole cap block is hidden when
+	// `monthlyTokenCap` is 0 (unlimited), with a single discreet note so
+	// operators can tell the cap is intentionally unset rather than missing.
+	const cap = usage.cap;
+	const capActive = !!cap && cap.monthlyTokenCap > 0;
+	const fractionUsed = cap ? cap.fractionUsed : 0;
+	const capExceeded = capActive && fractionUsed >= 1;
+	const capWarning = capActive && !capExceeded && cap.nearingThreshold;
+	// Progress bar colour ramps green → amber → red, matching the
+	// banner state. Clamp the visible width at 100% so an over-cap run
+	// (which can briefly report >1.0 in fractionUsed) doesn't overflow.
+	const barPct = Math.max(0, Math.min(100, fractionUsed * 100));
+	const barColor = capExceeded
+		? 'bg-red-500'
+		: capWarning
+			? 'bg-yellow-500'
+			: 'bg-os-500';
+
 	return (
 		<div className="card-primary p-4 space-y-3">
 			<div className="flex items-baseline justify-between gap-2">
@@ -177,6 +197,59 @@ export default function EmbeddingUsageCard({
 					</div>
 				</div>
 			</div>
+
+			{capActive && cap && (
+				<div className="space-y-1.5">
+					<div className="flex items-baseline justify-between gap-2">
+						<div className="eyebrow">Cap mensuel</div>
+						<div className="text-xs text-gray-400">
+							{cap.currentMonthTokens.toLocaleString('fr-CA')} /{' '}
+							{cap.monthlyTokenCap.toLocaleString('fr-CA')}
+							<span className="text-gray-500 ml-1">
+								({(fractionUsed * 100).toFixed(1)}%)
+							</span>
+						</div>
+					</div>
+					<div
+						className="h-1.5 w-full rounded-full bg-gray-800 overflow-hidden"
+						role="progressbar"
+						aria-valuenow={Math.round(fractionUsed * 100)}
+						aria-valuemin={0}
+						aria-valuemax={100}
+						aria-label="Consommation mensuelle d'embeddings"
+					>
+						<div
+							className={`h-full ${barColor} transition-all`}
+							style={{ width: `${barPct}%` }}
+						/>
+					</div>
+					{capExceeded && (
+						<div className="text-xs text-red-300 bg-red-900/30 border border-red-800/40 rounded px-2 py-1.5">
+							Cap mensuel atteint. Les synchronisations vont
+							échouer jusqu&apos;à la fin du mois ou jusqu&apos;à
+							ce que le cap soit relevé.
+						</div>
+					)}
+					{capWarning && (
+						<div className="text-xs text-yellow-300 bg-yellow-900/30 border border-yellow-800/40 rounded px-2 py-1.5">
+							Approche du cap mensuel
+							{cap.warningThreshold > 0 && (
+								<>
+									{' '}
+									(seuil {Math.round(cap.warningThreshold * 100)}
+									%)
+								</>
+							)}
+							.
+						</div>
+					)}
+				</div>
+			)}
+			{!capActive && (
+				<p className="text-[11px] text-gray-500 italic">
+					Pas de cap mensuel configuré (CALAME_RAG_MONTHLY_TOKEN_CAP).
+				</p>
+			)}
 
 			{usage.perProvider.length > 0 && (
 				<div className="space-y-1.5">

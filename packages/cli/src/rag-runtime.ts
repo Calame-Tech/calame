@@ -14,6 +14,7 @@ import type {
   PollScheduler,
   WatchManager,
   RateLimiter,
+  EmbeddingCapConfig,
 } from '@calame-ee/rag-core';
 import { randomUUID } from 'node:crypto';
 import type { CalameDatabase } from './database.js';
@@ -78,6 +79,14 @@ export interface RagRuntime {
   rateLimiter: RateLimiter;
   /** Reference to the loaded @calame-ee/rag-core module — used to register routes. */
   ragCore: typeof import('@calame-ee/rag-core');
+  /**
+   * Monthly embedding-token cap config (parsed from
+   * `CALAME_RAG_MONTHLY_TOKEN_CAP`). Always present — `monthlyTokenCap: 0`
+   * means unlimited. Threaded into the pipeline (gate before embed) and the
+   * usage route (progress / warning surface) so both paths agree on the
+   * same threshold.
+   */
+  capConfig: EmbeddingCapConfig;
 }
 
 /** Default vector dimension used when bootstrapping the vec0 table eagerly.
@@ -322,10 +331,28 @@ export async function initRagRuntime(
     );
   }
 
+  // Parse the operator-supplied monthly embedding-token cap. The env-var
+  // parser is lenient (`undefined` / `'abc'` / negative → 0 = unlimited),
+  // so a typo never crashes boot — it just disables the kill-switch. We
+  // build the config object even when unlimited so downstream code can
+  // always read `capConfig.monthlyTokenCap` without optional chaining.
+  const monthlyTokenCap = ragCore.parseMonthlyCapEnv(
+    process.env['CALAME_RAG_MONTHLY_TOKEN_CAP'],
+  );
+  const capConfig: EmbeddingCapConfig = { monthlyTokenCap };
+  if (monthlyTokenCap > 0) {
+    log.info(
+      `RAG monthly embedding cap: ${monthlyTokenCap.toLocaleString('en-US')} tokens / tenant / month.`,
+    );
+  } else {
+    log.info('RAG monthly embedding cap: no cap configured (unlimited).');
+  }
+
   const pipeline = new ragCore.IngestionPipeline({
     db: db.raw,
     vectorStore,
     embeddingClient: defaultEmbeddingClient ?? makeUnconfiguredEmbeddingClient(dimension),
+    capConfig,
   });
 
   // Token-bucket rate limiter shared by every connector singleton (and the
@@ -434,6 +461,9 @@ export async function initRagRuntime(
           // 'default'; Phase B will be context-aware when the worker carries
           // its own tenant binding.
           getTenantId: () => DEFAULT_TENANT_ID,
+          // Pass the cap config through so the orchestrator can produce a
+          // matching audit reason and the usage rollup stays consistent.
+          capConfig: rt.capConfig,
           onAudit: (entry) => {
             log.info(`[rag-audit] ${entry.type} ${JSON.stringify(entry.payload)}`);
           },
@@ -577,6 +607,7 @@ export async function initRagRuntime(
     watchManager,
     rateLimiter,
     ragCore,
+    capConfig,
   };
   ragRuntimeRef.current = state.ragRuntime;
 

@@ -66,15 +66,62 @@ export interface DocumentItemInfo {
   size: number;
 }
 
+/**
+ * A logical service exposed by an API source (e.g. "weather", "stripe-customers").
+ *
+ * For the MVP HTTP adapter, every source has a single implicit "default" service
+ * — the schema is intentionally flat. Once adapters parse OpenAPI / GraphQL / etc.
+ * specs (Phase 4+), a source may declare several services and the LLM-facing tool
+ * naming can fan out per service.
+ */
+export interface ServiceInfo {
+  /** Stable id, unique within the source. MVP: always 'default'. */
+  id: string;
+  /** Human-readable label (e.g. 'HTTP API', 'Stripe Customers'). */
+  name: string;
+  /** Fully-resolved base URL (no trailing slash). */
+  baseUrl: string;
+}
+
+/**
+ * A single operation the LLM can invoke through this source.
+ *
+ * For the MVP HTTP adapter, exactly one operation (`http_get`) is exposed and
+ * `pathPattern` is left undefined — the caller supplies the path at tool-call
+ * time. Future iterations may pin operations to specific paths derived from an
+ * OpenAPI spec.
+ */
+export interface OperationInfo {
+  /** Stable id, unique within the source (e.g. 'http_get'). */
+  id: string;
+  /**
+   * HTTP method. The MVP intentionally exposes GET only — adding POST/PUT/DELETE
+   * expands the security surface significantly and should land in its own slice
+   * with explicit per-method scope flags.
+   */
+  method: 'GET';
+  /**
+   * Path pattern (relative to `ServiceInfo.baseUrl`). Empty / undefined means
+   * the LLM supplies the path at call time, constrained by `allowedPathPrefixes`.
+   */
+  pathPattern?: string;
+  /** Human-readable description shown to the LLM. */
+  description: string;
+}
+
 export type SourceSchema =
   | { kind: 'relational'; tables: readonly TableInfo[]; relations: readonly Relation[] }
   | {
       kind: 'document';
       folders: readonly DocumentFolderInfo[];
       documents: readonly DocumentItemInfo[];
+    }
+  | {
+      kind: 'api';
+      services: readonly ServiceInfo[];
+      operations: readonly OperationInfo[];
     };
 // TODO: future arms — uncomment when adapters are built
-// | { kind: 'api'; services: readonly ServiceInfo[]; operations: readonly OperationInfo[] }
 // | { kind: 'stream'; topics: readonly TopicInfo[] }
 
 // ---------------------------------------------------------------------------
@@ -93,6 +140,22 @@ export type ScopeSelection =
       mode: 'allowAll' | 'allowList';
       allowedFolders: readonly string[];
       allowedDocuments: readonly string[];
+    }
+  | {
+      kind: 'api';
+      /**
+       * Allowlist of operation ids (per `OperationInfo.id`) the LLM may invoke
+       * via this source. Empty array effectively disables the adapter — the
+       * tools register but every call returns `error: operation not allowed`.
+       */
+      allowedOperations: readonly string[];
+      /**
+       * Optional path prefix allowlist applied to the generic `http_get` tool.
+       * When defined, the resolved request path MUST match at least one prefix.
+       * When undefined, the adapter falls back to the host-allowlist defined
+       * in the source's config (`allowedHosts`).
+       */
+      allowedPathPrefixes?: readonly string[];
     };
 
 // ---------------------------------------------------------------------------

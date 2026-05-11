@@ -409,3 +409,89 @@ describe('type contract: return types satisfy the declared interfaces', () => {
     expect(result.name).toBe('main-config');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Third-kind extensibility: 'api' scopes must be preserved by the migrator
+// (Phase 9 of the RAG plan — proof that the abstraction holds beyond
+//  document-style sources).
+// ---------------------------------------------------------------------------
+
+describe('upgradeProfileShape — api scopes preserved end-to-end', () => {
+  it('keeps an existing api scope untouched', () => {
+    const profile: Record<string, unknown> = {
+      name: 'with-api',
+      label: 'With API',
+      sources: ['api1'],
+      scopes: {
+        api1: {
+          kind: 'api',
+          allowedOperations: ['http_get'],
+          allowedPathPrefixes: ['/v1/public/'],
+        },
+      },
+    };
+    const result = upgradeProfileShape(profile);
+    expect(result.sources).toEqual(['api1']);
+    expect(result.scopes!['api1']).toEqual({
+      kind: 'api',
+      allowedOperations: ['http_get'],
+      allowedPathPrefixes: ['/v1/public/'],
+    });
+  });
+
+  it('preserves an api scope when mixed with a relational legacy block', () => {
+    // Half-migrated profile: scopes is already populated with an 'api' entry,
+    // so the migrator must skip the legacy synthesis path entirely.
+    const profile: Record<string, unknown> = {
+      name: 'hybrid-api',
+      label: 'Hybrid API',
+      // Legacy fields that should NOT be folded in because scopes is non-empty.
+      connections: ['legacy-pg'],
+      selectedTables: { users: ['id'] },
+      sources: ['api1'],
+      scopes: {
+        api1: { kind: 'api', allowedOperations: ['http_get'] },
+      },
+    };
+    const result = upgradeProfileShape(profile);
+    expect(result.scopes).toEqual({
+      api1: { kind: 'api', allowedOperations: ['http_get'] },
+    });
+    // Legacy fields are stripped by Phase-5 cleanup
+    const asRecord = result as unknown as Record<string, unknown>;
+    expect(asRecord['connections']).toBeUndefined();
+    expect(asRecord['selectedTables']).toBeUndefined();
+  });
+
+  it('is idempotent for api-only profiles', () => {
+    const profile: Record<string, unknown> = {
+      name: 'api-only',
+      label: 'API only',
+      sources: ['api1'],
+      scopes: {
+        api1: { kind: 'api', allowedOperations: ['http_get'] },
+      },
+    };
+    const once = upgradeProfileShape(profile);
+    const twice = upgradeProfileShape(once as unknown as Record<string, unknown>);
+    expect(twice).toEqual(once);
+  });
+});
+
+describe('upgradeConfigurationShape — api scopes preserved end-to-end', () => {
+  it('keeps an existing api scope untouched', () => {
+    const cfg: Record<string, unknown> = {
+      name: 'cfg-api',
+      label: 'Cfg API',
+      sources: ['api1'],
+      scopes: {
+        api1: { kind: 'api', allowedOperations: ['http_get'] },
+      },
+    };
+    const result = upgradeConfigurationShape(cfg);
+    expect(result.scopes!['api1']).toEqual({
+      kind: 'api',
+      allowedOperations: ['http_get'],
+    });
+  });
+});

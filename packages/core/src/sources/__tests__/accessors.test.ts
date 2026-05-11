@@ -188,6 +188,79 @@ describe('profile accessors — unified shape preferred', () => {
 });
 
 // ---------------------------------------------------------------------------
+// API scope kind — extensibility check (Phase 9 of the RAG plan)
+//
+// These tests pin the contract that tabular-relational accessors gracefully
+// ignore 'api' scopes (and never throw). Adding a third kind to the union
+// should not break call sites that only care about relational data.
+// ---------------------------------------------------------------------------
+
+describe("profile accessors — third 'api' kind ignored by tabular helpers", () => {
+  it('getProfileTableNames ignores api scopes', () => {
+    const profile = makeProfile({
+      sources: ['api1', 'db1'],
+      scopes: {
+        api1: { kind: 'api', allowedOperations: ['http_get'] },
+        db1: { kind: 'relational', selectedTables: { customers: ['id'] } },
+      },
+    });
+    expect(getProfileTableNames(profile)).toEqual(['customers']);
+  });
+
+  it('getProfileTableNames returns [] when every scope is api-only', () => {
+    const profile = makeProfile({
+      sources: ['api1'],
+      scopes: {
+        api1: { kind: 'api', allowedOperations: ['http_get'] },
+      },
+    });
+    expect(getProfileTableNames(profile)).toEqual([]);
+  });
+
+  it('getProfileSelectedTables returns {} when only api scopes exist', () => {
+    const profile = makeProfile({
+      sources: ['api1'],
+      scopes: {
+        api1: { kind: 'api', allowedOperations: ['http_get'] },
+      },
+    });
+    expect(getProfileSelectedTables(profile)).toEqual({});
+  });
+
+  it('getProfileTableOptions returns undefined for api-only profile', () => {
+    const profile = makeProfile({
+      sources: ['api1'],
+      scopes: {
+        api1: { kind: 'api', allowedOperations: ['http_get'] },
+      },
+    });
+    expect(getProfileTableOptions(profile)).toBeUndefined();
+  });
+
+  it('getProfileColumnMasking returns undefined for api-only profile', () => {
+    const profile = makeProfile({
+      sources: ['api1'],
+      scopes: {
+        api1: { kind: 'api', allowedOperations: ['http_get'] },
+      },
+    });
+    expect(getProfileColumnMasking(profile)).toBeUndefined();
+  });
+
+  it('getProfileRelationalSources excludes api scopes', () => {
+    const profile = makeProfile({
+      sources: ['db1', 'api1', 'db2'],
+      scopes: {
+        db1: { kind: 'relational', selectedTables: {} },
+        api1: { kind: 'api', allowedOperations: ['http_get'] },
+        db2: { kind: 'relational', selectedTables: {} },
+      },
+    });
+    expect(getProfileRelationalSources(profile)).toEqual(['db1', 'db2']);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Configuration accessors
 // ---------------------------------------------------------------------------
 
@@ -329,5 +402,39 @@ describe('configuration accessors — unified shape preferred', () => {
   it('getConfigurationRelationalSources returns [] when nothing is set', () => {
     const cfg = makeCfg({});
     expect(getConfigurationRelationalSources(cfg)).toEqual([]);
+  });
+});
+
+describe("configuration accessors — third 'api' kind ignored by tabular helpers", () => {
+  it('getConfigurationTableNames ignores api scopes', () => {
+    const cfg = makeCfg({
+      sources: ['api1', 'db1'],
+      scopes: {
+        api1: { kind: 'api', allowedOperations: ['http_get'] },
+        db1: { kind: 'relational', selectedTables: { invoices: ['id'] } },
+      },
+    });
+    expect(getConfigurationTableNames(cfg)).toEqual(['invoices']);
+  });
+
+  it('getConfigurationSelectedTables returns {} for api-only configuration', () => {
+    const cfg = makeCfg({
+      sources: ['api1'],
+      scopes: {
+        api1: { kind: 'api', allowedOperations: ['http_get'] },
+      },
+    });
+    expect(getConfigurationSelectedTables(cfg)).toEqual({});
+  });
+
+  it('getConfigurationRelationalSources excludes api scopes', () => {
+    const cfg = makeCfg({
+      sources: ['db1', 'api1'],
+      scopes: {
+        db1: { kind: 'relational', selectedTables: {} },
+        api1: { kind: 'api', allowedOperations: ['http_get'] },
+      },
+    });
+    expect(getConfigurationRelationalSources(cfg)).toEqual(['db1']);
   });
 });

@@ -88,7 +88,7 @@ export function resolveMcpRoute(
  * path unchanged and ensures the legacy URL `/mcp/<profile>` continues to
  * behave exactly as before Phase B introduced multi-tenancy.
  */
-function loadServeProfileForTenant(
+export function loadServeProfileForTenant(
   state: AppState,
   tenantId: string,
   profileName: string,
@@ -126,7 +126,7 @@ function loadServeProfileForTenant(
  * no per-tenant activation toggle today, and the alternative would be to
  * silently refuse every cross-tenant MCP request.
  */
-function isServeProfileActive(
+export function isServeProfileActive(
   state: AppState,
   tenantId: string,
   profileName: string,

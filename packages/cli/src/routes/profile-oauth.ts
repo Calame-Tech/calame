@@ -20,11 +20,13 @@ import { getOAuthProvider } from '../oauth-providers.js';
 import type { UserProfileAccess } from '../user.js';
 import { DEFAULT_TENANT_ID } from '../tenancy.js';
 import { buildMcpPath } from '../utils/mcp-url.js';
+import { loadServeProfileForTenant } from './serve.js';
 
 /** PKCE state entry stored while the OAuth round-trip is in flight. */
 interface PendingOAuthState {
   codeVerifier: string;
   profileName: string;
+  tenantId: string;
   expiresAt: number;
 }
 
@@ -139,7 +141,7 @@ export function registerProfileOAuthRoutes(app: Express, state: AppState): void 
   const loginHandler = async (req: Request, res: Response) => {
     const { tenantId, profileName } = readRouteParams(req);
 
-    const profile = state.serveProfiles[profileName];
+    const profile = loadServeProfileForTenant(state, tenantId, profileName);
     if (!profile) {
       res.status(404).json({ error: `Profile "${profileName}" not found.` });
       return;
@@ -172,6 +174,7 @@ export function registerProfileOAuthRoutes(app: Express, state: AppState): void 
       pendingStates.set(stateParam, {
         codeVerifier,
         profileName,
+        tenantId,
         expiresAt: Date.now() + 10 * 60 * 1000, // 10 minutes
       });
 
@@ -246,8 +249,12 @@ export function registerProfileOAuthRoutes(app: Express, state: AppState): void 
       res.status(400).json({ error: 'State parameter does not match the requested profile.' });
       return;
     }
+    if (pendingState.tenantId !== tenantId) {
+      res.status(400).json({ error: 'State parameter does not match the requested tenant.' });
+      return;
+    }
 
-    const profile = state.serveProfiles[profileName];
+    const profile = loadServeProfileForTenant(state, tenantId, profileName);
     if (!profile) {
       res.status(404).json({ error: `Profile "${profileName}" not found.` });
       return;

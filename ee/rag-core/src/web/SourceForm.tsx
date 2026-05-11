@@ -65,7 +65,7 @@ const SOURCE_TYPES: readonly SourceTypeMeta[] = [
   { value: 'gdrive', label: 'Google Drive', available: true },
   { value: 'gsheets', label: 'Google Sheets', available: false },
   { value: 'sharepoint', label: 'SharePoint', available: false },
-  { value: 'notion', label: 'Notion', available: false },
+  { value: 'notion', label: 'Notion', available: true },
   { value: 'git', label: 'Git', available: false },
 ];
 
@@ -106,6 +106,12 @@ interface GDriveConfig {
   recursive?: boolean;
   includeMimeTypes?: string[];
   excludeMimeTypes?: string[];
+}
+
+interface NotionConfig {
+  apiKey: string;
+  rootIds?: string[];
+  includeArchived?: boolean;
 }
 
 /**
@@ -333,6 +339,17 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
     [gdriveServiceAccountKey],
   );
 
+  // ---- notion fields ----
+  // The API key is sensitive — never pre-fill in edit mode. Same pattern as
+  // the S3 secretAccessKey: blank field on edit means "keep current".
+  const [notionApiKey, setNotionApiKey] = useState('');
+  const [notionRootIds, setNotionRootIds] = useState(
+    extractGlobsAsText(initial?.config, 'rootIds'),
+  );
+  const [notionIncludeArchived, setNotionIncludeArchived] = useState<boolean>(
+    extractBool(initial?.config, 'includeArchived'),
+  );
+
   // ---- ui state ----
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -397,6 +414,19 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
       // If the user pasted something, it must validate.
       if (gdriveServiceAccountKey.trim() && gdriveKeyValidation.error) {
         return `Service Account JSON invalide : ${gdriveKeyValidation.error}`;
+      }
+    }
+
+    if (type === 'notion') {
+      // In edit mode the API key textarea may be left blank (means "keep current").
+      if (!isEditing && !notionApiKey.trim()) {
+        return "Le secret de l'intégration Notion est requis.";
+      }
+      if (notionApiKey.trim()) {
+        const k = notionApiKey.trim();
+        if (!k.startsWith('secret_') && !k.startsWith('ntn_')) {
+          return "La clé Notion doit commencer par `secret_` ou `ntn_`.";
+        }
       }
     }
 
@@ -490,6 +520,23 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
     return config;
   };
 
+  const buildNotionConfig = (): NotionConfig => {
+    // Re-inject the existing apiKey when editing and the field is blank
+    // (same pattern as S3 secretAccessKey / GDrive serviceAccountKey).
+    let apiKey = notionApiKey.trim();
+    if (!apiKey && isEditing) {
+      const existing = initial?.config?.['apiKey'];
+      if (typeof existing === 'string' && existing.length > 0) {
+        apiKey = existing;
+      }
+    }
+    const config: NotionConfig = { apiKey };
+    const ids = parseLines(notionRootIds);
+    if (ids.length > 0) config.rootIds = ids;
+    if (notionIncludeArchived) config.includeArchived = true;
+    return config;
+  };
+
   const buildConfig = (): Record<string, unknown> => {
     if (type === 's3') {
       const cfg = buildS3Config();
@@ -510,6 +557,9 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
     }
     if (type === 'gdrive') {
       return buildGDriveConfig() as unknown as Record<string, unknown>;
+    }
+    if (type === 'notion') {
+      return buildNotionConfig() as unknown as Record<string, unknown>;
     }
     return buildLocalConfig() as unknown as Record<string, unknown>;
   };
@@ -1234,6 +1284,102 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                 </div>
               </div>
             )}
+          </div>
+
+          {/* Test button */}
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => void handleTest()}
+              disabled={testing || saving}
+              className="px-3 py-2 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-300 text-sm font-medium transition-all duration-200 disabled:opacity-50"
+            >
+              {testing ? 'Test…' : 'Tester la connexion'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Notion config                                                        */}
+      {/* ------------------------------------------------------------------ */}
+      {type === 'notion' && (
+        <div className="space-y-4">
+          {/* Setup helper — admin-facing onboarding steps. */}
+          <div className="p-3 rounded-lg bg-os-950/30 border border-os-900/40 text-xs text-gray-400 space-y-1">
+            <p className="font-medium text-gray-300">Préparation de l'intégration Notion</p>
+            <ol className="list-decimal list-inside space-y-0.5 ml-1">
+              <li>
+                Ouvrir{' '}
+                <span className="font-mono-plex">notion.so/profile/integrations</span> →
+                {' '}«&nbsp;New integration&nbsp;» → copier le secret.
+              </li>
+              <li>
+                Dans chaque page/database à indexer, cliquer «&nbsp;Share&nbsp;» et inviter
+                l'intégration.
+              </li>
+            </ol>
+          </div>
+
+          {/* API key */}
+          <div>
+            <FieldLabel htmlFor="notion-api-key" required={!isEditing}>
+              Secret de l'intégration
+            </FieldLabel>
+            <input
+              id="notion-api-key"
+              type="password"
+              value={notionApiKey}
+              onChange={(e) => setNotionApiKey(e.target.value)}
+              placeholder={
+                isEditing ? '(inchangé — laissez vide pour conserver la clé)' : 'secret_… ou ntn_…'
+              }
+              className="input-editorial w-full text-sm mt-1 font-mono-plex"
+              autoComplete="new-password"
+              spellCheck={false}
+            />
+            {isEditing && (
+              <HelperText>Laissez vide pour conserver la clé enregistrée.</HelperText>
+            )}
+          </div>
+
+          {/* Root IDs */}
+          <div>
+            <FieldLabel htmlFor="notion-root-ids">IDs racines (optionnel)</FieldLabel>
+            <textarea
+              id="notion-root-ids"
+              value={notionRootIds}
+              onChange={(e) => setNotionRootIds(e.target.value)}
+              placeholder={'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nbbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'}
+              rows={4}
+              className="input-editorial w-full text-sm mt-1 font-mono-plex resize-y"
+              autoComplete="off"
+              spellCheck={false}
+            />
+            <HelperText>
+              IDs de pages ou databases à utiliser comme racines (un par ligne, avec ou sans
+              tirets). Laissez vide pour indexer tout le contenu partagé avec l'intégration.
+            </HelperText>
+          </div>
+
+          {/* Include archived */}
+          <div className="flex items-start gap-2">
+            <input
+              id="notion-include-archived"
+              type="checkbox"
+              checked={notionIncludeArchived}
+              onChange={(e) => setNotionIncludeArchived(e.target.checked)}
+              className="mt-0.5 accent-os-500 focus:ring-2 focus:ring-os-500"
+            />
+            <label
+              htmlFor="notion-include-archived"
+              className="text-sm text-gray-400 select-none"
+            >
+              Inclure les pages archivées
+              <HelperText>
+                Désactivé par défaut. Activez pour indexer les pages déplacées vers la corbeille.
+              </HelperText>
+            </label>
           </div>
 
           {/* Test button */}

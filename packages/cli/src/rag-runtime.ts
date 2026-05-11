@@ -136,6 +136,20 @@ export async function initRagRuntime(
     );
   }
 
+  // Notion connector also lives in its own EE package (separate `@notionhq/client`
+  // dep). Same lazy-load pattern as gdrive: when the package is absent, `notion`
+  // sources fall through `resolveConnector` and the route layer answers 501.
+  type RagNotionModule = typeof import('@calame-ee/rag-notion');
+  let ragNotion: RagNotionModule | null = null;
+  try {
+    ragNotion = await import('@calame-ee/rag-notion');
+  } catch {
+    log.warn(
+      '@calame-ee/rag-notion not installed — notion sources will be unavailable. ' +
+        'Install the package and restart to enable Notion ingestion.',
+    );
+  }
+
   // Run schema migrations against the host's SQLite DB.
   try {
     ragCore.runRagMigrations({ raw: db.raw });
@@ -288,13 +302,18 @@ export async function initRagRuntime(
   });
 
   // Build a connector resolver. Phase 1 wired `local`; Phase 3 adds `s3` and
-  // `http`. Phase 3+ adds `gdrive` (from a separate package — see
-  // `ragGdrive` lazy-import above). Other types (sharepoint, notion, git, …)
-  // still return null so the route layer can answer 501 with a clear message.
+  // `http`. Phase 3+ adds `gdrive` and `notion` (each in a separate package —
+  // see the `ragGdrive` / `ragNotion` lazy-imports above). Other types
+  // (sharepoint, git, …) still return null so the route layer can answer 501
+  // with a clear message.
   const resolveConnector = (type: string): ConnectorLike | null => {
     if (type === 'gdrive') {
       if (!ragGdrive) return null;
       return new ragGdrive.GDriveConnector() as unknown as ConnectorLike;
+    }
+    if (type === 'notion') {
+      if (!ragNotion) return null;
+      return new ragNotion.NotionConnector() as unknown as ConnectorLike;
     }
     if (!ragConnectors) return null;
     if (type === 'local') {

@@ -19,6 +19,7 @@ import ProfilePreview from './components/ProfilePreview.js';
 import MetricsDashboard from './components/MetricsDashboard.js';
 import ChatEntryPage from './components/ChatEntryPage.js';
 import SourcesPage from './components/SourcesPage.js';
+import TenantManagement from './components/TenantManagement.js';
 import {
   pickMaskingTargetSourceId,
   getProfileSelectedTables,
@@ -106,6 +107,11 @@ type View =
   | { page: 'users'; selectedUserId?: string; backTo?: View }
   | { page: 'settings'; backTo?: View; initialTab?: 'ai' | 'email' | 'sso' }
   | { page: 'metrics' }
+  /**
+   * Tenant administration page — lists every distinct tenant id discovered
+   * across tenanted tables and lets the admin hard-delete one.
+   */
+  | { page: 'tenants' }
   /**
    * Legacy alias for `{ page: 'sources', tab: 'knowledge' }`.
    * Kept for backwards-compat.
@@ -1335,6 +1341,20 @@ export default function App() {
                   description="Request volume, tool usage, and performance over time."
                 />
                 <MetricsDashboard />
+              </div>
+            )}
+
+            {view.page === 'tenants' && (
+              <div className="space-y-4">
+                <PageHeader
+                  breadcrumb={[
+                    { label: 'Dashboard', onClick: () => setView({ page: 'dashboard' }) },
+                    { label: 'Workspaces' },
+                  ]}
+                  title="Workspaces"
+                  description="Liste de tous les workspaces (tenants) découverts sur cette instance. Les workspaces sont créés implicitement lors de la première écriture avec un identifiant donné."
+                />
+                <TenantManagement />
               </div>
             )}
 

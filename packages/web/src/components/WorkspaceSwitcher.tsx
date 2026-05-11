@@ -9,6 +9,14 @@ import {
 
 interface WorkspaceSwitcherProps {
   className?: string;
+  /**
+   * Optional handler invoked when the admin clicks "Gérer les workspaces"
+   * inside the dropdown. When supplied, a link to the tenant administration
+   * page is rendered at the bottom of the menu. When omitted, the link is
+   * hidden — useful for environments where the management page is not wired
+   * (e.g. an embedded preview).
+   */
+  onManageWorkspaces?: () => void;
 }
 
 // Chevron down icon (inline SVG, no external dep)
@@ -70,7 +78,7 @@ const IconBuildingOffice = (
  * the new tenant context. This is intentional: there is no "soft switch" because
  * the entire App state (connections, profiles, configurations) is tenant-scoped.
  */
-export default function WorkspaceSwitcher({ className }: WorkspaceSwitcherProps) {
+export default function WorkspaceSwitcher({ className, onManageWorkspaces }: WorkspaceSwitcherProps) {
   const [tenant] = useState<string>(() => getCurrentTenant());
   const isNonDefault = tenant !== 'default';
   const [open, setOpen] = useState(false);
@@ -278,6 +286,25 @@ export default function WorkspaceSwitcher({ className }: WorkspaceSwitcherProps)
               </p>
             )}
           </div>
+
+          {/* Manage workspaces — admin entry point for the tenant CRUD page */}
+          {onManageWorkspaces && (
+            <>
+              <div className="border-t border-white/8 mx-3" />
+              <div className="px-3 py-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpen(false);
+                    onManageWorkspaces();
+                  }}
+                  className="w-full text-left text-xs text-gray-400 hover:text-gray-100 focus:outline-none focus:text-gray-100"
+                >
+                  Gérer les workspaces &rarr;
+                </button>
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>

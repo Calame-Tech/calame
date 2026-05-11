@@ -11,7 +11,8 @@ type NavigablePage =
   | 'users'
   | 'metrics'
   | 'settings'
-  | 'knowledge';
+  | 'knowledge'
+  | 'tenants';
 
 interface SidebarUser {
   email?: string;
@@ -147,6 +148,25 @@ const IconChartBar = (
   </svg>
 );
 
+// Building icon — workspaces / tenants
+const IconBuildingOffice = (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    fill="none"
+    viewBox="0 0 24 24"
+    strokeWidth={1.5}
+    stroke="currentColor"
+    className="w-4 h-4"
+    aria-hidden="true"
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21"
+    />
+  </svg>
+);
+
 const IconCog = (
   <svg
     xmlns="http://www.w3.org/2000/svg"
@@ -230,6 +250,7 @@ const NAV_SECTIONS: NavSection[] = [
     label: 'Admin',
     items: [
       { page: 'users', label: 'Users', icon: IconUsers },
+      { page: 'tenants', label: 'Workspaces', icon: IconBuildingOffice },
       { page: 'metrics', label: 'Metrics', icon: IconChartBar },
       { page: 'settings', label: 'Settings', icon: IconCog },
     ],
@@ -356,8 +377,13 @@ export default function Sidebar({
             </div>
           </div>
 
-          {/* Workspace switcher — always visible, subtle when on 'default' */}
-          <WorkspaceSwitcher className="mt-3" />
+          {/* Workspace switcher — always visible, subtle when on 'default'.
+              We pass `onManageWorkspaces` so the dropdown surfaces a link to
+              the tenant CRUD page; the Sidebar already knows how to navigate. */}
+          <WorkspaceSwitcher
+            className="mt-3"
+            onManageWorkspaces={() => onNavigate('tenants')}
+          />
         </div>
 
         {/* Navigation sections — flex-1 so user footer is pushed to the bottom */}

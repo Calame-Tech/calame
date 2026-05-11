@@ -4,6 +4,8 @@
 
 import { describe, it, expect } from 'vitest';
 import {
+  applyToggleDocument,
+  applyToggleFolder,
   buildDocumentScope,
   countSelected,
   deriveFolderCheckState,
@@ -254,5 +256,159 @@ describe('countSelected', () => {
     const rootDocs = [makeDocument({ id: 'root-doc', folderId: null })];
     const counts = countSelected(true, [], rootDocs, {});
     expect(counts.documents).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// applyToggleFolder
+// ---------------------------------------------------------------------------
+
+describe('applyToggleFolder', () => {
+  it('switches to auto-include and clears checkedDocIds when nextCheck=checked', () => {
+    const folderMap: FolderMap = {
+      'f1': makeFolderNode({
+        mode: 'strict',
+        documents: [makeDocument({ id: 'd1' }), makeDocument({ id: 'd2' })],
+        checkedDocIds: new Set(['d1']),
+      }),
+    };
+    const next = applyToggleFolder('f1', 'checked', folderMap);
+    expect(next['f1']!.mode).toBe('auto-include');
+    expect(next['f1']!.checkedDocIds.size).toBe(0);
+    // Other fields are preserved
+    expect(next['f1']!.documents).toHaveLength(2);
+  });
+
+  it('switches to strict and clears checkedDocIds when nextCheck=unchecked', () => {
+    const folderMap: FolderMap = {
+      'f1': makeFolderNode({
+        mode: 'auto-include',
+        documents: [makeDocument({ id: 'd1' })],
+        checkedDocIds: new Set(),
+      }),
+    };
+    const next = applyToggleFolder('f1', 'unchecked', folderMap);
+    expect(next['f1']!.mode).toBe('strict');
+    expect(next['f1']!.checkedDocIds.size).toBe(0);
+  });
+
+  it('treats partial check state as unchecked (folds to strict)', () => {
+    // The component never emits `partial` as a direct user intent — but the
+    // helper must be deterministic on every possible CheckState value.
+    const folderMap: FolderMap = {
+      'f1': makeFolderNode({ mode: 'auto-include' }),
+    };
+    const next = applyToggleFolder('f1', 'partial', folderMap);
+    expect(next['f1']!.mode).toBe('strict');
+  });
+
+  it('returns the same folderMap reference for an unknown folderId', () => {
+    const folderMap: FolderMap = { 'f1': makeFolderNode() };
+    const next = applyToggleFolder('missing', 'checked', folderMap);
+    expect(next).toBe(folderMap);
+  });
+
+  it('does not mutate the input map', () => {
+    const node = makeFolderNode({ mode: 'strict', checkedDocIds: new Set(['d1']) });
+    const folderMap: FolderMap = { 'f1': node };
+    applyToggleFolder('f1', 'checked', folderMap);
+    // Original node must still carry the pre-toggle state.
+    expect(folderMap['f1']!.mode).toBe('strict');
+    expect(folderMap['f1']!.checkedDocIds.has('d1')).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// applyToggleDocument
+// ---------------------------------------------------------------------------
+
+describe('applyToggleDocument', () => {
+  it('bascule auto-include → strict and pre-checks all OTHER docs (with toast)', () => {
+    const docs = [
+      makeDocument({ id: 'd1', path: 'docs/faq/a.md' }),
+      makeDocument({ id: 'd2', path: 'docs/faq/b.md' }),
+      makeDocument({ id: 'd3', path: 'docs/faq/c.md' }),
+    ];
+    const folderMap: FolderMap = {
+      'f1': makeFolderNode({
+        folder: makeFolder({ id: 'f1', name: 'faq' }),
+        mode: 'auto-include',
+        documents: docs,
+        checkedDocIds: new Set(),
+      }),
+    };
+    const result = applyToggleDocument('f1', 'd2', folderMap);
+    expect(result.folderMap['f1']!.mode).toBe('strict');
+    // d2 was the one unchecked → not in the allowlist; d1 and d3 stay.
+    expect(result.folderMap['f1']!.checkedDocIds.has('d1')).toBe(true);
+    expect(result.folderMap['f1']!.checkedDocIds.has('d2')).toBe(false);
+    expect(result.folderMap['f1']!.checkedDocIds.has('d3')).toBe(true);
+    // Toast surfaces the bascule + the folder name.
+    expect(result.toastMessage).toBeTruthy();
+    expect(result.toastMessage).toContain('faq');
+    expect(result.toastMessage).toContain('strict');
+  });
+
+  it('bascule on a single-doc auto-include folder produces an empty strict allowlist', () => {
+    const folderMap: FolderMap = {
+      'f1': makeFolderNode({
+        mode: 'auto-include',
+        documents: [makeDocument({ id: 'only-doc' })],
+        checkedDocIds: new Set(),
+      }),
+    };
+    const result = applyToggleDocument('f1', 'only-doc', folderMap);
+    expect(result.folderMap['f1']!.mode).toBe('strict');
+    expect(result.folderMap['f1']!.checkedDocIds.size).toBe(0);
+    expect(result.toastMessage).toBeTruthy();
+  });
+
+  it('in strict mode, adds a doc to the allowlist (no mode change, no toast)', () => {
+    const folderMap: FolderMap = {
+      'f1': makeFolderNode({
+        mode: 'strict',
+        documents: [makeDocument({ id: 'd1' }), makeDocument({ id: 'd2' })],
+        checkedDocIds: new Set(['d1']),
+      }),
+    };
+    const result = applyToggleDocument('f1', 'd2', folderMap);
+    expect(result.folderMap['f1']!.mode).toBe('strict');
+    expect(result.folderMap['f1']!.checkedDocIds.has('d1')).toBe(true);
+    expect(result.folderMap['f1']!.checkedDocIds.has('d2')).toBe(true);
+    expect(result.toastMessage).toBeNull();
+  });
+
+  it('in strict mode, removes a doc from the allowlist (no mode change, no toast)', () => {
+    const folderMap: FolderMap = {
+      'f1': makeFolderNode({
+        mode: 'strict',
+        documents: [makeDocument({ id: 'd1' }), makeDocument({ id: 'd2' })],
+        checkedDocIds: new Set(['d1', 'd2']),
+      }),
+    };
+    const result = applyToggleDocument('f1', 'd1', folderMap);
+    expect(result.folderMap['f1']!.checkedDocIds.has('d1')).toBe(false);
+    expect(result.folderMap['f1']!.checkedDocIds.has('d2')).toBe(true);
+    expect(result.toastMessage).toBeNull();
+  });
+
+  it('returns the same folderMap and null toast for an unknown folderId', () => {
+    const folderMap: FolderMap = { 'f1': makeFolderNode() };
+    const result = applyToggleDocument('missing', 'd1', folderMap);
+    expect(result.folderMap).toBe(folderMap);
+    expect(result.toastMessage).toBeNull();
+  });
+
+  it('does not mutate the input map', () => {
+    const folderMap: FolderMap = {
+      'f1': makeFolderNode({
+        mode: 'auto-include',
+        documents: [makeDocument({ id: 'd1' }), makeDocument({ id: 'd2' })],
+      }),
+    };
+    applyToggleDocument('f1', 'd1', folderMap);
+    // Original folder remains untouched.
+    expect(folderMap['f1']!.mode).toBe('auto-include');
+    expect(folderMap['f1']!.checkedDocIds.size).toBe(0);
   });
 });

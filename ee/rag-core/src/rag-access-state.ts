@@ -148,6 +148,107 @@ export function buildDocumentScope(
 }
 
 // ---------------------------------------------------------------------------
+// Toggle helpers
+//
+// Pure state transitions extracted from RagAccessSelector.tsx so the bascule
+// logic (auto-include ↔ strict) can be unit-tested without React/JSX. The
+// component is a thin wrapper that calls these helpers and threads the result
+// into setState + the toast push.
+// ---------------------------------------------------------------------------
+
+/**
+ * Compute the new `FolderMap` after a user clicks a folder-level checkbox.
+ *
+ * - `nextCheck === 'checked'` → switch to `auto-include` mode and clear any
+ *   individual doc selections. Future docs ingested into this folder become
+ *   accessible automatically.
+ * - Anything else (`'unchecked'` / `'partial'`) → switch to `strict` mode with
+ *   an empty allowlist. The folder is effectively excluded until the user
+ *   explicitly re-checks individual docs.
+ *
+ * Returns the same `folderMap` reference when `folderId` is unknown (no-op,
+ * lets the component skip a setState round-trip).
+ */
+export function applyToggleFolder(
+	folderId: string,
+	nextCheck: CheckState,
+	folderMap: FolderMap,
+): FolderMap {
+	const node = folderMap[folderId];
+	if (!node) return folderMap;
+	const nextMode: FolderMode = nextCheck === 'checked' ? 'auto-include' : 'strict';
+	return {
+		...folderMap,
+		[folderId]: { ...node, mode: nextMode, checkedDocIds: new Set() },
+	};
+}
+
+/** Result of {@link applyToggleDocument}. */
+export interface ApplyToggleDocumentResult {
+	folderMap: FolderMap;
+	/**
+	 * Set to a non-null string when the helper triggered the auto-include →
+	 * strict bascule. The component is expected to surface the message as a
+	 * toast so the user is aware that future docs in this folder will NOT be
+	 * auto-included anymore.
+	 */
+	toastMessage: string | null;
+}
+
+/**
+ * Compute the new `FolderMap` after a user clicks an individual doc checkbox.
+ *
+ * Two cases:
+ *
+ * 1. Folder is `auto-include` → bascule into `strict`. Pre-check every OTHER
+ *    doc in the folder so the user's intent is preserved (they wanted to
+ *    *exclude* one doc, not nuke the whole folder). Returns a `toastMessage`
+ *    so the caller can warn that future docs won't be auto-allowed anymore.
+ *
+ * 2. Folder is already `strict` → simple add/remove on the explicit allowlist.
+ *    No mode change, no toast.
+ *
+ * Returns the same `folderMap` reference (and `toastMessage: null`) when
+ * `folderId` is unknown — no-op, lets the component skip a setState round-trip.
+ */
+export function applyToggleDocument(
+	folderId: string,
+	docId: string,
+	folderMap: FolderMap,
+): ApplyToggleDocumentResult {
+	const node = folderMap[folderId];
+	if (!node) return { folderMap, toastMessage: null };
+
+	if (node.mode === 'auto-include') {
+		// Pre-check every doc except the one being unchecked, then flip mode.
+		const allDocIds = new Set(node.documents.map((d) => d.id));
+		allDocIds.delete(docId);
+		return {
+			folderMap: {
+				...folderMap,
+				[folderId]: { ...node, mode: 'strict', checkedDocIds: allDocIds },
+			},
+			toastMessage: `Le dossier "${node.folder.name}" est maintenant en mode strict. Les nouveaux fichiers ne seront pas accessibles automatiquement.`,
+		};
+	}
+
+	// strict mode: toggle individual doc
+	const nextChecked = new Set(node.checkedDocIds);
+	if (nextChecked.has(docId)) {
+		nextChecked.delete(docId);
+	} else {
+		nextChecked.add(docId);
+	}
+	return {
+		folderMap: {
+			...folderMap,
+			[folderId]: { ...node, checkedDocIds: nextChecked },
+		},
+		toastMessage: null,
+	};
+}
+
+// ---------------------------------------------------------------------------
 // Count selected folders and documents
 // ---------------------------------------------------------------------------
 

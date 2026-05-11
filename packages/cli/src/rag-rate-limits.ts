@@ -23,7 +23,15 @@ const ENV_PREFIX = 'CALAME_RAG_RATE_LIMIT_';
  * an env var sets a limit for a type that won't be respected. We do NOT
  * filter unknown types out (forward-compat: future connectors should pick up
  * their env overrides without a code change in this file) — we only warn. */
-const KNOWN_TYPES = new Set(['notion', 'cohere', 'sharepoint', 'gdrive', 's3', 'http']);
+const KNOWN_TYPES = new Set([
+	'notion',
+	'cohere',
+	'sharepoint',
+	'gdrive',
+	'gsheets',
+	's3',
+	'http',
+]);
 
 /**
  * Parse every `CALAME_RAG_RATE_LIMIT_*` env var on the supplied `env` map

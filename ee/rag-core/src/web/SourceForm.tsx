@@ -63,7 +63,7 @@ const SOURCE_TYPES: readonly SourceTypeMeta[] = [
   { value: 's3', label: 'S3 / R2 / MinIO', available: true },
   { value: 'http', label: 'HTTP / URL', available: true },
   { value: 'gdrive', label: 'Google Drive', available: true },
-  { value: 'gsheets', label: 'Google Sheets', available: false },
+  { value: 'gsheets', label: 'Google Sheets', available: true },
   { value: 'sharepoint', label: 'SharePoint', available: true },
   { value: 'notion', label: 'Notion', available: true },
   { value: 'git', label: 'Git', available: false },
@@ -106,6 +106,15 @@ interface GDriveConfig {
   recursive?: boolean;
   includeMimeTypes?: string[];
   excludeMimeTypes?: string[];
+}
+
+interface GSheetsConfig {
+  serviceAccountKey: Record<string, unknown>;
+  spreadsheetIds?: string[];
+  driveFolderId?: string;
+  impersonateAs?: string;
+  defaultRange?: string;
+  includeArchived?: boolean;
 }
 
 interface NotionConfig {
@@ -351,6 +360,38 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
     [gdriveServiceAccountKey],
   );
 
+  // ---- gsheets fields ----
+  // The Service Account JSON is sensitive — same edit-mode "(unchanged)"
+  // pattern as gdrive. The source mode toggles between explicit spreadsheet
+  // IDs and Drive folder enumeration; both can technically coexist, but the
+  // form keeps a single primary mode for clarity.
+  const [gsheetsServiceAccountKey, setGsheetsServiceAccountKey] = useState('');
+  const [gsheetsMode, setGsheetsMode] = useState<'ids' | 'folder'>(() => {
+    if (initial?.config?.driveFolderId && !initial?.config?.spreadsheetIds) return 'folder';
+    return 'ids';
+  });
+  const [gsheetsSpreadsheetIds, setGsheetsSpreadsheetIds] = useState(
+    extractGlobsAsText(initial?.config, 'spreadsheetIds'),
+  );
+  const [gsheetsDriveFolderId, setGsheetsDriveFolderId] = useState(
+    extractStr(initial?.config, 'driveFolderId'),
+  );
+  const [gsheetsImpersonateAs, setGsheetsImpersonateAs] = useState(
+    extractStr(initial?.config, 'impersonateAs'),
+  );
+  const [gsheetsDefaultRange, setGsheetsDefaultRange] = useState(
+    extractStr(initial?.config, 'defaultRange'),
+  );
+  const [gsheetsIncludeArchived, setGsheetsIncludeArchived] = useState<boolean>(
+    extractBool(initial?.config, 'includeArchived'),
+  );
+  const [gsheetsShowAdvanced, setGsheetsShowAdvanced] = useState(false);
+
+  const gsheetsKeyValidation = useMemo(
+    () => validateServiceAccountKey(gsheetsServiceAccountKey),
+    [gsheetsServiceAccountKey],
+  );
+
   // ---- notion fields ----
   // The API key is sensitive — never pre-fill in edit mode. Same pattern as
   // the S3 secretAccessKey: blank field on edit means "keep current".
@@ -449,6 +490,22 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
       // If the user pasted something, it must validate.
       if (gdriveServiceAccountKey.trim() && gdriveKeyValidation.error) {
         return `Service Account JSON invalide : ${gdriveKeyValidation.error}`;
+      }
+    }
+
+    if (type === 'gsheets') {
+      // In edit mode the JSON textarea may be left blank (means "keep current").
+      if (!isEditing && !gsheetsServiceAccountKey.trim()) {
+        return 'Collez la clé JSON du Service Account.';
+      }
+      if (gsheetsServiceAccountKey.trim() && gsheetsKeyValidation.error) {
+        return `Service Account JSON invalide : ${gsheetsKeyValidation.error}`;
+      }
+      if (gsheetsMode === 'ids' && parseLines(gsheetsSpreadsheetIds).length === 0) {
+        return 'Renseignez au moins un ID de Google Sheet.';
+      }
+      if (gsheetsMode === 'folder' && !gsheetsDriveFolderId.trim()) {
+        return "L'ID du dossier Drive est requis.";
       }
     }
 
@@ -565,6 +622,38 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
     return config;
   };
 
+  const buildGSheetsConfig = (): GSheetsConfig => {
+    // Re-inject the existing key when editing + blank field (same pattern as
+    // gdrive). The GET endpoint returns the decrypted key, so initial.config
+    // carries it.
+    let key: Record<string, unknown> | null = gsheetsKeyValidation.key;
+    if (!key && isEditing) {
+      const existing = initial?.config?.['serviceAccountKey'];
+      if (existing && typeof existing === 'object' && !Array.isArray(existing)) {
+        key = existing as Record<string, unknown>;
+      } else if (typeof existing === 'string' && existing.length > 0) {
+        try {
+          key = JSON.parse(existing) as Record<string, unknown>;
+        } catch {
+          key = null;
+        }
+      }
+    }
+    const config: GSheetsConfig = {
+      serviceAccountKey: key ?? {},
+    };
+    if (gsheetsMode === 'ids') {
+      const ids = parseLines(gsheetsSpreadsheetIds);
+      if (ids.length > 0) config.spreadsheetIds = ids;
+    } else {
+      if (gsheetsDriveFolderId.trim()) config.driveFolderId = gsheetsDriveFolderId.trim();
+    }
+    if (gsheetsImpersonateAs.trim()) config.impersonateAs = gsheetsImpersonateAs.trim();
+    if (gsheetsDefaultRange.trim()) config.defaultRange = gsheetsDefaultRange.trim();
+    if (gsheetsIncludeArchived) config.includeArchived = true;
+    return config;
+  };
+
   const buildNotionConfig = (): NotionConfig => {
     // Re-inject the existing apiKey when editing and the field is blank
     // (same pattern as S3 secretAccessKey / GDrive serviceAccountKey).
@@ -630,6 +719,9 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
     }
     if (type === 'gdrive') {
       return buildGDriveConfig() as unknown as Record<string, unknown>;
+    }
+    if (type === 'gsheets') {
+      return buildGSheetsConfig() as unknown as Record<string, unknown>;
     }
     if (type === 'notion') {
       return buildNotionConfig() as unknown as Record<string, unknown>;
@@ -1357,6 +1449,230 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                     />
                     <HelperText>Un mime type par ligne.</HelperText>
                   </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Test button */}
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => void handleTest()}
+              disabled={testing || saving}
+              className="px-3 py-2 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-300 text-sm font-medium transition-all duration-200 disabled:opacity-50"
+            >
+              {testing ? 'Test…' : 'Tester la connexion'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Google Sheets config                                                 */}
+      {/* ------------------------------------------------------------------ */}
+      {type === 'gsheets' && (
+        <div className="space-y-4">
+          {/* Setup helper — admin-facing onboarding steps. */}
+          <div className="p-3 rounded-lg bg-os-950/30 border border-os-900/40 text-xs text-gray-400 space-y-1">
+            <p className="font-medium text-gray-300">Préparation du Service Account</p>
+            <ol className="list-decimal list-inside space-y-0.5 ml-1">
+              <li>
+                Réutiliser le Service Account de Google Drive si vous en avez déjà configuré un.
+              </li>
+              <li>
+                Activer l'API Google Sheets <em>et</em> l'API Google Drive sur le projet GCP.
+              </li>
+              <li>
+                Partager chaque Google Sheet (ou le dossier Drive d'énumération) avec l'email
+                du Service Account (accès Viewer suffisant).
+              </li>
+            </ol>
+          </div>
+
+          {/* Service Account JSON */}
+          <div>
+            <FieldLabel htmlFor="gsheets-key" required={!isEditing}>
+              Clé JSON du Service Account
+            </FieldLabel>
+            <textarea
+              id="gsheets-key"
+              value={gsheetsServiceAccountKey}
+              onChange={(e) => setGsheetsServiceAccountKey(e.target.value)}
+              placeholder={
+                isEditing
+                  ? '(inchangé — laissez vide pour conserver la clé existante)'
+                  : '{ "type": "service_account", "client_email": "...", "private_key": "...", ... }'
+              }
+              rows={7}
+              autoComplete="off"
+              spellCheck={false}
+              className={`input-editorial w-full text-xs mt-1 font-mono-plex resize-y ${
+                gsheetsKeyValidation.error ? 'border-red-600/60' : ''
+              }`}
+            />
+            {gsheetsKeyValidation.error && (
+              <p className="text-xs text-red-400 mt-1">{gsheetsKeyValidation.error}</p>
+            )}
+            {gsheetsKeyValidation.clientEmail && !gsheetsKeyValidation.error && (
+              <p className="text-xs text-green-400 mt-1">
+                Service Account détecté :{' '}
+                <span className="font-mono-plex">{gsheetsKeyValidation.clientEmail}</span>
+              </p>
+            )}
+            {isEditing && (
+              <HelperText>Laissez vide pour conserver la clé enregistrée.</HelperText>
+            )}
+          </div>
+
+          {/* Mode toggle: explicit IDs vs Drive folder enumeration */}
+          <div>
+            <FieldLabel htmlFor="gsheets-mode" required>
+              Source des Google Sheets
+            </FieldLabel>
+            <div className="flex items-center gap-3 mt-1.5">
+              <label className="flex items-center gap-1.5 text-sm text-gray-300 cursor-pointer">
+                <input
+                  type="radio"
+                  name="gsheets-mode"
+                  value="ids"
+                  checked={gsheetsMode === 'ids'}
+                  onChange={() => setGsheetsMode('ids')}
+                  className="accent-os-500 focus:ring-2 focus:ring-os-500"
+                />
+                IDs explicites
+              </label>
+              <label className="flex items-center gap-1.5 text-sm text-gray-300 cursor-pointer">
+                <input
+                  type="radio"
+                  name="gsheets-mode"
+                  value="folder"
+                  checked={gsheetsMode === 'folder'}
+                  onChange={() => setGsheetsMode('folder')}
+                  className="accent-os-500 focus:ring-2 focus:ring-os-500"
+                />
+                Dossier Drive
+              </label>
+            </div>
+          </div>
+
+          {gsheetsMode === 'ids' && (
+            <div>
+              <FieldLabel htmlFor="gsheets-ids" required>
+                IDs des Google Sheets (un par ligne)
+              </FieldLabel>
+              <textarea
+                id="gsheets-ids"
+                value={gsheetsSpreadsheetIds}
+                onChange={(e) => setGsheetsSpreadsheetIds(e.target.value)}
+                placeholder={'1A2B3C4D5E6F7G8H9I0J\n2B3C4D5E6F7G8H9I0J1A'}
+                rows={4}
+                className="input-editorial w-full text-sm mt-1 font-mono-plex resize-y"
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <HelperText>
+                Dans l'URL{' '}
+                <span className="font-mono-plex">docs.google.com/spreadsheets/d/</span>
+                <span className="font-mono-plex font-semibold text-gray-400">
+                  &lt;cet ID&gt;
+                </span>
+                /edit. Chaque onglet du classeur devient un document distinct.
+              </HelperText>
+            </div>
+          )}
+
+          {gsheetsMode === 'folder' && (
+            <div>
+              <FieldLabel htmlFor="gsheets-folder" required>
+                ID du dossier Drive
+              </FieldLabel>
+              <input
+                id="gsheets-folder"
+                type="text"
+                value={gsheetsDriveFolderId}
+                onChange={(e) => setGsheetsDriveFolderId(e.target.value)}
+                placeholder="1A2B3C4D5E6F7G8H9I0J"
+                className="input-editorial w-full text-sm mt-1 font-mono-plex"
+                autoComplete="off"
+              />
+              <HelperText>
+                Tous les Google Sheets <em>directement</em> dans ce dossier seront indexés.
+                Aucune récursion (les sous-dossiers sont ignorés).
+              </HelperText>
+            </div>
+          )}
+
+          {/* Include archived */}
+          <div className="flex items-start gap-2">
+            <input
+              id="gsheets-include-archived"
+              type="checkbox"
+              checked={gsheetsIncludeArchived}
+              onChange={(e) => setGsheetsIncludeArchived(e.target.checked)}
+              className="mt-0.5 accent-os-500 focus:ring-2 focus:ring-os-500"
+            />
+            <label
+              htmlFor="gsheets-include-archived"
+              className="text-sm text-gray-400 select-none"
+            >
+              Inclure les onglets archivés
+              <HelperText>
+                Les onglets dont le nom commence par <span className="font-mono-plex">archive_</span>{' '}
+                ou <span className="font-mono-plex">_old</span> sont ignorés par défaut.
+              </HelperText>
+            </label>
+          </div>
+
+          {/* Advanced section */}
+          <div className="border border-white/5 rounded-lg overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setGsheetsShowAdvanced((v) => !v)}
+              className="w-full flex items-center justify-between px-3 py-2.5 text-xs text-gray-400 hover:text-gray-300 hover:bg-white/[0.03] transition-colors"
+              aria-expanded={gsheetsShowAdvanced}
+            >
+              <span className="font-medium">Avancé (impersonation, plage par défaut)</span>
+              <span aria-hidden="true" className="text-gray-600">
+                {gsheetsShowAdvanced ? '▲' : '▼'}
+              </span>
+            </button>
+
+            {gsheetsShowAdvanced && (
+              <div className="px-3 pb-4 pt-1 space-y-3 border-t border-white/5">
+                <div>
+                  <FieldLabel htmlFor="gsheets-impersonate">Impersonate as</FieldLabel>
+                  <input
+                    id="gsheets-impersonate"
+                    type="text"
+                    value={gsheetsImpersonateAs}
+                    onChange={(e) => setGsheetsImpersonateAs(e.target.value)}
+                    placeholder="user@example.com"
+                    className="input-editorial w-full text-sm mt-1"
+                    autoComplete="off"
+                  />
+                  <HelperText>
+                    Délégation à l'échelle du domaine (Domain-wide delegation) uniquement.
+                    Laissez vide dans la plupart des cas.
+                  </HelperText>
+                </div>
+
+                <div>
+                  <FieldLabel htmlFor="gsheets-range">Plage par défaut</FieldLabel>
+                  <input
+                    id="gsheets-range"
+                    type="text"
+                    value={gsheetsDefaultRange}
+                    onChange={(e) => setGsheetsDefaultRange(e.target.value)}
+                    placeholder="A:Z"
+                    className="input-editorial w-full text-sm mt-1 font-mono-plex"
+                    autoComplete="off"
+                  />
+                  <HelperText>
+                    Notation A1 (par exemple <span className="font-mono-plex">A:Z</span> ou{' '}
+                    <span className="font-mono-plex">A1:D100</span>). Vide = toute la plage
+                    utilisée de chaque onglet.
+                  </HelperText>
                 </div>
               </div>
             )}

@@ -192,6 +192,34 @@ importers:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@25.4.0)(jsdom@25.0.1(canvas@2.11.2))
 
+  ee/rag-gsheets:
+    dependencies:
+      google-auth-library:
+        specifier: ^9.0.0
+        version: 9.15.1
+      googleapis:
+        specifier: ^144.0.0
+        version: 144.0.0
+      mime-types:
+        specifier: ^2.1.35
+        version: 2.1.35
+    devDependencies:
+      '@calame-ee/rag-connectors':
+        specifier: workspace:*
+        version: link:../rag-connectors
+      '@calame-ee/rag-core':
+        specifier: workspace:*
+        version: link:../rag-core
+      '@types/mime-types':
+        specifier: ^2.1.4
+        version: 2.1.4
+      typescript:
+        specifier: ~5.7.0
+        version: 5.7.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@25.4.0)(jsdom@25.0.1(canvas@2.11.2))
+
   ee/rag-microsoft:
     dependencies:
       '@azure/identity':
@@ -290,6 +318,9 @@ importers:
       '@calame-ee/rag-gdrive':
         specifier: workspace:*
         version: link:../../ee/rag-gdrive
+      '@calame-ee/rag-gsheets':
+        specifier: workspace:*
+        version: link:../../ee/rag-gsheets
       '@calame-ee/rag-microsoft':
         specifier: workspace:*
         version: link:../../ee/rag-microsoft

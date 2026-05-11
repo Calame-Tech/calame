@@ -156,6 +156,22 @@ export async function initRagRuntime(
     );
   }
 
+  // Google Sheets connector lives in its own EE package — it shares the
+  // `googleapis` dep with rag-gdrive but exists separately so admins can pick
+  // per-tab granularity + header-aware CSV chunking instead of gdrive's
+  // export-the-whole-workbook behaviour. Same lazy-load pattern as the other
+  // EE connectors.
+  type RagGsheetsModule = typeof import('@calame-ee/rag-gsheets');
+  let ragGsheets: RagGsheetsModule | null = null;
+  try {
+    ragGsheets = await import('@calame-ee/rag-gsheets');
+  } catch {
+    log.warn(
+      '@calame-ee/rag-gsheets not installed — gsheets sources will be unavailable. ' +
+        'Install the package and restart to enable Google Sheets ingestion.',
+    );
+  }
+
   // Notion connector also lives in its own EE package (separate `@notionhq/client`
   // dep). Same lazy-load pattern as gdrive: when the package is absent, `notion`
   // sources fall through `resolveConnector` and the route layer answers 501.
@@ -377,10 +393,10 @@ export async function initRagRuntime(
   });
 
   // Build a connector resolver. Phase 1 wired `local`; Phase 3 adds `s3` and
-  // `http`. Phase 3+ adds `gdrive`, `notion`, and `sharepoint` (each in a
-  // separate package — see the `ragGdrive` / `ragNotion` / `ragMicrosoft`
-  // lazy-imports above). Other types (gsheets, git, …) still return null so
-  // the route layer can answer 501 with a clear message.
+  // `http`. Phase 3+ adds `gdrive`, `gsheets`, `notion`, and `sharepoint` (each
+  // in a separate package — see the `ragGdrive` / `ragGsheets` / `ragNotion` /
+  // `ragMicrosoft` lazy-imports above). Other types (git, …) still return null
+  // so the route layer can answer 501 with a clear message.
   //
   // Every remote-API connector is wrapped with `setRateLimiter(rateLimiter)`
   // before returning so the queue / poller / watcher trigger paths all share
@@ -399,6 +415,10 @@ export async function initRagRuntime(
     if (type === 'gdrive') {
       if (!ragGdrive) return null;
       return withRateLimiter(new ragGdrive.GDriveConnector()) as unknown as ConnectorLike;
+    }
+    if (type === 'gsheets') {
+      if (!ragGsheets) return null;
+      return withRateLimiter(new ragGsheets.GSheetsConnector()) as unknown as ConnectorLike;
     }
     if (type === 'notion') {
       if (!ragNotion) return null;

@@ -17,6 +17,7 @@ import FolderTreeView from './FolderTreeView.js';
 import DocumentUploader from './DocumentUploader.js';
 import IngestionStatusCard from './IngestionStatusCard.js';
 import SyncHistoryPanel from './SyncHistoryPanel.js';
+import EmbeddingUsageCard from './EmbeddingUsageCard.js';
 import {
   useActiveSyncJobs,
   formatRelativeTime,
@@ -387,6 +388,12 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
         />
       )}
 
+      {/* Cost tracker — surfaces token consumption + estimated USD spend
+          from the embedding provider. Sits above the source list so it
+          stays visible at the top of the page; the component polls every
+          30s on its own. */}
+      <EmbeddingUsageCard />
+
       {/* Two-column layout: source list (left) and details (right). */}
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] gap-4 items-start">
         {/* Source list */}
@@ -414,6 +421,7 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
                 processedDocuments: 0,
                 skippedByEtag: 0,
                 gcDeleted: 0,
+                tokensEmbedded: 0,
                 error: null,
                 startedAt: new Date().toISOString(),
                 finishedAt: null,

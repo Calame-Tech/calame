@@ -137,6 +137,8 @@ export { registerRagContentRoutes } from './routes/rag-content.js';
 export { registerRagUploadRoutes } from './routes/rag-upload.js';
 export { registerRagIndexRoutes } from './routes/rag-index.js';
 export { registerRagSearchRoutes } from './routes/rag-search.js';
+export { registerRagUsageRoutes } from './routes/rag-usage.js';
+export type { RagUsageResponse } from './routes/rag-usage.js';
 export type {
 	RagRouteDeps,
 	RagAuditEntry,
@@ -144,3 +146,10 @@ export type {
 	ConnectorLike,
 } from './routes/types.js';
 export type { RagSourcePublic } from './routes/api-types.js';
+
+// ---------- Pricing ----------
+export {
+	EMBEDDING_PRICES_PER_1M_TOKENS,
+	estimateCostUsd,
+	isKnownEmbeddingModel,
+} from './pricing.js';

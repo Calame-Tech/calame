@@ -9,4 +9,5 @@ export { default as FolderTreeView } from './FolderTreeView.js';
 export { default as DocumentUploader } from './DocumentUploader.js';
 export { default as IngestionStatusCard } from './IngestionStatusCard.js';
 export { default as SyncHistoryPanel } from './SyncHistoryPanel.js';
+export { default as EmbeddingUsageCard } from './EmbeddingUsageCard.js';
 export type * from './api.js';

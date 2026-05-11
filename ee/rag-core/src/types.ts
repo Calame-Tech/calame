@@ -138,6 +138,13 @@ export interface RagJob {
   skippedByEtag: number;
   /** Documents soft-deleted by the GC pass because they were absent from the source listing. */
   gcDeleted: number;
+  /**
+   * Sum of `chunk.tokenCount` for every chunk actually sent to the embedding
+   * client during this job. Skipped fast-path documents (hash match) do NOT
+   * contribute. Populated at job completion (single UPDATE at the end of
+   * `runSyncJob` / `rag-upload`). Defaults to 0 for pre-v7 rows.
+   */
+  tokensEmbedded: number;
   error: string | null;
   startedAt: string;
   finishedAt: string | null;

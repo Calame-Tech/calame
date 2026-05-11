@@ -4,6 +4,7 @@
 
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { nanoid } from 'nanoid';
 import type { Express, Request, Response } from 'express';
 import type { RagSource, RagSourceType } from '../types.js';
 import type { RagRouteDeps } from './types.js';
@@ -145,6 +146,13 @@ export function registerRagUploadRoutes(app: Express, deps: RagRouteDeps): void 
 				return;
 			}
 
+			// Synthetic job row to track embedding-token usage from manual
+			// uploads. We INSERT with status='completed' at the end of the
+			// request rather than at the start so a thrown ingest doesn't
+			// leave a phantom 'pending' row the UI would chase. The usage
+			// endpoint aggregates over status='completed' so this row is
+			// indistinguishable from a sync job for cost accounting purposes.
+			let tokensEmbeddedThisUpload = 0;
 			const ingested = [];
 			for (const file of allFiles) {
 				const buffer = await fs.readFile(file.filepath);
@@ -156,16 +164,46 @@ export function registerRagUploadRoutes(app: Express, deps: RagRouteDeps): void 
 					path: filename,
 					mimeType: mime,
 					buffer,
+					onTokensEmbedded: (count: number) => {
+						tokensEmbeddedThisUpload += count;
+					},
 				});
 				ingested.push(doc);
 				// Cleanup the temp file — best effort.
 				await fs.unlink(file.filepath).catch(() => undefined);
 			}
 
+			// Record the upload as a completed synthetic job. tenant_id is
+			// inherited from the parent source (same model as sync jobs).
+			const uploadJobId = nanoid();
+			const finishedAt = new Date().toISOString();
+			deps.db
+				.prepare(
+					`INSERT INTO rag_jobs
+					 (id, source_id, status, progress, total_documents, processed_documents,
+					  skipped_by_etag, gc_deleted, tokens_embedded, tenant_id,
+					  started_at, finished_at)
+					 VALUES (?, ?, 'completed', 1, ?, ?, 0, 0, ?, ?, ?, ?)`,
+				)
+				.run(
+					uploadJobId,
+					id,
+					ingested.length,
+					ingested.length,
+					tokensEmbeddedThisUpload,
+					source.tenantId,
+					finishedAt,
+					finishedAt,
+				);
+
 			deps.onAudit?.({
 				type: 'rag.upload.ok',
-				payload: { sourceId: id, count: ingested.length },
-				timestamp: new Date().toISOString(),
+				payload: {
+					sourceId: id,
+					count: ingested.length,
+					tokensEmbedded: tokensEmbeddedThisUpload,
+				},
+				timestamp: finishedAt,
 			});
 			res.status(201).json({ documents: ingested });
 		} catch (error: unknown) {

@@ -463,10 +463,10 @@ describe('schema migration — v4 idempotence', () => {
 		const ver = db
 			.prepare(`SELECT version FROM rag_schema_version WHERE key = 'rag'`)
 			.get() as { version: number };
-		// v5 added the FTS5 mirror, v6 added tenant_id — the migration is
-		// no-op on this fixture's tables that aren't seeded, but the version
-		// still advances to head (6).
-		expect(ver.version).toBe(6);
+		// v5 added the FTS5 mirror, v6 added tenant_id, v7 added
+		// tokens_embedded — the migrations are no-op on this fixture's
+		// tables that aren't seeded, but the version still advances to head.
+		expect(ver.version).toBe(7);
 	});
 });
 
@@ -592,7 +592,7 @@ describe('schema migration — v6 tenant_id', () => {
 		const ver = db
 			.prepare(`SELECT version FROM rag_schema_version WHERE key = 'rag'`)
 			.get() as { version: number };
-		expect(ver.version).toBe(6);
+		expect(ver.version).toBe(7);
 	});
 
 	it('is idempotent — re-running runRagMigrations does not duplicate the column or throw', () => {

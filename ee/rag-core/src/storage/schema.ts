@@ -13,7 +13,7 @@ export interface RagMigrationDb {
 	raw: BetterSqlite3Database;
 }
 
-const CURRENT_RAG_SCHEMA_VERSION = 6;
+const CURRENT_RAG_SCHEMA_VERSION = 7;
 
 /**
  * Default tenant id used by Phase A of the multi-tenancy rollout. The column is
@@ -231,6 +231,7 @@ export function runRagMigrations(db: RagMigrationDb): void {
 			processed_documents INTEGER NOT NULL DEFAULT 0,
 			skipped_by_etag INTEGER NOT NULL DEFAULT 0,
 			gc_deleted INTEGER NOT NULL DEFAULT 0,
+			tokens_embedded INTEGER NOT NULL DEFAULT 0,
 			error TEXT,
 			tenant_id TEXT NOT NULL DEFAULT '${DEFAULT_TENANT_ID}',
 			started_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -349,6 +350,25 @@ export function runRagMigrations(db: RagMigrationDb): void {
 			}
 		}
 		setRagSchemaVersion(raw, 6);
+	}
+
+	if (current < 7) {
+		// v7 — embedding cost tracking foundation.
+		//
+		// Adds `tokens_embedded INTEGER NOT NULL DEFAULT 0` to `rag_jobs` so the
+		// sync orchestrator (and the upload route) can record the sum of chunk
+		// token counts that were actually embedded by the job. The usage endpoint
+		// aggregates this column at query time — no separate counter table is
+		// needed because rag_jobs already carries source_id and started_at, which
+		// gives us per-source and per-period rollups for free.
+		//
+		// Idempotent: `addColumnIfMissing` skips the ALTER when the column is
+		// already present (fresh installs that picked it up from the v1
+		// baseline DDL above).
+		if (hasTable(raw, 'rag_jobs')) {
+			addColumnIfMissing(raw, 'rag_jobs', 'tokens_embedded', 'INTEGER NOT NULL DEFAULT 0');
+		}
+		setRagSchemaVersion(raw, 7);
 	}
 
 	// Future migrations slot here, each gated on `current < N`.

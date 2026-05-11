@@ -9,6 +9,7 @@ import type {
 	RagSearchResult,
 } from '../types.js';
 import type { RagSourcePublic } from '../routes/api-types.js';
+import type { RagUsageResponse } from '../routes/rag-usage.js';
 
 /**
  * Thrown when an API call returns a non-2xx response. Carries the HTTP status
@@ -140,3 +141,7 @@ export interface RagJobListResponse {
  * conventional name for symmetry with the *List response types above.
  */
 export type RagSearchResponse = RagSearchResult;
+
+// Re-export the usage shape so the EmbeddingUsageCard can import it from the
+// web-layer barrel without reaching across the routes directory.
+export type { RagUsageResponse };

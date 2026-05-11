@@ -30,6 +30,7 @@ interface JobRow {
 	processed_documents: number;
 	skipped_by_etag: number;
 	gc_deleted: number;
+	tokens_embedded: number | null;
 	error: string | null;
 	tenant_id: string;
 	started_at: string;
@@ -75,6 +76,8 @@ function rowToJob(row: JobRow): RagJob {
 		processedDocuments: row.processed_documents,
 		skippedByEtag: row.skipped_by_etag,
 		gcDeleted: row.gc_deleted,
+		// Defensive `?? 0` for fixtures or pre-v7 rows that bypass the migration.
+		tokensEmbedded: row.tokens_embedded ?? 0,
 		error: row.error,
 		tenantId: row.tenant_id ?? 'default',
 		startedAt: row.started_at,
@@ -259,6 +262,12 @@ export async function runSyncJob(
 		let failures = 0;
 		let skippedByEtag = 0;
 		let gcDeleted = 0;
+		// Accumulated sum of chunk.tokenCount across every document that was
+		// actually embedded by this job. Fast-path (hash-match) docs do not
+		// contribute — the pipeline's `onTokensEmbedded` hook only fires after
+		// a successful re-embed. Persisted in a single UPDATE at the end of
+		// the job so the usage endpoint can aggregate per source / period.
+		let tokensEmbeddedThisJob = 0;
 		let lastError: string | null = null;
 		for (const { doc, folder } of entries) {
 			try {
@@ -300,6 +309,12 @@ export async function runSyncJob(
 					mimeType: fetched.mimeType,
 					buffer,
 					etag: docEtag,
+					// Per-job override of the pipeline-level hook so this counter
+					// stays scoped to the current sync. The pipeline only fires
+					// the hook on actual re-embeds (skipped fast-path → no fire).
+					onTokensEmbedded: (count: number) => {
+						tokensEmbeddedThisJob += count;
+					},
 				});
 			} catch (err: unknown) {
 				failures++;
@@ -355,7 +370,7 @@ export async function runSyncJob(
 			.prepare(
 				`UPDATE rag_jobs
 				 SET status = ?, finished_at = ?, error = ?, progress = 1,
-				     skipped_by_etag = ?, gc_deleted = ?
+				     skipped_by_etag = ?, gc_deleted = ?, tokens_embedded = ?
 				 WHERE id = ?`,
 			)
 			.run(
@@ -364,6 +379,7 @@ export async function runSyncJob(
 				failures > 0 ? `${failures}/${entries.length} failed; last: ${lastError}` : null,
 				skippedByEtag,
 				gcDeleted,
+				tokensEmbeddedThisJob,
 				jobId,
 			);
 		deps.db
@@ -380,6 +396,7 @@ export async function runSyncJob(
 				skippedByEtag,
 				gcDeleted,
 				failures,
+				tokensEmbedded: tokensEmbeddedThisJob,
 			},
 			timestamp: finishedAt,
 		});

@@ -304,6 +304,7 @@ function readJob(db: BetterSqlite3Database, sourceId: string): RagJob {
 		processedDocuments: row['processed_documents'] as number,
 		skippedByEtag: row['skipped_by_etag'] as number,
 		gcDeleted: row['gc_deleted'] as number,
+		tokensEmbedded: (row['tokens_embedded'] as number | null) ?? 0,
 		error: row['error'] as string | null,
 		tenantId: (row['tenant_id'] as string | null) ?? 'default',
 		startedAt: row['started_at'] as string,

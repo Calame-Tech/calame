@@ -30,6 +30,20 @@ export interface IngestionPipelineDeps {
 	embeddingClient: EmbeddingClient;
 	/** Optional chunker overrides (maxTokens / overlap / minTokens). */
 	chunkOptions?: ChunkOptions;
+	/**
+	 * Optional hook fired once per `ingestDocument` call that actually embedded
+	 * chunks (fast-path skips do NOT fire it). The `count` argument is the sum
+	 * of `chunk.tokenCount` for every chunk sent to the embedding client.
+	 *
+	 * Why a callback rather than a return value: the pipeline is shared by the
+	 * sync orchestrator (which aggregates over many documents per job row) AND
+	 * the upload route (which records a single synthetic job per upload). A
+	 * callback lets each caller decide how to accumulate without forcing every
+	 * caller to thread the same wrapper API. Counts are precise because the
+	 * chunker already computed `tokenCount` via gpt-tokenizer (o200k_base) —
+	 * no extra round-trip to the provider is needed.
+	 */
+	onTokensEmbedded?: (count: number) => void;
 }
 
 /** Inputs to {@link IngestionPipeline.ingestDocument}. */
@@ -42,6 +56,13 @@ export interface IngestDocumentInput {
 	buffer: Buffer;
 	/** Optional source-side ETag / version, when available. */
 	etag?: string | null;
+	/**
+	 * Per-call override of the constructor-level `onTokensEmbedded` hook. When
+	 * provided, this fires INSTEAD OF the constructor hook (not in addition),
+	 * so each caller can choose to accumulate against its own counter. Skipped
+	 * fast-path documents (hash match) do NOT fire the hook.
+	 */
+	onTokensEmbedded?: (count: number) => void;
 }
 
 interface DocumentRow {
@@ -96,12 +117,14 @@ export class IngestionPipeline {
 	private readonly vectorStore: VectorStore;
 	private readonly embeddingClient: EmbeddingClient;
 	private readonly chunkOptions: ChunkOptions | undefined;
+	private readonly onTokensEmbedded: ((count: number) => void) | undefined;
 
 	constructor(deps: IngestionPipelineDeps) {
 		this.db = deps.db;
 		this.vectorStore = deps.vectorStore;
 		this.embeddingClient = deps.embeddingClient;
 		this.chunkOptions = deps.chunkOptions;
+		this.onTokensEmbedded = deps.onTokensEmbedded;
 	}
 
 	/**
@@ -242,6 +265,17 @@ export class IngestionPipeline {
 		});
 
 		persist();
+
+		// Fire the tokens-embedded hook after persistence succeeds, so a thrown
+		// transaction doesn't credit tokens we never actually used. Counts come
+		// straight from the chunker (gpt-tokenizer, o200k_base) — no extra
+		// provider round-trip required. Skipped fast-path returns above don't
+		// reach this code, which is by design: a hash-match doesn't re-embed.
+		if (chunks.length > 0) {
+			const tokensEmbedded = chunks.reduce((sum, c) => sum + c.tokenCount, 0);
+			const hook = input.onTokensEmbedded ?? this.onTokensEmbedded;
+			hook?.(tokensEmbedded);
+		}
 
 		const refreshed = this.db
 			.prepare<[string], DocumentRow>(`SELECT * FROM rag_documents WHERE id = ?`)

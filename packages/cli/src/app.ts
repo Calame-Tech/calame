@@ -302,6 +302,7 @@ export function createApp(
     rt.ragCore.registerRagUploadRoutes(app, ragDeps);
     rt.ragCore.registerRagIndexRoutes(app, ragDeps);
     rt.ragCore.registerRagSearchRoutes(app, ragDeps);
+    rt.ragCore.registerRagUsageRoutes(app, ragDeps);
     log.info('RAG routes registered on /api/rag/*');
   }
 

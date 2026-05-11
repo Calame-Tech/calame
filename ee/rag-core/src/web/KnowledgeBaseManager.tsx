@@ -168,6 +168,28 @@ function RefreshIcon({ spinning }: { spinning: boolean }) {
   );
 }
 
+/**
+ * §12 Q7 — 7-day retention window for soft-deleted sources. Mirrors the
+ * `retentionDays` argument passed to `runSoftDeleteCleanup` at boot. Kept
+ * client-side as a UI affordance only; the server is the source of truth.
+ */
+const RETENTION_DAYS = 7;
+
+/**
+ * Compute how many days remain before the source is hard-deleted by the
+ * cleanup cron. Negative values mean the source is past retention and will be
+ * collected on the next server boot (or already has been — the UI just hasn't
+ * refreshed yet). Returns null when `deletedAt` is missing or unparsable.
+ */
+function daysUntilHardDelete(deletedAt: string | null): number | null {
+  if (deletedAt === null) return null;
+  const deletedMs = Date.parse(deletedAt);
+  if (Number.isNaN(deletedMs)) return null;
+  const elapsedMs = Date.now() - deletedMs;
+  const elapsedDays = elapsedMs / (24 * 60 * 60 * 1000);
+  return Math.max(0, Math.ceil(RETENTION_DAYS - elapsedDays));
+}
+
 export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerProps) {
   const [sources, setSources] = useState<RagSourceWithCounts[]>([]);
   const [aiSettings, setAiSettings] = useState<AiSettingOption[]>([]);
@@ -177,6 +199,11 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
   // We toggle in-place (no modal) because the panel is a full content view —
   // consistent with how SourceForm is rendered above the source list.
   const [showHistory, setShowHistory] = useState(false);
+  // §12 Q7 — when 'deleted', the main view is replaced by the "Recently
+  // deleted" panel. Restoring a source flips us back to 'sources'. Refresh
+  // pulls a different endpoint based on the active view.
+  const [view, setView] = useState<'sources' | 'deleted'>('sources');
+  const [deletedSources, setDeletedSources] = useState<RagSourcePublic[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
@@ -202,6 +229,34 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
     }
   }, []);
 
+  /**
+   * Pull the list of soft-deleted sources. Kept separate from
+   * `refreshSources` so the two views can refresh independently — switching
+   * to "Recently deleted" only fetches when needed, and the count badge in
+   * the header reuses this state.
+   */
+  const refreshDeletedSources = useCallback(async (): Promise<void> => {
+    try {
+      const data = await apiGet<{ sources: RagSourcePublic[] }>(
+        '/api/rag/sources?filter=deleted',
+      );
+      setDeletedSources(data.sources ?? []);
+    } catch (err) {
+      // Failure here is not fatal — the count badge just stays at the
+      // last known value. The "Recently deleted" view surfaces the
+      // error through its own state when the user navigates to it.
+      const message =
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : 'Erreur de chargement.';
+      if (view === 'deleted') {
+        setError(message);
+      }
+    }
+  }, [view]);
+
   const refreshAiSettings = useCallback(async (): Promise<void> => {
     try {
       const res = await fetch('/api/ai-settings', { credentials: 'include' });
@@ -221,10 +276,14 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
   useEffect(() => {
     void (async () => {
       setLoading(true);
-      await Promise.all([refreshSources(), refreshAiSettings()]);
+      await Promise.all([
+        refreshSources(),
+        refreshAiSettings(),
+        refreshDeletedSources(),
+      ]);
       setLoading(false);
     })();
-  }, [refreshSources, refreshAiSettings]);
+  }, [refreshSources, refreshAiSettings, refreshDeletedSources]);
 
   // Stable list of source IDs passed to the polling hook.
   const sourceIds = useMemo(() => sources.map((s) => s.id), [sources]);
@@ -294,7 +353,8 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
   const handleDelete = async (source: RagSourcePublic) => {
     if (
       !window.confirm(
-        `Supprimer la source "${source.name}" ? Tous les documents indexés seront retirés.`,
+        `Supprimer la source "${source.name}" ? ` +
+          `Elle sera déplacée vers la corbeille et conservée ${RETENTION_DAYS} jours avant suppression définitive.`,
       )
     ) {
       return;
@@ -302,8 +362,10 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
     try {
       await apiDelete(`/api/rag/sources/${encodeURIComponent(source.id)}`);
       if (selectedSourceId === source.id) setSelectedSourceId(null);
-      showAction(`Source "${source.name}" supprimée.`);
-      await refreshSources();
+      showAction(
+        `Source "${source.name}" déplacée vers la corbeille (récupérable ${RETENTION_DAYS} jours).`,
+      );
+      await Promise.all([refreshSources(), refreshDeletedSources()]);
     } catch (err) {
       const message =
         err instanceof ApiError
@@ -311,6 +373,58 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
           : err instanceof Error
             ? err.message
             : 'Échec de la suppression.';
+      setError(message);
+    }
+  };
+
+  /**
+   * Restore a soft-deleted source within the retention window. The server
+   * re-registers the poll timer / watch handle for us; we just refresh the
+   * UI lists and flip back to the main view when the trash is empty.
+   */
+  const handleRestore = async (source: RagSourcePublic) => {
+    setError(null);
+    try {
+      await apiPost(`/api/rag/sources/${encodeURIComponent(source.id)}/restore`);
+      showAction(`Source "${source.name}" restaurée.`);
+      await Promise.all([refreshSources(), refreshDeletedSources()]);
+    } catch (err) {
+      const message =
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : 'Échec de la restauration.';
+      setError(message);
+    }
+  };
+
+  /**
+   * Permanent (hard) delete. Bypasses the retention window — the source and
+   * every dependent row are dropped immediately. We require a stricter
+   * confirmation because the action is irreversible.
+   */
+  const handlePermanentDelete = async (source: RagSourcePublic) => {
+    if (
+      !window.confirm(
+        `Supprimer DÉFINITIVEMENT la source "${source.name}" ? ` +
+          `Cette action est IRRÉVERSIBLE — tous les documents, dossiers, chunks et historiques de sync seront perdus.`,
+      )
+    ) {
+      return;
+    }
+    setError(null);
+    try {
+      await apiDelete(`/api/rag/sources/${encodeURIComponent(source.id)}/permanent`);
+      showAction(`Source "${source.name}" supprimée définitivement.`);
+      await Promise.all([refreshSources(), refreshDeletedSources()]);
+    } catch (err) {
+      const message =
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : 'Échec de la suppression définitive.';
       setError(message);
     }
   };
@@ -327,6 +441,110 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
     );
   }
 
+  // §12 Q7 — "Recently deleted" view. Same full-replacement pattern as the
+  // history panel: own header, own back affordance. Listed in the order
+  // returned by the API (most recently soft-deleted first — see
+  // `ORDER BY deleted_at DESC` in the route).
+  if (view === 'deleted') {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="heading-md">Corbeille</h2>
+            <p className="text-sm text-gray-500 mt-1">
+              Sources supprimées au cours des {RETENTION_DAYS} derniers jours. Au-delà, elles
+              sont définitivement effacées par le cron au prochain démarrage du serveur.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setView('sources');
+              setError(null);
+            }}
+            className="px-3 py-1.5 rounded-lg text-sm text-gray-400 hover:text-gray-200 transition-colors"
+          >
+            ← Retour
+          </button>
+        </div>
+
+        {actionMessage && (
+          <div className="p-2.5 rounded-lg text-sm bg-green-950/30 border border-green-800/50 text-green-400">
+            {actionMessage}
+          </div>
+        )}
+        {error && (
+          <div className="p-2.5 rounded-lg text-sm bg-red-950/30 border border-red-800/50 text-red-400">
+            {error}
+          </div>
+        )}
+
+        {deletedSources.length === 0 ? (
+          <div className="text-sm text-gray-500 italic px-3 py-6 text-center border border-dashed border-white/5 rounded-lg">
+            Aucune source dans la corbeille.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {deletedSources.map((source) => {
+              const remaining = daysUntilHardDelete(source.deletedAt);
+              const remainingLabel =
+                remaining === null
+                  ? '—'
+                  : remaining <= 0
+                    ? 'expire à la prochaine maintenance'
+                    : `${remaining} jour${remaining > 1 ? 's' : ''} restant${remaining > 1 ? 's' : ''}`;
+              const urgent = remaining !== null && remaining <= 1;
+              return (
+                <div
+                  key={source.id}
+                  className="p-3 rounded-lg border border-white/5 bg-gray-900/40"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-medium text-gray-200 truncate">
+                          {source.name}
+                        </span>
+                        <span className="text-xs text-gray-500">·</span>
+                        <span className="text-xs text-gray-500">{source.type}</span>
+                      </div>
+                      <div className="text-xs text-gray-500 mt-0.5">
+                        Supprimée {formatDate(source.deletedAt ?? undefined)}
+                      </div>
+                      <div
+                        className={`text-xs mt-0.5 ${
+                          urgent ? 'text-yellow-500' : 'text-gray-500'
+                        }`}
+                      >
+                        {remainingLabel}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 mt-3">
+                    <button
+                      type="button"
+                      onClick={() => void handleRestore(source)}
+                      className="px-2 py-1 rounded text-xs bg-os-700 hover:bg-os-600 text-white"
+                    >
+                      Restaurer
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handlePermanentDelete(source)}
+                      className="px-2 py-1 rounded text-xs text-red-400 hover:bg-red-950/40 ml-auto"
+                    >
+                      Supprimer définitivement
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -338,6 +556,19 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setView('deleted');
+              setError(null);
+              void refreshDeletedSources();
+            }}
+            disabled={deletedSources.length === 0}
+            className="px-3 py-1.5 rounded-lg text-sm bg-gray-700/40 hover:bg-gray-700/60 text-gray-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            title={`${deletedSources.length} source(s) dans la corbeille — restaurables pendant ${RETENTION_DAYS} jours`}
+          >
+            Corbeille ({deletedSources.length})
+          </button>
           <button
             type="button"
             onClick={() => setShowHistory(true)}

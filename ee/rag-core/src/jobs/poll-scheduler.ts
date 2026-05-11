@@ -103,10 +103,20 @@ export class PollScheduler {
 			id: string;
 			polling_interval_seconds: number;
 		}
+		// Defensive: filter on `deleted_at IS NULL` so soft-deleted sources
+		// (v8) are never auto-synced. The column may be missing on legacy
+		// DBs that haven't run `runRagMigrations` yet — we probe table_info
+		// to keep the boot path tolerant of partial schemas. Without this
+		// guard a v7 DB would crash with "no such column: deleted_at" on
+		// every boot until the host upgrade ran.
+		const hasDeletedAt = cols.some((c) => c.name === 'deleted_at');
+		const whereSql = hasDeletedAt
+			? `WHERE polling_interval_seconds IS NOT NULL AND deleted_at IS NULL`
+			: `WHERE polling_interval_seconds IS NOT NULL`;
 		const rows = this.#deps.db
 			.prepare<[], Row>(
 				`SELECT id, polling_interval_seconds FROM rag_sources
-				 WHERE polling_interval_seconds IS NOT NULL`,
+				 ${whereSql}`,
 			)
 			.all();
 		for (const row of rows) {

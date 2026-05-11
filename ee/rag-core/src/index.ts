@@ -102,6 +102,12 @@ export type {
 	RateLimiterDeps,
 	RateLimitAuditEntry,
 } from './jobs/rate-limiter.js';
+export { runSoftDeleteCleanup } from './jobs/soft-delete-cleanup.js';
+export type {
+	SoftDeleteCleanupDeps,
+	SoftDeleteCleanupResult,
+	SoftDeleteCleanupAuditEntry,
+} from './jobs/soft-delete-cleanup.js';
 export { runSyncJob } from './routes/rag-index.js';
 
 // ---------- Source Adapter ----------

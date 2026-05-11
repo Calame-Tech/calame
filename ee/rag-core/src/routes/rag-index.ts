@@ -19,6 +19,8 @@ interface SourceRow {
 	created_at: string;
 	updated_at: string;
 	last_sync_at: string | null;
+	/** Phase 12 (Q7) soft-delete marker — non-null sources are off-limits to sync. */
+	deleted_at: string | null;
 }
 
 interface JobRow {
@@ -60,6 +62,8 @@ function rowToSource(row: SourceRow): RagSource {
 		// going through `runRagMigrations` — projections lands as undefined
 		// at runtime when the column isn't present.
 		tenantId: row.tenant_id ?? 'default',
+		// Normalize undefined → null for fixtures that bypass the v8 migration.
+		deletedAt: row.deleted_at ?? null,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 		...(row.last_sync_at !== null ? { lastSyncAt: row.last_sync_at } : {}),
@@ -179,6 +183,27 @@ export async function runSyncJob(
 			deps.onAudit?.({
 				type: 'rag.sync.failed',
 				payload: { sourceId, jobId, error: 'source not found' },
+				timestamp: new Date().toISOString(),
+			});
+			return;
+		}
+		// Source was soft-deleted between enqueue and worker pick-up. Treat the
+		// same as "vanished" — mark the job failed and bail without touching
+		// the source's stale documents. The cleanup cron will hard-delete the
+		// source (and this job row) once the retention window expires.
+		if (row.deleted_at !== null) {
+			deps.db
+				.prepare(
+					`UPDATE rag_jobs SET status = 'failed', error = ?, finished_at = ? WHERE id = ?`,
+				)
+				.run(
+					`Source "${sourceId}" was deleted while the job was queued.`,
+					new Date().toISOString(),
+					jobId,
+				);
+			deps.onAudit?.({
+				type: 'rag.sync.failed',
+				payload: { sourceId, jobId, error: 'source soft-deleted' },
 				timestamp: new Date().toISOString(),
 			});
 			return;
@@ -487,19 +512,24 @@ export function registerRagIndexRoutes(app: Express, deps: RagRouteDeps): void {
 			// Build the WHERE clause dynamically with parameterized values — never
 			// concatenate user input into the SQL string. `where` and `params`
 			// stay in lock-step so the placeholders line up with the bindings.
-			const where: string[] = [];
+			//
+			// The JOIN + `s.deleted_at IS NULL` filter hides jobs for soft-deleted
+			// sources from the history panel. `OR s.id IS NULL` covers the rare
+			// race where a job row outlived its source — keeps the row visible
+			// rather than silently dropping it.
+			const where: string[] = ['(s.id IS NULL OR s.deleted_at IS NULL)'];
 			const params: unknown[] = [];
 			if (typeof sourceId === 'string' && sourceId.length > 0) {
-				where.push('source_id = ?');
+				where.push('j.source_id = ?');
 				params.push(sourceId);
 			}
 			if (statusList.length > 0) {
-				where.push(`status IN (${statusList.map(() => '?').join(',')})`);
+				where.push(`j.status IN (${statusList.map(() => '?').join(',')})`);
 				params.push(...statusList);
 			}
 
-			const whereClause = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
-			const sql = `SELECT * FROM rag_jobs ${whereClause} ORDER BY started_at DESC LIMIT ?`;
+			const whereClause = `WHERE ${where.join(' AND ')}`;
+			const sql = `SELECT j.* FROM rag_jobs j LEFT JOIN rag_sources s ON s.id = j.source_id ${whereClause} ORDER BY j.started_at DESC LIMIT ?`;
 			params.push(limit);
 
 			const rows = deps.db.prepare<unknown[], JobRow>(sql).all(...params);
@@ -513,11 +543,17 @@ export function registerRagIndexRoutes(app: Express, deps: RagRouteDeps): void {
 	app.post('/api/rag/sources/:id/sync', (req: Request, res: Response) => {
 		const id = String(req.params['id'] ?? '');
 		try {
-			// 1. Source must exist — otherwise 404.
+			// 1. Source must exist — otherwise 404. Soft-deleted sources are
+			//    treated the same as missing: restore first if you want to
+			//    re-trigger a sync.
 			const row = deps.db
 				.prepare<[string], SourceRow>(`SELECT * FROM rag_sources WHERE id = ?`)
 				.get(id);
 			if (!row) {
+				sendError(res, 404, `Source "${id}" not found.`);
+				return;
+			}
+			if (row.deleted_at !== null) {
 				sendError(res, 404, `Source "${id}" not found.`);
 				return;
 			}

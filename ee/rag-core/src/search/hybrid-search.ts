@@ -175,9 +175,11 @@ export class HybridSearchIndex implements DocumentSearchIndex {
 
 		// Resolve the embedding setting for this source — the vector branch
 		// needs to embed the query in the same model used at index time.
+		// Filter out soft-deleted sources (v8) so a retired source returns
+		// empty results instead of leaking dangling chunks.
 		const settingRow = this.db
 			.prepare<[string], { embedding_setting_name: string }>(
-				'SELECT embedding_setting_name FROM rag_sources WHERE id = ? LIMIT 1',
+				'SELECT embedding_setting_name FROM rag_sources WHERE id = ? AND deleted_at IS NULL LIMIT 1',
 			)
 			.get(sourceId);
 		if (!settingRow) return { chunks: [] };
@@ -317,6 +319,9 @@ export class HybridSearchIndex implements DocumentSearchIndex {
 	): Array<{ chunkId: string; meta: ChunkMetadata }> {
 		if (chunkIds.length === 0) return [];
 		const placeholders = chunkIds.map(() => '?').join(',');
+		// Extra JOIN on rag_sources filters out chunks whose parent source
+		// has been soft-deleted (v8) — their rows are kept until the cleanup
+		// cron runs but should never surface in search results.
 		const rows = this.db
 			.prepare<string[], VectorJoinRow>(
 				`SELECT
@@ -330,10 +335,12 @@ export class HybridSearchIndex implements DocumentSearchIndex {
 				   f.path      AS folder_path
 				 FROM rag_chunks c
 				 JOIN rag_documents d ON d.id = c.document_id
+				 JOIN rag_sources s ON s.id = d.source_id
 				 LEFT JOIN rag_folders f ON f.id = d.folder_id
 				 WHERE c.id IN (${placeholders})
 				   AND d.source_id = ?
-				   AND d.deleted_at IS NULL`,
+				   AND d.deleted_at IS NULL
+				   AND s.deleted_at IS NULL`,
 			)
 			.all(...chunkIds, sourceId);
 
@@ -384,10 +391,12 @@ export class HybridSearchIndex implements DocumentSearchIndex {
 				 FROM rag_chunks_fts fts
 				 JOIN rag_chunks c ON c.rowid = fts.rowid
 				 JOIN rag_documents d ON d.id = c.document_id
+				 JOIN rag_sources s ON s.id = d.source_id
 				 LEFT JOIN rag_folders f ON f.id = d.folder_id
 				 WHERE rag_chunks_fts MATCH ?
 				   AND d.source_id = ?
 				   AND d.deleted_at IS NULL
+				   AND s.deleted_at IS NULL
 				 ORDER BY keyword_score
 				 LIMIT ?`,
 			)

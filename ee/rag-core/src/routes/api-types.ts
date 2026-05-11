@@ -39,4 +39,12 @@ export interface RagSourcePublic {
 	createdAt: string;
 	updatedAt: string;
 	lastSyncAt?: string;
+	/**
+	 * Soft-delete marker — ISO timestamp when the source was soft-deleted, or
+	 * `null` when active. The default `GET /api/rag/sources` endpoint filters
+	 * soft-deleted rows out of the response; `?includeDeleted=true` (or the
+	 * stricter `?filter=deleted`) is required to surface them in the UI's
+	 * "Recently deleted" view.
+	 */
+	deletedAt: string | null;
 }

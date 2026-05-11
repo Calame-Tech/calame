@@ -462,12 +462,22 @@ export async function initRagRuntime(
   const triggerSync = (sourceId: string): string | null => {
     const jobId = randomUUID();
     const now = new Date().toISOString();
+    // Skip soft-deleted sources defensively. The poll scheduler and watch
+    // manager already filter on `deleted_at IS NULL` at boot, but a tick
+    // can fire AFTER the source was soft-deleted but BEFORE its timer is
+    // removed (race: HTTP DELETE landed, `remove(sourceId)` queued in the
+    // event loop, but the `setInterval` fired first). Returning null
+    // matches the "queue rejected" contract — pollers / watchers will log
+    // a `*.skipped` audit event and the next tick will find the timer gone.
     const sourceRow = db.raw
-      .prepare<[string], { tenant_id: string | null }>(
-        `SELECT tenant_id FROM rag_sources WHERE id = ?`,
+      .prepare<[string], { tenant_id: string | null; deleted_at: string | null }>(
+        `SELECT tenant_id, deleted_at FROM rag_sources WHERE id = ?`,
       )
       .get(sourceId);
-    const tenantId = sourceRow?.tenant_id ?? DEFAULT_TENANT_ID;
+    if (!sourceRow || sourceRow.deleted_at !== null) {
+      return null;
+    }
+    const tenantId = sourceRow.tenant_id ?? DEFAULT_TENANT_ID;
     db.raw
       .prepare(
         `INSERT INTO rag_jobs
@@ -522,6 +532,35 @@ export async function initRagRuntime(
     },
   });
   watchManager.start();
+
+  // Soft-delete retention sweep (§12 Q7) — at boot, hard-delete every source
+  // whose `deleted_at` is older than 7 days. The pass runs synchronously;
+  // for a long-lived server one boot covers the typical operational rhythm
+  // (most installs restart at least once per week for upgrades), so a
+  // recurring setInterval is intentionally NOT wired here — adding it would
+  // make the runtime harder to test for negligible payoff at MVP. If usage
+  // patterns later show servers running for months at a time, layer a
+  // setInterval that calls `runSoftDeleteCleanup` once per day.
+  try {
+    const summary = ragCore.runSoftDeleteCleanup({
+      db: db.raw,
+      vectorStore,
+      retentionDays: 7,
+      onAudit: (event) => {
+        log.info(`[rag-audit] ${event.type} ${JSON.stringify(event.payload)}`);
+      },
+    });
+    if (summary.hardDeletedSources > 0) {
+      log.info(
+        `RAG: cleanup pass hard-deleted ${summary.hardDeletedSources} expired source(s), ` +
+          `wiped ${summary.wipedDocuments} doc(s) / ${summary.wipedChunks} chunk(s) / ` +
+          `${summary.wipedFolders} folder(s) / ${summary.wipedJobs} job(s).`,
+      );
+    }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    log.warn(`RAG: soft-delete cleanup pass failed at boot: ${msg} (continuing).`);
+  }
 
   state.ragDisabledReason = null;
   state.ragRuntime = {
@@ -683,6 +722,9 @@ export async function initRagRuntime(
       },
 
       async listSources() {
+        // Exclude soft-deleted sources from the adapter's listing — the
+        // MCP `rag_list_sources` tool reads through this code path and
+        // should never see retired sources.
         const rows = ragDb.raw
           .prepare<[], SourceAggRow>(
             `SELECT
@@ -692,6 +734,7 @@ export async function initRagRuntime(
                (SELECT COUNT(*) FROM rag_folders f WHERE f.source_id = s.id) AS folder_count,
                (SELECT COUNT(*) FROM rag_documents d WHERE d.source_id = s.id AND d.deleted_at IS NULL) AS document_count
              FROM rag_sources s
+             WHERE s.deleted_at IS NULL
              ORDER BY s.created_at ASC`,
           )
           .all();
@@ -774,6 +817,9 @@ export async function initRagRuntime(
 
           const placeholders = vecResults.map(() => '?').join(',');
           const chunkIds = vecResults.map((r) => r.chunkId);
+          // Extra JOIN on rag_sources + s.deleted_at IS NULL filters out
+          // chunks whose parent source has been soft-deleted (v8). Mirrors
+          // the same filter in the hybrid index and rag-search route.
           const rows = ragDb.raw
             .prepare<string[], ChunkJoinRow>(
               `SELECT
@@ -786,10 +832,12 @@ export async function initRagRuntime(
                  f.path      AS folder_path
                FROM rag_chunks c
                JOIN rag_documents d ON d.id = c.document_id
+               JOIN rag_sources s ON s.id = d.source_id
                LEFT JOIN rag_folders f ON f.id = d.folder_id
                WHERE c.id IN (${placeholders})
                  AND d.source_id = ?
-                 AND d.deleted_at IS NULL`,
+                 AND d.deleted_at IS NULL
+                 AND s.deleted_at IS NULL`,
             )
             .all(...chunkIds, sourceId);
 

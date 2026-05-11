@@ -13,7 +13,7 @@ export interface RagMigrationDb {
 	raw: BetterSqlite3Database;
 }
 
-const CURRENT_RAG_SCHEMA_VERSION = 7;
+const CURRENT_RAG_SCHEMA_VERSION = 8;
 
 /**
  * Default tenant id used by Phase A of the multi-tenancy rollout. The column is
@@ -178,7 +178,8 @@ export function runRagMigrations(db: RagMigrationDb): void {
 			tenant_id TEXT NOT NULL DEFAULT '${DEFAULT_TENANT_ID}',
 			created_at TEXT NOT NULL DEFAULT (datetime('now')),
 			updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-			last_sync_at TEXT
+			last_sync_at TEXT,
+			deleted_at TEXT
 		)`);
 
 		raw.exec(`CREATE TABLE IF NOT EXISTS rag_folders (
@@ -250,6 +251,14 @@ export function runRagMigrations(db: RagMigrationDb): void {
 		);
 		raw.exec(`CREATE INDEX IF NOT EXISTS idx_rag_chunks_document ON rag_chunks(document_id)`);
 		raw.exec(`CREATE INDEX IF NOT EXISTS idx_rag_jobs_source ON rag_jobs(source_id)`);
+
+		// Soft-delete index — supports the `WHERE deleted_at IS NULL` filter
+		// applied to every listing query plus the `WHERE deleted_at < ?`
+		// scan run by the boot-time cleanup cron (see jobs/soft-delete-cleanup.ts).
+		// Added at v1 for fresh DBs so the index is present from day one; the
+		// v8 migration below back-fills it on upgraded DBs via
+		// `CREATE INDEX IF NOT EXISTS`.
+		raw.exec(`CREATE INDEX IF NOT EXISTS idx_rag_sources_deleted_at ON rag_sources(deleted_at)`);
 
 		// Tenant indexes — created here so fresh DBs are ready for the
 		// upcoming WHERE tenant_id = ? filters without an extra migration.
@@ -369,6 +378,31 @@ export function runRagMigrations(db: RagMigrationDb): void {
 			addColumnIfMissing(raw, 'rag_jobs', 'tokens_embedded', 'INTEGER NOT NULL DEFAULT 0');
 		}
 		setRagSchemaVersion(raw, 7);
+	}
+
+	if (current < 8) {
+		// v8 — source-level soft delete with 7-day retention.
+		//
+		// Adds `deleted_at TEXT NULL` to `rag_sources`. A non-null value means
+		// the source is soft-deleted: it is hidden from every listing
+		// (`WHERE deleted_at IS NULL` is applied at the route layer), the poll
+		// scheduler / watch manager skip it on boot, and the cleanup cron
+		// (`jobs/soft-delete-cleanup.ts`) hard-deletes it once
+		// `deleted_at < now - 7 days`. Cascading FKs (added in v1) drop every
+		// dependent `rag_folders` / `rag_documents` / `rag_chunks` / `rag_jobs`
+		// row in the same transaction.
+		//
+		// Idempotent: `addColumnIfMissing` skips the ALTER when the column is
+		// already present (fresh installs that picked it up from the v1
+		// baseline DDL above). The index is created with IF NOT EXISTS so
+		// re-running the migration is a no-op.
+		if (hasTable(raw, 'rag_sources')) {
+			addColumnIfMissing(raw, 'rag_sources', 'deleted_at', 'TEXT');
+			raw.exec(
+				`CREATE INDEX IF NOT EXISTS idx_rag_sources_deleted_at ON rag_sources(deleted_at)`,
+			);
+		}
+		setRagSchemaVersion(raw, 8);
 	}
 
 	// Future migrations slot here, each gated on `current < N`.

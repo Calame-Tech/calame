@@ -50,6 +50,16 @@ export interface RagSource {
    * time so a future `WHERE tenant_id = ?` filter can be applied uniformly.
    */
   tenantId: string;
+  /**
+   * Soft-delete marker — see migration v8 in `storage/schema.ts`. When non-
+   * null (ISO timestamp), the source is hidden from every listing query,
+   * the poll scheduler / watch manager skip it on boot, and the cleanup
+   * cron (`jobs/soft-delete-cleanup.ts`) hard-deletes it once
+   * `deleted_at < now - 7 days`. Cascading FKs drop every dependent
+   * `rag_folders` / `rag_documents` / `rag_chunks` / `rag_jobs` row in the
+   * same transaction.
+   */
+  deletedAt: string | null;
 }
 
 /**

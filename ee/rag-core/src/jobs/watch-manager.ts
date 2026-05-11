@@ -136,10 +136,18 @@ export class WatchManager {
 	start(): void {
 		let rows: SourceRowLite[];
 		try {
+			// Defensive: filter on `deleted_at IS NULL` so soft-deleted sources
+			// (v8) never re-register a watcher at boot. Probe table_info first
+			// because legacy DBs that haven't replayed `runRagMigrations` yet
+			// don't have the column — adding the clause unconditionally would
+			// crash the boot path.
+			const cols = this.#deps.db.pragma('table_info(rag_sources)') as Array<{ name: string }>;
+			const hasDeletedAt = cols.some((c) => c.name === 'deleted_at');
+			const sql = hasDeletedAt
+				? `SELECT id, type, config_encrypted FROM rag_sources WHERE type = 'local' AND deleted_at IS NULL`
+				: `SELECT id, type, config_encrypted FROM rag_sources WHERE type = 'local'`;
 			rows = this.#deps.db
-				.prepare<[], SourceRowLite>(
-					`SELECT id, type, config_encrypted FROM rag_sources WHERE type = 'local'`,
-				)
+				.prepare<[], SourceRowLite>(sql)
 				.all();
 		} catch (err: unknown) {
 			const message = err instanceof Error ? err.message : String(err);

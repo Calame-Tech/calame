@@ -82,10 +82,30 @@ function sendError(res: Response, status: number, message: string): void {
  *  - GET /api/rag/sources/:id/documents      list (non-deleted) documents
  *  - GET /api/rag/documents/:id              full document metadata + reconstructed text
  */
+/**
+ * Returns true when the parent source exists AND is not soft-deleted.
+ * Used by every listing handler to refuse to expose folders / documents
+ * of a source that the admin removed from the UI — the row may still be
+ * in `rag_sources` waiting for the 7-day cleanup cron, but to API
+ * consumers the source is gone.
+ */
+function isSourceVisible(deps: RagRouteDeps, sourceId: string): boolean {
+	const row = deps.db
+		.prepare<[string], { deleted_at: string | null }>(
+			`SELECT deleted_at FROM rag_sources WHERE id = ?`,
+		)
+		.get(sourceId);
+	return row !== undefined && row.deleted_at === null;
+}
+
 export function registerRagContentRoutes(app: Express, deps: RagRouteDeps): void {
 	app.get('/api/rag/sources/:id/folders', (req: Request, res: Response) => {
 		try {
 			const id = String(req.params['id'] ?? '');
+			if (!isSourceVisible(deps, id)) {
+				sendError(res, 404, `Source "${id}" not found.`);
+				return;
+			}
 			const rows = deps.db
 				.prepare<[string], FolderRow>(
 					`SELECT * FROM rag_folders WHERE source_id = ? ORDER BY path ASC`,
@@ -101,6 +121,10 @@ export function registerRagContentRoutes(app: Express, deps: RagRouteDeps): void
 	app.get('/api/rag/sources/:id/documents', (req: Request, res: Response) => {
 		try {
 			const id = String(req.params['id'] ?? '');
+			if (!isSourceVisible(deps, id)) {
+				sendError(res, 404, `Source "${id}" not found.`);
+				return;
+			}
 			const folder = req.query['folder'];
 
 			let rows: DocumentRow[];
@@ -135,6 +159,13 @@ export function registerRagContentRoutes(app: Express, deps: RagRouteDeps): void
 				.prepare<[string], DocumentRow>(`SELECT * FROM rag_documents WHERE id = ?`)
 				.get(id);
 			if (!row) {
+				sendError(res, 404, `Document "${id}" not found.`);
+				return;
+			}
+			// Refuse to surface a document whose parent source is soft-deleted —
+			// it would leak data that should be invisible until the source is
+			// restored (or hard-deleted by the cleanup cron).
+			if (!isSourceVisible(deps, row.source_id)) {
 				sendError(res, 404, `Document "${id}" not found.`);
 				return;
 			}

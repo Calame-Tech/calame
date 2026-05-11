@@ -20,6 +20,8 @@ interface SourceRow {
 	created_at: string;
 	updated_at: string;
 	last_sync_at: string | null;
+	/** Phase 12 (Q7) soft-delete marker. Non-null hides the source from uploads. */
+	deleted_at: string | null;
 }
 
 function rowToSource(row: SourceRow): RagSource {
@@ -32,6 +34,8 @@ function rowToSource(row: SourceRow): RagSource {
 		embeddingModelVersion: row.embedding_model_version,
 		// Defensive `?? 'default'` for fixtures that bypass the migration.
 		tenantId: row.tenant_id ?? 'default',
+		// Normalize undefined → null for fixtures that bypass the v8 migration.
+		deletedAt: row.deleted_at ?? null,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 		...(row.last_sync_at !== null ? { lastSyncAt: row.last_sync_at } : {}),
@@ -113,6 +117,11 @@ export function registerRagUploadRoutes(app: Express, deps: RagRouteDeps): void 
 				.prepare<[string], SourceRow>(`SELECT * FROM rag_sources WHERE id = ?`)
 				.get(id);
 			if (!row) {
+				sendError(res, 404, `Source "${id}" not found.`);
+				return;
+			}
+			// Refuse uploads to a soft-deleted source — restore it first.
+			if (row.deleted_at !== null) {
 				sendError(res, 404, `Source "${id}" not found.`);
 				return;
 			}

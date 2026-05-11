@@ -464,9 +464,10 @@ describe('schema migration — v4 idempotence', () => {
 			.prepare(`SELECT version FROM rag_schema_version WHERE key = 'rag'`)
 			.get() as { version: number };
 		// v5 added the FTS5 mirror, v6 added tenant_id, v7 added
-		// tokens_embedded — the migrations are no-op on this fixture's
-		// tables that aren't seeded, but the version still advances to head.
-		expect(ver.version).toBe(7);
+		// tokens_embedded, v8 added deleted_at — the migrations are no-op on
+		// this fixture's tables that aren't seeded, but the version still
+		// advances to head.
+		expect(ver.version).toBe(8);
 	});
 });
 
@@ -592,7 +593,7 @@ describe('schema migration — v6 tenant_id', () => {
 		const ver = db
 			.prepare(`SELECT version FROM rag_schema_version WHERE key = 'rag'`)
 			.get() as { version: number };
-		expect(ver.version).toBe(7);
+		expect(ver.version).toBe(8);
 	});
 
 	it('is idempotent — re-running runRagMigrations does not duplicate the column or throw', () => {
@@ -760,6 +761,440 @@ describe('registerRagSourcesRoutes — watch integration', () => {
 		expect(delRes.statusCode).toBe(200);
 		expect(build.watchRemoveSpy).toHaveBeenCalledTimes(1);
 		expect(build.watchRemoveSpy.mock.calls[0]).toEqual([created.id]);
+	});
+});
+
+describe('schema migration — v8 deleted_at', () => {
+	function hasIndex(db: BetterSqlite3Database, name: string): boolean {
+		const row = db
+			.prepare(`SELECT name FROM sqlite_master WHERE type='index' AND name = ?`)
+			.get(name) as { name: string } | undefined;
+		return row !== undefined;
+	}
+
+	it('adds deleted_at column to rag_sources on a fresh DB', () => {
+		const db = makeDb();
+		const cols = db.pragma('table_info(rag_sources)') as Array<{ name: string }>;
+		expect(cols.some((c) => c.name === 'deleted_at')).toBe(true);
+	});
+
+	it('creates the idx_rag_sources_deleted_at index', () => {
+		const db = makeDb();
+		expect(hasIndex(db, 'idx_rag_sources_deleted_at')).toBe(true);
+	});
+
+	it('upgrade path — v7 DB without the column gets it added by v8', () => {
+		const db = new Database(':memory:');
+		// Build a v7-shape DB (every table v7 expects, no deleted_at on
+		// rag_sources). We stamp the version table to 7 and re-run migrations.
+		db.exec(`
+			CREATE TABLE rag_sources (
+				id TEXT PRIMARY KEY,
+				name TEXT NOT NULL,
+				type TEXT NOT NULL,
+				config_encrypted TEXT NOT NULL,
+				embedding_setting_name TEXT NOT NULL,
+				embedding_model_version TEXT NOT NULL,
+				embedding_dimensions INTEGER NOT NULL DEFAULT 0,
+				polling_interval_seconds INTEGER,
+				tenant_id TEXT NOT NULL DEFAULT 'default',
+				created_at TEXT NOT NULL DEFAULT (datetime('now')),
+				updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+				last_sync_at TEXT
+			);
+			CREATE TABLE rag_jobs (
+				id TEXT PRIMARY KEY,
+				source_id TEXT NOT NULL,
+				status TEXT NOT NULL,
+				progress REAL NOT NULL DEFAULT 0,
+				total_documents INTEGER NOT NULL DEFAULT 0,
+				processed_documents INTEGER NOT NULL DEFAULT 0,
+				skipped_by_etag INTEGER NOT NULL DEFAULT 0,
+				gc_deleted INTEGER NOT NULL DEFAULT 0,
+				tokens_embedded INTEGER NOT NULL DEFAULT 0,
+				error TEXT,
+				tenant_id TEXT NOT NULL DEFAULT 'default',
+				started_at TEXT NOT NULL DEFAULT (datetime('now')),
+				finished_at TEXT
+			);
+			CREATE TABLE rag_schema_version (key TEXT PRIMARY KEY, version INTEGER NOT NULL);
+			INSERT INTO rag_schema_version (key, version) VALUES ('rag', 7);
+			INSERT INTO rag_sources (id, name, type, config_encrypted, embedding_setting_name, embedding_model_version)
+				VALUES ('s-legacy', 'legacy', 'local', '{}', 'test', 'mock-1');
+		`);
+
+		let cols = db.pragma('table_info(rag_sources)') as Array<{ name: string }>;
+		expect(cols.some((c) => c.name === 'deleted_at')).toBe(false);
+
+		runRagMigrations({ raw: db });
+
+		cols = db.pragma('table_info(rag_sources)') as Array<{ name: string }>;
+		expect(cols.some((c) => c.name === 'deleted_at')).toBe(true);
+		// Legacy row inherits the default (NULL) — not soft-deleted.
+		const legacy = db
+			.prepare(`SELECT deleted_at FROM rag_sources WHERE id = ?`)
+			.get('s-legacy') as { deleted_at: string | null };
+		expect(legacy.deleted_at).toBeNull();
+
+		const ver = db
+			.prepare(`SELECT version FROM rag_schema_version WHERE key = 'rag'`)
+			.get() as { version: number };
+		expect(ver.version).toBe(8);
+	});
+
+	it('is idempotent — re-running runRagMigrations does not duplicate the column or throw', () => {
+		const db = makeDb();
+		runRagMigrations({ raw: db });
+		runRagMigrations({ raw: db });
+		const cols = db.pragma('table_info(rag_sources)') as Array<{ name: string }>;
+		expect(cols.filter((c) => c.name === 'deleted_at')).toHaveLength(1);
+	});
+});
+
+describe('registerRagSourcesRoutes — soft delete', () => {
+	let db: BetterSqlite3Database;
+	let captured: CapturedApp;
+	let build: DepsBuild;
+
+	beforeEach(() => {
+		db = makeDb();
+		captured = makeCapturedApp();
+		build = makeDeps(db);
+		registerRagSourcesRoutes(captured.app, build.deps);
+	});
+
+	async function createSource(opts?: { pollingIntervalSeconds?: number }): Promise<string> {
+		const createRes = makeRes();
+		await captured.post('/api/rag/sources')(
+			makeReq({
+				body: {
+					name: 'src',
+					type: 'local',
+					config: { rootPath: '/tmp/x' },
+					embeddingSettingName: 'test',
+					...(opts?.pollingIntervalSeconds !== undefined
+						? { pollingIntervalSeconds: opts.pollingIntervalSeconds }
+						: {}),
+				},
+			}),
+			createRes.res,
+		);
+		expect(createRes.statusCode).toBe(201);
+		return (createRes.body as { source: { id: string } }).source.id;
+	}
+
+	it('DELETE marks deleted_at and keeps the row in DB (soft delete)', async () => {
+		const id = await createSource();
+
+		const delRes = makeRes();
+		await captured.delete('/api/rag/sources/:id')(
+			makeReq({ params: { id } }),
+			delRes.res,
+		);
+
+		expect(delRes.statusCode).toBe(200);
+		// Row still exists.
+		const row = db
+			.prepare(`SELECT id, deleted_at FROM rag_sources WHERE id = ?`)
+			.get(id) as { id: string; deleted_at: string | null };
+		expect(row).toBeDefined();
+		expect(row.deleted_at).not.toBeNull();
+		// Poll scheduler / watch manager tear-down still happens.
+		expect(build.removeSpy).toHaveBeenCalledWith(id);
+		expect(build.watchRemoveSpy).toHaveBeenCalledWith(id);
+	});
+
+	it('DELETE a soft-deleted source returns 410 Gone', async () => {
+		const id = await createSource();
+
+		const firstDel = makeRes();
+		await captured.delete('/api/rag/sources/:id')(
+			makeReq({ params: { id } }),
+			firstDel.res,
+		);
+		expect(firstDel.statusCode).toBe(200);
+
+		const secondDel = makeRes();
+		await captured.delete('/api/rag/sources/:id')(
+			makeReq({ params: { id } }),
+			secondDel.res,
+		);
+		expect(secondDel.statusCode).toBe(410);
+	});
+
+	it('GET /api/rag/sources excludes soft-deleted by default', async () => {
+		const id1 = await createSource();
+		const id2 = await createSource();
+
+		await captured.delete('/api/rag/sources/:id')(makeReq({ params: { id: id1 } }), makeRes().res);
+
+		const listRes = makeRes();
+		await captured.get('/api/rag/sources')(makeReq({}), listRes.res);
+
+		const body = listRes.body as { sources: Array<{ id: string }> };
+		const ids = body.sources.map((s) => s.id);
+		expect(ids).not.toContain(id1);
+		expect(ids).toContain(id2);
+	});
+
+	it('GET /api/rag/sources?filter=deleted returns only soft-deleted sources', async () => {
+		const id1 = await createSource();
+		const id2 = await createSource();
+		await captured.delete('/api/rag/sources/:id')(makeReq({ params: { id: id1 } }), makeRes().res);
+
+		const listRes = makeRes();
+		const req = makeReq({}) as Request & { query: Record<string, string> };
+		req.query = { filter: 'deleted' };
+		await captured.get('/api/rag/sources')(req, listRes.res);
+
+		const body = listRes.body as { sources: Array<{ id: string; deletedAt: string | null }> };
+		expect(body.sources.map((s) => s.id)).toEqual([id1]);
+		expect(body.sources[0]!.deletedAt).not.toBeNull();
+		expect(body.sources.map((s) => s.id)).not.toContain(id2);
+	});
+
+	it('GET /api/rag/sources/:id returns 404 for soft-deleted source without includeDeleted', async () => {
+		const id = await createSource();
+		await captured.delete('/api/rag/sources/:id')(makeReq({ params: { id } }), makeRes().res);
+
+		const getRes = makeRes();
+		await captured.get('/api/rag/sources/:id')(makeReq({ params: { id } }), getRes.res);
+		expect(getRes.statusCode).toBe(404);
+	});
+
+	it('GET /api/rag/sources/:id?includeDeleted=true returns the soft-deleted source', async () => {
+		const id = await createSource();
+		await captured.delete('/api/rag/sources/:id')(makeReq({ params: { id } }), makeRes().res);
+
+		const getRes = makeRes();
+		const req = makeReq({ params: { id } }) as Request & { query: Record<string, string> };
+		req.query = { includeDeleted: 'true' };
+		await captured.get('/api/rag/sources/:id')(req, getRes.res);
+		expect(getRes.statusCode).toBe(200);
+		const body = getRes.body as { source: { id: string; deletedAt: string | null } };
+		expect(body.source.id).toBe(id);
+		expect(body.source.deletedAt).not.toBeNull();
+	});
+
+	it('PATCH a soft-deleted source returns 404', async () => {
+		const id = await createSource();
+		await captured.delete('/api/rag/sources/:id')(makeReq({ params: { id } }), makeRes().res);
+
+		const patchRes = makeRes();
+		await captured.patch('/api/rag/sources/:id')(
+			makeReq({ params: { id }, body: { name: 'renamed' } }),
+			patchRes.res,
+		);
+		expect(patchRes.statusCode).toBe(404);
+	});
+});
+
+describe('registerRagSourcesRoutes — restore', () => {
+	let db: BetterSqlite3Database;
+	let captured: CapturedApp;
+	let build: DepsBuild;
+
+	beforeEach(() => {
+		db = makeDb();
+		captured = makeCapturedApp();
+		build = makeDeps(db);
+		registerRagSourcesRoutes(captured.app, build.deps);
+	});
+
+	it('POST /:id/restore brings a soft-deleted source back and re-registers the watcher', async () => {
+		// Seed (no polling).
+		const createRes = makeRes();
+		await captured.post('/api/rag/sources')(
+			makeReq({
+				body: {
+					name: 'src',
+					type: 'local',
+					config: { rootPath: '/tmp/x' },
+					embeddingSettingName: 'test',
+				},
+			}),
+			createRes.res,
+		);
+		const id = (createRes.body as { source: { id: string } }).source.id;
+
+		await captured.delete('/api/rag/sources/:id')(makeReq({ params: { id } }), makeRes().res);
+
+		build.watchUpsertSpy.mockClear();
+		build.upsertSpy.mockClear();
+
+		const restoreRes = makeRes();
+		await captured.post('/api/rag/sources/:id/restore')(
+			makeReq({ params: { id } }),
+			restoreRes.res,
+		);
+		expect(restoreRes.statusCode).toBe(200);
+
+		const body = restoreRes.body as { source: { id: string; deletedAt: string | null } };
+		expect(body.source.id).toBe(id);
+		expect(body.source.deletedAt).toBeNull();
+
+		// Watcher was re-registered (type === 'local').
+		expect(build.watchUpsertSpy).toHaveBeenCalledTimes(1);
+		// No polling was set, so pollScheduler.upsert was not called.
+		expect(build.upsertSpy).not.toHaveBeenCalled();
+	});
+
+	it('POST /:id/restore on a source with polling re-registers the timer too', async () => {
+		const createRes = makeRes();
+		await captured.post('/api/rag/sources')(
+			makeReq({
+				body: {
+					name: 'src',
+					type: 'local',
+					config: { rootPath: '/tmp/x' },
+					embeddingSettingName: 'test',
+					pollingIntervalSeconds: 300,
+				},
+			}),
+			createRes.res,
+		);
+		const id = (createRes.body as { source: { id: string } }).source.id;
+
+		await captured.delete('/api/rag/sources/:id')(makeReq({ params: { id } }), makeRes().res);
+		build.upsertSpy.mockClear();
+
+		const restoreRes = makeRes();
+		await captured.post('/api/rag/sources/:id/restore')(
+			makeReq({ params: { id } }),
+			restoreRes.res,
+		);
+		expect(restoreRes.statusCode).toBe(200);
+		expect(build.upsertSpy).toHaveBeenCalledWith(id, 300);
+	});
+
+	it('POST /:id/restore on a never-deleted source returns 400', async () => {
+		const createRes = makeRes();
+		await captured.post('/api/rag/sources')(
+			makeReq({
+				body: {
+					name: 'src',
+					type: 'local',
+					config: { rootPath: '/tmp/x' },
+					embeddingSettingName: 'test',
+				},
+			}),
+			createRes.res,
+		);
+		const id = (createRes.body as { source: { id: string } }).source.id;
+
+		const restoreRes = makeRes();
+		await captured.post('/api/rag/sources/:id/restore')(
+			makeReq({ params: { id } }),
+			restoreRes.res,
+		);
+		expect(restoreRes.statusCode).toBe(400);
+	});
+
+	it('POST /:id/restore on unknown id returns 404', async () => {
+		const restoreRes = makeRes();
+		await captured.post('/api/rag/sources/:id/restore')(
+			makeReq({ params: { id: 'nope' } }),
+			restoreRes.res,
+		);
+		expect(restoreRes.statusCode).toBe(404);
+	});
+});
+
+describe('registerRagSourcesRoutes — permanent delete', () => {
+	let db: BetterSqlite3Database;
+	let captured: CapturedApp;
+	let build: DepsBuild;
+
+	beforeEach(() => {
+		db = makeDb();
+		captured = makeCapturedApp();
+		build = makeDeps(db);
+		registerRagSourcesRoutes(captured.app, build.deps);
+	});
+
+	async function seedSourceWithChildren(): Promise<string> {
+		const createRes = makeRes();
+		await captured.post('/api/rag/sources')(
+			makeReq({
+				body: {
+					name: 'src',
+					type: 'local',
+					config: { rootPath: '/tmp/x' },
+					embeddingSettingName: 'test',
+				},
+			}),
+			createRes.res,
+		);
+		const id = (createRes.body as { source: { id: string } }).source.id;
+		// Seed a folder + document + chunk + job so the cascade is observable.
+		db.prepare(
+			`INSERT INTO rag_folders (id, source_id, parent_id, path, name) VALUES ('f1', ?, NULL, '/sub', 'sub')`,
+		).run(id);
+		db.prepare(
+			`INSERT INTO rag_documents (id, source_id, folder_id, path, name, mime_type, size, hash) VALUES ('d1', ?, 'f1', '/sub/a.txt', 'a.txt', 'text/plain', 10, 'h1')`,
+		).run(id);
+		db.prepare(
+			`INSERT INTO rag_chunks (id, document_id, position, text, token_count, embedding_dimensions) VALUES ('c1', 'd1', 0, 'hi', 1, 16)`,
+		).run();
+		db.prepare(
+			`INSERT INTO rag_jobs (id, source_id, status, started_at) VALUES ('j1', ?, 'completed', '2026-01-01T00:00:00.000Z')`,
+		).run(id);
+		return id;
+	}
+
+	it('DELETE /:id/permanent cascades chunks, docs, folders, jobs and calls vectorStore.deleteByDocument', async () => {
+		const id = await seedSourceWithChildren();
+
+		const delRes = makeRes();
+		await captured.delete('/api/rag/sources/:id/permanent')(
+			makeReq({ params: { id } }),
+			delRes.res,
+		);
+		expect(delRes.statusCode).toBe(200);
+
+		// Everything's gone.
+		expect(
+			db.prepare(`SELECT COUNT(*) AS c FROM rag_sources WHERE id = ?`).get(id),
+		).toEqual({ c: 0 });
+		expect(
+			db.prepare(`SELECT COUNT(*) AS c FROM rag_folders WHERE source_id = ?`).get(id),
+		).toEqual({ c: 0 });
+		expect(
+			db.prepare(`SELECT COUNT(*) AS c FROM rag_documents WHERE source_id = ?`).get(id),
+		).toEqual({ c: 0 });
+		expect(
+			db.prepare(`SELECT COUNT(*) AS c FROM rag_chunks`).get(),
+		).toEqual({ c: 0 });
+		expect(
+			db.prepare(`SELECT COUNT(*) AS c FROM rag_jobs WHERE source_id = ?`).get(id),
+		).toEqual({ c: 0 });
+
+		// vectorStore.deleteByDocument was called for each document.
+		expect(build.deps.vectorStore.deleteByDocument).toHaveBeenCalledWith('d1');
+	});
+
+	it('DELETE /:id/permanent works on an already-soft-deleted source', async () => {
+		const id = await seedSourceWithChildren();
+		await captured.delete('/api/rag/sources/:id')(makeReq({ params: { id } }), makeRes().res);
+
+		const delRes = makeRes();
+		await captured.delete('/api/rag/sources/:id/permanent')(
+			makeReq({ params: { id } }),
+			delRes.res,
+		);
+		expect(delRes.statusCode).toBe(200);
+		expect(
+			db.prepare(`SELECT COUNT(*) AS c FROM rag_sources WHERE id = ?`).get(id),
+		).toEqual({ c: 0 });
+	});
+
+	it('DELETE /:id/permanent on unknown id returns 404', async () => {
+		const delRes = makeRes();
+		await captured.delete('/api/rag/sources/:id/permanent')(
+			makeReq({ params: { id: 'nope' } }),
+			delRes.res,
+		);
+		expect(delRes.statusCode).toBe(404);
 	});
 });
 

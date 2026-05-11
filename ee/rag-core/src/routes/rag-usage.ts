@@ -88,7 +88,18 @@ export function registerRagUsageRoutes(app: Express, deps: RagRouteDeps): void {
 			// Build the WHERE clause once and reuse across the three roll-ups
 			// below. We always filter on tenant + completed status; the date
 			// bound is appended only for week/month.
-			const baseWhere = ['j.status = ?', 'j.tenant_id = ?'];
+			//
+			// `s.deleted_at IS NULL` excludes jobs from soft-deleted sources —
+			// they'd skew the dashboard with cost rows for sources the user
+			// can no longer see, and they're scheduled for hard-deletion by
+			// the cleanup cron anyway. The condition uses `(s.id IS NULL OR
+			// s.deleted_at IS NULL)` to tolerate the LEFT JOIN: jobs whose
+			// source row was already hard-deleted (rare race) still count.
+			const baseWhere = [
+				'j.status = ?',
+				'j.tenant_id = ?',
+				'(s.id IS NULL OR s.deleted_at IS NULL)',
+			];
 			const baseParams: unknown[] = ['completed', tenantId];
 			if (sinceIso !== null) {
 				baseWhere.push('j.started_at >= ?');
@@ -164,7 +175,9 @@ export function registerRagUsageRoutes(app: Express, deps: RagRouteDeps): void {
 
 			// 3. per-day — bucketize on the `started_at` ISO date prefix.
 			// SUBSTR is portable across SQLite versions and avoids the
-			// platform-specific `date()` formatting quirks.
+			// platform-specific `date()` formatting quirks. The LEFT JOIN on
+			// `rag_sources` mirrors the other two roll-ups so the shared
+			// `whereSql` (which references `s.deleted_at`) resolves cleanly.
 			interface DayRow {
 				date: string;
 				tokens: number | null;
@@ -175,6 +188,7 @@ export function registerRagUsageRoutes(app: Express, deps: RagRouteDeps): void {
 					   SUBSTR(j.started_at, 1, 10) AS date,
 					   SUM(j.tokens_embedded) AS tokens
 					 FROM rag_jobs j
+					 LEFT JOIN rag_sources s ON s.id = j.source_id
 					 ${whereSql}
 					 GROUP BY SUBSTR(j.started_at, 1, 10)
 					 ORDER BY date ASC`,

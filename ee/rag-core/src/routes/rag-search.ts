@@ -54,17 +54,19 @@ export function registerRagSearchRoutes(app: Express, deps: RagRouteDeps): void 
 
 		try {
 			// Resolve the embedding setting to use for the query vector.
+			// Soft-deleted sources are excluded — searching from a retired
+			// source would mix dangling chunks back into results.
 			let resolvedSettingName: string | null = settingName ?? null;
 			if (!resolvedSettingName) {
 				const firstSource = sourceIds?.[0]
 					? (deps.db
 							.prepare<[string], { embedding_setting_name: string }>(
-								`SELECT embedding_setting_name FROM rag_sources WHERE id = ?`,
+								`SELECT embedding_setting_name FROM rag_sources WHERE id = ? AND deleted_at IS NULL`,
 							)
 							.get(sourceIds[0]) ?? null)
 					: (deps.db
 							.prepare<[], { embedding_setting_name: string }>(
-								`SELECT embedding_setting_name FROM rag_sources ORDER BY created_at ASC LIMIT 1`,
+								`SELECT embedding_setting_name FROM rag_sources WHERE deleted_at IS NULL ORDER BY created_at ASC LIMIT 1`,
 							)
 							.get() ?? null);
 				if (!firstSource) {
@@ -90,6 +92,10 @@ export function registerRagSearchRoutes(app: Express, deps: RagRouteDeps): void 
 			}
 
 			// Hydrate chunk metadata in a single SQL roundtrip.
+			// The extra JOIN on `rag_sources` + `s.deleted_at IS NULL` filters
+			// out chunks whose parent source has been soft-deleted — their
+			// rows are kept in the DB until the cleanup cron runs but should
+			// never surface in search results.
 			const placeholders = hits.map(() => '?').join(',');
 			const ids = hits.map((h) => h.chunkId);
 			const rows = deps.db
@@ -105,8 +111,11 @@ export function registerRagSearchRoutes(app: Express, deps: RagRouteDeps): void 
 					   f.path AS folder_path
 					 FROM rag_chunks c
 					 JOIN rag_documents d ON d.id = c.document_id
+					 JOIN rag_sources s ON s.id = d.source_id
 					 LEFT JOIN rag_folders f ON f.id = d.folder_id
-					 WHERE c.id IN (${placeholders}) AND d.deleted_at IS NULL`,
+					 WHERE c.id IN (${placeholders})
+					   AND d.deleted_at IS NULL
+					   AND s.deleted_at IS NULL`,
 				)
 				.all(...ids) as ChunkJoinRow[];
 

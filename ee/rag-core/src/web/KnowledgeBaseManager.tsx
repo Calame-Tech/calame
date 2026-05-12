@@ -212,6 +212,11 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
   // Optimistic active IDs: sourceIds where we just triggered a sync but the
   // poll hasn't returned yet, so the badge should show "in progress" immediately.
   const [optimisticActiveIds, setOptimisticActiveIds] = useState<Set<string>>(new Set());
+  // Bumped on every successful upload so `FolderTreeView` re-fetches the
+  // source root and the freshly indexed documents appear without a manual
+  // page reload. Per source id, so switching sources doesn't carry stale
+  // counters across.
+  const [folderRefreshTicks, setFolderRefreshTicks] = useState<Record<string, number>>({});
 
   const refreshSources = useCallback(async (): Promise<void> => {
     try {
@@ -792,13 +797,25 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
                 />
               </div>
 
-              <FolderTreeView source={selectedSource} />
+              <FolderTreeView
+                source={selectedSource}
+                refreshKey={folderRefreshTicks[selectedSource.id] ?? 0}
+              />
               {selectedSource.type === 'local' && (
                 <div className="card-primary p-4 space-y-2">
                   <h3 className="eyebrow">Téléverser des fichiers</h3>
                   <DocumentUploader
                     source={selectedSource}
-                    onUploaded={() => void refreshSources()}
+                    onUploaded={() => {
+                      // Refresh the source list (counts) AND bump the
+                      // FolderTreeView refresh key so the newly indexed
+                      // documents show up immediately at the root level.
+                      void refreshSources();
+                      setFolderRefreshTicks((prev) => ({
+                        ...prev,
+                        [selectedSource.id]: (prev[selectedSource.id] ?? 0) + 1,
+                      }));
+                    }}
                   />
                 </div>
               )}

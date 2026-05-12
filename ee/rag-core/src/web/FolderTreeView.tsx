@@ -16,6 +16,15 @@ import {
 
 interface FolderTreeViewProps {
 	source: RagSourcePublic;
+	/**
+	 * Bumping this value triggers a re-fetch of the source root so freshly
+	 * uploaded documents become visible without a full page reload. Currently
+	 * the upload route always lands files at the root folder (cf.
+	 * `ee/rag-core/src/routes/rag-upload.ts` — `folder: null`), so we only
+	 * refresh the root level on bump. The user's `expanded` set and the
+	 * cached child folders are preserved so the tree doesn't collapse.
+	 */
+	refreshKey?: number;
 }
 
 /** Children of a folder (or of the source root, when key is `__root__`). */
@@ -95,7 +104,7 @@ function ChevronIcon({ open }: { open: boolean }) {
 	);
 }
 
-export default function FolderTreeView({ source }: FolderTreeViewProps) {
+export default function FolderTreeView({ source, refreshKey = 0 }: FolderTreeViewProps) {
 	// Map keyed by folderId, or ROOT_KEY for the source root.
 	const [children, setChildren] = useState<Record<string, FolderChildren>>({});
 	const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -163,6 +172,16 @@ export default function FolderTreeView({ source }: FolderTreeViewProps) {
 		setSyncMessage(null);
 		void loadChildren(null);
 	}, [source.id, loadChildren]);
+
+	// Re-fetch the root level when the parent bumps `refreshKey` (typically
+	// after an upload completes). We skip the initial render (refreshKey === 0
+	// by default) because the source-change effect above already loaded it.
+	// `expanded` and the cached subfolders are intentionally preserved so the
+	// tree doesn't collapse under the user's feet on every upload.
+	useEffect(() => {
+		if (refreshKey === 0) return;
+		void loadChildren(null);
+	}, [refreshKey, loadChildren]);
 
 	const toggle = (folder: RagFolder) => {
 		setExpanded((prev) => {

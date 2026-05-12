@@ -9,8 +9,11 @@ const SsoLoginButton = lazy(() =>
   import('@calame-ee/sso/web')
     .then((m) => ({ default: m.SsoLoginButton }))
     .catch(() => ({
+      // The real component self-hides when OIDC is not configured; the
+      // fallback matches that contract. Returns a Fragment (not `null`)
+      // so the type matches React.lazy's expected ComponentType.
       default: function SsoLoginButtonUnavailable() {
-        return null;
+        return <></>;
       },
     })),
 );

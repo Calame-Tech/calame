@@ -250,7 +250,12 @@ export interface PoolStats {
   stats: { active: number; idle: number; waiting: number; total: number };
 }
 
-// RAG / Sources access scoping — mirrors @calame/core ScopeSelection
+// RAG / Sources access scoping — mirrors @calame/core ScopeSelection.
+// Keep the arms in sync with `packages/core/src/sources/types.ts:ScopeSelection`
+// so that values flowing from @calame-ee/rag-core/web components type-check
+// without `unknown` casts. New arms added on the core side must be reflected
+// here even if the web does not render them — the components on this side
+// preserve them inertly via the override pattern.
 export type ScopeSelection =
   | {
       kind: 'relational';
@@ -263,6 +268,16 @@ export type ScopeSelection =
       mode: 'allowAll' | 'allowList';
       allowedFolders: readonly string[];
       allowedDocuments: readonly string[];
+    }
+  | {
+      kind: 'api';
+      /**
+       * Allowlist of operation ids the LLM may invoke via this source.
+       * Mirrors `packages/core/src/sources/types.ts:ScopeSelection`'s `api` arm.
+       * The web layer doesn't render API scopes today — `RagAccessSelector`
+       * preserves them inertly through its scope-merge pattern.
+       */
+      allowedOperations: readonly string[];
     };
 
 // Serve status

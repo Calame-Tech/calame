@@ -38,8 +38,11 @@ const ProfileSsoNotice = lazy(() =>
   import('@calame-ee/sso/web')
     .then((m) => ({ default: m.ProfileSsoNotice }))
     .catch(() => ({
+      // Informational banner — disappear silently when SSO is absent.
+      // Return a Fragment (not `null`) so the type matches React.lazy's expected
+      // `ComponentType<{}>` shape (() => JSX.Element, not () => null).
       default: function ProfileSsoNoticeUnavailable() {
-        return null;
+        return <></>;
       },
     })),
 );
@@ -2735,19 +2738,16 @@ function McpDetailView({
               >
                 <RagAccessSelector
                   profileName={profile.name}
-                  initialScopes={(profile.scopes ?? {}) as unknown as Record<string, ScopeSelection>}
+                  initialScopes={profile.scopes ?? {}}
                   initialSources={profile.sources ?? []}
                   onSaved={(newScopes, newSources) => {
                     // Update local profile state — do NOT call persistProfiles here.
                     // The RagAccessSelector already posted to /api/profiles/:name/scopes.
-                    // Cast via unknown: the mirror type in schema.ts and @calame/core are
-                    // structurally equivalent at the values we use; the mismatch is only on
-                    // tableOptions (unknown vs TableToolOptions) which is inert here.
                     onProfilesChange((prev) => {
                       const updated = [...prev];
                       updated[profileIndex] = {
                         ...updated[profileIndex],
-                        scopes: newScopes as unknown as Record<string, ScopeSelection>,
+                        scopes: newScopes,
                         sources: newSources,
                       };
                       return updated;
@@ -3564,7 +3564,7 @@ function ConfigurationDetailView({
           >
             <RagAccessSelector
               profileName={configName}
-              initialScopes={configDocumentScopes as unknown as Record<string, ScopeSelection>}
+              initialScopes={configDocumentScopes}
               initialSources={configDocumentSources}
               saveEndpoint="/api/configurations"
               saveBodyTransform={({ sources, scopes }) => ({
@@ -3584,7 +3584,7 @@ function ConfigurationDetailView({
                   sources: [...configRelationalSources, ...newSources],
                   scopes: {
                     ...configRelationalScopes,
-                    ...(newScopes as unknown as Record<string, ScopeSelection>),
+                    ...newScopes,
                   },
                 });
               }}

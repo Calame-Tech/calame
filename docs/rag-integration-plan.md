@@ -8,6 +8,14 @@ Ce document propose une architecture pour ajouter une couche RAG (Retrieval-Augm
 
 > **Pivot stratégique (2026-05-07)** — La suite de la roadmap RAG est désormais portée par un plan plus large : **`docs/sources-unified-plan.md`**. La RAG-Phase-2 originale de ce document (intégration profiles + MCP) **est livrée comme Phase 3 de ce plan unifié**, dans le cadre d'une refonte qui généralise « Connection (DB) » et « RagSource » en un concept polymorphique `Source` accueillant aussi les futurs APIs / SaaS / streams. Lire les deux docs en parallèle pour comprendre le contexte.
 
+### ✅ Livré 2026-05-11 — UX fixes & typing cleanup
+
+Trois petites tranches livrées dans la même session, listées ici pour traçabilité :
+
+- **`3fd56fc`** — fix(rag-core/web) : refresh folder tree after upload so new files appear instantly. Signalé en live : un fichier droppé dans une base de connaissance n'apparaissait dans `FolderTreeView` qu'après reload de la page. Cause : `FolderTreeView` ne re-fetchait que sur changement de `source.id` ; `onUploaded` côté `KnowledgeBaseManager` ne refraîchissait que la liste des sources (counts). Fix : nouvelle prop `refreshKey?: number` sur `FolderTreeView` + un `useEffect` dédié qui re-charge le root quand le key bumpe (l'upload route va toujours en `folder: null`). `KnowledgeBaseManager` maintient un `folderRefreshTicks: Record<sourceId, number>` (per-source, pour ne pas embarquer de compteurs périmés en switchant). L'état `expanded` et les caches de sous-dossiers sont préservés — l'arbre ne se collapse pas.
+- **`269685d`** — fix(web) : align ScopeSelection mirror + drop the 4 unknown casts. Cf. section "Issues à ouvrir post-commit" pour le détail.
+- **`7adeb0f`** — refactor(rag-core/web) : split RagAccessSelector into sub-components. Ferme le God Component flag du QA review post-Phase 4. Cf. section "Issues à ouvrir post-commit" pour le détail.
+
 ### ✅ Livré 2026-05-11 — Phase 6 : Data Profile RAG support (commit `d5cd010`)
 
 **Question d'origine** : « Actuellement le profile pour le rag se fait dans le MCP. Est-ce que c'est prévu de pouvoir le faire dans le Data Profile ? »

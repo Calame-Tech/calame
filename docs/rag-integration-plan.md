@@ -429,12 +429,13 @@ Quand on a démarré pour tester en vrai, plusieurs choses cassaient. Voici les 
 | 3 | Open-core : tout BUSL en `ee/` | ✅ |
 | 4 | Parser PDF : `unpdf` | ✅ |
 
-### 🛑 Limitations restantes (après 2026-05-08)
+### 🛑 Limitations restantes (mis à jour 2026-05-11)
 
 - **Une seule dimension d'embedding par instance** (sqlite-vec exige une dim fixée au create de la virtual table). Auto-heal possible si rag_chunks est vide (cf. fix #3). Phase 5 du plan original prévoyait un vec0 par dimension — **toujours d'actualité**.
-- **Sync synchrone bloquante** : OK pour tester, pas pour de gros corpora. Phase 4 du plan original — **toujours pendant**.
-- **Connecteurs externes absents** : seul `LocalFolderConnector`. S3/HTTP/GDrive — **toujours pendant**, Phase 3 du plan original (= ce qui suit dans ce document).
-- **Watch incrémental absent** (`chokidar`, polling) : Phase 4 du plan original — **toujours pendant**.
+- **OCR PDF scannés absents** (§12 Q8, Tesseract) — les PDF scannés sont indexés vides. Scope futur, faible priorité — sera dans un `ee/rag-ocr` package quand un client en aura besoin.
+- ~~**Sync synchrone bloquante**~~ → ✅ **résolu** : `SyncQueue` FIFO + dedupe per-sourceId + HTTP 202 immédiat (cf. `ee/rag-core/src/jobs/sync-queue.ts`, `ee/rag-core/src/routes/rag-index.ts:605-672`).
+- ~~**Connecteurs externes absents**~~ → ✅ **résolu** : `ee/rag-connectors/src/{local-folder,s3,http}.ts` + connecteurs SaaS dédiés (`ee/rag-gdrive`, `ee/rag-gsheets`, `ee/rag-notion`, `ee/rag-microsoft`).
+- ~~**Watch incrémental absent**~~ → ✅ **résolu** : `WatchManager` (chokidar) + `PollScheduler` partagent un `triggerSync` qui passe par la `SyncQueue` pour dedupe (cf. `ee/rag-core/src/jobs/watch-manager.ts`, `poll-scheduler.ts`).
 - ~~**PII detection non appliquée** sur les chunks (cf. §12 question 5)~~ → ✅ **résolu** par le commit `423c81a` (« mask PII in chunks before returning to LLM »). Décision actée : on applique le **même** `applyPiiMasking` que les colonnes DB (vient de `@calame/core`, partagé via `ee/rag-core/src/pii-masking.ts`). Masking en réponse MCP (pas en ingestion) — cohérent avec le pattern DB où la masque est en RESPONSE-time aussi. Couvert par le test E2E Path B (`rag-e2e.test.ts`, commit `6df0fed`) qui vérifie 2 emails masqués + audit `piiRedacted.email >= 2`.
 - ~~**Tests E2E manquants**~~ → ✅ **résolu** par le commit `6df0fed` (`ee/rag-core/src/__tests__/rag-e2e.test.ts`). Couvre ingest → search → MCP → PII → allowList.
 
@@ -446,15 +447,16 @@ Quand on a démarré pour tester en vrai, plusieurs choses cassaient. Voici les 
 - ~~**Polish UX `ragDisabledReason`**~~ → livré dans le commit `d774228`
 - ~~**Pas d'UI** pour assigner un scope `document` à un profile~~ → en cours (Phase 4 plan unifié, non commité 2026-05-09) : `RagAccessSelector` (BUSL, 1134 lignes) + `SourcesPage` (Apache, tabbed) + preview live counts. Plus de curl manuel.
 
-### 🟢 Statut technique (2026-05-09)
+### 🟢 Statut technique (2026-05-11)
 
-- `pnpm install` : OK 8 packages
+- `pnpm install` : OK 11 packages workspace (Apache + BUSL EE)
 - `pnpm build` : OK tous packages compilent (TS strict, no `any`)
-- `pnpm lint` : 0 erreur 0 warning sur `packages/*/src/**`. Gap connu : le script ne couvre pas `ee/*/src/**` (à corriger en Phase 5 — pour l'instant validation manuelle via `npx eslint ee/...`)
-- `pnpm test` : **790 tests verts** (28 sso + 204 core + 53 rag-core + 72 connectors + 433 cli). +22 tests vs. 768 du 2026-05-08 (15 helpers `rag-access-state` + 7 preview live/fallback + sources empty 200 + serve-adapter-tools `sources: []`). Pré-existing better-sqlite3 NODE_MODULE_VERSION mismatch (115 vs 137) sur tests SQLite — résolu localement par `pnpm rebuild better-sqlite3`.
-- Smoke test manuel : drag & drop d'un .txt fonctionne, ingestion complète + chunking + embeddings + sqlite-vec OK. Sync via le bouton fonctionne après les fixes.
-- Smoke test 2026-05-08 : chat MCP DB fonctionne après le fix `781fca4` (test "donne moi le nombre de colis total" → LLM voit `query_<table>`, `describe_<table>`, etc., et répond).
-- ⏳ Smoke test Phase 4 UI (RagAccessSelector → save → MCP filtré) : pas encore fait, à faire avant commit.
+- `pnpm lint` : 0 erreur 0 warning sur `packages/*/src/**`. Rule `no-restricted-imports` étend la boundary open-core à `@calame-ee/*` uniformément (test files exclus). Gap historique sur `ee/*/src/**` toujours non couvert par le script global — validation via `npx eslint ee/...` au cas par cas.
+- `pnpm test` : **1596 tests verts** (28 sso + 267 core + 105 connectors + 359 rag-core + 30 web + 67 rag-connectors + 34 gdrive + 42 gsheets + 50 notion + 28 microsoft + 536 cli). +806 vs. 790 du 2026-05-09 — gros bonds essentiellement dans `packages/cli` (auth, tenancy, profile-scopes, serve-adapter-tools, configurations) et les connecteurs SaaS livrés depuis.
+- Smoke test 2026-05-08 : chat MCP DB fonctionne (test "donne moi le nombre de colis total" → LLM voit `query_<table>` etc.).
+- Smoke test 2026-05-09 : drag & drop d'un .txt → ingestion + chunking + embeddings + sqlite-vec OK.
+- ⏳ Smoke test Phase 4 UI (RagAccessSelector → save → MCP filtré, allowAll + allowList) : pas encore fait. Faisable maintenant ; livre quand tu testes.
+- ⏳ Smoke test Phase 6 UI (Data Profile tabbed → cocher folders KB → save → un MCP Profile qui référence cette Config voit `rag_search` filtré) : pas encore fait.
 
 ### 🔜 Prochaine session — Priorités
 
@@ -472,10 +474,10 @@ Quand on a démarré pour tester en vrai, plusieurs choses cassaient. Voici les 
    - 📋 Drop alias middleware `/api/connections/*` et `/api/rag/*` après une release avec header `Sunset` (≥ 2026-Q3). **Bloqué par release schedule** — pas par du dev work.
    - ✅ ~~Migrer les value imports statiques `@calame-ee/sso`~~ → **livré 2026-05-11** (commit `90ae706`). `packages/cli/src/sso-runtime.ts` (NEW, mirror exact de `rag-runtime.ts`) lazy-load `@calame-ee/sso` et stash les classes sur `AppState.ssoRuntime`. `app.ts` et `oauth.ts` consomment via le runtime, register les routes OIDC sous `if (appState.ssoRuntime)`. Frontend : 5 composants SSO (`OidcSettings`, `ProfileSsoNotice`, `DataScopingSection`, `SsoLoginButton`, `ChatSsoLogin`) en `React.lazy` + `Suspense` avec fallback gracieux. **Rule ESLint étendue** : `@calame-ee/rag-*` → `@calame-ee/*` (uniforme), test files exclus (`__tests__/**`, `*.test.ts(x)`). 1577 tests verts sur 11 packages, QA score 9.5/10.
    - ✅ ~~Décider du sort de `ConnectionManager.tsx` standalone~~ → **acté 2026-05-11** : **on garde** le composant comme corps du tab `databases` de `SourcesPage` (cf. `SourcesPage.tsx:4` + `:195`). Il n'est plus jamais rendu en standalone — la View `{ page: 'connections' }` est conservée comme **alias legacy** qui route via `<SourcesPage currentTab="databases">` (App.tsx:1154-1168) pour ne pas casser les deep-links existants. Pas de rewrite : ConnectionManager fait ~600 lignes de logique DB CRUD bien isolée, l'inline-r dans SourcesPage gonflerait celui-ci sans bénéfice. Décision documentée, pas de code change.
-6. **Sync async (Phase 4 plan original)** : passer la sync `LocalFolderConnector` en mode background job + queue. Toujours pertinent pour gros corpora.
-7. **Connecteurs externes (Phase 3 plan original)** : `S3Connector`, `HttpConnector` dans `ee/rag-connectors`. Important pour passer du POC à un vrai usage. Bénéficie maintenant de l'UI `SourcesPage` qui peut accueillir n'importe quel kind via `AddSourceModal`.
+6. ~~**Sync async (Phase 4 plan original)**~~ → ✅ **livré**. `SyncQueue` FIFO + dedupe per-sourceId, route POST `/sync` retourne 202 immédiat (HTTP 202 + job persisté en `rag_jobs`). `WatchManager` (chokidar) + `PollScheduler` (cron interne) partagent la même queue pour le dedupe. `recoverOrphanedJobs` sweep les jobs `pending`/`running` orphelins au boot. Cf. `ee/rag-core/src/jobs/{sync-queue,watch-manager,poll-scheduler,rate-limiter,soft-delete-cleanup,embedding-cap}.ts` + tests.
+7. ~~**Connecteurs externes (Phase 3 plan original)**~~ → ✅ **livré**. `ee/rag-connectors/src/{local-folder,s3,http}.ts` pour le pack de base + packages dédiés pour les SaaS lourds : `ee/rag-gdrive` (service account), `ee/rag-gsheets` (per-tab + header-aware CSV chunking), `ee/rag-notion` (internal integration), `ee/rag-microsoft` (SharePoint via Graph + client credentials). Tous lazy-loadés dans `rag-runtime.ts` — `resolveConnector(type)` retourne `null` si le package n'est pas installé, route répond 501.
 8. ~~**Décision PII** (cf. §12 question 5)~~ → ✅ **tranchée et livrée** (commit `423c81a` + couverture par le test E2E `rag-e2e.test.ts:Path B`). Réponse : **OUI**, on applique le même PII detector (`applyPiiMasking` de `@calame/core`) aux chunks avant retour MCP. Localisation : `ee/rag-core/src/pii-masking.ts` (wrapper `maskSearchResult`) ; intégration : `ee/rag-core/src/source-adapter.ts:493-503` ; config via env `CALAME_RAG_PII_MASK` (safe-by-default = enabled). Cohérent avec le pattern DB où le masque est également RESPONSE-time (la DB stocke les valeurs brutes, le masquage s'applique sur le résultat de la query avant retour MCP). Audit log expose les counts par catégorie via `piiRedacted`. Coût : ~1 scan regex par chunk au moment du `rag_search` — négligeable (microsecondes par chunk, dominé par le RTT de l'embedding).
-9. **Délivrer un kind `api` ou `stream`** — premier test de l'extensibilité du `SourceAdapter`. HTTP/REST simple ou OpenAPI generator. Marqué TODO dans `SourceSchema` mais jamais essayé concrètement, donc on ne sait pas encore si l'abstraction tient.
+9. ~~**Délivrer un kind `api` ou `stream`**~~ → ✅ **livré** (commit `22ab106` « new kind 'api' validates SourceAdapter abstraction »). `packages/connectors/src/api-adapter.ts` ship un `HttpApiSourceAdapter` (~370 LOC) qui implémente `SourceAdapter<TConfig, { kind: 'api' }, TCaps>` end-to-end : MVP HTTP GET avec scope filtering sur `allowedOperations`, MCP registration via `http_get` tool. **Verdict** : l'abstraction tient — aucun changement d'interface, aucune gymnastic de typage côté host, aucune migration. 47 tests dans `__tests__/api-adapter.test.ts` valident le contrat. Kind `stream` reste TODO mais sera trivial à ajouter sur la même base.
 
 ### Fichiers modifiés / créés en récap
 

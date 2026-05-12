@@ -10,6 +10,8 @@ import {
   getConfigurationTableOptions,
   getConfigurationColumnMasking,
   getConfigurationRelationalSources,
+  getConfigurationDocumentScopes,
+  getConfigurationDocumentSources,
   type ProfileScopeShape,
 } from '../accessors.js';
 import type { ServeConfiguration } from '../../serve/types.js';
@@ -436,5 +438,84 @@ describe("configuration accessors — third 'api' kind ignored by tabular helper
       },
     });
     expect(getConfigurationRelationalSources(cfg)).toEqual(['db1']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Document accessors
+// ---------------------------------------------------------------------------
+
+describe('configuration document accessors', () => {
+  it('getConfigurationDocumentScopes returns indexed kind=document scopes', () => {
+    const cfg = makeCfg({
+      sources: ['kb1', 'kb2', 'db1'],
+      scopes: {
+        kb1: {
+          kind: 'document',
+          mode: 'allowAll',
+          allowedFolders: [],
+          allowedDocuments: [],
+        },
+        kb2: {
+          kind: 'document',
+          mode: 'allowList',
+          allowedFolders: ['docs/faq'],
+          allowedDocuments: ['doc-1'],
+        },
+        db1: { kind: 'relational', selectedTables: { users: ['id'] } },
+      },
+    });
+    const docs = getConfigurationDocumentScopes(cfg);
+    expect(Object.keys(docs).sort()).toEqual(['kb1', 'kb2']);
+    expect(docs['kb1']!.mode).toBe('allowAll');
+    expect(docs['kb2']!.allowedFolders).toEqual(['docs/faq']);
+    expect(docs['kb2']!.allowedDocuments).toEqual(['doc-1']);
+  });
+
+  it('getConfigurationDocumentScopes returns empty object when no document scopes', () => {
+    const cfg = makeCfg({
+      sources: ['db1'],
+      scopes: { db1: { kind: 'relational', selectedTables: {} } },
+    });
+    expect(getConfigurationDocumentScopes(cfg)).toEqual({});
+  });
+
+  it('getConfigurationDocumentScopes returns empty object when scopes is undefined', () => {
+    // Legacy-only config with no `scopes` field set.
+    const cfg = makeCfg({
+      connections: ['legacy-db'],
+      selectedTables: { table_a: ['col1'] },
+    });
+    expect(getConfigurationDocumentScopes(cfg)).toEqual({});
+  });
+
+  it('getConfigurationDocumentSources lists the kind=document source ids', () => {
+    const cfg = makeCfg({
+      sources: ['kb1', 'db1', 'kb2'],
+      scopes: {
+        kb1: {
+          kind: 'document',
+          mode: 'allowAll',
+          allowedFolders: [],
+          allowedDocuments: [],
+        },
+        db1: { kind: 'relational', selectedTables: {} },
+        kb2: {
+          kind: 'document',
+          mode: 'allowList',
+          allowedFolders: ['x'],
+          allowedDocuments: [],
+        },
+      },
+    });
+    expect(getConfigurationDocumentSources(cfg).sort()).toEqual(['kb1', 'kb2']);
+  });
+
+  it('getConfigurationDocumentSources returns empty array for relational-only configs', () => {
+    const cfg = makeCfg({
+      sources: ['db1'],
+      scopes: { db1: { kind: 'relational', selectedTables: {} } },
+    });
+    expect(getConfigurationDocumentSources(cfg)).toEqual([]);
   });
 });

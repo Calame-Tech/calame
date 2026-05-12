@@ -1234,6 +1234,7 @@ export default function App() {
                   onNavigateToEditConnection={(c: string) =>
                     setView({ page: 'connections', backTo: view, editConnectionName: c })
                   }
+                  ragEnabled={ragEnabled}
                 />
               </div>
             )}
@@ -2957,6 +2958,8 @@ interface ConfigurationDetailViewProps {
   onGlobalMaskingRulesChange: (rules: GlobalMaskingRule[]) => void;
   onNavigateToConnections?: () => void;
   onNavigateToEditConnection?: (connName: string) => void;
+  /** Whether the RAG runtime is available on this instance. Controls visibility of the Knowledge tab. */
+  ragEnabled?: boolean;
 }
 
 function ConfigurationDetailView({
@@ -2976,6 +2979,7 @@ function ConfigurationDetailView({
   onGlobalMaskingRulesChange,
   onNavigateToConnections,
   onNavigateToEditConnection,
+  ragEnabled = false,
 }: ConfigurationDetailViewProps) {
   const config = configurations.find((c) => c.name === configName);
 
@@ -2998,6 +3002,9 @@ function ConfigurationDetailView({
   const [saved, setSaved] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  // Tab switcher: 'databases' mirrors the existing UI, 'knowledge' mounts RagAccessSelector.
+  const [activeConfigTab, setActiveConfigTab] = useState<'databases' | 'knowledge'>('databases');
 
   const availableConnectionNames = connections.map((c) => c.name);
 
@@ -3057,6 +3064,56 @@ function ConfigurationDetailView({
   };
 
   const [saveError, setSaveError] = useState<string | null>(null);
+
+  // ---------------------------------------------------------------------------
+  // RAG scope helpers — extract document-kind entries from the current config.
+  // These are preserved verbatim when the Databases tab is saved, and updated
+  // by RagAccessSelector when the Knowledge tab is saved.
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Returns a Record of only the `kind: 'document'` scopes in the config.
+   * Used to seed RagAccessSelector with the existing document scopes.
+   */
+  const configDocumentScopes = useMemo<Record<string, ScopeSelection>>(() => {
+    if (!config?.scopes) return {};
+    const result: Record<string, ScopeSelection> = {};
+    for (const [id, scope] of Object.entries(config.scopes)) {
+      if (scope.kind === 'document') result[id] = scope;
+    }
+    return result;
+  }, [config]);
+
+  /**
+   * Returns the list of sourceIds whose scope kind is 'document'.
+   * Used to seed RagAccessSelector#initialSources.
+   */
+  const configDocumentSources = useMemo<string[]>(() => {
+    if (!config?.sources || !config?.scopes) return [];
+    return config.sources.filter(
+      (id) => config.scopes !== undefined && config.scopes[id]?.kind === 'document',
+    );
+  }, [config]);
+
+  /**
+   * Returns the non-document (relational) scopes and sources from the config.
+   * Preserved when saving from the Knowledge tab so relational settings aren't lost.
+   */
+  const configRelationalScopes = useMemo<Record<string, ScopeSelection>>(() => {
+    if (!config?.scopes) return {};
+    const result: Record<string, ScopeSelection> = {};
+    for (const [id, scope] of Object.entries(config.scopes)) {
+      if (scope.kind !== 'document') result[id] = scope;
+    }
+    return result;
+  }, [config]);
+
+  const configRelationalSources = useMemo<string[]>(() => {
+    if (!config?.sources || !config?.scopes) return [];
+    return config.sources.filter(
+      (id) => config.scopes === undefined || config.scopes[id]?.kind !== 'document',
+    );
+  }, [config]);
 
   const handleSave = async () => {
     setSaveError(null);
@@ -3293,6 +3350,53 @@ function ConfigurationDetailView({
         </div>
       </div>
 
+      {/* Tab switcher — Databases / Knowledge */}
+      <div className="border-b border-gray-700">
+        <div className="flex gap-0">
+          {(
+            [
+              { id: 'databases', label: 'Databases', disabled: false },
+              { id: 'knowledge', label: 'Knowledge bases', disabled: !ragEnabled },
+            ] as const
+          ).map((tab) => {
+            const isActive = activeConfigTab === tab.id;
+            if (tab.disabled) {
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  disabled
+                  aria-disabled="true"
+                  title="Les bases de connaissance RAG ne sont pas disponibles sur cette instance."
+                  className="px-5 py-3 text-sm font-medium border-b-2 border-transparent text-gray-600 cursor-not-allowed opacity-50"
+                >
+                  {tab.label}
+                </button>
+              );
+            }
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveConfigTab(tab.id)}
+                aria-current={isActive ? 'true' : undefined}
+                className={[
+                  'px-5 py-3 text-sm font-medium border-b-2 transition-all duration-200',
+                  isActive
+                    ? 'border-os-500 text-os-400'
+                    : 'border-transparent text-gray-500 hover:text-gray-300 hover:border-gray-600',
+                ].join(' ')}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* --- DATABASES TAB --- */}
+      {activeConfigTab === 'databases' && (
+        <>
       {/* Connections selection */}
       <div className="card-primary p-4">
         <div className="mb-3"><Eyebrow>Databases</Eyebrow></div>
@@ -3417,6 +3521,75 @@ function ConfigurationDetailView({
             onGlobalMaskingRulesChange={handleLocalGlobalMaskingRulesChange}
             onPiiOverride={onPiiOverride}
           />
+        </div>
+      )}
+        </>
+      )}
+
+      {/* --- KNOWLEDGE TAB --- */}
+      {activeConfigTab === 'knowledge' && ragEnabled && (
+        <div className="card-primary">
+          {/*
+           * NOTE: `profileName` below is intentionally `configName` — RagAccessSelector
+           * uses this value only as an identifier label and as part of the default POST
+           * URL (which we override via `saveEndpoint`). A future refactor should rename
+           * the prop to `entityName` on the component side.
+           */}
+          <Suspense
+            fallback={
+              <div className="p-6 text-sm text-gray-500 italic flex items-center gap-2">
+                <svg
+                  className="w-3 h-3 animate-spin"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                  />
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  />
+                </svg>
+                Chargement…
+              </div>
+            }
+          >
+            <RagAccessSelector
+              profileName={configName}
+              initialScopes={configDocumentScopes as unknown as Record<string, ScopeSelection>}
+              initialSources={configDocumentSources}
+              saveEndpoint="/api/configurations"
+              saveBodyTransform={({ sources, scopes }) => ({
+                // Merge relational sources/scopes back in so the Databases tab settings
+                // are not overwritten when saving from the Knowledge tab.
+                name: configName,
+                label,
+                sources: [...configRelationalSources, ...sources],
+                scopes: { ...configRelationalScopes, ...scopes },
+              })}
+              onSaved={(newScopes, newSources) => {
+                // Reflect the merged update in local configurations state so the UI
+                // stays consistent without a full page refresh.
+                onSave({
+                  name: configName,
+                  label,
+                  sources: [...configRelationalSources, ...newSources],
+                  scopes: {
+                    ...configRelationalScopes,
+                    ...(newScopes as unknown as Record<string, ScopeSelection>),
+                  },
+                });
+              }}
+            />
+          </Suspense>
         </div>
       )}
     </div>

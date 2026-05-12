@@ -278,3 +278,39 @@ export function getConfigurationRelationalSources(cfg: ConfigScopeShape): string
   }
   return cfg.connections ?? [];
 }
+
+/** Document scope, narrowed from the discriminated `ScopeSelection` union. */
+type DocumentScope = Extract<ScopeSelection, { kind: 'document' }>;
+
+/**
+ * Document scopes (kind='document') indexed by their sourceId, extracted from
+ * the unified `cfg.scopes` shape. Returns an empty object when the configuration
+ * carries no document scopes — the legacy flat fields are DB-only and have no
+ * document equivalent, so there is no fallback path.
+ *
+ * Used by `mergeConfigurations` (`packages/cli/src/routes/serve.ts`) to fold
+ * the RAG scopes of every Configuration referenced by a Profile into a single
+ * effective set at serve time. Mirrors `getConfigurationRelationalSources` /
+ * `getConfigurationSelectedTables` for the document side of `ScopeSelection`.
+ */
+export function getConfigurationDocumentScopes(
+  cfg: ConfigScopeShape,
+): Record<string, DocumentScope> {
+  if (!cfg.scopes) return {};
+  const out: Record<string, DocumentScope> = {};
+  for (const [sourceId, scope] of Object.entries(cfg.scopes)) {
+    if (scope.kind === 'document') {
+      out[sourceId] = scope;
+    }
+  }
+  return out;
+}
+
+/**
+ * The active source ids of `kind: 'document'` (RAG sources) declared by the
+ * configuration. Returns an empty array when the configuration has no
+ * document scopes. Symmetrical to `getConfigurationRelationalSources`.
+ */
+export function getConfigurationDocumentSources(cfg: ConfigScopeShape): string[] {
+  return Object.keys(getConfigurationDocumentScopes(cfg));
+}

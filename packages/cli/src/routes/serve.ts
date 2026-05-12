@@ -28,6 +28,7 @@ import {
   getConfigurationTableOptions,
   getConfigurationColumnMasking,
   getConfigurationRelationalSources,
+  getConfigurationDocumentScopes,
 } from '@calame/core';
 import { readConfigurationsFile } from './configurations.js';
 import type { ServeConfiguration } from '@calame/core';
@@ -183,7 +184,18 @@ const MASKING_ORDER: readonly string[] = [
  * (the migrator deletes them after folding their data into `sources`/`scopes`).
  * All field reads go through the Configuration accessors so that both the
  * pre-migration legacy shape and the new unified shape are handled identically.
+ *
+ * Phase 6 — document scopes: per-source `kind: 'document'` allowlists declared
+ * in any of the Configurations are merged into `documentScopes`. The merge
+ * follows the same "least restrictive" spirit as the relational side:
+ *   - if **any** config sets `mode: 'allowAll'` for a sourceId, the result is
+ *     `allowAll` with empty allowlists (least restrictive wins);
+ *   - otherwise (every config is `allowList`) the merged allowedFolders and
+ *     allowedDocuments are the unions of the individual config lists.
  */
+/** Narrowed document scope type. */
+type DocumentScope = Extract<ScopeSelection, { kind: 'document' }>;
+
 export function mergeConfigurations(
   configs: ServeConfiguration[],
 ): {
@@ -191,11 +203,20 @@ export function mergeConfigurations(
   selectedTables: Record<string, string[]>;
   tableOptions: Record<string, TableToolOptions>;
   columnMasking: Record<string, Record<string, ColumnMasking>>;
+  /**
+   * Merged document (RAG) scopes from every configuration in the array.
+   * Merge rule: "allowAll wins" — if any config has mode='allowAll' for a
+   * given sourceId, the result is allowAll (empty allowlists). Otherwise the
+   * allowedFolders and allowedDocuments lists are unioned across all configs.
+   * Mirrors the relational strategy (union / least-restrictive).
+   */
+  documentScopes: Record<string, DocumentScope>;
 } {
   const connectionsSet = new Set<string>();
   const selectedTables: Record<string, string[]> = {};
   const tableOptions: Record<string, TableToolOptions> = {};
   const columnMasking: Record<string, Record<string, ColumnMasking>> = {};
+  const documentScopes: Record<string, DocumentScope> = {};
 
   for (const config of configs) {
     for (const c of getConfigurationRelationalSources(config)) connectionsSet.add(c);
@@ -256,6 +277,38 @@ export function mergeConfigurations(
         }
       }
     }
+
+    // Merge document (RAG) scopes — "allowAll wins, else union of allowlists"
+    for (const [sourceId, docScope] of Object.entries(getConfigurationDocumentScopes(config))) {
+      const existing = documentScopes[sourceId];
+      if (!existing) {
+        // First time we see this sourceId: copy as-is (mutable snapshot).
+        documentScopes[sourceId] = {
+          kind: 'document',
+          mode: docScope.mode,
+          allowedFolders: [...docScope.allowedFolders],
+          allowedDocuments: [...docScope.allowedDocuments],
+        };
+      } else if (existing.mode === 'allowAll' || docScope.mode === 'allowAll') {
+        // Either side is allowAll → promote to allowAll (least restrictive wins).
+        documentScopes[sourceId] = {
+          kind: 'document',
+          mode: 'allowAll',
+          allowedFolders: [],
+          allowedDocuments: [],
+        };
+      } else {
+        // Both are allowList → union of the two allowlists.
+        const foldersSet = new Set([...existing.allowedFolders, ...docScope.allowedFolders]);
+        const docsSet = new Set([...existing.allowedDocuments, ...docScope.allowedDocuments]);
+        documentScopes[sourceId] = {
+          kind: 'document',
+          mode: 'allowList',
+          allowedFolders: [...foldersSet],
+          allowedDocuments: [...docsSet],
+        };
+      }
+    }
   }
 
   return {
@@ -263,6 +316,7 @@ export function mergeConfigurations(
     selectedTables,
     tableOptions,
     columnMasking,
+    documentScopes,
   };
 }
 
@@ -478,6 +532,8 @@ export function registerServeRoute(app: Express, state: AppState): void {
       let effectiveSelectedTables: Record<string, string[]>;
       let effectiveTableOptions: Record<string, TableToolOptions> | undefined;
       let effectiveColumnMasking: Record<string, Record<string, ColumnMasking>> | undefined;
+      // Document scopes merged from configurations (empty when using legacy path — profile.scopes is used directly).
+      let effectiveDocumentScopes: Record<string, Extract<ScopeSelection, { kind: 'document' }>> = {};
 
       if (profile.configurations && profile.configurations.length > 0) {
         // New path: resolve configurations and merge them
@@ -507,6 +563,8 @@ export function registerServeRoute(app: Express, state: AppState): void {
         effectiveSelectedTables = merged.selectedTables;
         effectiveTableOptions = merged.tableOptions;
         effectiveColumnMasking = merged.columnMasking;
+        // Capture merged document scopes from configurations.
+        effectiveDocumentScopes = merged.documentScopes;
       } else {
         // Read via accessors so legacy profiles (`selectedTables` at the root)
         // and unified profiles (`scopes[].selectedTables`) merge into the same
@@ -583,9 +641,12 @@ export function registerServeRoute(app: Express, state: AppState): void {
 
       // Phase 3c: allow profiles that have only document sources (no DB connections).
       // A profile is valid if it has at least one connection OR at least one document-kind scope.
+      // Also check effectiveDocumentScopes so that a profile that declares RAG only via
+      // Data Configurations (no direct profile.scopes document entries) is still accepted.
       const hasDocumentSources =
-        profile.scopes !== undefined &&
-        Object.values(profile.scopes).some((s) => s.kind === 'document');
+        (profile.scopes !== undefined &&
+          Object.values(profile.scopes).some((s) => s.kind === 'document')) ||
+        Object.keys(effectiveDocumentScopes).length > 0;
 
       if (profileConnections.length === 0 && !hasDocumentSources) {
         res.status(500).json({ error: 'No database connection available for this profile.' });
@@ -631,11 +692,16 @@ export function registerServeRoute(app: Express, state: AppState): void {
       // adapter path is only taken when `profile.scopes` has been populated by upgradeProfileShape.
 
       // Determine which path to take.
+      // Take the adapter path when:
+      //   (a) profile.scopes is populated (normal new-shape profile), OR
+      //   (b) configurations contributed document scopes even though profile.scopes is empty
+      //       (profile uses Data Configurations for RAG only, no direct scopes declared).
       const hasNewShape =
-        profile.scopes !== undefined &&
-        profile.scopes !== null &&
-        typeof profile.scopes === 'object' &&
-        Object.keys(profile.scopes).length > 0;
+        (profile.scopes !== undefined &&
+          profile.scopes !== null &&
+          typeof profile.scopes === 'object' &&
+          Object.keys(profile.scopes).length > 0) ||
+        Object.keys(effectiveDocumentScopes).length > 0;
 
       if (hasNewShape) {
         // --- New path: adapter-driven registration ---
@@ -649,6 +715,7 @@ export function registerServeRoute(app: Express, state: AppState): void {
           effectiveSelectedTables,
           effectiveTableOptions,
           effectiveColumnMasking,
+          effectiveDocumentScopes,
           scopeGuard,
           responseMode,
           wrapResponse,
@@ -1021,6 +1088,13 @@ interface RegisterAdaptersOptions {
   effectiveSelectedTables: Record<string, string[]>;
   effectiveTableOptions: Record<string, TableToolOptions> | undefined;
   effectiveColumnMasking: Record<string, Record<string, ColumnMasking>> | undefined;
+  /**
+   * Merged document scopes from Data Configurations (empty object on the legacy
+   * no-configurations path — `profile.scopes` is the sole source in that case).
+   * For each sourceId: profile.scopes wins when a document scope is already declared
+   * there; otherwise the merged config scope fills the gap.
+   */
+  effectiveDocumentScopes: Record<string, Extract<ScopeSelection, { kind: 'document' }>>;
   scopeGuard: import('@calame/core').ScopeGuard;
   responseMode: 'friendly' | 'raw';
   wrapResponse: (json: string) => string;
@@ -1183,14 +1257,34 @@ async function registerToolsViaAdapters(opts: RegisterAdaptersOptions): Promise<
     effectiveSelectedTables,
     effectiveTableOptions,
     effectiveColumnMasking,
+    effectiveDocumentScopes,
     scopeGuard,
     responseMode,
     wrapResponse,
     resolvedTokenLabel,
   } = opts;
 
-  const scopes = profile.scopes ?? {};
-  const rawSources = profile.sources ?? Object.keys(scopes);
+  // Build the effective scopes map:
+  //   - Start from the merged configuration document scopes (may be empty on legacy path).
+  //   - Profile.scopes always wins for document sources declared directly on the profile
+  //     (profile.scopes[sourceId] exists and is kind='document' → it overrides the config scope).
+  //   - Relational scopes come exclusively from profile.scopes (unchanged behaviour).
+  const profileScopes = profile.scopes ?? {};
+  const mergedScopes: Record<string, ScopeSelection> = { ...profileScopes };
+  for (const [sourceId, docScope] of Object.entries(effectiveDocumentScopes)) {
+    // profile.scopes[sourceId] wins — only fill in sourceIds not declared on the profile.
+    if (!(sourceId in profileScopes)) {
+      mergedScopes[sourceId] = docScope;
+    }
+  }
+
+  const rawSources = profile.sources
+    ? [
+        ...profile.sources,
+        // Add any config-only document sourceIds that the profile did not explicitly declare.
+        ...Object.keys(effectiveDocumentScopes).filter((id) => !profile.sources!.includes(id)),
+      ]
+    : Object.keys(mergedScopes);
 
   // Resolve sourceIds against the live runtime. The migrator may have
   // synthesised placeholder ids (e.g. 'default') for legacy profiles whose
@@ -1201,7 +1295,7 @@ async function registerToolsViaAdapters(opts: RegisterAdaptersOptions): Promise<
   // available DB connection. Document scopes are left as-is.
   const resolvedPairs: Array<{ sourceId: string; scope: ScopeSelection }> = [];
   for (const sourceId of rawSources) {
-    const scope = scopes[sourceId];
+    const scope = mergedScopes[sourceId];
     if (!scope) continue;
     if (scope.kind === 'relational' && !state.connections.has(sourceId)) {
       const liveConnIds = [...state.connections.keys()];

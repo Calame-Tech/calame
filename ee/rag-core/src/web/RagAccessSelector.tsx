@@ -8,6 +8,7 @@ import type { RagDocument, RagJob } from '../types.js';
 import {
   ApiError,
   apiGet,
+  apiPatch,
   apiPost,
   type RagDocumentListResponse,
   type RagFolderListResponse,
@@ -38,6 +39,26 @@ interface RagAccessSelectorProps {
   initialSources: string[];
   onSaved?: (newScopes: Record<string, ScopeSelection>, newSources: string[]) => void;
   onCancel?: () => void;
+  /**
+   * Override the POST endpoint used during save.
+   * Defaults to `/api/profiles/:profileName/scopes` (the MCP-profile endpoint).
+   * Callers that persist to a different resource (e.g. Data Profiles → `/api/configurations`)
+   * pass their own URL here.
+   */
+  saveEndpoint?: string;
+  /**
+   * HTTP method for the save request. Defaults to `'POST'`.
+   */
+  saveMethod?: 'POST' | 'PATCH';
+  /**
+   * Transform the default save payload `{ sources, scopes }` before sending.
+   * Useful when the target endpoint expects additional fields (e.g. `name`, `label`).
+   * If omitted, the raw payload is sent as-is.
+   */
+  saveBodyTransform?: (payload: {
+    sources: string[];
+    scopes: Record<string, ScopeSelection>;
+  }) => unknown;
 }
 
 /**
@@ -477,6 +498,9 @@ export default function RagAccessSelector({
   initialSources,
   onSaved,
   onCancel,
+  saveEndpoint,
+  saveMethod = 'POST',
+  saveBodyTransform,
 }: RagAccessSelectorProps) {
   // Defensive: a profile with no scopes yet passes `undefined` from the host.
   // Coerce to {} so `initialScopes[source.id]` lookups never throw.
@@ -841,10 +865,17 @@ export default function RagAccessSelector({
         );
       }
 
-      await apiPost<{ success: boolean }>(`/api/profiles/${encodeURIComponent(profileName)}/scopes`, {
-        sources: updatedSources,
-        scopes: updatedScopes,
-      });
+      // Determine target endpoint: caller-supplied override or default profile scopes route.
+      const endpoint =
+        saveEndpoint ?? `/api/profiles/${encodeURIComponent(profileName)}/scopes`;
+      const rawPayload = { sources: updatedSources, scopes: updatedScopes };
+      const body = saveBodyTransform ? saveBodyTransform(rawPayload) : rawPayload;
+
+      if (saveMethod === 'PATCH') {
+        await apiPatch<{ success: boolean }>(endpoint, body);
+      } else {
+        await apiPost<{ success: boolean }>(endpoint, body);
+      }
 
       pushToast(`Accès RAG mis à jour pour le profile "${profileName}".`, 'info');
       onSaved?.(updatedScopes, updatedSources);

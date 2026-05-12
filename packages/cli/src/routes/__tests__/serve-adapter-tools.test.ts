@@ -72,6 +72,47 @@ vi.mock('@calame/core', () => ({
     (p: { sources?: string[]; connections?: string[] }) =>
       p.sources && p.sources.length > 0 ? p.sources : (p.connections ?? []),
   ),
+  // Configuration accessors — used by mergeConfigurations inside serve.ts.
+  getConfigurationRelationalSources: vi.fn(
+    (c: { connections?: string[]; sources?: string[]; scopes?: Record<string, { kind: string }> }) => {
+      if (c.sources && c.scopes) {
+        return c.sources.filter((id: string) => c.scopes![id]?.kind === 'relational');
+      }
+      return c.connections ?? [];
+    },
+  ),
+  getConfigurationSelectedTables: vi.fn(
+    (c: { selectedTables?: Record<string, string[]>; scopes?: Record<string, { kind: string; selectedTables?: Record<string, string[]> }> }) => {
+      if (c.scopes) {
+        const out: Record<string, string[]> = {};
+        for (const scope of Object.values(c.scopes)) {
+          if (scope.kind === 'relational' && scope.selectedTables) {
+            Object.assign(out, scope.selectedTables);
+          }
+        }
+        return out;
+      }
+      return c.selectedTables ?? {};
+    },
+  ),
+  getConfigurationTableOptions: vi.fn(
+    (c: { tableOptions?: Record<string, unknown> }) => c.tableOptions,
+  ),
+  getConfigurationColumnMasking: vi.fn(
+    (c: { columnMasking?: Record<string, Record<string, unknown>> }) => c.columnMasking,
+  ),
+  getConfigurationDocumentScopes: vi.fn(
+    (c: { scopes?: Record<string, { kind: string; mode?: string; allowedFolders?: readonly string[]; allowedDocuments?: readonly string[] }> }) => {
+      if (!c.scopes) return {};
+      const out: Record<string, { kind: 'document'; mode: string; allowedFolders: readonly string[]; allowedDocuments: readonly string[] }> = {};
+      for (const [id, scope] of Object.entries(c.scopes)) {
+        if (scope.kind === 'document') {
+          out[id] = scope as { kind: 'document'; mode: string; allowedFolders: readonly string[]; allowedDocuments: readonly string[] };
+        }
+      }
+      return out;
+    },
+  ),
 }));
 
 vi.mock('@calame/connectors', () => ({
@@ -129,6 +170,7 @@ import { AppState } from '../../state.js';
 import { registerServeRoute } from '../serve.js';
 import type { ConnectionState } from '../../state.js';
 import type { NamedConnection } from '@calame/core';
+import { readConfigurationsFile } from '../configurations.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -607,5 +649,280 @@ describe('serve route — Phase 3c adapter-driven tool registration', () => {
     };
     expect(args.tables).toEqual([]);
     expect(args.selectedTables).toEqual({});
+  });
+
+  // -------------------------------------------------------------------------
+  // Test 9: Two configurations with allowList document scopes → union of allowlists
+  // -------------------------------------------------------------------------
+  it('two configs with allowList document scopes: merged scope is union of allowedFolders', async () => {
+    const state = new AppState();
+
+    const docAdapterMock = {
+      type: 'local',
+      displayName: 'Local folder',
+      capabilities: ['search'],
+      registerMcpTools: vi.fn(),
+    };
+    registeredAdapters.set('local', docAdapterMock);
+
+    // Provide a db for rag_sources lookup and configurations file.
+    const mockDb = {
+      raw: {
+        prepare: vi.fn().mockImplementation((sql: string) => ({
+          get: vi.fn().mockImplementation((id: string) => {
+            if (sql.includes('FROM rag_sources') && id === 'kb1') {
+              return { type: 'local', name: 'KB1', embedding_setting_name: null };
+            }
+            if (sql.includes('configurations')) return null;
+            return null;
+          }),
+          all: vi.fn().mockReturnValue([]),
+        })),
+      },
+    };
+    state.db = mockDb as unknown as typeof state.db;
+
+    const mockRagRuntime = {
+      vectorStore: { search: vi.fn().mockReturnValue([]) },
+      resolveEmbeddingClient: vi.fn(),
+      decryptConfig: vi.fn().mockReturnValue('{"root":"/docs"}'),
+    };
+    state.ragRuntime = mockRagRuntime as unknown as typeof state.ragRuntime;
+
+    // Two configurations: cfg-a allows docs/public, cfg-b allows docs/legal.
+    const cfgA = {
+      name: 'cfg-a',
+      sources: ['kb1'],
+      scopes: {
+        kb1: {
+          kind: 'document' as const,
+          mode: 'allowList' as const,
+          allowedFolders: ['docs/public'],
+          allowedDocuments: [],
+        },
+      },
+    };
+    const cfgB = {
+      name: 'cfg-b',
+      sources: ['kb1'],
+      scopes: {
+        kb1: {
+          kind: 'document' as const,
+          mode: 'allowList' as const,
+          allowedFolders: ['docs/legal'],
+          allowedDocuments: [],
+        },
+      },
+    };
+
+    vi.mocked(readConfigurationsFile).mockReturnValue({
+      configurations: { 'cfg-a': cfgA as never, 'cfg-b': cfgB as never },
+    });
+
+    // Profile references both configurations, no direct scopes.
+    state.serveProfiles = {
+      cfgMerge: {
+        name: 'cfgMerge',
+        label: 'Config Merge',
+        configurations: ['cfg-a', 'cfg-b'],
+        sources: [],
+        scopes: {},
+      },
+    };
+    state.activeProfileNames.add('cfgMerge');
+
+    const app = makeApp(state);
+    const res = await postInitialize(app, 'cfgMerge');
+    expect(res.status).toBe(200);
+
+    // Document adapter called once with the merged allowList scope.
+    expect(docAdapterMock.registerMcpTools).toHaveBeenCalledOnce();
+    const ctx = docAdapterMock.registerMcpTools.mock.calls[0][0] as McpRegistrationContext;
+    expect(ctx.selection.kind).toBe('document');
+    if (ctx.selection.kind === 'document') {
+      expect(ctx.selection.mode).toBe('allowList');
+      // Union of both folder allowlists.
+      expect([...ctx.selection.allowedFolders].sort()).toEqual(['docs/legal', 'docs/public']);
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // Test 10: allowAll wins — if one config has allowAll, merged scope is allowAll
+  // -------------------------------------------------------------------------
+  it('allowAll wins: config A allowAll + config B allowList → merged scope is allowAll', async () => {
+    const state = new AppState();
+
+    const docAdapterMock = {
+      type: 'local',
+      displayName: 'Local folder',
+      capabilities: ['search'],
+      registerMcpTools: vi.fn(),
+    };
+    registeredAdapters.set('local', docAdapterMock);
+
+    const mockDb = {
+      raw: {
+        prepare: vi.fn().mockImplementation((sql: string) => ({
+          get: vi.fn().mockImplementation((id: string) => {
+            if (sql.includes('FROM rag_sources') && id === 'kb1') {
+              return { type: 'local', name: 'KB1', embedding_setting_name: null };
+            }
+            return null;
+          }),
+          all: vi.fn().mockReturnValue([]),
+        })),
+      },
+    };
+    state.db = mockDb as unknown as typeof state.db;
+
+    const mockRagRuntime = {
+      vectorStore: { search: vi.fn().mockReturnValue([]) },
+      resolveEmbeddingClient: vi.fn(),
+      decryptConfig: vi.fn().mockReturnValue('{"root":"/docs"}'),
+    };
+    state.ragRuntime = mockRagRuntime as unknown as typeof state.ragRuntime;
+
+    const cfgAllowAll = {
+      name: 'cfg-all',
+      sources: ['kb1'],
+      scopes: {
+        kb1: {
+          kind: 'document' as const,
+          mode: 'allowAll' as const,
+          allowedFolders: [],
+          allowedDocuments: [],
+        },
+      },
+    };
+    const cfgAllowList = {
+      name: 'cfg-list',
+      sources: ['kb1'],
+      scopes: {
+        kb1: {
+          kind: 'document' as const,
+          mode: 'allowList' as const,
+          allowedFolders: ['docs/restricted'],
+          allowedDocuments: [],
+        },
+      },
+    };
+
+    vi.mocked(readConfigurationsFile).mockReturnValue({
+      configurations: {
+        'cfg-all': cfgAllowAll as never,
+        'cfg-list': cfgAllowList as never,
+      },
+    });
+
+    state.serveProfiles = {
+      allowAllWins: {
+        name: 'allowAllWins',
+        label: 'AllowAll Wins',
+        configurations: ['cfg-all', 'cfg-list'],
+        sources: [],
+        scopes: {},
+      },
+    };
+    state.activeProfileNames.add('allowAllWins');
+
+    const app = makeApp(state);
+    const res = await postInitialize(app, 'allowAllWins');
+    expect(res.status).toBe(200);
+
+    expect(docAdapterMock.registerMcpTools).toHaveBeenCalledOnce();
+    const ctx = docAdapterMock.registerMcpTools.mock.calls[0][0] as McpRegistrationContext;
+    expect(ctx.selection.kind).toBe('document');
+    if (ctx.selection.kind === 'document') {
+      // allowAll wins regardless of which config has it.
+      expect(ctx.selection.mode).toBe('allowAll');
+      expect(ctx.selection.allowedFolders).toEqual([]);
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // Test 11: profile.scopes wins over config document scopes
+  // -------------------------------------------------------------------------
+  it('profile.scopes[kb1] wins over config document scopes when both declare kb1', async () => {
+    const state = new AppState();
+
+    const docAdapterMock = {
+      type: 'local',
+      displayName: 'Local folder',
+      capabilities: ['search'],
+      registerMcpTools: vi.fn(),
+    };
+    registeredAdapters.set('local', docAdapterMock);
+
+    const mockDb = {
+      raw: {
+        prepare: vi.fn().mockImplementation((sql: string) => ({
+          get: vi.fn().mockImplementation((id: string) => {
+            if (sql.includes('FROM rag_sources') && id === 'kb1') {
+              return { type: 'local', name: 'KB1', embedding_setting_name: null };
+            }
+            return null;
+          }),
+          all: vi.fn().mockReturnValue([]),
+        })),
+      },
+    };
+    state.db = mockDb as unknown as typeof state.db;
+
+    const mockRagRuntime = {
+      vectorStore: { search: vi.fn().mockReturnValue([]) },
+      resolveEmbeddingClient: vi.fn(),
+      decryptConfig: vi.fn().mockReturnValue('{"root":"/docs"}'),
+    };
+    state.ragRuntime = mockRagRuntime as unknown as typeof state.ragRuntime;
+
+    // Config declares allowAll for kb1.
+    const cfgAllowAll = {
+      name: 'cfg-all',
+      sources: ['kb1'],
+      scopes: {
+        kb1: {
+          kind: 'document' as const,
+          mode: 'allowAll' as const,
+          allowedFolders: [],
+          allowedDocuments: [],
+        },
+      },
+    };
+
+    vi.mocked(readConfigurationsFile).mockReturnValue({
+      configurations: { 'cfg-all': cfgAllowAll as never },
+    });
+
+    // Profile also declares kb1 with a stricter allowList — profile wins.
+    const profileDocScope = {
+      kind: 'document' as const,
+      mode: 'allowList' as const,
+      allowedFolders: ['docs/strict'],
+      allowedDocuments: [],
+    };
+
+    state.serveProfiles = {
+      profileWins: {
+        name: 'profileWins',
+        label: 'Profile Wins',
+        configurations: ['cfg-all'],
+        sources: ['kb1'],
+        scopes: { kb1: profileDocScope },
+      },
+    };
+    state.activeProfileNames.add('profileWins');
+
+    const app = makeApp(state);
+    const res = await postInitialize(app, 'profileWins');
+    expect(res.status).toBe(200);
+
+    expect(docAdapterMock.registerMcpTools).toHaveBeenCalledOnce();
+    const ctx = docAdapterMock.registerMcpTools.mock.calls[0][0] as McpRegistrationContext;
+    expect(ctx.selection.kind).toBe('document');
+    if (ctx.selection.kind === 'document') {
+      // Profile's allowList overrides the config's allowAll.
+      expect(ctx.selection.mode).toBe('allowList');
+      expect([...ctx.selection.allowedFolders]).toEqual(['docs/strict']);
+    }
   });
 });

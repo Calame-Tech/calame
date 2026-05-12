@@ -28,7 +28,7 @@ import {
 } from '../rag-access-state.js';
 
 // ---------------------------------------------------------------------------
-// Component types
+// Public props interface
 // ---------------------------------------------------------------------------
 
 interface RagAccessSelectorProps {
@@ -61,6 +61,10 @@ interface RagAccessSelectorProps {
   }) => unknown;
 }
 
+// ---------------------------------------------------------------------------
+// Internal types
+// ---------------------------------------------------------------------------
+
 /**
  * Top-level source node.
  */
@@ -81,10 +85,6 @@ interface SourceNode {
   syncError: string | null;
 }
 
-// ---------------------------------------------------------------------------
-// Toast
-// ---------------------------------------------------------------------------
-
 interface Toast {
   id: number;
   message: string;
@@ -94,7 +94,7 @@ interface Toast {
 let toastSeq = 0;
 
 // ---------------------------------------------------------------------------
-// Source-level check state (depends on folder states)
+// Source-level check state helper
 // ---------------------------------------------------------------------------
 
 function deriveSourceCheckState(node: SourceNode, folderMap: FolderMap): CheckState {
@@ -113,7 +113,7 @@ function deriveSourceCheckState(node: SourceNode, folderMap: FolderMap): CheckSt
 }
 
 // ---------------------------------------------------------------------------
-// Icons
+// Icons (file-internal)
 // ---------------------------------------------------------------------------
 
 function CheckIcon() {
@@ -226,7 +226,7 @@ function SpinnerIcon() {
 }
 
 // ---------------------------------------------------------------------------
-// TriStateCheckbox sub-component
+// TriStateCheckbox
 // ---------------------------------------------------------------------------
 
 interface TriStateCheckboxProps {
@@ -269,7 +269,7 @@ function TriStateCheckbox({ state, onChange, label, disabled = false }: TriState
 }
 
 // ---------------------------------------------------------------------------
-// FolderModeMenu — small inline button to force auto-include
+// FolderModeBadge — inline button to revert a folder to auto-include
 // ---------------------------------------------------------------------------
 
 interface FolderModeBadgeProps {
@@ -298,7 +298,7 @@ function FolderModeBadge({ mode, onForceAutoInclude }: FolderModeBadgeProps) {
 }
 
 // ---------------------------------------------------------------------------
-// DocumentRow sub-component
+// DocumentRow
 // ---------------------------------------------------------------------------
 
 interface DocumentRowProps {
@@ -349,7 +349,7 @@ function DocumentRow({ doc, checked, disabled, depth, onToggle }: DocumentRowPro
 }
 
 // ---------------------------------------------------------------------------
-// FolderRow sub-component (recursive)
+// FolderRow (recursive)
 // ---------------------------------------------------------------------------
 
 interface FolderRowProps {
@@ -489,7 +489,236 @@ function FolderRow({
 }
 
 // ---------------------------------------------------------------------------
-// Main component
+// ToastList
+// ---------------------------------------------------------------------------
+
+interface ToastListProps {
+  toasts: Toast[];
+  onDismiss: (id: number) => void;
+}
+
+function ToastList({ toasts, onDismiss }: ToastListProps) {
+  if (toasts.length === 0) return null;
+
+  return (
+    <div className="space-y-1.5" aria-live="polite" aria-atomic="false">
+      {toasts.map((t) => (
+        <div
+          key={t.id}
+          className={`p-2.5 rounded-lg text-xs border flex items-start justify-between gap-2 ${
+            t.kind === 'error'
+              ? 'bg-red-950/30 border-red-800/50 text-red-400'
+              : 'bg-os-950/30 border-os-800/50 text-os-300'
+          }`}
+        >
+          <span>{t.message}</span>
+          <button
+            type="button"
+            onClick={() => onDismiss(t.id)}
+            aria-label="Fermer la notification"
+            className="flex-shrink-0 opacity-60 hover:opacity-100 transition-opacity"
+          >
+            ×
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// SourceRow — header row for a single source + its expanded tree
+// ---------------------------------------------------------------------------
+
+interface SourceRowProps {
+  node: SourceNode;
+  checkState: CheckState;
+  saving: boolean;
+  folderMap: FolderMap;
+  onToggleExpand: (sourceId: string) => void;
+  onToggleIncluded: (sourceId: string, next: CheckState) => void;
+  onToggleFolder: (folderId: string, next: CheckState) => void;
+  onToggleDocument: (folderId: string, docId: string) => void;
+  onToggleFolderExpand: (folderId: string) => void;
+  onForceAutoInclude: (folderId: string) => void;
+  pushToast: (msg: string, kind?: Toast['kind']) => void;
+}
+
+function SourceRow({
+  node,
+  checkState,
+  saving,
+  folderMap,
+  onToggleExpand,
+  onToggleIncluded,
+  onToggleFolder,
+  onToggleDocument,
+  onToggleFolderExpand,
+  onForceAutoInclude,
+  pushToast,
+}: SourceRowProps) {
+  return (
+    <li className="bg-gray-900/30">
+      {/* Source header */}
+      <div className="flex items-center gap-2 px-3 py-2.5 hover:bg-white/5 transition-colors">
+        {/* Expand toggle */}
+        <button
+          type="button"
+          onClick={() => onToggleExpand(node.source.id)}
+          className="flex-shrink-0 p-0.5 hover:text-gray-300 transition-colors"
+          aria-label={node.expanded ? 'Réduire la source' : 'Développer la source'}
+          aria-expanded={node.expanded}
+        >
+          {node.loading ? <SpinnerIcon /> : <ChevronIcon open={node.expanded} />}
+        </button>
+
+        {/* Checkbox */}
+        <TriStateCheckbox
+          state={checkState}
+          onChange={(next) => onToggleIncluded(node.source.id, next)}
+          label={`Inclure la source ${node.source.name}`}
+          disabled={saving}
+        />
+
+        {/* Source name + type */}
+        <button
+          type="button"
+          onClick={() => onToggleExpand(node.source.id)}
+          className="flex-1 text-left flex items-center gap-2 min-w-0"
+        >
+          <span className="text-sm font-medium text-gray-200 truncate">{node.source.name}</span>
+          <span className="text-xs text-gray-500 flex-shrink-0">{node.source.type}</span>
+        </button>
+
+        {/* Status badges */}
+        {node.activeJob && (
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-os-900/40 text-os-300 border border-os-700/40 flex-shrink-0 flex items-center gap-1">
+            <SpinnerIcon />
+            indexation {node.activeJob.processedDocuments}/{node.activeJob.totalDocuments}
+          </span>
+        )}
+        {node.syncError && !node.activeJob && (
+          <span
+            className="text-[10px] px-1.5 py-0.5 rounded bg-red-950/40 text-red-400 border border-red-800/40 flex-shrink-0"
+            title={node.syncError}
+          >
+            sync échouée
+          </span>
+        )}
+      </div>
+
+      {/* Source load error */}
+      {node.loadError && (
+        <div className="px-10 py-1.5 text-xs text-red-400">{node.loadError}</div>
+      )}
+
+      {/* Expanded tree */}
+      {node.expanded && node.loaded && (
+        <div className="bg-gray-900/20 border-t border-white/5 px-2 py-1.5">
+          {node.rootFolderIds.length === 0 && node.rootDocuments.length === 0 ? (
+            <p className="text-xs text-gray-600 italic py-1 px-2">Aucun contenu indexé.</p>
+          ) : (
+            <ul className="space-y-0.5">
+              {node.rootFolderIds.map((fid) => (
+                <FolderRow
+                  key={fid}
+                  folderId={fid}
+                  folderMap={folderMap}
+                  sourceIncluded={node.included}
+                  depth={0}
+                  saving={saving}
+                  onToggleFolder={onToggleFolder}
+                  onToggleDocument={onToggleDocument}
+                  onToggleExpand={onToggleFolderExpand}
+                  onForceAutoInclude={onForceAutoInclude}
+                  toastFn={pushToast}
+                />
+              ))}
+              {node.rootDocuments.map((doc) => (
+                <DocumentRow
+                  key={doc.id}
+                  doc={doc}
+                  checked={node.included}
+                  disabled={saving || !node.included}
+                  depth={0}
+                  onToggle={() => {
+                    // Root-level docs: inclusion controlled at source level only
+                  }}
+                />
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </li>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// SaveFooter — summary counts + cancel/save buttons
+// ---------------------------------------------------------------------------
+
+interface SaveFooterProps {
+  counts: { folders: number; documents: number };
+  saving: boolean;
+  onCancel?: () => void;
+  onSave: () => void;
+}
+
+function SaveFooter({ counts, saving, onCancel, onSave }: SaveFooterProps) {
+  const total = counts.folders + counts.documents;
+
+  return (
+    <div className="flex items-center justify-between pt-1 border-t border-white/5">
+      <p className="text-xs text-gray-500">
+        {total > 0 ? (
+          <>
+            {counts.folders > 0 && (
+              <span>
+                {counts.folders} dossier{counts.folders > 1 ? 's' : ''}
+              </span>
+            )}
+            {counts.folders > 0 && counts.documents > 0 && (
+              <span className="mx-1 text-gray-600">·</span>
+            )}
+            {counts.documents > 0 && (
+              <span>
+                {counts.documents} document{counts.documents > 1 ? 's' : ''}
+              </span>
+            )}
+            <span className="ml-1">sélectionné{total > 1 ? 's' : ''}</span>
+          </>
+        ) : (
+          <span>Aucun élément sélectionné</span>
+        )}
+      </p>
+
+      <div className="flex items-center gap-2">
+        {onCancel && (
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={saving}
+            className="px-3 py-1.5 rounded-lg text-sm text-gray-400 hover:text-gray-200 disabled:opacity-50 transition-colors"
+          >
+            Annuler
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={saving}
+          className="px-4 py-1.5 rounded-lg bg-os-700 hover:bg-os-600 text-white text-sm font-medium disabled:opacity-50 transition-all duration-200 shadow-md shadow-os-900/20 focus:outline-none focus:ring-2 focus:ring-os-500/40"
+        >
+          {saving ? 'Enregistrement…' : 'Enregistrer'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// RagAccessSelector — main assembler component
 // ---------------------------------------------------------------------------
 
 export default function RagAccessSelector({
@@ -505,6 +734,7 @@ export default function RagAccessSelector({
   // Defensive: a profile with no scopes yet passes `undefined` from the host.
   // Coerce to {} so `initialScopes[source.id]` lookups never throw.
   const initialScopes = rawInitialScopes ?? {};
+
   const [sourceNodes, setSourceNodes] = useState<SourceNode[]>([]);
   const [folderMap, setFolderMap] = useState<FolderMap>({});
   const [loading, setLoading] = useState(true);
@@ -526,6 +756,10 @@ export default function RagAccessSelector({
     }, 4000);
   }, []);
 
+  const dismissToast = useCallback((id: number) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
   // ---------------------------------------------------------------------------
   // Initial load: fetch all sources + their jobs
   // ---------------------------------------------------------------------------
@@ -543,12 +777,8 @@ export default function RagAccessSelector({
 
       const nodes: SourceNode[] = (sourcesRes.sources ?? []).map((source) => {
         const existingScope = initialScopes[source.id];
-        const docScope =
-          existingScope?.kind === 'document'
-            ? existingScope
-            : null;
+        const docScope = existingScope?.kind === 'document' ? existingScope : null;
 
-        // Find an active or recent job for this source
         const activeJob =
           allJobs.find(
             (j) => j.sourceId === source.id && (j.status === 'running' || j.status === 'pending'),
@@ -614,10 +844,8 @@ export default function RagAccessSelector({
         const rootDocs = (documentsRes.documents ?? []).filter((d) => d.folderId === null);
         const rootFolderIds = rootFolders.map((f) => f.id);
 
-        // Find the existing scope for this source to seed initial folder modes
         const existingScope = initialScopes[sourceId];
-        const docScope =
-          existingScope?.kind === 'document' ? existingScope : null;
+        const docScope = existingScope?.kind === 'document' ? existingScope : null;
 
         setFolderMap((prev) => {
           const next = { ...prev };
@@ -687,19 +915,15 @@ export default function RagAccessSelector({
         const childFolderIds = childFolders.map((f) => f.id);
 
         const existingScope = initialScopes[sourceId];
-        const docScope =
-          existingScope?.kind === 'document' ? existingScope : null;
+        const docScope = existingScope?.kind === 'document' ? existingScope : null;
 
         setFolderMap((prev) => {
           const next = { ...prev };
 
-          // Register child folders
           for (const folder of childFolders) {
             if (!next[folder.id]) {
               const mode: FolderMode =
                 docScope?.allowedFolders.includes(folder.path) ? 'auto-include' : 'strict';
-              const checkedDocIds = new Set<string>();
-              // Pre-seed document selection from scope (will be populated on expansion)
               next[folder.id] = {
                 folder,
                 loaded: false,
@@ -707,14 +931,13 @@ export default function RagAccessSelector({
                 loadError: null,
                 expanded: false,
                 mode,
-                checkedDocIds,
+                checkedDocIds: new Set<string>(),
                 childFolderIds: [],
                 documents: [],
               };
             }
           }
 
-          // Seed checked docs for this folder from scope
           const checkedDocIds = new Set<string>();
           if (docScope) {
             for (const doc of documents) {
@@ -761,9 +984,7 @@ export default function RagAccessSelector({
     }
 
     setSourceNodes((prev) =>
-      prev.map((n) =>
-        n.source.id === sourceId ? { ...n, expanded: !n.expanded } : n,
-      ),
+      prev.map((n) => (n.source.id === sourceId ? { ...n, expanded: !n.expanded } : n)),
     );
   };
 
@@ -772,7 +993,6 @@ export default function RagAccessSelector({
       prev.map((n) => {
         if (n.source.id !== sourceId) return n;
         const included = next === 'checked';
-        // Load contents if first time expanding-to-include
         if (included && !n.loaded && !n.loading) {
           void loadSourceContents(sourceId);
         }
@@ -796,22 +1016,10 @@ export default function RagAccessSelector({
     }));
   };
 
-  const handleToggleFolder = useCallback(
-    (folderId: string, nextCheck: CheckState) => {
-      // Pure state transition extracted to rag-access-state.ts so the bascule
-      // logic is unit-testable without React. See `applyToggleFolder` JSDoc.
-      setFolderMap((prev) => applyToggleFolder(folderId, nextCheck, prev));
-    },
-    [],
-  );
+  const handleToggleFolder = useCallback((folderId: string, nextCheck: CheckState) => {
+    setFolderMap((prev) => applyToggleFolder(folderId, nextCheck, prev));
+  }, []);
 
-  /**
-   * Toggle a single document's inclusion in its folder. The state transition
-   * (auto-include → strict bascule with pre-checking, or simple strict
-   * toggle) lives in `applyToggleDocument` (`rag-access-state.ts`) so it can
-   * be unit-tested without React. This wrapper only threads the result into
-   * `setFolderMap` and surfaces the optional toast.
-   */
   const handleToggleDocument = useCallback(
     (folderId: string, docId: string) => {
       setFolderMap((prev) => {
@@ -837,7 +1045,6 @@ export default function RagAccessSelector({
   const handleSave = async () => {
     setSaving(true);
     try {
-      // Build updated scopes: preserve non-document entries, rebuild document entries
       const updatedScopes: Record<string, ScopeSelection> = { ...initialScopes };
       const updatedSources = [...initialSources];
 
@@ -845,14 +1052,12 @@ export default function RagAccessSelector({
         const sid = sourceNode.source.id;
 
         if (!sourceNode.included) {
-          // Remove from sources list and delete scope
           const idx = updatedSources.indexOf(sid);
           if (idx !== -1) updatedSources.splice(idx, 1);
           delete updatedScopes[sid];
           continue;
         }
 
-        // Add to sources if not present
         if (!updatedSources.includes(sid)) {
           updatedSources.push(sid);
         }
@@ -865,9 +1070,7 @@ export default function RagAccessSelector({
         );
       }
 
-      // Determine target endpoint: caller-supplied override or default profile scopes route.
-      const endpoint =
-        saveEndpoint ?? `/api/profiles/${encodeURIComponent(profileName)}/scopes`;
+      const endpoint = saveEndpoint ?? `/api/profiles/${encodeURIComponent(profileName)}/scopes`;
       const rawPayload = { sources: updatedSources, scopes: updatedScopes };
       const body = saveBodyTransform ? saveBodyTransform(rawPayload) : rawPayload;
 
@@ -939,23 +1142,7 @@ export default function RagAccessSelector({
         </p>
       </div>
 
-      {/* Toasts */}
-      {toasts.length > 0 && (
-        <div className="space-y-1.5" aria-live="polite" aria-atomic="false">
-          {toasts.map((t) => (
-            <div
-              key={t.id}
-              className={`p-2.5 rounded-lg text-xs border ${
-                t.kind === 'error'
-                  ? 'bg-red-950/30 border-red-800/50 text-red-400'
-                  : 'bg-os-950/30 border-os-800/50 text-os-300'
-              }`}
-            >
-              {t.message}
-            </div>
-          ))}
-        </div>
-      )}
+      <ToastList toasts={toasts} onDismiss={dismissToast} />
 
       {/* Source tree */}
       {sourceNodes.length === 0 ? (
@@ -965,166 +1152,32 @@ export default function RagAccessSelector({
       ) : (
         <div className="border border-white/5 rounded-lg overflow-hidden">
           <ul className="divide-y divide-white/5">
-            {sourceNodes.map((node) => {
-              const sourceCheckState = deriveSourceCheckState(node, folderMap);
-
-              return (
-                <li key={node.source.id} className="bg-gray-900/30">
-                  {/* Source header row */}
-                  <div className="flex items-center gap-2 px-3 py-2.5 hover:bg-white/5 transition-colors">
-                    {/* Expand toggle */}
-                    <button
-                      type="button"
-                      onClick={() => handleToggleSourceExpand(node.source.id)}
-                      className="flex-shrink-0 p-0.5 hover:text-gray-300 transition-colors"
-                      aria-label={node.expanded ? 'Réduire la source' : 'Développer la source'}
-                      aria-expanded={node.expanded}
-                    >
-                      {node.loading ? (
-                        <SpinnerIcon />
-                      ) : (
-                        <ChevronIcon open={node.expanded} />
-                      )}
-                    </button>
-
-                    {/* Checkbox */}
-                    <TriStateCheckbox
-                      state={sourceCheckState}
-                      onChange={(next) => handleToggleSourceIncluded(node.source.id, next)}
-                      label={`Inclure la source ${node.source.name}`}
-                      disabled={saving}
-                    />
-
-                    {/* Source name + type */}
-                    <button
-                      type="button"
-                      onClick={() => handleToggleSourceExpand(node.source.id)}
-                      className="flex-1 text-left flex items-center gap-2 min-w-0"
-                    >
-                      <span className="text-sm font-medium text-gray-200 truncate">
-                        {node.source.name}
-                      </span>
-                      <span className="text-xs text-gray-500 flex-shrink-0">
-                        {node.source.type}
-                      </span>
-                    </button>
-
-                    {/* Status badges */}
-                    {node.activeJob && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-os-900/40 text-os-300 border border-os-700/40 flex-shrink-0 flex items-center gap-1">
-                        <SpinnerIcon />
-                        indexation{' '}
-                        {node.activeJob.processedDocuments}/{node.activeJob.totalDocuments}
-                      </span>
-                    )}
-                    {node.syncError && !node.activeJob && (
-                      <span
-                        className="text-[10px] px-1.5 py-0.5 rounded bg-red-950/40 text-red-400 border border-red-800/40 flex-shrink-0"
-                        title={node.syncError}
-                      >
-                        sync échouée
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Source load error */}
-                  {node.loadError && (
-                    <div className="px-10 py-1.5 text-xs text-red-400">{node.loadError}</div>
-                  )}
-
-                  {/* Expanded contents */}
-                  {node.expanded && node.loaded && (
-                    <div className="bg-gray-900/20 border-t border-white/5 px-2 py-1.5">
-                      {node.rootFolderIds.length === 0 && node.rootDocuments.length === 0 ? (
-                        <p className="text-xs text-gray-600 italic py-1 px-2">
-                          Aucun contenu indexé.
-                        </p>
-                      ) : (
-                        <ul className="space-y-0.5">
-                          {node.rootFolderIds.map((fid) => (
-                            <FolderRow
-                              key={fid}
-                              folderId={fid}
-                              folderMap={folderMap}
-                              sourceIncluded={node.included}
-                              depth={0}
-                              saving={saving}
-                              onToggleFolder={handleToggleFolder}
-                              onToggleDocument={handleToggleDocument}
-                              onToggleExpand={handleToggleFolderExpand}
-                              onForceAutoInclude={handleForceAutoInclude}
-                              toastFn={pushToast}
-                            />
-                          ))}
-                          {node.rootDocuments.map((doc) => (
-                            <DocumentRow
-                              key={doc.id}
-                              doc={doc}
-                              checked={node.included}
-                              disabled={saving || !node.included}
-                              depth={0}
-                              onToggle={() => {
-                                // Root-level docs: inclusion controlled at source level only
-                              }}
-                            />
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                  )}
-                </li>
-              );
-            })}
+            {sourceNodes.map((node) => (
+              <SourceRow
+                key={node.source.id}
+                node={node}
+                checkState={deriveSourceCheckState(node, folderMap)}
+                saving={saving}
+                folderMap={folderMap}
+                onToggleExpand={handleToggleSourceExpand}
+                onToggleIncluded={handleToggleSourceIncluded}
+                onToggleFolder={handleToggleFolder}
+                onToggleDocument={handleToggleDocument}
+                onToggleFolderExpand={handleToggleFolderExpand}
+                onForceAutoInclude={handleForceAutoInclude}
+                pushToast={pushToast}
+              />
+            ))}
           </ul>
         </div>
       )}
 
-      {/* Summary footer */}
-      <div className="flex items-center justify-between pt-1 border-t border-white/5">
-        <p className="text-xs text-gray-500">
-          {totalCounts.folders > 0 || totalCounts.documents > 0 ? (
-            <>
-              {totalCounts.folders > 0 && (
-                <span>
-                  {totalCounts.folders} dossier{totalCounts.folders > 1 ? 's' : ''}
-                </span>
-              )}
-              {totalCounts.folders > 0 && totalCounts.documents > 0 && (
-                <span className="mx-1 text-gray-600">·</span>
-              )}
-              {totalCounts.documents > 0 && (
-                <span>
-                  {totalCounts.documents} document{totalCounts.documents > 1 ? 's' : ''}
-                </span>
-              )}
-              <span className="ml-1">sélectionné{totalCounts.folders + totalCounts.documents > 1 ? 's' : ''}</span>
-            </>
-          ) : (
-            <span>Aucun élément sélectionné</span>
-          )}
-        </p>
-
-        <div className="flex items-center gap-2">
-          {onCancel && (
-            <button
-              type="button"
-              onClick={onCancel}
-              disabled={saving}
-              className="px-3 py-1.5 rounded-lg text-sm text-gray-400 hover:text-gray-200 disabled:opacity-50 transition-colors"
-            >
-              Annuler
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={() => void handleSave()}
-            disabled={saving}
-            className="px-4 py-1.5 rounded-lg bg-os-700 hover:bg-os-600 text-white text-sm font-medium disabled:opacity-50 transition-all duration-200 shadow-md shadow-os-900/20 focus:outline-none focus:ring-2 focus:ring-os-500/40"
-          >
-            {saving ? 'Enregistrement…' : 'Enregistrer'}
-          </button>
-        </div>
-      </div>
+      <SaveFooter
+        counts={totalCounts}
+        saving={saving}
+        onCancel={onCancel}
+        onSave={() => void handleSave()}
+      />
     </div>
   );
 }

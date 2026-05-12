@@ -31,7 +31,8 @@
       "path-to-regexp@0.x": "^0.1.13",
       "path-to-regexp@8.x": "^8.4.0",
       "hono": "^4.12.14",
-      "@hono/node-server": "^1.19.13"
+      "@hono/node-server": "^1.19.13",
+      "fast-uri": ">=3.1.2"
     }
   }
 }

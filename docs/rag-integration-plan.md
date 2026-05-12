@@ -4,9 +4,63 @@ Ce document propose une architecture pour ajouter une couche RAG (Retrieval-Augm
 
 ---
 
-## 0. État d'avancement (mis à jour 2026-05-09)
+## 0. État d'avancement (mis à jour 2026-05-11)
 
 > **Pivot stratégique (2026-05-07)** — La suite de la roadmap RAG est désormais portée par un plan plus large : **`docs/sources-unified-plan.md`**. La RAG-Phase-2 originale de ce document (intégration profiles + MCP) **est livrée comme Phase 3 de ce plan unifié**, dans le cadre d'une refonte qui généralise « Connection (DB) » et « RagSource » en un concept polymorphique `Source` accueillant aussi les futurs APIs / SaaS / streams. Lire les deux docs en parallèle pour comprendre le contexte.
+
+### ✅ Livré 2026-05-11 — Phase 6 : Data Profile RAG support (commit `d5cd010`)
+
+**Question d'origine** : « Actuellement le profile pour le rag se fait dans le MCP. Est-ce que c'est prévu de pouvoir le faire dans le Data Profile ? »
+
+Avant cette tranche, un scope `kind: 'document'` ne pouvait être attaché qu'à un MCP Profile (via le `RagAccessSelector` monté dans `McpDetailView`). La couche `ServeConfiguration` (= Data Profile, un preset réutilisable) était relational-only au runtime — le `mergeConfigurations` ignorait silencieusement tout scope document. Cette tranche rend les deux couches **symétriques**.
+
+**Backend** :
+
+- `packages/core/src/sources/accessors.ts` : nouveaux `getConfigurationDocumentScopes(cfg)` (retourne `Record<sourceId, DocumentScope>`) et `getConfigurationDocumentSources(cfg)` (juste les ids). Symétriques avec les accessors relational. **5 nouveaux tests** (`accessors.test.ts`).
+- `packages/cli/src/routes/serve.ts:mergeConfigurations` : signature retour étendue avec `documentScopes: Record<sourceId, DocumentScope>`. **Sémantique de merge tranchée** : « **allowAll wins, sinon union des allowlists** » — cohérent avec le pattern relational (union des selectedTables, least-restrictive masking). Si **au moins une** Config a `mode: 'allowAll'` pour un sourceId, le merged est `allowAll` avec allowlists vides ; sinon (toutes en `allowList`) → union de `allowedFolders` et `allowedDocuments`.
+- `packages/cli/src/routes/serve.ts:registerToolsViaAdapters` : l'itération `profile.scopes` (ligne ~1264) est désormais une **fusion** `{ ...effectiveDocumentScopes, ...profileScopes }` — **profile.scopes wins** per sourceId (cohérent avec l'override pattern qui s'applique déjà aux scopes relational via le narrowedScope). Les sourceIds présents **uniquement** dans les Configurations sont ajoutés à `rawSources` pour que la boucle adapter les itère. **3 nouveaux tests** (`serve-adapter-tools.test.ts`) couvrant : union d'allowlists (2 Configs `allowList` → union), `allowAll` wins (Config A `allowAll` + Config B `allowList` → résultat `allowAll`), profile override (`profile.scopes` contient `allowList(['strict'])`, Config dit `allowAll` → runtime utilise `allowList(['strict'])`).
+
+**Frontend** :
+
+- `ee/rag-core/src/web/RagAccessSelector.tsx` : **3 nouvelles props optionnelles** (defaults inchangés, pas de régression `McpDetailView`) :
+  - `saveEndpoint?: string` — override l'URL de POST (default `/api/profiles/:profileName/scopes`)
+  - `saveMethod?: 'POST' | 'PATCH'` — méthode HTTP (default `'POST'`)
+  - `saveBodyTransform?: (payload) => unknown` — permet au caller d'enrichir le body avant envoi (ex : ajouter `name`/`label` pour la route `/api/configurations`)
+- `packages/web/src/App.tsx:ConfigurationDetailView` : layout **tabbed** `Databases` / `Knowledge bases`. Le tab `knowledge` est `disabled` avec tooltip quand `ragEnabled === false`. À l'ouverture du tab, lazy-mount d'un `<RagAccessSelector>` avec `saveEndpoint="/api/configurations"` + `saveBodyTransform` qui **préserve les scopes relational existants** (le save RAG ne droppe jamais les tables DB déjà sélectionnées). Helpers `useMemo` `configDocumentScopes` / `configRelationalScopes` pour ne pas re-calculer les filtres à chaque render.
+
+**Pattern d'override profile × configuration** (documenté en code) :
+
+| Cas | Source du scope effectif au serve-time |
+|---|---|
+| Profile sans `configurations[]` | `profile.scopes` direct (path 2 inchangé) |
+| Profile avec `configurations[]` mais sans `profile.scopes[sourceId]` (document) | Scope mergé depuis les Configurations |
+| Profile avec `configurations[]` ET `profile.scopes[sourceId]` (document) | **Profile.scopes wins** (override per-sourceId) |
+| Pour `kind: 'relational'` | Inchangé — le `narrowedScope` issu de `mergeConfigurations.{selectedTables, tableOptions, columnMasking}` override |
+
+**Tests** : 1596 tests verts (28 sso + 267 core + 105 connectors + 359 rag-core + 30 web + 67 rag-connectors + 34 gdrive + 42 gsheets + 50 notion + 28 microsoft + 536 cli). **+8 vs. 1588** (5 accessors + 3 merge). 0 régression.
+
+**QA review** : score 10/10, aucun bloquant. Validation des points critiques :
+- ✅ Sémantique `allowAll wins` correcte (allowlists explicitement clearées, pas d'union puis check post-hoc)
+- ✅ Profile override hiérarchie respectée (spread order garantit profile last)
+- ✅ Config-only sourceIds auto-ajoutés à `rawSources` — pas de drop silencieux
+- ✅ Mocks `@calame/core` étendus avec `getConfigurationDocumentScopes` — passthrough realistic
+- ✅ `saveBodyTransform` préserve les scopes relational existants → save RAG ne perd pas la DB selection
+- ✅ Boundary open-core respectée (lazy import `RagAccessSelector`, pas de value import statique `@calame-ee/*` dans `packages/`)
+
+**Fichiers modifiés** :
+
+```
+MOD packages/core/src/sources/accessors.ts                       (+44 lignes)
+MOD packages/core/src/sources/__tests__/accessors.test.ts        (+78 lignes — 5 nouveaux tests)
+MOD packages/cli/src/routes/serve.ts                             (+78 lignes)
+MOD packages/cli/src/routes/__tests__/serve-adapter-tools.test.ts (+196 lignes — 3 nouveaux tests + mocks)
+MOD ee/rag-core/src/web/RagAccessSelector.tsx                    (+27 lignes — 3 nouvelles props)
+MOD packages/web/src/App.tsx                                     (+110 lignes — tabbed ConfigurationDetailView)
+```
+
+**Bénéfices opérationnels** :
+- Un admin peut maintenant créer une Configuration "kb_internal" qui combine des tables DB + des dossiers RAG, et la **partager** entre plusieurs MCP Profiles (`support`, `legal`, `engineering`) en une seule référence — au lieu de re-cocher les mêmes dossiers à chaque Profile.
+- Cohérence du modèle Sources Unifiées : le pivot 2026-05-07 (`docs/sources-unified-plan.md`) avait pour but de gommer la dichotomie DB/RAG dans les types. Cette tranche supprime la dernière asymétrie runtime.
 
 ### 🚧 En cours 2026-05-09 — Phase 4 du plan unifié : UI Sources unifiée + `RagAccessSelector` (non commité)
 

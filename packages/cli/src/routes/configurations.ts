@@ -188,6 +188,19 @@ export function registerConfigurationsRoute(app: Express, state: AppState): void
         return;
       }
 
+      // Dedup sources defensively — the frontend can emit duplicates when merging
+      // per-tab edits (relational + knowledge bases) and we want the persisted row
+      // to carry each sourceId at most once. Order is preserved (first occurrence wins).
+      if (Array.isArray(payload['sources'])) {
+        const seen = new Set<string>();
+        payload['sources'] = (payload['sources'] as unknown[]).filter((id): id is string => {
+          if (typeof id !== 'string') return false;
+          if (seen.has(id)) return false;
+          seen.add(id);
+          return true;
+        });
+      }
+
       const configLabel = typeof label === 'string' && label.length > 0 ? label : name;
       const db = await getDb();
 

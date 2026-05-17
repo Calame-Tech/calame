@@ -741,6 +741,11 @@ export default function RagAccessSelector({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [piiMaskingDisabled, setPiiMaskingDisabled] = useState<boolean>(() =>
+    Object.values(initialScopes).some(
+      (s) => s.kind === 'document' && s.piiMaskingMode === 'off',
+    ),
+  );
 
   const abortRef = useRef<AbortController | null>(null);
 
@@ -776,17 +781,12 @@ export default function RagAccessSelector({
       const allJobs: RagJob[] = jobsRes.jobs ?? [];
 
       const nodes: SourceNode[] = (sourcesRes.sources ?? []).map((source) => {
-        const existingScope = initialScopes[source.id];
-        const docScope = existingScope?.kind === 'document' ? existingScope : null;
-
         const activeJob =
           allJobs.find(
             (j) => j.sourceId === source.id && (j.status === 'running' || j.status === 'pending'),
           ) ?? null;
-
         const failedJob =
           allJobs.find((j) => j.sourceId === source.id && j.status === 'failed') ?? null;
-
         return {
           source,
           loaded: false,
@@ -795,14 +795,11 @@ export default function RagAccessSelector({
           expanded: false,
           rootFolderIds: [],
           rootDocuments: [],
-          included:
-            docScope !== null &&
-            (docScope.allowedFolders.length > 0 || docScope.allowedDocuments.length > 0),
+          included: initialSources.includes(source.id),
           activeJob,
           syncError: failedJob?.error ?? null,
         };
       });
-
       setSourceNodes(nodes);
     } catch (err) {
       const msg =
@@ -811,7 +808,14 @@ export default function RagAccessSelector({
     } finally {
       setLoading(false);
     }
-  }, [initialScopes]);
+    // Initial mount only — see the dedicated effect below for keeping `included`
+    // in sync with `initialSources` without re-fetching. `initialSources` is read
+    // here only to seed the first render; the eslint dep-exhaustive warning is
+    // intentionally silenced because re-fetching on every save round-trip
+    // (`initialSources` changes reference every time the parent rebuilds the
+    // memoised array) would flash the loading spinner and wipe UI state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     void loadSources();
@@ -819,6 +823,21 @@ export default function RagAccessSelector({
       abortRef.current?.abort();
     };
   }, [loadSources]);
+
+  // Keep `included` in sync with `initialSources` WITHOUT triggering a refetch
+  // of `/api/rag/sources`. After a save the parent always passes a new array
+  // reference; refetching here would flash the loading spinner and momentarily
+  // wipe the expanded/loaded UI state, which the user perceives as "everything
+  // got unchecked". Updating the boolean in place keeps the tree visible and
+  // selections intact.
+  useEffect(() => {
+    setSourceNodes((prev) =>
+      prev.map((n) => {
+        const nextIncluded = initialSources.includes(n.source.id);
+        return n.included === nextIncluded ? n : { ...n, included: nextIncluded };
+      }),
+    );
+  }, [initialSources]);
 
   // ---------------------------------------------------------------------------
   // Lazy load root folders + documents for a source
@@ -1067,6 +1086,7 @@ export default function RagAccessSelector({
           sourceNode.rootFolderIds,
           sourceNode.rootDocuments,
           folderMap,
+          piiMaskingDisabled ? 'off' : 'inherit',
         );
       }
 
@@ -1140,6 +1160,23 @@ export default function RagAccessSelector({
         <p className="text-xs text-gray-500 mt-0.5">
           Sélectionnez les bases de connaissance et dossiers accessibles pour ce profile.
         </p>
+        <label className="flex items-start gap-2 mt-2 cursor-pointer group">
+          <input
+            type="checkbox"
+            checked={piiMaskingDisabled}
+            onChange={(e) => setPiiMaskingDisabled(e.target.checked)}
+            className="mt-0.5 w-4 h-4 rounded border border-gray-600 bg-gray-800 accent-os-600 cursor-pointer flex-shrink-0"
+          />
+          <span className="flex flex-col gap-0.5">
+            <span className="text-xs text-gray-300 group-hover:text-gray-100 transition-colors">
+              Désactiver le masquage PII (le contenu sensible reste visible par l'IA)
+            </span>
+            <span className="text-[11px] text-gray-500">
+              Désactivez si votre contenu contient des numéros qui ne sont pas du vrai PII (codes
+              secrets, IDs internes, etc.).
+            </span>
+          </span>
+        </label>
       </div>
 
       <ToastList toasts={toasts} onDismiss={dismissToast} />

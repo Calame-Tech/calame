@@ -106,6 +106,7 @@ export function buildDocumentScope(
   rootFolderIds: string[],
   rootDocuments: RagDocument[],
   folderMap: FolderMap,
+  piiMaskingMode?: 'inherit' | 'off',
 ): Extract<ScopeSelection, { kind: 'document' }> {
   if (!sourceIncluded) {
     return { kind: 'document', mode: 'allowAll', allowedFolders: [], allowedDocuments: [] };
@@ -143,8 +144,17 @@ export function buildDocumentScope(
     allowedDocuments.push(doc.path);
   }
 
-  const mode = allowedFolders.length > 0 ? 'allowAll' : 'allowList';
-  return { kind: 'document', mode, allowedFolders, allowedDocuments };
+  const mode: 'allowAll' | 'allowList' =
+    allowedFolders.length === 0 && allowedDocuments.length === 0
+      ? 'allowAll'
+      : 'allowList';
+  return {
+    kind: 'document',
+    mode,
+    allowedFolders,
+    allowedDocuments,
+    ...(piiMaskingMode === 'off' ? { piiMaskingMode: 'off' } : {}),
+  };
 }
 
 // ---------------------------------------------------------------------------

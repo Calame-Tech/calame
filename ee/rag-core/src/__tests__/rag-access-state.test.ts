@@ -164,6 +164,26 @@ describe('buildDocumentScope', () => {
     });
   });
 
+  it('returns allowAll when source is included but no folders or documents are picked', () => {
+    const scope = buildDocumentScope(true, [], [], {});
+    expect(scope).toEqual({
+      kind: 'document',
+      mode: 'allowAll',
+      allowedFolders: [],
+      allowedDocuments: [],
+    });
+  });
+
+  it('includes piiMaskingMode: off in the scope when specified', () => {
+    const scope = buildDocumentScope(true, [], [], {}, 'off');
+    expect(scope.piiMaskingMode).toBe('off');
+  });
+
+  it('omits piiMaskingMode when value is inherit', () => {
+    const scope = buildDocumentScope(true, [], [], {}, 'inherit');
+    expect(scope.piiMaskingMode).toBeUndefined();
+  });
+
   it('builds allowedFolders for auto-include folders', () => {
     const folderMap: FolderMap = {
       'folder-1': makeFolderNode({
@@ -175,7 +195,8 @@ describe('buildDocumentScope', () => {
     expect(scope.kind).toBe('document');
     expect(scope.allowedFolders).toContain('docs/faq');
     expect(scope.allowedDocuments).toHaveLength(0);
-    expect(scope.mode).toBe('allowAll');
+    // Folders were picked → allowList (restricted to those folders)
+    expect(scope.mode).toBe('allowList');
   });
 
   it('builds allowedDocuments for strict folders', () => {

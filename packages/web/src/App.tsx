@@ -1337,8 +1337,6 @@ export default function App() {
                       },
                     })
                   }
-                  ragEnabled={ragEnabled}
-                  ragDisabledReason={ragDisabledReason}
                 />
               </div>
             )}
@@ -1433,15 +1431,6 @@ export default function App() {
 // MCP Detail / Config view — shown when clicking an MCP card
 // ---------------------------------------------------------------------------
 
-/** Totals returned by GET /api/profiles/:name/scopes/preview */
-interface ScopesPreviewTotals {
-  tables: number;
-  columns: number;
-  folders: number;
-  documents: number;
-  chunks: number;
-}
-
 interface McpDetailViewProps {
   profileName: string;
   profiles: Profile[];
@@ -1457,8 +1446,6 @@ interface McpDetailViewProps {
   onNavigateToUser: (userId: string) => void;
   onNavigateToAiSettings: () => void;
   initialActiveSection?: string;
-  ragEnabled: boolean;
-  ragDisabledReason: string | null;
 }
 
 function McpDetailView({
@@ -1476,15 +1463,13 @@ function McpDetailView({
   onNavigateBack,
   onNavigateToUser,
   initialActiveSection,
-  ragEnabled,
-  ragDisabledReason,
 }: McpDetailViewProps) {
   const [togglingProfile, setTogglingProfile] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copiedEndpoint, setCopiedEndpoint] = useState(false);
   const [activeSection, setActiveSection] = useState<
-    'tables' | 'config' | 'tokens' | 'audit' | 'users' | 'scoping' | 'sources'
+    'tables' | 'config' | 'tokens' | 'audit' | 'users' | 'scoping'
   >(
     (initialActiveSection as
       | 'tables'
@@ -1492,13 +1477,9 @@ function McpDetailView({
       | 'tokens'
       | 'audit'
       | 'users'
-      | 'scoping'
-      | 'sources') ?? 'tables',
+      | 'scoping') ?? 'tables',
   );
 
-  // RAG scopes preview state
-  const [scopesPreview, setScopesPreview] = useState<ScopesPreviewTotals | null>(null);
-  const [scopesPreviewLoading, setScopesPreviewLoading] = useState(false);
   const [editingLabel, setEditingLabel] = useState(false);
   const [editLabel, setEditLabel] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -1582,30 +1563,6 @@ function McpDetailView({
       onActiveProfileIndexChange(profileIndex);
     }
   }, [profileIndex, activeProfileIndex, onActiveProfileIndexChange]);
-
-  // Fetch RAG scopes preview when on the "Knowledge Bases" section
-  const fetchScopesPreview = useCallback(async () => {
-    setScopesPreviewLoading(true);
-    try {
-      const res = await fetch(`/api/profiles/${encodeURIComponent(profileName)}/scopes/preview`, {
-        credentials: 'include',
-      });
-      const data = await res.json();
-      if (data.success !== false && data.totals) {
-        setScopesPreview(data.totals as ScopesPreviewTotals);
-      }
-    } catch {
-      // Preview is best-effort — silently ignore errors
-    } finally {
-      setScopesPreviewLoading(false);
-    }
-  }, [profileName]);
-
-  useEffect(() => {
-    if (activeSection === 'sources') {
-      void fetchScopesPreview();
-    }
-  }, [activeSection, fetchScopesPreview]);
 
   if (!profile) {
     return (
@@ -1784,11 +1741,6 @@ function McpDetailView({
       id: 'scoping',
       label: 'Data Scoping',
       tooltip: "Configurer l'isolation des données par utilisateur (row-level)",
-    },
-    {
-      id: 'sources',
-      label: 'Knowledge Bases',
-      tooltip: 'Configurer les bases de connaissance RAG accessibles via ce serveur MCP',
     },
     {
       id: 'audit',
@@ -2632,136 +2584,6 @@ function McpDetailView({
         </div>
       )}
 
-      {activeSection === 'sources' && (
-        <div className="space-y-4">
-          {/* Preview header */}
-          <div className="card-primary p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-semibold text-gray-300">Knowledge Bases</h3>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  Sélectionnez les bases de connaissance et les dossiers accessibles via ce serveur MCP.
-                </p>
-              </div>
-              {/* Scope summary badge */}
-              {scopesPreviewLoading ? (
-                <span className="text-xs text-gray-500 italic">Chargement…</span>
-              ) : scopesPreview ? (
-                <div className="flex items-center gap-2 text-xs text-gray-400 flex-wrap justify-end">
-                  {scopesPreview.tables > 0 && (
-                    <span className="px-2 py-0.5 rounded bg-gray-800/60 border border-gray-700">
-                      {scopesPreview.tables} table{scopesPreview.tables !== 1 ? 's' : ''}
-                    </span>
-                  )}
-                  {scopesPreview.columns > 0 && (
-                    <span className="px-2 py-0.5 rounded bg-gray-800/60 border border-gray-700">
-                      {scopesPreview.columns} col{scopesPreview.columns !== 1 ? 's' : ''}
-                    </span>
-                  )}
-                  {scopesPreview.folders > 0 && (
-                    <span className="px-2 py-0.5 rounded bg-gray-800/60 border border-gray-700">
-                      {scopesPreview.folders} dossier{scopesPreview.folders !== 1 ? 's' : ''}
-                    </span>
-                  )}
-                  {scopesPreview.documents > 0 && (
-                    <span className="px-2 py-0.5 rounded bg-gray-800/60 border border-gray-700">
-                      {scopesPreview.documents} document{scopesPreview.documents !== 1 ? 's' : ''}
-                    </span>
-                  )}
-                  {scopesPreview.chunks > 0 && (
-                    <span className="px-2 py-0.5 rounded bg-gray-800/60 border border-gray-700">
-                      ~{scopesPreview.chunks} chunk{scopesPreview.chunks !== 1 ? 's' : ''}
-                    </span>
-                  )}
-                  {scopesPreview.tables === 0 &&
-                    scopesPreview.folders === 0 &&
-                    scopesPreview.documents === 0 && (
-                      <span className="text-gray-600 italic">Aucun élément accessible</span>
-                    )}
-                </div>
-              ) : null}
-            </div>
-          </div>
-
-          {/* RAG access selector body */}
-          {!ragEnabled ? (
-            <div className="card-primary p-6 text-center space-y-2">
-              <svg
-                className="w-8 h-8 text-gray-600 mx-auto"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={1.5}
-                aria-hidden="true"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25"
-                />
-              </svg>
-              <p className="text-sm font-medium text-gray-400">
-                Bases de connaissance non disponibles
-              </p>
-              {ragDisabledReason && (
-                <p className="text-xs text-gray-600 max-w-sm mx-auto">{ragDisabledReason}</p>
-              )}
-            </div>
-          ) : (
-            <div className="card-primary p-4">
-              <Suspense
-                fallback={
-                  <div className="p-6 text-sm text-gray-500 italic flex items-center gap-2">
-                    <svg
-                      className="w-3 h-3 animate-spin text-gray-500 flex-shrink-0"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      aria-hidden="true"
-                    >
-                      <circle
-                        className="opacity-25"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                      />
-                      <path
-                        className="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                      />
-                    </svg>
-                    Chargement…
-                  </div>
-                }
-              >
-                <RagAccessSelector
-                  profileName={profile.name}
-                  initialScopes={profile.scopes ?? {}}
-                  initialSources={profile.sources ?? []}
-                  onSaved={(newScopes, newSources) => {
-                    // Update local profile state — do NOT call persistProfiles here.
-                    // The RagAccessSelector already posted to /api/profiles/:name/scopes.
-                    onProfilesChange((prev) => {
-                      const updated = [...prev];
-                      updated[profileIndex] = {
-                        ...updated[profileIndex],
-                        scopes: newScopes,
-                        sources: newSources,
-                      };
-                      return updated;
-                    });
-                    // Refresh the preview summary
-                    void fetchScopesPreview();
-                  }}
-                />
-              </Suspense>
-            </div>
-          )}
-        </div>
-      )}
-
       {activeSection === 'audit' && (
         <div className="card-primary p-4">
           <h3 className="text-sm font-semibold text-gray-300 mb-3">Audit Log</h3>
@@ -3146,9 +2968,27 @@ function ConfigurationDetailView({
     // relational scope carrying the cleaned tables/options/masking. When
     // multiple connections are selected they all share the same selection for
     // now (per-source differentiation can be added later via RagAccessSelector).
-    const sourcesArray = [...selectedConns];
-    const scopes: Record<string, import('./types/schema.js').ScopeSelection> = {};
-    for (const sourceId of sourcesArray) {
+    //
+    // Critical: PRESERVE any document-kind sources/scopes already on the
+    // config. This save runs from the Databases tab but the top-level Save
+    // button is visible on the Knowledge tab too — without the merge below
+    // a click here would discard every RAG selection configured via
+    // RagAccessSelector.
+    //
+    // Also critical: `selectedConns` is seeded from `config.sources` which can
+    // contain non-DB source ids (e.g. a RAG nanoid that found its way in via
+    // an earlier save). Filtering to actual DB connection names is what stops
+    // the relational loop from overwriting `scopes[ragSourceId]` with
+    // `kind: 'relational'` — which would clobber the document scope we just
+    // spread above.
+    const validConnNames = new Set(connections.map((c) => c.name));
+    const relationalSources = [...selectedConns].filter((id) => validConnNames.has(id));
+
+    const sourcesArray = [...relationalSources, ...configDocumentSources];
+    const scopes: Record<string, import('./types/schema.js').ScopeSelection> = {
+      ...configDocumentScopes,
+    };
+    for (const sourceId of relationalSources) {
       scopes[sourceId] = {
         kind: 'relational',
         selectedTables: cleanedTables,

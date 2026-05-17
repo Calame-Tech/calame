@@ -989,9 +989,23 @@ export async function initRagRuntime(
       piiMasking,
     };
 
-    const documentAdapter = ragCore.buildDocumentSourceAdapter(deps, 'local', 'Local folder');
-    sourceAdapterRegistry.register(documentAdapter);
-    log.info('RAG DocumentSourceAdapter (local) registered in SourceAdapterRegistry.');
+    const ADAPTERS_TO_REGISTER: ReadonlyArray<{ type: string; displayName: string }> = [
+      { type: 'local', displayName: 'Local folder' },
+      { type: 's3', displayName: 'Amazon S3' },
+      { type: 'http', displayName: 'HTTP' },
+      { type: 'gdrive', displayName: 'Google Drive' },
+      { type: 'gsheets', displayName: 'Google Sheets' },
+      { type: 'notion', displayName: 'Notion' },
+      { type: 'sharepoint', displayName: 'SharePoint' },
+      { type: 'git', displayName: 'Git' },
+    ];
+
+    for (const { type, displayName } of ADAPTERS_TO_REGISTER) {
+      if (sourceAdapterRegistry.has(type)) continue;
+      const adapter = ragCore.buildDocumentSourceAdapter(deps, type, displayName);
+      sourceAdapterRegistry.register(adapter);
+      log.info(`RAG DocumentSourceAdapter (${type}) registered in SourceAdapterRegistry.`);
+    }
   }
 
   log.info(`RAG runtime initialized (vector dimension=${dimension}).`);

@@ -646,7 +646,7 @@ async function executeWithAudit(
 //   catalogue baked in the tool descriptions.
 // ===========================================================================
 
-function registerCalcTool(
+export function registerCalcTool(
   server: McpServer,
   profileName: string,
   toolName: (suffix: string) => string,
@@ -742,8 +742,6 @@ export function registerDynamicTools(options: DynamicToolsOptions): void {
     scopeGuard,
     toolName,
   };
-
-  registerCalcTool(options.server, options.profileName, toolName, options.onAuditLog);
 
   const accessible = buildAccessibleTables(options, scopeGuard);
   if (accessible.length === 0) return;

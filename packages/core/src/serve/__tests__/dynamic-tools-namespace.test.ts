@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { registerDynamicTools } from '../dynamic-tools.js';
+import { registerDynamicTools, registerCalcTool } from '../dynamic-tools.js';
 import type { TableInfo, Relation } from '../../introspect/types.js';
 
 // ---------------------------------------------------------------------------
@@ -82,9 +82,11 @@ describe('registerDynamicTools — toolNamespace', () => {
 
   describe('when toolNamespace is unset', () => {
     it('registers tools with unprefixed names', () => {
+      registerCalcTool(server as unknown as Parameters<typeof registerCalcTool>[0], 'test', (s) => s);
       registerDynamicTools(makeBaseOptions(server));
 
       const names = server.getToolNames();
+      // calc is registered globally (no prefix) by the caller, not by registerDynamicTools
       expect(names).toContain('calc');
       expect(names).toContain('list_tables');
       expect(names).toContain('describe');
@@ -101,14 +103,22 @@ describe('registerDynamicTools — toolNamespace', () => {
       const prefixed = names.filter((n) => /^[a-z]+_[a-z]/.test(n) && n !== 'list_tables' && n !== 'join_aggregate');
       expect(prefixed).toHaveLength(0);
     });
+
+    it('does not register calc — calc is registered globally by the caller', () => {
+      registerDynamicTools(makeBaseOptions(server));
+
+      const names = server.getToolNames();
+      expect(names).not.toContain('calc');
+    });
   });
 
   describe('when toolNamespace is empty string', () => {
-    it('behaves identically to unset (no prefix)', () => {
+    it('behaves identically to unset (no prefix) for source-scoped tools', () => {
       registerDynamicTools(makeBaseOptions(server, { toolNamespace: '' }));
 
       const names = server.getToolNames();
-      expect(names).toContain('calc');
+      // calc is NOT registered by registerDynamicTools — it is the caller's responsibility
+      expect(names).not.toContain('calc');
       expect(names).toContain('list_tables');
       expect(names).toContain('describe');
       expect(names).toContain('aggregate');
@@ -122,11 +132,12 @@ describe('registerDynamicTools — toolNamespace', () => {
   // ---------------------------------------------------------------------------
 
   describe('when toolNamespace is "prod_"', () => {
-    it('prefixes every registered tool name', () => {
+    it('prefixes every source-scoped tool name (calc excluded — it is global)', () => {
       registerDynamicTools(makeBaseOptions(server, { toolNamespace: 'prod_' }));
 
       const names = server.getToolNames();
-      expect(names).toContain('prod_calc');
+      // calc is global, registered once by the caller without a namespace — not by registerDynamicTools
+      expect(names).not.toContain('prod_calc');
       expect(names).toContain('prod_list_tables');
       expect(names).toContain('prod_describe');
       expect(names).toContain('prod_aggregate');
@@ -134,7 +145,7 @@ describe('registerDynamicTools — toolNamespace', () => {
       expect(names).toContain('prod_join_aggregate');
     });
 
-    it('registers NO unprefixed tool names', () => {
+    it('registers NO unprefixed source-scoped tool names', () => {
       registerDynamicTools(makeBaseOptions(server, { toolNamespace: 'prod_' }));
 
       const names = server.getToolNames();
@@ -148,11 +159,12 @@ describe('registerDynamicTools — toolNamespace', () => {
   });
 
   describe('when toolNamespace is "staging_"', () => {
-    it('prefixes every registered tool name with staging_', () => {
+    it('prefixes every source-scoped tool name with staging_ (calc excluded — it is global)', () => {
       registerDynamicTools(makeBaseOptions(server, { toolNamespace: 'staging_' }));
 
       const names = server.getToolNames();
-      expect(names).toContain('staging_calc');
+      // calc is global, not registered by registerDynamicTools
+      expect(names).not.toContain('staging_calc');
       expect(names).toContain('staging_list_tables');
       expect(names).toContain('staging_describe');
       expect(names).toContain('staging_aggregate');
@@ -160,7 +172,7 @@ describe('registerDynamicTools — toolNamespace', () => {
       expect(names).toContain('staging_join_aggregate');
     });
 
-    it('does not register any unprefixed tool names', () => {
+    it('does not register any unprefixed source-scoped tool names', () => {
       registerDynamicTools(makeBaseOptions(server, { toolNamespace: 'staging_' }));
 
       const names = server.getToolNames();

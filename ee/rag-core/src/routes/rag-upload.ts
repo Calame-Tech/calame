@@ -144,6 +144,14 @@ export function registerRagUploadRoutes(app: Express, deps: RagRouteDeps): void 
 				return;
 			}
 
+			// Decrypt once, fail fast before touching the multipart stream.
+			const config = JSON.parse(deps.decryptConfig(row.config_encrypted)) as Record<string, unknown>;
+			if (typeof config['rootPath'] !== 'string' || config['rootPath'] === '') {
+				sendError(res, 400, 'Source has no rootPath configured.');
+				return;
+			}
+			const rootPath = path.resolve(config['rootPath'] as string);
+
 			const formidable = await loadFormidable();
 			if (!formidable) {
 				sendError(
@@ -180,10 +188,22 @@ export function registerRagUploadRoutes(app: Express, deps: RagRouteDeps): void 
 				const buffer = await fs.readFile(file.filepath);
 				const filename = file.originalFilename ?? path.basename(file.filepath);
 				const mime = detectMime(filename, file.mimetype ?? undefined);
+
+				// Strip any path separators or ".." from the client-supplied name so the
+				// file lands safely inside rootPath and the connector's readdir will find it.
+				const safeName = path.basename(filename);
+				const targetAbs = path.resolve(rootPath, safeName);
+				if (!targetAbs.startsWith(rootPath + path.sep) && targetAbs !== rootPath) {
+					sendError(res, 400, `Unsafe filename: "${filename}".`);
+					return;
+				}
+				await fs.mkdir(rootPath, { recursive: true });
+				await fs.writeFile(targetAbs, buffer);
+
 				const doc = await deps.pipeline.ingestDocument({
 					source,
 					folder: null,
-					path: filename,
+					path: safeName,
 					mimeType: mime,
 					buffer,
 					onTokensEmbedded: (count: number) => {

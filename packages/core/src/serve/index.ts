@@ -1,4 +1,4 @@
-export { registerDynamicTools } from './dynamic-tools.js';
+export { registerDynamicTools, registerCalcTool } from './dynamic-tools.js';
 export { computeDistinctValues } from './distinct-values.js';
 export type { ComputeDistinctValuesOptions } from './distinct-values.js';
 export type {

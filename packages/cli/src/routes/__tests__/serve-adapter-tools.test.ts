@@ -45,6 +45,7 @@ const {
 
 vi.mock('@calame/core', () => ({
   registerDynamicTools: registerDynamicToolsMock,
+  registerCalcTool: vi.fn(),
   resolveUserScope: vi.fn().mockReturnValue([]),
   createScopeGuard: vi.fn().mockReturnValue({
     active: false,
@@ -840,9 +841,16 @@ describe('serve route — Phase 3c adapter-driven tool registration', () => {
   });
 
   // -------------------------------------------------------------------------
-  // Test 11: profile.scopes wins over config document scopes
+  // Test 11: config document scopes win over profile.scopes for the same id
+  //
+  // The Knowledge tab moved from MCP detail to the data Configuration view, so
+  // the Configuration is now the single source of truth for document scopes.
+  // A stale profile.scopes[id] (e.g. left over from the removed MCP-detail
+  // Knowledge tab) MUST NOT shadow the user's current Configuration setting —
+  // otherwise updates made in the Knowledge tab (allowed docs, piiMaskingMode)
+  // silently fail to take effect at serve time.
   // -------------------------------------------------------------------------
-  it('profile.scopes[kb1] wins over config document scopes when both declare kb1', async () => {
+  it('config document scopes win over profile.scopes when both declare the same id', async () => {
     const state = new AppState();
 
     const docAdapterMock = {
@@ -893,7 +901,8 @@ describe('serve route — Phase 3c adapter-driven tool registration', () => {
       configurations: { 'cfg-all': cfgAllowAll as never },
     });
 
-    // Profile also declares kb1 with a stricter allowList — profile wins.
+    // Profile also declares kb1 with a stricter allowList — but the config
+    // now wins, so this stale profile scope should be ignored.
     const profileDocScope = {
       kind: 'document' as const,
       mode: 'allowList' as const,
@@ -902,27 +911,27 @@ describe('serve route — Phase 3c adapter-driven tool registration', () => {
     };
 
     state.serveProfiles = {
-      profileWins: {
-        name: 'profileWins',
-        label: 'Profile Wins',
+      configWins: {
+        name: 'configWins',
+        label: 'Config Wins',
         configurations: ['cfg-all'],
         sources: ['kb1'],
         scopes: { kb1: profileDocScope },
       },
     };
-    state.activeProfileNames.add('profileWins');
+    state.activeProfileNames.add('configWins');
 
     const app = makeApp(state);
-    const res = await postInitialize(app, 'profileWins');
+    const res = await postInitialize(app, 'configWins');
     expect(res.status).toBe(200);
 
     expect(docAdapterMock.registerMcpTools).toHaveBeenCalledOnce();
     const ctx = docAdapterMock.registerMcpTools.mock.calls[0][0] as McpRegistrationContext;
     expect(ctx.selection.kind).toBe('document');
     if (ctx.selection.kind === 'document') {
-      // Profile's allowList overrides the config's allowAll.
-      expect(ctx.selection.mode).toBe('allowList');
-      expect([...ctx.selection.allowedFolders]).toEqual(['docs/strict']);
+      // Config's allowAll overrides the profile's stale allowList.
+      expect(ctx.selection.mode).toBe('allowAll');
+      expect([...ctx.selection.allowedFolders]).toEqual([]);
     }
   });
 });

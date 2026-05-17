@@ -165,6 +165,7 @@ const scopeSelectionSchema = z.discriminatedUnion('kind', [
     mode: z.enum(['allowAll', 'allowList']),
     allowedFolders: z.array(z.string()),
     allowedDocuments: z.array(z.string()),
+    piiMaskingMode: z.enum(['inherit', 'off']).optional(),
   }),
   z.object({
     kind: z.literal('relational'),
@@ -181,11 +182,15 @@ const scopeSelectionSchema = z.discriminatedUnion('kind', [
 /** Returns true when the document passes the scope selection allowlist. */
 function isDocumentAllowed(
   documentId: string,
+  documentPath: string,
   folderPath: string | null,
   scope: Extract<ScopeSelection, { kind: 'document' }>,
 ): boolean {
   if (scope.mode === 'allowAll') return true;
+  // `allowedDocuments` accepts EITHER stable nanoids OR human-readable paths/names —
+  // the frontend writes paths, but the contract was originally id-based, so we honour both.
   if (scope.allowedDocuments.includes(documentId)) return true;
+  if (scope.allowedDocuments.includes(documentPath)) return true;
   if (folderPath !== null) {
     for (const allowed of scope.allowedFolders) {
       if (folderPath === allowed || folderPath.startsWith(allowed + '/')) return true;
@@ -426,9 +431,9 @@ export function buildDocumentSourceAdapter(
       // -------------------------------------------------------------------
       ctx.server.tool(
         `${ns}rag_search`,
-        `Search documents in source "${ctx.source.name}" using semantic (vector) similarity. ` +
-          `Returns the most relevant text chunks. Use this when you need information from ` +
-          `the knowledge base.`,
+        `Semantic vector search over the "${ctx.source.name}" knowledge base — user-uploaded documents such as notes, work logs, manuals, reports, contracts, meeting minutes, or any free-form text content. ` +
+          `Returns the most relevant text chunks. Prefer this tool over relational database queries whenever the user asks about textual content, what was written in a document, what was logged on a date, or anything that naturally lives in a file rather than a structured table. ` +
+          `Call it even when the question mentions names, dates, or events — those may appear in documents just as easily as in tables.`,
         {
           query: z.string().min(1).describe('The natural language search query.'),
           topK: z
@@ -467,7 +472,7 @@ export function buildDocumentSourceAdapter(
 
           // Post-search allowlist filter (§6.3 invariant)
           const filtered = searchResult.chunks.filter((chunk) => {
-            return isDocumentAllowed(chunk.documentId, chunk.folder, scope);
+            return isDocumentAllowed(chunk.documentId, chunk.fileName, chunk.folder, scope);
           });
 
           const cappedChunks = filtered.map((chunk) => {
@@ -490,7 +495,7 @@ export function buildDocumentSourceAdapter(
           // no-op when piiMasking is undefined or `enabled: false`.
           let piiRedacted: Partial<Record<PiiCategory, number>> | undefined;
           let outChunks = cappedChunks;
-          if (deps.piiMasking?.enabled) {
+          if (deps.piiMasking?.enabled && scope.piiMaskingMode !== 'off') {
             // `maskSearchResult` accepts a RagSearchResult-shaped object;
             // our `cappedChunks` carries an extra `truncated` field, which
             // the function preserves via spread. Cast at the boundary.
@@ -531,7 +536,7 @@ export function buildDocumentSourceAdapter(
       // -------------------------------------------------------------------
       ctx.server.tool(
         `${ns}rag_list_sources`,
-        `List the document source(s) available through this MCP server endpoint.`,
+        `List the document source(s) of the user's knowledge base accessible through this endpoint. Use when the user asks "what knowledge bases / document sources do I have?" or to discover what's available before calling rag_search.`,
         {},
         async (_args) => {
           const t0 = Date.now();
@@ -564,7 +569,7 @@ export function buildDocumentSourceAdapter(
       // -------------------------------------------------------------------
       ctx.server.tool(
         `${ns}rag_list_folders`,
-        `List folders in source "${ctx.source.name}". Useful for exploring the knowledge base structure.`,
+        `List folders in the "${ctx.source.name}" knowledge base — useful to discover the structure of the user's documents before drilling down with rag_list_documents or rag_search.`,
         {
           parent: z
             .string()
@@ -621,7 +626,7 @@ export function buildDocumentSourceAdapter(
       // -------------------------------------------------------------------
       ctx.server.tool(
         `${ns}rag_list_documents`,
-        `List documents in a specific folder of source "${ctx.source.name}".`,
+        `List documents in a specific folder of the "${ctx.source.name}" knowledge base. Use when the user asks "what files do I have in <folder>?" or to enumerate documents before fetching them.`,
         {
           folder: z.string().describe('The folder path to list documents from.'),
           limit: z
@@ -680,7 +685,7 @@ export function buildDocumentSourceAdapter(
           // Post-fetch per-document allowlist filter (document may be individually
           // blocked even when the folder is not)
           const allowed = docs
-            .filter((d) => isDocumentAllowed(d.id, d.folderId ? args.folder : null, scope))
+            .filter((d) => isDocumentAllowed(d.id, d.path, d.folderId ? args.folder : null, scope))
             .slice(0, limit);
 
           const result = {
@@ -711,8 +716,7 @@ export function buildDocumentSourceAdapter(
       // -------------------------------------------------------------------
       ctx.server.tool(
         `${ns}rag_get_document`,
-        `Retrieve the full text content of a document from source "${ctx.source.name}". ` +
-          `Content is capped at 50 KB — large documents are truncated with a flag.`,
+        `Retrieve the full text content of a single document from the "${ctx.source.name}" knowledge base. Use when the user names a document explicitly, or to expand on a chunk that rag_search returned but truncated. Content is capped at 50 KB — large documents are flagged truncated.`,
         {
           documentId: z.string().describe('The document id to retrieve.'),
         },
@@ -752,7 +756,7 @@ export function buildDocumentSourceAdapter(
           // interface only returns RagDocument (with folderId, not path), we use the
           // document's own path to derive the folder component for the check.
           const folderPath = doc.folderId ? doc.path.split('/').slice(0, -1).join('/') : null;
-          if (!isDocumentAllowed(doc.id, folderPath, scope)) {
+          if (!isDocumentAllowed(doc.id, doc.path, folderPath, scope)) {
             audit(
               'rag_get_document',
               { documentId: args.documentId },
@@ -779,7 +783,7 @@ export function buildDocumentSourceAdapter(
           // undefined or `enabled: false`, this is a structural no-op.
           let finalText = capped;
           let piiRedacted: Partial<Record<PiiCategory, number>> | undefined;
-          if (deps.piiMasking?.enabled) {
+          if (deps.piiMasking?.enabled && scope.piiMaskingMode !== 'off') {
             // Lazy import would be cleaner but `applyPiiMasking` is already
             // pulled in transitively via maskSearchResult; importing it at
             // the top of the file keeps the tree-shaker happy and avoids a

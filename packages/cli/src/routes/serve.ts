@@ -15,6 +15,7 @@ import type {
 } from '@calame/core';
 import {
   registerDynamicTools,
+  registerCalcTool,
   resolveUserScope,
   createScopeGuard,
   computeDistinctValues,
@@ -278,9 +279,17 @@ export function mergeConfigurations(
       }
     }
 
-    // Merge document (RAG) scopes — "allowAll wins, else union of allowlists"
+    // Merge document (RAG) scopes — "allowAll wins, else union of allowlists".
+    //
+    // piiMaskingMode merge policy: 'off' wins. Rationale — the toggle is an
+    // explicit user opt-out for sources whose content collides with the PII
+    // detector heuristics. When any linked configuration disables masking we
+    // honour that intent; otherwise masking stays at the default. This
+    // mirrors the "least-restrictive-on-access" merge for allowAll/allowList.
     for (const [sourceId, docScope] of Object.entries(getConfigurationDocumentScopes(config))) {
       const existing = documentScopes[sourceId];
+      const piiMaskingMode: 'off' | undefined =
+        existing?.piiMaskingMode === 'off' || docScope.piiMaskingMode === 'off' ? 'off' : undefined;
       if (!existing) {
         // First time we see this sourceId: copy as-is (mutable snapshot).
         documentScopes[sourceId] = {
@@ -288,6 +297,7 @@ export function mergeConfigurations(
           mode: docScope.mode,
           allowedFolders: [...docScope.allowedFolders],
           allowedDocuments: [...docScope.allowedDocuments],
+          ...(piiMaskingMode !== undefined ? { piiMaskingMode } : {}),
         };
       } else if (existing.mode === 'allowAll' || docScope.mode === 'allowAll') {
         // Either side is allowAll → promote to allowAll (least restrictive wins).
@@ -296,6 +306,7 @@ export function mergeConfigurations(
           mode: 'allowAll',
           allowedFolders: [],
           allowedDocuments: [],
+          ...(piiMaskingMode !== undefined ? { piiMaskingMode } : {}),
         };
       } else {
         // Both are allowList → union of the two allowlists.
@@ -306,6 +317,7 @@ export function mergeConfigurations(
           mode: 'allowList',
           allowedFolders: [...foldersSet],
           allowedDocuments: [...docsSet],
+          ...(piiMaskingMode !== undefined ? { piiMaskingMode } : {}),
         };
       }
     }
@@ -723,6 +735,15 @@ export function registerServeRoute(app: Express, state: AppState): void {
         });
       } else {
         // --- Legacy path: direct registerDynamicTools iteration (unchanged) ---
+
+        // Register calc once globally — same rationale as in registerToolsViaAdapters.
+        registerCalcTool(mcpServer, profileName, (s) => s, (entry) => {
+          if (state.auditLog) {
+            state.auditLog.addEntry({ ...entry, tokenLabel: resolvedTokenLabel, tenantId });
+            state.auditLog.save().catch(() => {});
+          }
+        });
+
         // Group tables by connection
         const tablesByConnection = new Map<
           ConnectionState,
@@ -1265,17 +1286,22 @@ async function registerToolsViaAdapters(opts: RegisterAdaptersOptions): Promise<
   } = opts;
 
   // Build the effective scopes map:
-  //   - Start from the merged configuration document scopes (may be empty on legacy path).
-  //   - Profile.scopes always wins for document sources declared directly on the profile
-  //     (profile.scopes[sourceId] exists and is kind='document' → it overrides the config scope).
-  //   - Relational scopes come exclusively from profile.scopes (unchanged behaviour).
+  //   - Start from profile.scopes (which carries relational scopes plus any
+  //     legacy profile-level document scopes still hanging around).
+  //   - For document-kind sources the linked Configuration is now the single
+  //     source of truth (the Knowledge tab moved from MCP detail to the data
+  //     Configuration). When a Configuration declares a document scope for a
+  //     sourceId we OVERRIDE any pre-existing profile.scopes entry for that
+  //     same id — otherwise stale legacy profile entries (e.g. an old
+  //     `piiMaskingMode` setting written from the removed MCP-detail Knowledge
+  //     tab) would silently win over the user's current data-profile config.
+  //   - Relational scopes still come exclusively from profile.scopes — they
+  //     are not part of `effectiveDocumentScopes` so the override is a no-op
+  //     for relational ids.
   const profileScopes = profile.scopes ?? {};
   const mergedScopes: Record<string, ScopeSelection> = { ...profileScopes };
   for (const [sourceId, docScope] of Object.entries(effectiveDocumentScopes)) {
-    // profile.scopes[sourceId] wins — only fill in sourceIds not declared on the profile.
-    if (!(sourceId in profileScopes)) {
-      mergedScopes[sourceId] = docScope;
-    }
+    mergedScopes[sourceId] = docScope;
   }
 
   const rawSources = profile.sources
@@ -1321,6 +1347,17 @@ async function registerToolsViaAdapters(opts: RegisterAdaptersOptions): Promise<
   }
 
   let anyRegistered = false;
+
+  // Register calc once globally — it is not source-specific, so it must not
+  // participate in per-source namespacing. Calling it here (before the loop)
+  // guarantees exactly one registration even when multiple relational sources
+  // are wired into the same profile.
+  registerCalcTool(mcpServer, profileName, (s) => s, (entry) => {
+    if (state.auditLog) {
+      state.auditLog.addEntry({ ...entry, tokenLabel: resolvedTokenLabel, tenantId });
+      state.auditLog.save().catch(() => {});
+    }
+  });
 
   for (const { sourceId, scope } of resolvedPairs) {
     const resolved = resolveAdapterForSource(sourceId, scope, state);

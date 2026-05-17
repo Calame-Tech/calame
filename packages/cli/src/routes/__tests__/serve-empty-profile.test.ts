@@ -27,6 +27,7 @@ const { registerDynamicToolsMock } = vi.hoisted(() => ({
 // ---------------------------------------------------------------------------
 vi.mock('@calame/core', () => ({
   registerDynamicTools: registerDynamicToolsMock,
+  registerCalcTool: vi.fn(),
   resolveUserScope: vi.fn().mockReturnValue([]),
   createScopeGuard: vi.fn().mockReturnValue({
     active: false,

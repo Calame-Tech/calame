@@ -88,12 +88,17 @@ export function registerChatStreamRoute(app: Express, state: AppState): void {
         return;
       }
 
-      // Dual auth: admin session cookie OR user session cookie OR Bearer token
+      // Dual auth: admin session cookie OR user session cookie OR Bearer token,
+      // with one bypass branch for profiles configured as `authMode: 'open'`
+      // (anonymous chat — matches the open-mode handling in `auth.ts`).
       const adminSessionId = cookies['calame_session'];
       const userSessionId = cookies['calame_user_session'];
       const adminSession = adminSessionId ? validateSession(adminSessionId) : null;
       const userSession = !adminSession && userSessionId ? validateSession(userSessionId) : null;
       const resolvedSession = adminSession ?? userSession;
+
+      const serveProfile = state.serveProfiles[profileName];
+      const isOpenMode = serveProfile?.authMode === 'open';
 
       let mcpBearerToken: string | null = null;
 
@@ -107,6 +112,11 @@ export function registerChatStreamRoute(app: Express, state: AppState): void {
           return;
         }
         mcpBearerToken = token;
+      } else if (isOpenMode) {
+        // Anonymous chat against an open-mode profile. The MCP endpoint at
+        // /mcp/<profileName> accepts unauthenticated requests for open
+        // profiles; the optional profile-level token is forwarded when set.
+        mcpBearerToken = serveProfile?.token ?? '';
       } else {
         const authHeader = req.headers.authorization ?? '';
         const match = authHeader.match(/^Bearer\s+(.+)$/i);

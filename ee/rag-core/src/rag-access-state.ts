@@ -107,6 +107,7 @@ export function buildDocumentScope(
   rootDocuments: RagDocument[],
   folderMap: FolderMap,
   piiMaskingMode?: 'inherit' | 'off',
+  directFetchDisabled?: boolean,
 ): Extract<ScopeSelection, { kind: 'document' }> {
   if (!sourceIncluded) {
     return { kind: 'document', mode: 'allowAll', allowedFolders: [], allowedDocuments: [] };
@@ -154,6 +155,7 @@ export function buildDocumentScope(
     allowedFolders,
     allowedDocuments,
     ...(piiMaskingMode === 'off' ? { piiMaskingMode: 'off' } : {}),
+    ...(directFetchDisabled === true ? { directFetchDisabled: true } : {}),
   };
 }
 

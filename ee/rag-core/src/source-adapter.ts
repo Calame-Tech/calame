@@ -166,6 +166,7 @@ const scopeSelectionSchema = z.discriminatedUnion('kind', [
     allowedFolders: z.array(z.string()),
     allowedDocuments: z.array(z.string()),
     piiMaskingMode: z.enum(['inherit', 'off']).optional(),
+    directFetchDisabled: z.boolean().optional(),
   }),
   z.object({
     kind: z.literal('relational'),
@@ -233,6 +234,19 @@ function capChunkText(text: string): { text: string; truncated: boolean } {
 
 // Document full-text cap (50 KB, matching the plan §rag_get_document)
 const MAX_DOC_BYTES = 50 * 1024;
+
+/**
+ * Per-MCP-session cap on `rag_get_document` invocations. Read from
+ * CALAME_RAG_MAX_DIRECT_FETCH_PER_TURN. Default 5. Negative / zero values
+ * disable the cap entirely. NaN falls back to the default.
+ */
+function readDirectFetchCap(): number {
+  const raw = process.env['CALAME_RAG_MAX_DIRECT_FETCH_PER_TURN'];
+  if (raw === undefined) return 5;
+  const parsed = Number.parseInt(raw, 10);
+  if (Number.isNaN(parsed)) return 5;
+  return parsed;
+}
 
 function capDocText(text: string): { text: string; truncated: boolean } {
   if (text.length <= MAX_DOC_BYTES) return { text, truncated: false };
@@ -391,6 +405,9 @@ export function buildDocumentSourceAdapter(
           `DocumentSourceAdapter(${type}): expected document selection, got '${ctx.selection.kind}'`,
         );
       }
+
+      const directFetchCap = readDirectFetchCap();
+      let directFetchCount = 0;
 
       const scope = ctx.selection;
       const ns = ctx.toolNamespace; // e.g. '' or 'kb1_'
@@ -714,6 +731,7 @@ export function buildDocumentSourceAdapter(
       // -------------------------------------------------------------------
       // rag_get_document
       // -------------------------------------------------------------------
+      if (scope.directFetchDisabled !== true) {
       ctx.server.tool(
         `${ns}rag_get_document`,
         `Retrieve the full text content of a single document from the "${ctx.source.name}" knowledge base. Use when the user names a document explicitly, or to expand on a chunk that rag_search returned but truncated. Content is capped at 50 KB — large documents are flagged truncated.`,
@@ -722,6 +740,21 @@ export function buildDocumentSourceAdapter(
         },
         async (args) => {
           const t0 = Date.now();
+
+          // Per-session cap: prevent the LLM from bulk-reading all documents.
+          if (directFetchCap > 0 && directFetchCount >= directFetchCap) {
+            audit('rag_get_document', { documentId: args.documentId }, `cap exceeded (${directFetchCap})`, 'error', t0);
+            return {
+              content: [{
+                type: 'text',
+                text: JSON.stringify({
+                  error: `Direct-fetch cap reached for this session (max ${directFetchCap} per turn). Use rag_search to find specific content instead.`,
+                }),
+              }],
+            };
+          }
+          directFetchCount++;
+
           let result: { doc: RagDocument; text: string } | null;
           try {
             result = await deps.storage.getDocument(args.documentId);
@@ -830,6 +863,7 @@ export function buildDocumentSourceAdapter(
           };
         },
       );
+      } // end if (scope.directFetchDisabled !== true)
     },
   };
 }

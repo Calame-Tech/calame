@@ -290,6 +290,12 @@ export function mergeConfigurations(
       const existing = documentScopes[sourceId];
       const piiMaskingMode: 'off' | undefined =
         existing?.piiMaskingMode === 'off' || docScope.piiMaskingMode === 'off' ? 'off' : undefined;
+      // directFetchDisabled merge policy: true wins. If any configuration disables direct fetch
+      // for the same source, it stays disabled in the merged scope.
+      const directFetchDisabled: true | undefined =
+        existing?.directFetchDisabled === true || docScope.directFetchDisabled === true
+          ? true
+          : undefined;
       if (!existing) {
         // First time we see this sourceId: copy as-is (mutable snapshot).
         documentScopes[sourceId] = {
@@ -298,6 +304,7 @@ export function mergeConfigurations(
           allowedFolders: [...docScope.allowedFolders],
           allowedDocuments: [...docScope.allowedDocuments],
           ...(piiMaskingMode !== undefined ? { piiMaskingMode } : {}),
+          ...(directFetchDisabled !== undefined ? { directFetchDisabled } : {}),
         };
       } else if (existing.mode === 'allowAll' || docScope.mode === 'allowAll') {
         // Either side is allowAll → promote to allowAll (least restrictive wins).
@@ -307,6 +314,7 @@ export function mergeConfigurations(
           allowedFolders: [],
           allowedDocuments: [],
           ...(piiMaskingMode !== undefined ? { piiMaskingMode } : {}),
+          ...(directFetchDisabled !== undefined ? { directFetchDisabled } : {}),
         };
       } else {
         // Both are allowList → union of the two allowlists.
@@ -318,6 +326,7 @@ export function mergeConfigurations(
           allowedFolders: [...foldersSet],
           allowedDocuments: [...docsSet],
           ...(piiMaskingMode !== undefined ? { piiMaskingMode } : {}),
+          ...(directFetchDisabled !== undefined ? { directFetchDisabled } : {}),
         };
       }
     }

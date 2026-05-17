@@ -141,6 +141,7 @@ export type ScopeSelection =
       allowedFolders: readonly string[];
       allowedDocuments: readonly string[];
       piiMaskingMode?: 'inherit' | 'off';
+      directFetchDisabled?: boolean;
     }
   | {
       kind: 'api';

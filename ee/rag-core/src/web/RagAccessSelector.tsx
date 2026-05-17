@@ -746,6 +746,11 @@ export default function RagAccessSelector({
       (s) => s.kind === 'document' && s.piiMaskingMode === 'off',
     ),
   );
+  const [directFetchDisabled, setDirectFetchDisabled] = useState<boolean>(() =>
+    Object.values(initialScopes).some(
+      (s) => s.kind === 'document' && s.directFetchDisabled === true,
+    ),
+  );
 
   const abortRef = useRef<AbortController | null>(null);
 
@@ -1087,6 +1092,7 @@ export default function RagAccessSelector({
           sourceNode.rootDocuments,
           folderMap,
           piiMaskingDisabled ? 'off' : 'inherit',
+          directFetchDisabled,
         );
       }
 
@@ -1174,6 +1180,24 @@ export default function RagAccessSelector({
             <span className="text-[11px] text-gray-500">
               Désactivez si votre contenu contient des numéros qui ne sont pas du vrai PII (codes
               secrets, IDs internes, etc.).
+            </span>
+          </span>
+        </label>
+        <label className="flex items-start gap-2 mt-2 cursor-pointer group">
+          <input
+            type="checkbox"
+            checked={directFetchDisabled}
+            onChange={(e) => setDirectFetchDisabled(e.target.checked)}
+            className="mt-0.5 w-4 h-4 rounded border border-gray-600 bg-gray-800 accent-os-600 cursor-pointer flex-shrink-0"
+          />
+          <span className="flex flex-col gap-0.5">
+            <span className="text-xs text-gray-300 group-hover:text-gray-100 transition-colors">
+              Désactiver la lecture directe des documents (le LLM ne pourra utiliser que la
+              recherche sémantique)
+            </span>
+            <span className="text-[11px] text-gray-500">
+              Recommandé pour les knowledge bases volumineuses : limite le coût des questions du
+              type &quot;résume tous mes fichiers&quot;.
             </span>
           </span>
         </label>

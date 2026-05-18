@@ -13,12 +13,24 @@ export interface SourceJobInfo {
   lastFailedJob: RagJob | null;
 }
 
+export interface UseActiveSyncJobsResult {
+  jobMap: Map<string, SourceJobInfo>;
+  /**
+   * Force an immediate re-poll. Callers should invoke this right after firing
+   * an action that creates or transitions a job (e.g. POST /sync), so the UI
+   * picks up the new `pending`/`running` row without waiting for the next
+   * scheduled tick — and crucially without needing to remount the component.
+   */
+  triggerPoll: () => void;
+}
+
 /**
  * Polls `/api/rag/jobs` globally every `pollIntervalMs` milliseconds and
  * returns a Map keyed by sourceId with active and last-failed job info.
  *
- * The poll stops when no active jobs remain and restarts as soon as a new
- * sourceId is added to the list (e.g. after a manual Re-sync trigger).
+ * The poll stops when no active jobs remain. Call `triggerPoll()` after
+ * actions that create new jobs (e.g. manual Re-sync) to restart polling
+ * immediately instead of waiting for a remount.
  *
  * @param sourceIds - list of source IDs to track; stable reference preferred.
  * @param pollIntervalMs - polling cadence in ms (default 5000).
@@ -26,7 +38,7 @@ export interface SourceJobInfo {
 export function useActiveSyncJobs(
   sourceIds: string[],
   pollIntervalMs = 5000,
-): Map<string, SourceJobInfo> {
+): UseActiveSyncJobsResult {
   const [jobMap, setJobMap] = useState<Map<string, SourceJobInfo>>(new Map());
 
   // Keep a ref to latest sourceIds so the interval callback stays current
@@ -98,7 +110,17 @@ export function useActiveSyncJobs(
     };
   }, [fetchJobs]);
 
-  return jobMap;
+  // Re-arm the poll loop on demand. Clears any pending timer first so we don't
+  // double-poll if the loop was still scheduled.
+  const triggerPoll = useCallback((): void => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    void fetchJobs();
+  }, [fetchJobs]);
+
+  return { jobMap, triggerPoll };
 }
 
 /**

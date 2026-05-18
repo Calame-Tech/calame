@@ -157,6 +157,7 @@ interface RagDocumentRow {
 	id: string;
 	source_id: string;
 	folder_id: string | null;
+	ingest_error: string | null;
 	path: string;
 	name: string;
 	mime_type: string;
@@ -200,6 +201,7 @@ function buildStorage(db: BetterSqlite3Database): DocumentStorage {
 		tenantId: r.tenant_id ?? 'default',
 		lastIndexedAt: r.last_indexed_at,
 		deletedAt: r.deleted_at,
+		ingestError: r.ingest_error ?? null,
 	});
 	return {
 		async listFolders(sourceId, parent) {

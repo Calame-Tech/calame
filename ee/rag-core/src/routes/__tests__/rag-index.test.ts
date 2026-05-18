@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Calame Tech inc. Licensed under the Business Source License 1.1.
 // See ee/LICENSE.BUSL at the root of the ee/ directory for terms.
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import Database from 'better-sqlite3';
 import type { Database as BetterSqlite3Database } from 'better-sqlite3';
 import { Readable } from 'node:stream';
@@ -966,5 +966,309 @@ describe('runSyncJob — monthly cap kill-switch', () => {
 
 		// Only the first doc is attempted; the loop breaks immediately.
 		expect(ingestDocument).toHaveBeenCalledTimes(1);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Circuit-breaker — verify the sync worker aborts after N consecutive
+// failures and surfaces a clear error in the job row and audit event.
+// ---------------------------------------------------------------------------
+
+describe('runSyncJob — circuit-breaker (consecutive failures)', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		// Ensure each test starts with the default cap (env var cleared).
+		delete process.env['CALAME_RAG_SYNC_MAX_CONSECUTIVE_FAILURES'];
+	});
+
+	afterEach(() => {
+		delete process.env['CALAME_RAG_SYNC_MAX_CONSECUTIVE_FAILURES'];
+	});
+
+	it('aborts after the default 5 consecutive failures and emits reason=consecutive_failures', async () => {
+		const db = makeDb();
+		const source = insertSource(db);
+
+		// 8 docs — circuit-breaker should fire after 5 consecutive failures.
+		const connector = makeConnector([
+			{ id: 'd1', path: '1.txt', etag: null },
+			{ id: 'd2', path: '2.txt', etag: null },
+			{ id: 'd3', path: '3.txt', etag: null },
+			{ id: 'd4', path: '4.txt', etag: null },
+			{ id: 'd5', path: '5.txt', etag: null },
+			{ id: 'd6', path: '6.txt', etag: null },
+			{ id: 'd7', path: '7.txt', etag: null },
+			{ id: 'd8', path: '8.txt', etag: null },
+		]);
+		const ingestDocument = vi.fn(async () => {
+			throw new Error('embedding endpoint unreachable');
+		});
+		const pipeline = {
+			ingestDocument,
+			markDocumentDeleted: vi.fn(),
+		} as unknown as IngestionPipeline;
+
+		const onAudit = vi.fn();
+		const captured = makeCapturedApp();
+		const deps = makeDeps(db, connector, pipeline, { onAudit });
+		registerRagIndexRoutes(captured.app, deps);
+
+		await runSync(captured, source.id, deps);
+
+		// Default cap is 5 — ingest is called exactly 5 times before abort.
+		expect(ingestDocument).toHaveBeenCalledTimes(5);
+
+		const job = readJob(db, source.id);
+		expect(job.status).toBe('failed');
+		// Error message must mention the abort cause.
+		expect(job.error).toContain('consecutive');
+		// GC pass must be skipped (we didn't finish the loop).
+		expect(job.gcDeleted).toBe(0);
+
+		// Terminal audit event must carry reason=consecutive_failures.
+		const terminal = onAudit.mock.calls
+			.map(([entry]) => entry as { type: string; payload: Record<string, unknown> })
+			.find((e) => e.type === 'rag.sync.failed' && e.payload['reason'] === 'consecutive_failures');
+		expect(terminal).toBeDefined();
+	});
+
+	it('respects CALAME_RAG_SYNC_MAX_CONSECUTIVE_FAILURES=2', async () => {
+		process.env['CALAME_RAG_SYNC_MAX_CONSECUTIVE_FAILURES'] = '2';
+
+		const db = makeDb();
+		const source = insertSource(db);
+
+		const connector = makeConnector([
+			{ id: 'd1', path: '1.txt', etag: null },
+			{ id: 'd2', path: '2.txt', etag: null },
+			{ id: 'd3', path: '3.txt', etag: null },
+		]);
+		const ingestDocument = vi.fn(async () => {
+			throw new Error('bad model name');
+		});
+		const pipeline = {
+			ingestDocument,
+			markDocumentDeleted: vi.fn(),
+		} as unknown as IngestionPipeline;
+
+		const captured = makeCapturedApp();
+		const deps = makeDeps(db, connector, pipeline);
+		registerRagIndexRoutes(captured.app, deps);
+
+		await runSync(captured, source.id, deps);
+
+		// Cap=2 → breaks after doc 2, doc 3 never attempted.
+		expect(ingestDocument).toHaveBeenCalledTimes(2);
+		const job = readJob(db, source.id);
+		expect(job.status).toBe('failed');
+	});
+
+	it('resets consecutiveFailures counter when a doc succeeds mid-run', async () => {
+		// Cap=2. Pattern: fail, succeed (resets counter), fail, succeed (resets),
+		// fail, fail → circuit trips on the 2nd consecutive failure of the last
+		// pair (i.e. doc 6).
+		process.env['CALAME_RAG_SYNC_MAX_CONSECUTIVE_FAILURES'] = '2';
+
+		const db = makeDb();
+		const source = insertSource(db);
+
+		const connector = makeConnector([
+			{ id: 'd1', path: '1.txt', etag: null },
+			{ id: 'd2', path: '2.txt', etag: null },
+			{ id: 'd3', path: '3.txt', etag: null },
+			{ id: 'd4', path: '4.txt', etag: null },
+			{ id: 'd5', path: '5.txt', etag: null },
+			{ id: 'd6', path: '6.txt', etag: null },
+		]);
+
+		let callCount = 0;
+		// fail, succeed, fail, succeed, fail, fail → trips on doc 6
+		const ingestDocument = vi.fn(async () => {
+			callCount++;
+			if (callCount % 2 === 0) return {}; // even calls succeed
+			throw new Error('transient error');
+		});
+		const pipeline = {
+			ingestDocument,
+			markDocumentDeleted: vi.fn(),
+		} as unknown as IngestionPipeline;
+
+		const captured = makeCapturedApp();
+		const deps = makeDeps(db, connector, pipeline);
+		registerRagIndexRoutes(captured.app, deps);
+
+		await runSync(captured, source.id, deps);
+
+		// Docs 1–6 attempted: 1 fail, 2 succeed (reset), 3 fail, 4 succeed (reset),
+		// 5 fail, 6 fail → breaker fires at doc 6 (2nd consecutive).
+		expect(ingestDocument).toHaveBeenCalledTimes(6);
+		const job = readJob(db, source.id);
+		expect(job.status).toBe('failed');
+	});
+
+	it('CALAME_RAG_SYNC_MAX_CONSECUTIVE_FAILURES=0 disables the breaker', async () => {
+		process.env['CALAME_RAG_SYNC_MAX_CONSECUTIVE_FAILURES'] = '0';
+
+		const db = makeDb();
+		const source = insertSource(db);
+
+		const connector = makeConnector([
+			{ id: 'd1', path: '1.txt', etag: null },
+			{ id: 'd2', path: '2.txt', etag: null },
+			{ id: 'd3', path: '3.txt', etag: null },
+		]);
+		const ingestDocument = vi.fn(async () => {
+			throw new Error('always fails');
+		});
+		const pipeline = {
+			ingestDocument,
+			markDocumentDeleted: vi.fn(),
+		} as unknown as IngestionPipeline;
+
+		const captured = makeCapturedApp();
+		const deps = makeDeps(db, connector, pipeline);
+		registerRagIndexRoutes(captured.app, deps);
+
+		await runSync(captured, source.id, deps);
+
+		// Breaker disabled → all 3 docs attempted despite all failing.
+		expect(ingestDocument).toHaveBeenCalledTimes(3);
+		const job = readJob(db, source.id);
+		expect(job.status).toBe('failed');
+	});
+
+	it('UnsupportedMimeTypeError is treated as a skip, not a failure', async () => {
+		process.env['CALAME_RAG_SYNC_MAX_CONSECUTIVE_FAILURES'] = '5';
+
+		const db = makeDb();
+		const source = insertSource(db);
+
+		const connector = makeConnector([
+			{ id: 'd1', path: '1.txt', etag: null },
+			{ id: 'd2', path: 'doc.odt', etag: null },
+			{ id: 'd3', path: '3.txt', etag: null },
+		]);
+
+		// Middle doc throws UnsupportedMimeTypeError; others succeed.
+		let callCount = 0;
+		const ingestDocument = vi.fn(async (_args: { path: string }) => {
+			callCount++;
+			if (callCount === 2) {
+				const { UnsupportedMimeTypeError: UME } = await import('../../parsers/index.js');
+				throw new UME('application/vnd.oasis.opendocument.text');
+			}
+			return {};
+		});
+		const pipeline = {
+			ingestDocument,
+			markDocumentDeleted: vi.fn(),
+			markDocumentUnsupported: vi.fn(),
+		} as unknown as IngestionPipeline;
+
+		const onAudit = vi.fn();
+		const captured = makeCapturedApp();
+		const deps = makeDeps(db, connector, pipeline, { onAudit });
+		registerRagIndexRoutes(captured.app, deps);
+
+		await runSync(captured, source.id, deps);
+
+		// All 3 docs attempted (skip does not abort).
+		expect(ingestDocument).toHaveBeenCalledTimes(3);
+		const job = readJob(db, source.id);
+		expect(job.status).toBe('completed');
+		expect(job.processedDocuments).toBe(3);
+
+		// Audit payload carries skippedUnsupported=1, failures=0.
+		const completedCalls = onAudit.mock.calls.filter(
+			(c) => (c[0] as { type: string }).type === 'rag.sync.completed',
+		);
+		expect(completedCalls).toHaveLength(1);
+		const payload = (completedCalls[0]![0] as { payload: Record<string, unknown> }).payload;
+		expect(payload['skippedUnsupported']).toBe(1);
+		expect(payload['failures']).toBe(0);
+
+		// Terminal error column carries a helpful hint, not null.
+		expect(job.error).toMatch(/unsupported format/i);
+	});
+
+	it('unsupported MIME does not trigger the circuit-breaker', async () => {
+		process.env['CALAME_RAG_SYNC_MAX_CONSECUTIVE_FAILURES'] = '5';
+
+		const db = makeDb();
+		const source = insertSource(db);
+
+		const docs = Array.from({ length: 10 }, (_, i) => ({
+			id: `d${i}`,
+			path: `doc-${i}.odt`,
+			etag: null,
+		}));
+		const connector = makeConnector(docs);
+
+		const ingestDocument = vi.fn(async () => {
+			const { UnsupportedMimeTypeError: UME } = await import('../../parsers/index.js');
+			throw new UME('application/vnd.oasis.opendocument.text');
+		});
+		const pipeline = {
+			ingestDocument,
+			markDocumentDeleted: vi.fn(),
+			markDocumentUnsupported: vi.fn(),
+		} as unknown as IngestionPipeline;
+
+		const onAudit = vi.fn();
+		const captured = makeCapturedApp();
+		const deps = makeDeps(db, connector, pipeline, { onAudit });
+		registerRagIndexRoutes(captured.app, deps);
+
+		await runSync(captured, source.id, deps);
+
+		// All 10 docs processed despite 10 consecutive unsupported-MIME events.
+		expect(ingestDocument).toHaveBeenCalledTimes(10);
+		const job = readJob(db, source.id);
+		expect(job.status).toBe('completed');
+		expect(job.processedDocuments).toBe(10);
+
+		const completedCalls = onAudit.mock.calls.filter(
+			(c) => (c[0] as { type: string }).type === 'rag.sync.completed',
+		);
+		expect(completedCalls).toHaveLength(1);
+		const payload = (completedCalls[0]![0] as { payload: Record<string, unknown> }).payload;
+		expect(payload['skippedUnsupported']).toBe(10);
+		expect(payload['failures']).toBe(0);
+	});
+
+	it('writes incremental error summary to rag_jobs.error before the job finishes', async () => {
+		process.env['CALAME_RAG_SYNC_MAX_CONSECUTIVE_FAILURES'] = '0'; // disable breaker
+
+		const db = makeDb();
+		const source = insertSource(db);
+
+		// One failure followed by one success.
+		const connector = makeConnector([
+			{ id: 'd1', path: '1.txt', etag: null },
+			{ id: 'd2', path: '2.txt', etag: null },
+		]);
+		let callCount = 0;
+		const ingestDocument = vi.fn(async () => {
+			callCount++;
+			if (callCount === 1) throw new Error('first doc failed');
+			return {};
+		});
+		const pipeline = {
+			ingestDocument,
+			markDocumentDeleted: vi.fn(),
+		} as unknown as IngestionPipeline;
+
+		const captured = makeCapturedApp();
+		const deps = makeDeps(db, connector, pipeline);
+		registerRagIndexRoutes(captured.app, deps);
+
+		await runSync(captured, source.id, deps);
+
+		// Job ends as 'failed' (1 failure, 1 success → failures > 0 → finalStatus='failed').
+		const job = readJob(db, source.id);
+		expect(job.status).toBe('failed');
+		// Terminal error field describes the single failure.
+		expect(job.error).toContain('1/');
+		expect(job.error).toContain('first doc failed');
 	});
 });

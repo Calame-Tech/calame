@@ -37,6 +37,7 @@ interface DocumentRow {
 	tenant_id: string;
 	last_indexed_at: string;
 	deleted_at: string | null;
+	ingest_error: string | null;
 }
 
 interface ChunkRow {
@@ -76,6 +77,8 @@ function rowToDocument(row: DocumentRow): RagDocument {
 		tenantId: row.tenant_id ?? 'default',
 		lastIndexedAt: row.last_indexed_at,
 		deletedAt: row.deleted_at,
+		// Defensive `?? null` for fixtures that bypass the v9 migration.
+		ingestError: row.ingest_error ?? null,
 	};
 }
 
@@ -121,13 +124,30 @@ export function registerRagContentRoutes(app: Express, deps: RagRouteDeps): void
 			// so binding `tenant_id` on the JOIN-less query is redundant but kept
 			// for defence-in-depth (and to keep the audit-trail of every read
 			// path passing through the tenant filter).
-			const rows = deps.db
-				.prepare<[string, string], FolderRow>(
-					`SELECT * FROM rag_folders
-					 WHERE source_id = ? AND tenant_id = ?
-					 ORDER BY path ASC`,
-				)
-				.all(id, tenantId);
+			// Honour the `?folder=<parentId>` query param so the frontend tree-view
+			// can lazily load one level at a time. Without this filter the route
+			// returns every folder of the source on each expand, which makes the
+			// recursive `renderFolder` map over its own ancestors and blows the
+			// React call stack ("Maximum call stack size exceeded").
+			const folderParam = req.query['folder'];
+			let rows: FolderRow[];
+			if (typeof folderParam === 'string' && folderParam.length > 0) {
+				rows = deps.db
+					.prepare<[string, string, string], FolderRow>(
+						`SELECT * FROM rag_folders
+						 WHERE source_id = ? AND parent_id = ? AND tenant_id = ?
+						 ORDER BY path ASC`,
+					)
+					.all(id, folderParam, tenantId);
+			} else {
+				rows = deps.db
+					.prepare<[string, string], FolderRow>(
+						`SELECT * FROM rag_folders
+						 WHERE source_id = ? AND parent_id IS NULL AND tenant_id = ?
+						 ORDER BY path ASC`,
+					)
+					.all(id, tenantId);
+			}
 			res.json({ folders: rows.map(rowToFolder) });
 		} catch (error: unknown) {
 			const message = error instanceof Error ? error.message : 'Unknown error';

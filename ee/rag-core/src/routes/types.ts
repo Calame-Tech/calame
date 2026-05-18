@@ -133,4 +133,14 @@ export interface RagRouteDeps {
 	 * `monthlyTokenCap: 0` (unlimited) so the UI can render a unified shape.
 	 */
 	capConfig?: EmbeddingCapConfig;
+	/**
+	 * Optional structured logger injected by the host. Used by the sync worker
+	 * to emit per-document progress at info/warn level so operators can observe
+	 * mid-job failures without waiting for the terminal audit event.
+	 * When absent all `deps.logger?.*` calls are no-ops.
+	 */
+	logger?: {
+		info: (msg: string, meta?: Record<string, unknown>) => void;
+		warn: (msg: string, meta?: Record<string, unknown>) => void;
+	};
 }

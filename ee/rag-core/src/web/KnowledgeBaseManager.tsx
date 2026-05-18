@@ -289,7 +289,7 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
 
   // Stable list of source IDs passed to the polling hook.
   const sourceIds = useMemo(() => sources.map((s) => s.id), [sources]);
-  const jobMap = useActiveSyncJobs(sourceIds);
+  const { jobMap, triggerPoll } = useActiveSyncJobs(sourceIds);
 
   const selectedSource = sources.find((s) => s.id === selectedSourceId) ?? null;
 
@@ -322,6 +322,10 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
       try {
         await apiPost(`/api/rag/sources/${encodeURIComponent(source.id)}/sync`);
         showAction(`Sync lancée pour "${source.name}".`);
+        // Restart the poll loop right away so the badge picks up the new
+        // `pending`/`running` row without waiting for the next scheduled
+        // tick (the loop self-suspends when nothing is active).
+        triggerPoll();
       } catch (err) {
         if (err instanceof ApiError && err.status === 409) {
           // Already queued — the badge will reflect this from the poll.
@@ -349,7 +353,7 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
         });
       }
     },
-    [showAction],
+    [showAction, triggerPoll],
   );
 
   const handleDelete = async (source: RagSourcePublic) => {

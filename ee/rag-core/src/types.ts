@@ -108,6 +108,16 @@ export interface RagDocument {
   lastIndexedAt: string;
   deletedAt: string | null;
   /**
+   * Non-null when the last sync attempted to ingest this file but the
+   * pipeline couldn't process it (e.g. unsupported MIME type, parser error).
+   * The document row is kept so the file still shows up in the tree view —
+   * the frontend renders a badge using this message. NULL on healthy docs.
+   *
+   * Cleared automatically when a subsequent sync succeeds (e.g. after a new
+   * parser is added for the format).
+   */
+  ingestError: string | null;
+  /**
    * Multi-tenancy (Phase A) — inherited from the parent source. Optional in
    * the type so connector-built instances don't need to set it; the host
    * enriches it before persisting.

@@ -8,6 +8,7 @@ import { nanoid } from 'nanoid';
 import type { RagFolder, RagJob, RagJobStatus, RagSource, RagSourceType } from '../types.js';
 import type { ConnectorLike, RagRouteDeps } from './types.js';
 import { EmbeddingCapExceededError } from '../jobs/embedding-cap.js';
+import { UnsupportedMimeTypeError } from '../parsers/index.js';
 
 /**
  * Resolve the tenant id for a request, falling back to the literal
@@ -51,12 +52,13 @@ interface JobRow {
 /**
  * Mini shape used by the etag fast-path. Intentionally NOT reusing
  * `DocumentRow` from `pipeline/ingest.ts` (private to the pipeline) — only the
- * two columns we need to decide whether to skip a fetch.
+ * columns we need to decide whether to skip a fetch.
  */
 interface ExistingDocLookupRow {
 	id: string;
 	etag: string | null;
 	deleted_at: string | null;
+	ingest_error: string | null;
 }
 
 function rowToSource(row: SourceRow): RagSource {
@@ -120,14 +122,14 @@ function lookupExistingDoc(
 	db: BetterSqlite3Database,
 	sourceId: string,
 	path: string,
-): { etag: string | null; deletedAt: string | null } | null {
+): { etag: string | null; deletedAt: string | null; ingestError: string | null } | null {
 	const row = db
 		.prepare<[string, string], ExistingDocLookupRow>(
-			`SELECT id, etag, deleted_at FROM rag_documents WHERE source_id = ? AND path = ?`,
+			`SELECT id, etag, deleted_at, ingest_error FROM rag_documents WHERE source_id = ? AND path = ?`,
 		)
 		.get(sourceId, path);
 	if (!row) return null;
-	return { etag: row.etag, deletedAt: row.deleted_at };
+	return { etag: row.etag, deletedAt: row.deleted_at, ingestError: row.ingest_error };
 }
 
 /** Recursively walk a connector to enumerate every document under a source. */
@@ -136,8 +138,19 @@ async function walkConnector(
 	config: Record<string, unknown>,
 	sourceId: string,
 	tenantId: string,
+	db: BetterSqlite3Database,
 ): Promise<Array<{ doc: Awaited<ReturnType<ConnectorLike['listDocuments']>>[number]; folder: RagFolder | null }>> {
 	const out: Array<{ doc: Awaited<ReturnType<ConnectorLike['listDocuments']>>[number]; folder: RagFolder | null }> = [];
+
+	// Prepared once and reused across all recursive `visit` calls. INSERT OR
+	// IGNORE makes this idempotent: folder ids are stable per connector, so
+	// re-syncs that re-encounter the same folder are a no-op. The row MUST be
+	// present before `ingestDocument` writes a `rag_documents` row that carries
+	// `folder_id` — the foreign key constraint requires it.
+	const insertFolder = db.prepare(
+		`INSERT OR IGNORE INTO rag_folders (id, source_id, parent_id, path, name, tenant_id)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+	);
 
 	async function visit(folder: RagFolder | undefined): Promise<void> {
 		const folderArg = folder ? { id: folder.id, path: folder.path } : undefined;
@@ -147,6 +160,11 @@ async function walkConnector(
 		}
 		const subfolders = await connector.listFolders(config, sourceId, folderArg);
 		for (const sf of subfolders) {
+			// Persist BEFORE recursing/ingesting docs — the foreign key on
+			// rag_documents.folder_id requires this row to exist. INSERT OR IGNORE
+			// makes this idempotent across re-syncs (folder ids are stable per
+			// connector and act as a natural upsert key).
+			insertFolder.run(sf.id, sourceId, folder?.id ?? null, sf.path, sf.name, tenantId);
 			// Connectors don't know about tenancy; the folder inherits the
 			// parent source's tenant. This keeps the pipeline downstream from
 			// having to defensively check `?? 'default'` at every consumer.
@@ -156,6 +174,77 @@ async function walkConnector(
 
 	await visit(undefined);
 	return out;
+}
+
+/**
+ * Truncate a message string to `maxLen` characters, appending an ellipsis
+ * when truncation occurs. Null-safe: returns '' for null input.
+ */
+function truncateMessage(msg: string | null, maxLen: number): string {
+	if (msg === null) return '';
+	if (msg.length <= maxLen) return msg;
+	return msg.slice(0, maxLen - 1) + '…';
+}
+
+/**
+ * Read the maximum number of consecutive per-document failures before the
+ * sync worker aborts the job early. Sourced from the
+ * `CALAME_RAG_SYNC_MAX_CONSECUTIVE_FAILURES` environment variable.
+ *
+ * - Default: 5
+ * - Set to 0 to disable the circuit-breaker entirely.
+ */
+function readMaxConsecutiveFailures(): number {
+	const raw = process.env['CALAME_RAG_SYNC_MAX_CONSECUTIVE_FAILURES'];
+	if (raw === undefined) return 5;
+	const parsed = Number.parseInt(raw, 10);
+	if (Number.isNaN(parsed)) return 5;
+	return parsed;
+}
+
+/**
+ * Per-document hard timeout in milliseconds. Reads `CALAME_RAG_DOC_TIMEOUT_MS`
+ * (default 300_000 = 5 min). Set to 0 or negative to disable (NOT recommended
+ * — a hung parser will freeze the worker indefinitely). NaN falls back to the
+ * default.
+ *
+ * This is a *soft* timeout: the underlying promise (e.g. mammoth parser, HTTP
+ * fetch without an AbortSignal) is not actively cancelled — Promise.race only
+ * lets us continue past it. The leaked promise resolves or rejects later and
+ * its result is discarded. Acceptable trade-off for unblocking the sync.
+ */
+function readDocTimeoutMs(): number {
+	const raw = process.env['CALAME_RAG_DOC_TIMEOUT_MS'];
+	if (raw === undefined) return 300_000;
+	const parsed = Number.parseInt(raw, 10);
+	if (Number.isNaN(parsed)) return 300_000;
+	return parsed;
+}
+
+/**
+ * Race a promise against a timer; reject with a labelled error if the timer
+ * fires first. The original promise is left to settle on its own (its result
+ * is discarded) — there is no AbortSignal threaded through the ingest
+ * pipeline, so this is a best-effort safety net rather than a real cancel.
+ */
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+	if (ms <= 0) return promise;
+	return new Promise<T>((resolve, reject) => {
+		const timer = setTimeout(
+			() => reject(new Error(`${label} timed out after ${ms}ms`)),
+			ms,
+		);
+		promise.then(
+			(value) => {
+				clearTimeout(timer);
+				resolve(value);
+			},
+			(err) => {
+				clearTimeout(timer);
+				reject(err);
+			},
+		);
+	});
 }
 
 /**
@@ -272,7 +361,7 @@ export async function runSyncJob(
 
 		let entries: Awaited<ReturnType<typeof walkConnector>>;
 		try {
-			entries = await walkConnector(connector, config, source.id, source.tenantId);
+			entries = await walkConnector(connector, config, source.id, source.tenantId, deps.db);
 		} catch (err: unknown) {
 			const m = err instanceof Error ? err.message : String(err);
 			deps.db
@@ -295,6 +384,7 @@ export async function runSyncJob(
 		let processed = 0;
 		let failures = 0;
 		let skippedByEtag = 0;
+		let skippedUnsupported = 0;
 		let gcDeleted = 0;
 		// Accumulated sum of chunk.tokenCount across every document that was
 		// actually embedded by this job. Fast-path (hash-match) docs do not
@@ -310,7 +400,18 @@ export async function runSyncJob(
 		// the per-document loop on the first hit since every subsequent doc
 		// would observe the same condition.
 		let capExceeded = false;
+		// Circuit-breaker: abort the loop after this many consecutive failures.
+		// 0 disables the breaker entirely. Sourced from
+		// CALAME_RAG_SYNC_MAX_CONSECUTIVE_FAILURES (default 5).
+		const maxConsecutiveFailures = readMaxConsecutiveFailures();
+		let consecutiveFailures = 0;
+		let circuitBroken = false;
+		let entryIndex = 0;
 		for (const { doc, folder } of entries) {
+			deps.logger?.info(
+				`[rag-sync] ingesting doc ${entryIndex + 1}/${entries.length}: ${doc.path}`,
+				{ component: `rag-sync/${source.id}` },
+			);
 			try {
 				// Etag pre-fetch fast-path: if the connector reports a non-empty
 				// etag and our indexed copy has the same etag (and is not
@@ -323,75 +424,185 @@ export async function runSyncJob(
 					if (
 						existing !== null &&
 						existing.deletedAt === null &&
-						existing.etag === docEtag
+						existing.etag === docEtag &&
+						// Don't skip docs that previously failed to ingest — we want to
+						// retry them every sync in case a parser was added for the
+						// format. On success the pipeline clears `ingest_error`; on
+						// repeated failure the markDocumentUnsupported path
+						// re-writes the same row, costing only the parser call.
+						existing.ingestError === null
 					) {
 						skippedByEtag++;
 						processed++;
+						consecutiveFailures = 0; // etag-skip is not a failure
+						deps.logger?.info(
+							`[rag-sync] etag-skip ${doc.path}`,
+							{ component: `rag-sync/${source.id}` },
+						);
+						const errorSummary =
+							failures > 0
+								? `${failures}/${processed} failed so far; last: ${truncateMessage(lastError, 200)}`
+								: null;
 						deps.db
 							.prepare(
-								`UPDATE rag_jobs SET processed_documents = ?, progress = ?, skipped_by_etag = ? WHERE id = ?`,
+								`UPDATE rag_jobs SET processed_documents = ?, progress = ?, skipped_by_etag = ?, error = ? WHERE id = ?`,
 							)
 							.run(
 								processed,
 								entries.length === 0 ? 1 : processed / entries.length,
 								skippedByEtag,
+								errorSummary,
 								jobId,
 							);
+						entryIndex++;
 						continue;
 					}
 				}
 
-				const fetched = await connector.fetchDocument(config, source.id, doc.id);
-				const buffer = await streamToBuffer(fetched.stream);
-				await deps.pipeline.ingestDocument({
-					source,
-					folder,
-					path: doc.path,
-					mimeType: fetched.mimeType,
-					buffer,
-					etag: docEtag,
-					// Per-job override of the pipeline-level hook so this counter
-					// stays scoped to the current sync. The pipeline only fires
-					// the hook on actual re-embeds (skipped fast-path → no fire).
-					onTokensEmbedded: (count: number) => {
-						tokensEmbeddedThisJob += count;
-					},
+				const docTimeoutMs = readDocTimeoutMs();
+				deps.logger?.info(`[rag-sync] fetch ${doc.path}`, {
+					component: `rag-sync/${source.id}`,
 				});
-			} catch (err: unknown) {
-				failures++;
-				lastError = err instanceof Error ? err.message : String(err);
-				if (err instanceof EmbeddingCapExceededError) {
-					// The cap is process-wide and tenant-scoped — no point
-					// continuing to walk remaining documents in this job
-					// since every one will hit the same gate. Bail early
-					// with the flag set so the terminal audit event can
-					// report `reason: 'cap_exceeded'`.
-					capExceeded = true;
-					processed++;
-					deps.db
-						.prepare(
-							`UPDATE rag_jobs SET processed_documents = ?, progress = ?, skipped_by_etag = ? WHERE id = ?`,
-						)
-						.run(
-							processed,
-							entries.length === 0 ? 1 : processed / entries.length,
-							skippedByEtag,
-							jobId,
+				// Hoisted so the catch block below can read them when handling
+				// UnsupportedMimeTypeError (so we can still persist the file
+				// metadata to the tree view).
+				let fetched: { stream: NodeJS.ReadableStream; mimeType: string } | null = null;
+				let buffer: Buffer | null = null;
+				fetched = await withTimeout(
+					connector.fetchDocument(config, source.id, doc.id),
+					docTimeoutMs,
+					`fetchDocument(${doc.path})`,
+				);
+				deps.logger?.info(`[rag-sync] buffer ${doc.path}`, {
+					component: `rag-sync/${source.id}`,
+				});
+				buffer = await withTimeout(
+					streamToBuffer(fetched.stream),
+					docTimeoutMs,
+					`streamToBuffer(${doc.path})`,
+				);
+				deps.logger?.info(
+					`[rag-sync] ingest ${doc.path} (${buffer.byteLength} bytes, ${fetched.mimeType})`,
+					{ component: `rag-sync/${source.id}` },
+				);
+				try {
+					await withTimeout(
+						deps.pipeline.ingestDocument({
+							source,
+							folder,
+							path: doc.path,
+							mimeType: fetched.mimeType,
+							buffer,
+							etag: docEtag,
+							// Per-job override of the pipeline-level hook so this counter
+							// stays scoped to the current sync. The pipeline only fires
+							// the hook on actual re-embeds (skipped fast-path → no fire).
+							onTokensEmbedded: (count: number) => {
+								tokensEmbeddedThisJob += count;
+							},
+						}),
+						docTimeoutMs,
+						`ingestDocument(${doc.path})`,
+					);
+				} catch (ingestErr: unknown) {
+					if (ingestErr instanceof UnsupportedMimeTypeError) {
+						// Persist a metadata-only row so the file appears in the
+						// tree view with a "Format non supporté" badge. We do this
+						// inside the inner try/catch so the outer `fetched`/`buffer`
+						// are still in scope.
+						deps.pipeline.markDocumentUnsupported(
+							{
+								source,
+								folder,
+								path: doc.path,
+								mimeType: fetched.mimeType,
+								buffer,
+								etag: docEtag,
+							},
+							ingestErr.message,
 						);
-					break;
+					}
+					throw ingestErr;
+				}
+				deps.logger?.info(`[rag-sync] OK ${doc.path}`, { component: `rag-sync/${source.id}` });
+				consecutiveFailures = 0;
+			} catch (err: unknown) {
+				if (err instanceof UnsupportedMimeTypeError) {
+					skippedUnsupported++;
+					consecutiveFailures = 0; // reset — this isn't a failure of the embedding pipeline
+					deps.logger?.info(
+						`[rag-sync] SKIPPED (unsupported MIME) ${doc.path}: ${err.message}`,
+						{ component: `rag-sync/${source.id}` },
+					);
+				} else {
+					const errMsg = err instanceof Error ? err.message : String(err);
+					failures++;
+					lastError = errMsg;
+					deps.logger?.warn(`[rag-sync] FAILED ${doc.path}: ${errMsg}`, {
+						component: `rag-sync/${source.id}`,
+					});
+					if (err instanceof EmbeddingCapExceededError) {
+						// The cap is process-wide and tenant-scoped — no point
+						// continuing to walk remaining documents in this job
+						// since every one will hit the same gate. Bail early
+						// with the flag set so the terminal audit event can
+						// report `reason: 'cap_exceeded'`.
+						capExceeded = true;
+						processed++;
+						const errorSummary = `${failures}/${processed} failed so far; last: ${truncateMessage(lastError, 200)}`;
+						deps.db
+							.prepare(
+								`UPDATE rag_jobs SET processed_documents = ?, progress = ?, skipped_by_etag = ?, error = ? WHERE id = ?`,
+							)
+							.run(
+								processed,
+								entries.length === 0 ? 1 : processed / entries.length,
+								skippedByEtag,
+								errorSummary,
+								jobId,
+							);
+						break;
+					}
+					consecutiveFailures++;
+					if (maxConsecutiveFailures > 0 && consecutiveFailures >= maxConsecutiveFailures) {
+						circuitBroken = true;
+						lastError = `Aborted after ${maxConsecutiveFailures} consecutive failures. Last error: ${lastError}`;
+						processed++;
+						const errorSummary = `${failures}/${processed} failed so far; last: ${truncateMessage(lastError, 200)}`;
+						deps.db
+							.prepare(
+								`UPDATE rag_jobs SET processed_documents = ?, progress = ?, skipped_by_etag = ?, error = ? WHERE id = ?`,
+							)
+							.run(
+								processed,
+								entries.length === 0 ? 1 : processed / entries.length,
+								skippedByEtag,
+								errorSummary,
+								jobId,
+							);
+						break;
+					}
 				}
 			}
 			processed++;
+			const errorSummary =
+				failures > 0
+					? `${failures}/${processed} failed so far; last: ${truncateMessage(lastError, 200)}`
+					: skippedUnsupported > 0
+						? `${skippedUnsupported} doc(s) skipped (unsupported format)`
+						: null;
 			deps.db
 				.prepare(
-					`UPDATE rag_jobs SET processed_documents = ?, progress = ?, skipped_by_etag = ? WHERE id = ?`,
+					`UPDATE rag_jobs SET processed_documents = ?, progress = ?, skipped_by_etag = ?, error = ? WHERE id = ?`,
 				)
 				.run(
 					processed,
 					entries.length === 0 ? 1 : processed / entries.length,
 					skippedByEtag,
+					errorSummary,
 					jobId,
 				);
+			entryIndex++;
 		}
 
 		// GC pass: any document tracked under this source whose path is no
@@ -404,16 +615,15 @@ export async function runSyncJob(
 		// on "the listing is known to be complete" — otherwise an outage on
 		// a single subfolder would soft-delete every doc under it.
 		//
-		// Cap-aborted runs ALSO skip the GC pass: we walked the full source
-		// listing successfully, but the document loop was cut short, so the
-		// docs we never reached would be wrongly flagged as removed. Skipping
-		// the pass preserves their indexed state until the next (post-cap)
-		// sync.
+		// Cap-aborted and circuit-broken runs ALSO skip the GC pass: the document
+		// loop was cut short, so docs we never reached would be wrongly flagged
+		// as removed. Skipping the pass preserves their indexed state until the
+		// next sync.
 		interface IndexedDocRow {
 			id: string;
 			path: string;
 		}
-		if (!capExceeded) {
+		if (!capExceeded && !circuitBroken) {
 			const indexedRows = deps.db
 				.prepare<[string], IndexedDocRow>(
 					`SELECT id, path FROM rag_documents WHERE source_id = ? AND deleted_at IS NULL`,
@@ -445,7 +655,11 @@ export async function runSyncJob(
 			.run(
 				finalStatus,
 				finishedAt,
-				failures > 0 ? `${failures}/${entries.length} failed; last: ${lastError}` : null,
+				failures > 0
+					? `${failures}/${entries.length} failed; last: ${lastError}`
+					: skippedUnsupported > 0
+						? `${skippedUnsupported} doc(s) skipped — unsupported format. Convert to PDF/DOCX/MD/TXT or wait for native support.`
+						: null,
 				skippedByEtag,
 				gcDeleted,
 				tokensEmbeddedThisJob,
@@ -455,12 +669,11 @@ export async function runSyncJob(
 			.prepare(`UPDATE rag_sources SET last_sync_at = ? WHERE id = ?`)
 			.run(finishedAt, sourceId);
 
-		// When the cap kill-switch fired we report `rag.sync.failed`
-		// regardless of how many docs landed before the gate (the run is
-		// not idempotent and the operator needs to know the cap was hit).
-		// `payload.reason: 'cap_exceeded'` lets the audit log be filtered
-		// without re-parsing the error string downstream.
-		const terminalType = capExceeded
+		// When the cap kill-switch or circuit-breaker fired we report
+		// `rag.sync.failed` regardless of how many docs landed before the gate.
+		// `payload.reason` lets the audit log be filtered without re-parsing the
+		// error string downstream.
+		const terminalType = capExceeded || circuitBroken
 			? 'rag.sync.failed'
 			: failures === 0
 				? 'rag.sync.completed'
@@ -471,11 +684,13 @@ export async function runSyncJob(
 			total: entries.length,
 			processed,
 			skippedByEtag,
+			skippedUnsupported,
 			gcDeleted,
 			failures,
 			tokensEmbedded: tokensEmbeddedThisJob,
 		};
 		if (capExceeded) terminalPayload['reason'] = 'cap_exceeded';
+		if (circuitBroken) terminalPayload['reason'] = 'consecutive_failures';
 		deps.onAudit?.({
 			type: terminalType,
 			payload: terminalPayload,

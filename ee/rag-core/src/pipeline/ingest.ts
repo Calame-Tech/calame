@@ -93,6 +93,7 @@ interface DocumentRow {
 	tenant_id: string;
 	last_indexed_at: string;
 	deleted_at: string | null;
+	ingest_error: string | null;
 }
 
 function rowToDocument(row: DocumentRow): RagDocument {
@@ -110,6 +111,8 @@ function rowToDocument(row: DocumentRow): RagDocument {
 		tenantId: row.tenant_id ?? 'default',
 		lastIndexedAt: row.last_indexed_at,
 		deletedAt: row.deleted_at,
+		// Defensive `?? null` for fixtures that bypass the v9 migration.
+		ingestError: row.ingest_error ?? null,
 	};
 }
 
@@ -235,7 +238,7 @@ export class IngestionPipeline {
 					.prepare(
 						`UPDATE rag_documents
 						 SET folder_id = ?, name = ?, mime_type = ?, size = ?, hash = ?, etag = ?,
-						     last_indexed_at = ?, deleted_at = NULL
+						     last_indexed_at = ?, deleted_at = NULL, ingest_error = NULL
 						 WHERE id = ?`,
 					)
 					.run(
@@ -319,6 +322,78 @@ export class IngestionPipeline {
 			.get(documentId);
 		if (!refreshed) throw new Error(`IngestionPipeline: document ${documentId} vanished after insert`);
 		return rowToDocument(refreshed);
+	}
+
+	/**
+	 * Persist a document the sync worker could not ingest (today: only
+	 * unsupported MIME type) so the tree view can still surface it with a
+	 * "Format non supporté" badge. The row carries no chunks / embeddings —
+	 * semantic search ignores it. The `etag` is intentionally cleared so the
+	 * next sync re-attempts the file (a future parser addition will then
+	 * succeed and clear `ingest_error` via the normal update path).
+	 *
+	 * Idempotent: if a row already exists for `(source_id, path)`, it's
+	 * updated in place. If a healthy version of the document existed before
+	 * (with chunks), those chunks AND the vector entries are dropped — the
+	 * file became unparseable so its embeddings should not stay searchable.
+	 */
+	markDocumentUnsupported(input: IngestDocumentInput, reason: string): void {
+		const name = deriveDocumentName(input.path);
+		const folderId = input.folder?.id ?? null;
+		const sourceId = input.source.id;
+		const tenantId: string = input.source.tenantId ?? 'default';
+		const now = new Date().toISOString();
+		// We still hash the buffer so we can detect "same broken file" on the
+		// next sync without re-running the parser (the connector may not return
+		// a stable etag).
+		const hash = sha256Hex(input.buffer);
+		const size = input.buffer.byteLength;
+
+		const existing = this.db
+			.prepare<[string, string], DocumentRow>(
+				`SELECT * FROM rag_documents WHERE source_id = ? AND path = ?`,
+			)
+			.get(sourceId, input.path);
+
+		const apply = this.db.transaction(() => {
+			if (existing) {
+				// Drop any chunks left over from a previous healthy ingest.
+				this.vectorStore.deleteByDocument(existing.id);
+				this.db
+					.prepare(`DELETE FROM rag_chunks WHERE document_id = ?`)
+					.run(existing.id);
+				this.db
+					.prepare(
+						`UPDATE rag_documents
+						 SET folder_id = ?, name = ?, mime_type = ?, size = ?, hash = ?, etag = NULL,
+						     last_indexed_at = ?, deleted_at = NULL, ingest_error = ?
+						 WHERE id = ?`,
+					)
+					.run(folderId, name, input.mimeType, size, hash, now, reason, existing.id);
+			} else {
+				this.db
+					.prepare(
+						`INSERT INTO rag_documents
+						 (id, source_id, folder_id, path, name, mime_type, size, hash, etag,
+						  tenant_id, last_indexed_at, deleted_at, ingest_error)
+						 VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, NULL, ?)`,
+					)
+					.run(
+						nanoid(),
+						sourceId,
+						folderId,
+						input.path,
+						name,
+						input.mimeType,
+						size,
+						hash,
+						tenantId,
+						now,
+						reason,
+					);
+			}
+		});
+		apply();
 	}
 
 	/**

@@ -3,7 +3,8 @@
 // See ee/LICENSE.BUSL at the root of the ee/ directory for terms.
 
 import type { ReactNode } from 'react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useActiveSyncJobs } from './useActiveSyncJobs.js';
 import type { RagDocument, RagFolder } from '../types.js';
 import {
 	apiGet,
@@ -112,6 +113,14 @@ export default function FolderTreeView({ source, refreshKey = 0 }: FolderTreeVie
 	const [syncError, setSyncError] = useState<string | null>(null);
 	const [syncMessage, setSyncMessage] = useState<string | null>(null);
 
+	// Poll for active sync jobs for this source so we can render live progress
+	// while the worker is processing files. The hook auto-throttles to 5s when
+	// an active job exists and stops polling otherwise. `triggerPoll` is used
+	// after the manual Synchroniser action to re-arm the loop without remounting.
+	const sourceIds = useMemo(() => [source.id], [source.id]);
+	const { jobMap, triggerPoll } = useActiveSyncJobs(sourceIds);
+	const activeJob = jobMap.get(source.id)?.activeJob ?? null;
+
 	const loadChildren = useCallback(
 		async (folderId: string | null): Promise<void> => {
 			const key = folderId ?? ROOT_KEY;
@@ -206,6 +215,11 @@ export default function FolderTreeView({ source, refreshKey = 0 }: FolderTreeVie
 		try {
 			await apiPost(`/api/rag/sources/${encodeURIComponent(source.id)}/sync`);
 			setSyncMessage('Synchronisation lancée.');
+			// Re-arm the polling loop so the live progress block appears right
+			// away — without this the user has to switch tabs and come back to
+			// see the new active job (the hook self-suspends when nothing was
+			// active at mount time).
+			triggerPoll();
 			// Refresh root view; nested folders will refetch if the user re-expands.
 			await loadChildren(null);
 			// Drop cached children so re-expansion fetches fresh data.
@@ -285,16 +299,31 @@ export default function FolderTreeView({ source, refreshKey = 0 }: FolderTreeVie
 
 	const renderDocument = (doc: RagDocument, depth: number): ReactNode => {
 		const isDeleted = doc.deletedAt !== null;
+		const hasIngestError = doc.ingestError !== null;
 		return (
 			<li
 				key={doc.id}
 				className={`flex items-center gap-2 px-2 py-1.5 rounded-md ${
-					isDeleted ? 'opacity-50 line-through' : ''
+					isDeleted ? 'opacity-50 line-through' : hasIngestError ? 'opacity-70' : ''
 				}`}
 				style={{ paddingLeft: `${depth * 16 + 24}px` }}
 			>
 				<FileIcon />
-				<span className="text-sm text-gray-300 truncate">{doc.name}</span>
+				<span
+					className={`text-sm truncate ${
+						hasIngestError ? 'text-gray-400' : 'text-gray-300'
+					}`}
+				>
+					{doc.name}
+				</span>
+				{hasIngestError && (
+					<span
+						className="text-[10px] uppercase tracking-wide text-amber-400 bg-amber-950/40 border border-amber-800/40 px-1.5 py-0.5 rounded flex-shrink-0"
+						title={doc.ingestError ?? ''}
+					>
+						Non supporté
+					</span>
+				)}
 				<span className="text-xs text-gray-600 ml-auto pl-2 flex-shrink-0">
 					{formatBytes(doc.size)}
 				</span>
@@ -314,13 +343,45 @@ export default function FolderTreeView({ source, refreshKey = 0 }: FolderTreeVie
 				<button
 					type="button"
 					onClick={handleSync}
-					disabled={syncing}
+					disabled={syncing || activeJob !== null}
 					className="px-3 py-1.5 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-300 text-sm font-medium transition-all duration-200 disabled:opacity-50"
 				>
-					{syncing ? 'Synchronisation…' : 'Synchroniser'}
+					{activeJob ? 'Synchronisation en cours…' : syncing ? 'Synchronisation…' : 'Synchroniser'}
 				</button>
 			</div>
 
+			{activeJob && (
+				<div className="text-xs text-gray-300 bg-gray-900/30 border border-gray-700/40 rounded px-3 py-2 flex items-center gap-2">
+					<svg
+						className="w-3 h-3 animate-spin flex-shrink-0"
+						fill="none"
+						viewBox="0 0 24 24"
+						aria-hidden="true"
+					>
+						<circle
+							className="opacity-25"
+							cx="12"
+							cy="12"
+							r="10"
+							stroke="currentColor"
+							strokeWidth="4"
+						/>
+						<path
+							className="opacity-75"
+							fill="currentColor"
+							d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+						/>
+					</svg>
+					{activeJob.totalDocuments === 0 ? (
+						<span>Préparation de la synchronisation…</span>
+					) : (
+						<span>
+							Synchronisation en cours : {activeJob.processedDocuments}/{activeJob.totalDocuments} (
+							{Math.round((activeJob.progress ?? 0) * 100)}%)
+						</span>
+					)}
+				</div>
+			)}
 			{syncMessage && (
 				<div className="p-2 rounded-lg text-xs bg-green-950/30 border border-green-800/50 text-green-400">
 					{syncMessage}

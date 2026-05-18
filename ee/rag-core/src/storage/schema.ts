@@ -13,7 +13,7 @@ export interface RagMigrationDb {
 	raw: BetterSqlite3Database;
 }
 
-const CURRENT_RAG_SCHEMA_VERSION = 8;
+const CURRENT_RAG_SCHEMA_VERSION = 9;
 
 /**
  * Default tenant id used by Phase A of the multi-tenancy rollout. The column is
@@ -207,6 +207,7 @@ export function runRagMigrations(db: RagMigrationDb): void {
 			tenant_id TEXT NOT NULL DEFAULT '${DEFAULT_TENANT_ID}',
 			last_indexed_at TEXT NOT NULL DEFAULT (datetime('now')),
 			deleted_at TEXT,
+			ingest_error TEXT,
 			FOREIGN KEY (source_id) REFERENCES rag_sources(id) ON DELETE CASCADE,
 			FOREIGN KEY (folder_id) REFERENCES rag_folders(id) ON DELETE SET NULL
 		)`);
@@ -403,6 +404,25 @@ export function runRagMigrations(db: RagMigrationDb): void {
 			);
 		}
 		setRagSchemaVersion(raw, 8);
+	}
+
+	if (current < 9) {
+		// v9 — surface unsupported / failed documents in the tree view.
+		//
+		// Adds `ingest_error TEXT NULL` to `rag_documents`. A non-null value
+		// means the last sync attempt couldn't ingest the file (today: only
+		// `UnsupportedMimeTypeError`, but the column is provider-agnostic).
+		// The row is otherwise a real document — it just has no chunks /
+		// embeddings, so semantic search ignores it while the tree view can
+		// surface it with a "Format non supporté" badge.
+		//
+		// Idempotent: `addColumnIfMissing` skips the ALTER when the column is
+		// already present (fresh installs that picked it up from the v1
+		// baseline DDL above).
+		if (hasTable(raw, 'rag_documents')) {
+			addColumnIfMissing(raw, 'rag_documents', 'ingest_error', 'TEXT');
+		}
+		setRagSchemaVersion(raw, 9);
 	}
 
 	// Future migrations slot here, each gated on `current < N`.

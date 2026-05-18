@@ -9,6 +9,20 @@ import type { EmbeddingClient } from '../types.js';
  * Studio, OpenRouter). Inputs above this are split and concatenated. */
 const BATCH_SIZE = 96;
 
+/**
+ * Per-embedding-batch timeout in milliseconds. Reads
+ * `CALAME_RAG_EMBED_TIMEOUT_MS` (default 600_000 = 10 minutes). Set to 0 or
+ * negative to disable the timeout (NOT recommended — a hung upstream will
+ * freeze the sync worker indefinitely). NaN falls back to the default.
+ */
+function readEmbedTimeoutMs(): number {
+  const raw = process.env['CALAME_RAG_EMBED_TIMEOUT_MS'];
+  if (raw === undefined) return 600_000;
+  const parsed = Number.parseInt(raw, 10);
+  if (Number.isNaN(parsed)) return 600_000;
+  return parsed;
+}
+
 /** Thrown when the AI setting's provider is incompatible with embeddings. */
 export class EmbeddingNotSupportedError extends Error {
 	constructor(provider: string) {
@@ -105,7 +119,40 @@ export class OpenAiCompatibleEmbeddingClient implements EmbeddingClient {
 
 		const body = JSON.stringify({ input: batch, model: this.modelName });
 
-		const response = await fetch(url, { method: 'POST', headers, body });
+		const timeoutMs = readEmbedTimeoutMs();
+		const controller = new AbortController();
+		const timer =
+			timeoutMs > 0
+				? setTimeout(
+						() =>
+							controller.abort(new Error(`Embedding request timed out after ${timeoutMs}ms`)),
+						timeoutMs,
+					)
+				: null;
+
+		let response: Response;
+		try {
+			response = await fetch(url, {
+				method: 'POST',
+				headers,
+				body,
+				signal: controller.signal,
+			});
+		} catch (err: unknown) {
+			// Convert AbortError into a clear, actionable error message that lands
+			// in `rag_jobs.error` so the user knows WHY the sync stalled.
+			if (err instanceof Error && err.name === 'AbortError') {
+				throw new Error(
+					`Embeddings request to ${this.baseUrl}/embeddings timed out after ${timeoutMs}ms. ` +
+						`The upstream embedding service may be unresponsive. ` +
+						`Increase CALAME_RAG_EMBED_TIMEOUT_MS or check the provider's health.`,
+				);
+			}
+			throw err;
+		} finally {
+			if (timer !== null) clearTimeout(timer);
+		}
+
 		if (!response.ok) {
 			const errText = await response.text().catch(() => '<no body>');
 			throw new Error(

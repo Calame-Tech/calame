@@ -487,6 +487,10 @@ export async function initRagRuntime(
           onAudit: (entry) => {
             log.info(`[rag-audit] ${entry.type} ${JSON.stringify(entry.payload)}`);
           },
+          // Per-doc logging (info on ingest start/success, warn on failure,
+          // info on unsupported-MIME skip). Surfaces what the worker is doing
+          // mid-job so a stuck sync can be diagnosed without scanning the DB.
+          logger: log,
         },
         sourceId,
         jobId,

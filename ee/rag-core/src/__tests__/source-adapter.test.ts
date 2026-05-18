@@ -42,6 +42,7 @@ const makeDocument = (overrides?: Partial<RagDocument>): RagDocument => ({
   tenantId: 'default',
   lastIndexedAt: '2026-01-01T00:00:00.000Z',
   deletedAt: null,
+  ingestError: null,
   ...overrides,
 });
 

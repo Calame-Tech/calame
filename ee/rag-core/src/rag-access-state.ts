@@ -40,6 +40,36 @@ export interface FolderNode {
 export type FolderMap = Record<string, FolderNode>;
 
 // ---------------------------------------------------------------------------
+// Ancestor coverage
+// ---------------------------------------------------------------------------
+
+/**
+ * Walks the `parentId` chain to find an ancestor folder in `auto-include`
+ * mode. Returns true if any exists. The folder itself is NOT considered
+ * (caller checks its own mode separately).
+ *
+ * Why this matters: `auto-include` is recursive server-side — pushing a
+ * folder path into `allowedFolders` covers every descendant. The UI must
+ * mirror that contract so descendants render as checked when an ancestor
+ * is auto-included, both right after the user clicks the parent AND after
+ * the scope is reloaded from disk (the serializer drops descendant entries
+ * under an auto-include ancestor by design — see {@link buildDocumentScope}).
+ */
+export function isCoveredByAncestorAutoInclude(
+  folderId: string,
+  folderMap: FolderMap,
+): boolean {
+  let parentId = folderMap[folderId]?.folder.parentId ?? null;
+  while (parentId !== null) {
+    const parent = folderMap[parentId];
+    if (!parent) return false;
+    if (parent.mode === 'auto-include') return true;
+    parentId = parent.folder.parentId;
+  }
+  return false;
+}
+
+// ---------------------------------------------------------------------------
 // Derive check state (recursive)
 // ---------------------------------------------------------------------------
 
@@ -47,6 +77,7 @@ export type FolderMap = Record<string, FolderNode>;
  * Derive the tri-state checkbox value for a folder node.
  *
  * - If the source is not included → always `unchecked`
+ * - If any ancestor is in `auto-include` mode → `checked` (covered recursively)
  * - If mode is `auto-include` → `checked` (the whole folder is allowed)
  * - If mode is `strict` → computed from individual doc selections + child folder states
  */
@@ -58,6 +89,10 @@ export function deriveFolderCheckState(
   const node = folderMap[folderId];
   if (!node) return 'unchecked';
   if (!sourceIncluded) return 'unchecked';
+
+  if (isCoveredByAncestorAutoInclude(folderId, folderMap)) {
+    return 'checked';
+  }
 
   if (node.mode === 'auto-include') {
     return 'checked';

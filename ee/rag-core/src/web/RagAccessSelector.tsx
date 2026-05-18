@@ -22,6 +22,7 @@ import {
   buildDocumentScope,
   countSelected,
   deriveFolderCheckState,
+  isCoveredByAncestorAutoInclude,
   type CheckState,
   type FolderMap,
   type FolderMode,
@@ -381,6 +382,11 @@ function FolderRow({
 
   const checkState = deriveFolderCheckState(folderId, folderMap, sourceIncluded);
   const isActive = sourceIncluded && checkState !== 'unchecked';
+  // When an ancestor is in `auto-include` mode, every descendant is covered
+  // recursively (see `buildDocumentScope`). The checkbox is locked because
+  // toggling it would have no effect on serialization — to exclude a sub
+  // tree, the user has to uncheck the auto-include ancestor first.
+  const coveredByAncestor = isCoveredByAncestorAutoInclude(folderId, folderMap);
 
   return (
     <li className="select-none">
@@ -399,12 +405,18 @@ function FolderRow({
           {node.loading ? <SpinnerIcon /> : <ChevronIcon open={node.expanded} />}
         </button>
 
-        {/* Checkbox */}
+        {/* Checkbox — locked when an ancestor is auto-include (the descendant
+            is already covered recursively and toggling it here is a no-op at
+            save time). Surface a tooltip so the user understands why. */}
         <TriStateCheckbox
           state={checkState}
           onChange={(next) => onToggleFolder(folderId, next)}
-          label={`Inclure le dossier ${node.folder.name}`}
-          disabled={saving || !sourceIncluded}
+          label={
+            coveredByAncestor
+              ? `Inclus par un dossier parent — décochez le parent pour gérer ${node.folder.name}`
+              : `Inclure le dossier ${node.folder.name}`
+          }
+          disabled={saving || !sourceIncluded || coveredByAncestor}
         />
 
         <FolderIcon open={node.expanded} />
@@ -462,13 +474,25 @@ function FolderRow({
             />
           ))}
           {node.documents.map((doc) => {
-            const checked = node.mode === 'auto-include' || node.checkedDocIds.has(doc.id);
+            // A doc is visually checked when the folder itself is auto-include,
+            // OR an ancestor folder is auto-include (recursive coverage), OR
+            // the doc is in the explicit allowlist of a strict folder.
+            const checked =
+              node.mode === 'auto-include' ||
+              coveredByAncestor ||
+              node.checkedDocIds.has(doc.id);
+            // Lock the doc checkbox only when an ancestor is auto-include —
+            // toggling has no effect at save time. When the folder itself is
+            // auto-include, clicking a doc remains useful: it bascules into
+            // strict mode with every OTHER doc pre-checked (the user wanted
+            // to exclude this one specific file).
+            const docDisabled = saving || !sourceIncluded || coveredByAncestor;
             return (
               <DocumentRow
                 key={doc.id}
                 doc={doc}
                 checked={checked}
-                disabled={saving || !sourceIncluded}
+                disabled={docDisabled}
                 depth={depth + 1}
                 onToggle={(docId) => onToggleDocument(folderId, docId)}
               />

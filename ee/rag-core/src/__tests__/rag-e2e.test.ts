@@ -274,6 +274,28 @@ function buildStorage(db: BetterSqlite3Database): DocumentStorage {
 				documentCount: r.document_count,
 			}));
 		},
+		async getDocumentFolderChain(documentId: string) {
+			interface ChainRow {
+				id: string;
+				path: string;
+			}
+			const rows = db
+				.prepare<[string], ChainRow>(
+					`WITH RECURSIVE chain(id, parent_id, path) AS (
+					   SELECT f.id, f.parent_id, f.path
+					   FROM rag_folders f
+					   JOIN rag_documents d ON d.folder_id = f.id
+					   WHERE d.id = ?
+					   UNION ALL
+					   SELECT p.id, p.parent_id, p.path
+					   FROM rag_folders p
+					   JOIN chain c ON c.parent_id = p.id
+					 )
+					 SELECT id, path FROM chain`,
+				)
+				.all(documentId);
+			return rows.map((r) => ({ id: r.id, path: r.path }));
+		},
 	};
 }
 

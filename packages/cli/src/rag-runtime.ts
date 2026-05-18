@@ -743,6 +743,8 @@ export async function initRagRuntime(
           tenantId: r.tenant_id ?? DEFAULT_TENANT_ID,
           lastIndexedAt: r.last_indexed_at,
           deletedAt: r.deleted_at,
+          // Defensive `?? null` for fixtures or pre-v9 rows.
+          ingestError: (r as RagDocumentRow & { ingest_error?: string | null }).ingest_error ?? null,
         }));
       },
 
@@ -771,9 +773,37 @@ export async function initRagRuntime(
             tenantId: row.tenant_id ?? DEFAULT_TENANT_ID,
             lastIndexedAt: row.last_indexed_at,
             deletedAt: row.deleted_at,
+            ingestError: (row as RagDocumentRow & { ingest_error?: string | null }).ingest_error ?? null,
           },
           text,
         };
+      },
+
+      async getDocumentFolderChain(documentId: string) {
+        // Recursive CTE walks the rag_folders tree from the document's
+        // immediate folder upward via `parent_id` until it hits the root
+        // (or a missing link — Phase 6 doesn't enforce referential integrity
+        // on parent_id so legacy rows with orphan parents stop cleanly).
+        interface ChainRow {
+          id: string;
+          path: string;
+        }
+        const rows = ragDb.raw
+          .prepare<[string], ChainRow>(
+            `WITH RECURSIVE chain(id, parent_id, path) AS (
+               SELECT f.id, f.parent_id, f.path
+               FROM rag_folders f
+               JOIN rag_documents d ON d.folder_id = f.id
+               WHERE d.id = ?
+               UNION ALL
+               SELECT p.id, p.parent_id, p.path
+               FROM rag_folders p
+               JOIN chain c ON c.parent_id = p.id
+             )
+             SELECT id, path FROM chain`,
+          )
+          .all(documentId);
+        return rows.map((r) => ({ id: r.id, path: r.path }));
       },
 
       async listSources() {

@@ -119,6 +119,20 @@ export interface DocumentStorage {
       documentCount: number;
     }>
   >;
+  /**
+   * Returns the folder ancestor chain of a document — its immediate folder
+   * first, then that folder's parent, and so on up to the root. Each entry
+   * carries both `id` and `path` so the scope allowlist check can match by
+   * either (the gdrive connector stores flat `path = name` while other
+   * connectors may store hierarchical paths — both must work).
+   *
+   * Returns an empty array when the document is at the source root, when the
+   * document does not exist, or when the chain has already been fully walked
+   * and no ancestor folder is recorded.
+   */
+  getDocumentFolderChain(
+    documentId: string,
+  ): Promise<Array<{ id: string; path: string }>>;
 }
 
 /**
@@ -201,22 +215,61 @@ function isDocumentAllowed(
 }
 
 /**
- * Computes the effective folder filter for rag_search.
- * - allowAll: no restriction unless caller explicitly filtered
- * - allowList: intersect caller folders with profile allowedFolders (or default
- *   to all allowedFolders when caller does not specify)
+ * Returns true when the document passes the allowlist using its full folder
+ * ancestor chain. Use this in preference to {@link isDocumentAllowed} when
+ * the storage layer can supply the chain — it covers cases where the doc's
+ * immediate folder doesn't match an entry but a higher ancestor does
+ * (typical when the user ticks a top-level folder expecting recursive
+ * coverage). Falls back to the path-prefix behaviour for connectors whose
+ * folder paths already encode the hierarchy.
+ *
+ * The chain MUST list folders from immediate parent outward — root last —
+ * but the function does not depend on the order; it scans all entries.
+ */
+function isDocumentAllowedByChain(
+  documentId: string,
+  documentPath: string,
+  folderChain: ReadonlyArray<{ id: string; path: string }>,
+  scope: Extract<ScopeSelection, { kind: 'document' }>,
+): boolean {
+  if (scope.mode === 'allowAll') return true;
+  if (scope.allowedDocuments.includes(documentId)) return true;
+  if (scope.allowedDocuments.includes(documentPath)) return true;
+  for (const ancestor of folderChain) {
+    if (scope.allowedFolders.includes(ancestor.id)) return true;
+    if (scope.allowedFolders.includes(ancestor.path)) return true;
+  }
+  // Keep prefix matching as a defensive fallback for hierarchical connectors
+  // (the chain check above covers flat-path connectors like gdrive).
+  for (const ancestor of folderChain) {
+    for (const allowed of scope.allowedFolders) {
+      if (ancestor.path === allowed || ancestor.path.startsWith(allowed + '/')) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * Computes the effective folder filter passed to the search index.
+ *
+ * Scope enforcement is handled by the post-search filter (which walks each
+ * chunk's folder ancestor chain — see `isDocumentAllowedByChain`). We
+ * therefore only forward the **caller-requested** folders here; pre-filtering
+ * by `scope.allowedFolders` at the SQL layer would mis-fire on connectors
+ * that store flat folder paths (gdrive's `path = name`), excluding deeply
+ * nested matches before the chain-walk even runs.
+ *
+ * The reranking layer over-fetches `candidatesPerSearch` (50 by default) so
+ * the post-filter has enough headroom to keep top-K populated even when most
+ * of the source falls outside the profile scope.
  */
 function effectiveFolders(
   argFolders: readonly string[] | undefined,
-  scope: Extract<ScopeSelection, { kind: 'document' }>,
+  _scope: Extract<ScopeSelection, { kind: 'document' }>,
 ): readonly string[] | undefined {
-  if (scope.mode === 'allowAll') return argFolders; // no extra restriction
-  const allowed = scope.allowedFolders;
-  if (!argFolders || argFolders.length === 0) {
-    return allowed.length > 0 ? allowed : undefined;
-  }
-  const intersection = argFolders.filter((f) => allowed.includes(f));
-  return intersection.length > 0 ? intersection : allowed;
+  return argFolders;
 }
 
 // ---------------------------------------------------------------------------
@@ -487,10 +540,26 @@ export function buildDocumentSourceAdapter(
             return { content: [{ type: 'text', text: JSON.stringify({ error: message }) }] };
           }
 
-          // Post-search allowlist filter (§6.3 invariant)
-          const filtered = searchResult.chunks.filter((chunk) => {
-            return isDocumentAllowed(chunk.documentId, chunk.fileName, chunk.folder, scope);
-          });
+          // Post-search allowlist filter (§6.3 invariant).
+          //
+          // The check walks each chunk's document folder ancestor chain so a
+          // ticked top-level folder transitively covers everything underneath
+          // — required because connectors like gdrive store flat folder paths
+          // (`path = name`), so prefix-only matching on the immediate folder
+          // misses deeply-nested matches. When the chain is empty (legacy
+          // tests, orphaned folder rows) we fall back to the chunk.folder
+          // path so the old single-level behaviour stays intact.
+          const filtered: typeof searchResult.chunks = [];
+          for (const chunk of searchResult.chunks) {
+            const chain = await deps.storage.getDocumentFolderChain(chunk.documentId);
+            const effectiveChain =
+              chain.length > 0 ? chain : [{ id: '', path: chunk.folder }];
+            if (
+              isDocumentAllowedByChain(chunk.documentId, chunk.fileName, effectiveChain, scope)
+            ) {
+              filtered.push(chunk);
+            }
+          }
 
           const cappedChunks = filtered.map((chunk) => {
             const { text, truncated } = capChunkText(chunk.text);
@@ -699,11 +768,24 @@ export function buildDocumentSourceAdapter(
             return { content: [{ type: 'text', text: JSON.stringify({ error: message }) }] };
           }
 
-          // Post-fetch per-document allowlist filter (document may be individually
-          // blocked even when the folder is not)
-          const allowed = docs
-            .filter((d) => isDocumentAllowed(d.id, d.path, d.folderId ? args.folder : null, scope))
-            .slice(0, limit);
+          // Post-fetch per-document allowlist filter. Walk the doc's folder
+          // ancestor chain so a ticked top-level folder transitively covers
+          // descendants. Falls back to the immediate folder path argument
+          // when the chain is unavailable (legacy mocks, orphaned rows).
+          const filteredDocs: RagDocument[] = [];
+          for (const d of docs) {
+            const chain = await deps.storage.getDocumentFolderChain(d.id);
+            const effectiveChain =
+              chain.length > 0
+                ? chain
+                : d.folderId && args.folder
+                  ? [{ id: d.folderId, path: args.folder }]
+                  : [];
+            if (isDocumentAllowedByChain(d.id, d.path, effectiveChain, scope)) {
+              filteredDocs.push(d);
+            }
+          }
+          const allowed = filteredDocs.slice(0, limit);
 
           const result = {
             documents: allowed.map((d) => ({
@@ -784,12 +866,11 @@ export function buildDocumentSourceAdapter(
 
           const { doc, text } = result;
 
-          // Allowlist enforcement — must be in allowedDocuments OR in an allowed folder
-          // We look up the folder path from the document's folderId. Because the storage
-          // interface only returns RagDocument (with folderId, not path), we use the
-          // document's own path to derive the folder component for the check.
-          const folderPath = doc.folderId ? doc.path.split('/').slice(0, -1).join('/') : null;
-          if (!isDocumentAllowed(doc.id, doc.path, folderPath, scope)) {
+          // Allowlist enforcement — must be in allowedDocuments OR in an
+          // allowed folder (walking the full ancestor chain so a ticked
+          // top-level folder covers descendants transitively).
+          const chain = await deps.storage.getDocumentFolderChain(doc.id);
+          if (!isDocumentAllowedByChain(doc.id, doc.path, chain, scope)) {
             audit(
               'rag_get_document',
               { documentId: args.documentId },

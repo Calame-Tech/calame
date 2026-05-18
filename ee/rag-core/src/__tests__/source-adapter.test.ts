@@ -109,6 +109,7 @@ function makeStorage(overrides?: Partial<DocumentStorage>): DocumentStorage {
     listDocuments: vi.fn().mockResolvedValue([]),
     getDocument: vi.fn().mockResolvedValue(null),
     listSources: vi.fn().mockResolvedValue([]),
+    getDocumentFolderChain: vi.fn().mockResolvedValue([]),
     ...overrides,
   };
 }

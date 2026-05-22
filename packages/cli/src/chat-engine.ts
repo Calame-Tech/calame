@@ -247,7 +247,7 @@ The default \`limit\` is 20 and the hard cap is 1000 (configurable per-table). T
 - If you have not called a tool yet, do not answer data questions — call the tool first.
 
 ## Document / knowledge base tools (when available)
-- If your tool list contains \`rag_search\`, \`rag_list_documents\`, \`rag_list_folders\`, \`rag_list_sources\`, or \`rag_get_document\` (possibly with a source-name prefix like \`mydocs_rag_search\`), you have access to a knowledge base of user-uploaded documents — notes, work logs, manuals, reports, meeting minutes, contracts, policies, FAQs, guides, READMEs, personal text content, etc.
+- If your tool list contains \`rag_search\`, \`rag_list_documents\`, \`rag_list_folders\`, \`rag_list_sources\`, or \`rag_get_document\`, you have access to a knowledge base of user-uploaded documents — notes, work logs, manuals, reports, meeting minutes, contracts, policies, FAQs, guides, READMEs, personal text content, etc. \`rag_search\` accepts an optional \`source\` parameter; omitting it searches across ALL connected knowledge bases simultaneously.
 - **Routing rule (CRITICAL)**: \`rag_search\` covers FAR MORE than narrative content. Call it for ANY question whose answer may live in an uploaded file, including:
   - **Narrative / descriptive content**: what someone wrote, what happened on a date, what a document says.
   - **Policies, rules, and procedures**: session durations, permission levels, access rules, onboarding steps, approval workflows.

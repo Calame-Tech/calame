@@ -1267,14 +1267,22 @@ function resolveAdapterConfig(
 }
 
 /**
- * Phase 3c: Register MCP tools by iterating `profile.sources`/`profile.scopes`
- * and delegating to `SourceAdapter.registerMcpTools` for each source.
+ * Phase 4: Register MCP tools by iterating `profile.sources`/`profile.scopes`
+ * and delegating to adapters.
  *
- * Backward compat invariant: single-DB profiles (one relational source, one kind)
- * produce toolNamespace='' → tool names are unchanged (e.g. `query`, not `prod_query`).
+ * Strategy:
+ *   - Relational sources: EXACT previous behavior — one call to
+ *     `adapter.registerMcpTools(ctx)` per source, with namespace when
+ *     multiple relational sources are present. kindCounts only counts
+ *     relational sources for namespace computation.
+ *   - Document sources: collected into a single array, then
+ *     `registerMergedDocumentRagTools` is called ONCE for all of them.
+ *     The 5 RAG tools (rag_search, rag_list_sources, …) are registered
+ *     without any prefix. The optional `source` param on rag_search lets
+ *     the LLM target a specific knowledge base.
  *
- * Multi-source profiles produce `<sanitizedName>_` prefix per source when more
- * than one source of the same `kind` is active in the profile.
+ * Backward compat invariant: single-DB profiles produce toolNamespace=''
+ * → tool names are unchanged (e.g. `query`, not `prod_query`).
  */
 async function registerToolsViaAdapters(opts: RegisterAdaptersOptions): Promise<void> {
   const {
@@ -1325,9 +1333,9 @@ async function registerToolsViaAdapters(opts: RegisterAdaptersOptions): Promise<
   // synthesised placeholder ids (e.g. 'default') for legacy profiles whose
   // `connections` field was empty — those placeholders won't match
   // `state.connections` keys when the actual connection has a different name.
-  // Mirror the legacy fallback at serve.ts:379-381: when a relational
-  // sourceId doesn't match any live connection, fan the scope out to every
-  // available DB connection. Document scopes are left as-is.
+  // Mirror the legacy fallback: when a relational sourceId doesn't match any
+  // live connection, fan the scope out to every available DB connection.
+  // Document scopes are left as-is.
   const resolvedPairs: Array<{ sourceId: string; scope: ScopeSelection }> = [];
   for (const sourceId of rawSources) {
     const scope = mergedScopes[sourceId];
@@ -1349,30 +1357,47 @@ async function registerToolsViaAdapters(opts: RegisterAdaptersOptions): Promise<
     }
   }
 
-  // Count active sources per kind to determine when namespacing is needed.
-  const kindCounts = new Map<string, number>();
-  for (const { scope } of resolvedPairs) {
-    kindCounts.set(scope.kind, (kindCounts.get(scope.kind) ?? 0) + 1);
-  }
+  // Split resolved pairs into relational and document buckets.
+  const relationalPairs = resolvedPairs.filter((p) => p.scope.kind === 'relational');
+  const documentPairs = resolvedPairs.filter((p) => p.scope.kind === 'document');
+
+  // Count active RELATIONAL sources only — document sources are no longer
+  // namespaced (merged into a single tool set), so their count must not
+  // influence the relational namespace computation.
+  const relationalKindCount = relationalPairs.length;
 
   let anyRegistered = false;
+
+  // Shared audit body used by both relational and document registrations.
+  // Two typed wrappers below satisfy the different onAuditLog signatures:
+  //   - registerCalcTool / registerDynamicTools: Omit<AuditLogEntry, 'id'|'timestamp'>
+  //   - McpRegistrationContext.onAuditLog: full AuditLogEntry
+  // Both map to the same addEntry call; only the declared parameter type differs.
+  const addAuditEntry = (entry: Omit<AuditLogEntry, 'id' | 'timestamp'>): void => {
+    if (state.auditLog) {
+      state.auditLog.addEntry({ ...entry, tokenLabel: resolvedTokenLabel, tenantId });
+      state.auditLog.save().catch(() => {});
+    }
+  };
+  /** onAuditLog for registerCalcTool / registerDynamicTools. */
+  const onAuditLogPartial: (entry: Omit<AuditLogEntry, 'id' | 'timestamp'>) => void = addAuditEntry;
+  /** onAuditLog for McpRegistrationContext (full AuditLogEntry including id/timestamp). */
+  const onAuditLog: (entry: AuditLogEntry) => void = (entry) => addAuditEntry(entry);
 
   // Register calc once globally — it is not source-specific, so it must not
   // participate in per-source namespacing. Calling it here (before the loop)
   // guarantees exactly one registration even when multiple relational sources
   // are wired into the same profile.
-  registerCalcTool(mcpServer, profileName, (s) => s, (entry) => {
-    if (state.auditLog) {
-      state.auditLog.addEntry({ ...entry, tokenLabel: resolvedTokenLabel, tenantId });
-      state.auditLog.save().catch(() => {});
-    }
-  });
+  registerCalcTool(mcpServer, profileName, (s) => s, onAuditLogPartial);
 
-  for (const { sourceId, scope } of resolvedPairs) {
+  // ---------------------------------------------------------------------------
+  // Relational sources — EXACT previous behavior, one call per source.
+  // ---------------------------------------------------------------------------
+  for (const { sourceId, scope } of relationalPairs) {
     const resolved = resolveAdapterForSource(sourceId, scope, state);
     if (!resolved) {
       state.logger?.warn(
-        `No adapter found for source "${sourceId}" (kind=${scope.kind}) — skipping`,
+        `No adapter found for relational source "${sourceId}" — skipping`,
         { component: `mcp/${profileName}` },
       );
       continue;
@@ -1380,10 +1405,9 @@ async function registerToolsViaAdapters(opts: RegisterAdaptersOptions): Promise<
 
     const { adapter, source } = resolved;
 
-    // Compute toolNamespace: empty when only one source of this kind, prefixed otherwise.
-    const kindCount = kindCounts.get(scope.kind) ?? 1;
+    // Compute toolNamespace: empty when only one relational source, prefixed otherwise.
     const toolNamespace =
-      kindCount >= 2
+      relationalKindCount >= 2
         ? sanitizeToolNamespace(source.name) + '_'
         : '';
 
@@ -1391,57 +1415,35 @@ async function registerToolsViaAdapters(opts: RegisterAdaptersOptions): Promise<
     const config = resolveAdapterConfig(sourceId, scope, state);
     if (config === null) {
       state.logger?.warn(
-        `Could not resolve config for source "${sourceId}" — skipping`,
+        `Could not resolve config for relational source "${sourceId}" — skipping`,
         { component: `mcp/${profileName}` },
       );
       continue;
     }
 
-    // Build a SourceSchema for the adapter. For relational sources we synthesize
-    // it from the in-memory ConnectionState schema (already introspected). For
-    // document sources the adapter introspects lazily; we pass an empty schema
-    // here because registerMcpTools doesn't need the full schema — the RAG tools
-    // query the storage layer at runtime.
-    let schema: import('@calame/core').SourceSchema;
-    if (scope.kind === 'relational') {
-      const connState = state.connections.get(sourceId);
-      // Apply user-level table restrictions to the scope selection before passing in.
-      // effectiveSelectedTables has already been narrowed by the user restrictions block above.
-      const narrowedScope: ScopeSelection = {
-        kind: 'relational',
-        selectedTables: effectiveSelectedTables,
-        tableOptions: effectiveTableOptions,
-        columnMasking: effectiveColumnMasking,
-      };
-      schema = {
-        kind: 'relational',
-        tables: connState?.schema.tables ?? [],
-        relations: profileConnections.flatMap((cs) => cs.schema.relations ?? []),
-      };
-      // Override scope with the narrowed one.
-      (resolved as { adapter: SourceAdapter; source: Source; narrowedScope?: ScopeSelection }).narrowedScope =
-        narrowedScope;
-    } else {
-      schema = { kind: 'document', folders: [], documents: [] };
-    }
+    const connState = state.connections.get(sourceId);
+    // Apply user-level table restrictions to the scope selection before passing in.
+    // effectiveSelectedTables has already been narrowed by the user restrictions block above.
+    const narrowedScope: ScopeSelection = {
+      kind: 'relational',
+      selectedTables: effectiveSelectedTables,
+      tableOptions: effectiveTableOptions,
+      columnMasking: effectiveColumnMasking,
+    };
+    const schema: import('@calame/core').SourceSchema = {
+      kind: 'relational',
+      tables: connState?.schema.tables ?? [],
+      relations: profileConnections.flatMap((cs) => cs.schema.relations ?? []),
+    };
 
-    // Retrieve the (potentially narrowed) scope.
-    const effectiveScope: ScopeSelection =
-      (resolved as { adapter: SourceAdapter; source: Source; narrowedScope?: ScopeSelection })
-        .narrowedScope ?? scope;
-
-    // Build McpRegistrationContext.
-    // For relational sources: build a live executeQuery closure over the connection.
-    // For document sources: searchIndex is provided via the RAG runtime's search wrapper.
-    const connState = scope.kind === 'relational' ? state.connections.get(sourceId) : undefined;
     const connector = connState ? getConnector(connState.connection.databaseType) : undefined;
     const connectionString = connState?.connection.connectionString ?? '';
     const sslConfig = connState?.connection.sslConfig;
 
     // Distinct-values cache for relational sources (same pattern as legacy path).
     let distinctValuesByTable: Record<string, Record<string, unknown[]>> | undefined;
-    if (scope.kind === 'relational' && connState && connector) {
-      const relScope = effectiveScope as Extract<ScopeSelection, { kind: 'relational' }>;
+    if (connState && connector) {
+      const relScope = narrowedScope as Extract<ScopeSelection, { kind: 'relational' }>;
       const distinctCacheKey = distinctValuesCacheKey(
         profileName,
         connectionString,
@@ -1478,16 +1480,11 @@ async function registerToolsViaAdapters(opts: RegisterAdaptersOptions): Promise<
       source,
       config,
       schema,
-      selection: effectiveScope,
+      selection: narrowedScope,
       profileName,
       toolNamespace,
       responseMode,
-      onAuditLog: (entry: AuditLogEntry) => {
-        if (state.auditLog) {
-          state.auditLog.addEntry({ ...entry, tokenLabel: resolvedTokenLabel, tenantId });
-          state.auditLog.save().catch(() => {});
-        }
-      },
+      onAuditLog,
       scopeGuard,
       executeQuery: connector
         ? async (sql: string, params?: ReadonlyArray<unknown>) => {
@@ -1504,32 +1501,23 @@ async function registerToolsViaAdapters(opts: RegisterAdaptersOptions): Promise<
         : undefined,
     };
 
-    // Document adapters (kind === 'document') read their search index from the
-    // closure-bound deps that rag-runtime.ts injected at adapter construction time
-    // (see packages/cli/src/rag-runtime.ts where buildDocumentSourceAdapter is
-    // called). The McpRegistrationContext.searchIndex field is intentionally not
-    // populated here — it would be dead since the adapter never reads it.
-
-    // Inject wrapResponse for relational adapters (the DB adapter delegates to
-    // registerDynamicTools which accepts wrapResponse).
-    if (scope.kind === 'relational') {
+    // Inject wrapResponse / maxOffset / distinctValuesByTable for the DB adapter.
+    (ctx as McpRegistrationContext & {
+      wrapResponse?: (json: string) => string;
+      maxOffset?: number;
+      distinctValuesByTable?: Record<string, Record<string, unknown[]>>;
+    }).wrapResponse = wrapResponse;
+    (ctx as McpRegistrationContext & {
+      wrapResponse?: (json: string) => string;
+      maxOffset?: number;
+      distinctValuesByTable?: Record<string, Record<string, unknown[]>>;
+    }).maxOffset = 10000;
+    if (distinctValuesByTable) {
       (ctx as McpRegistrationContext & {
         wrapResponse?: (json: string) => string;
         maxOffset?: number;
         distinctValuesByTable?: Record<string, Record<string, unknown[]>>;
-      }).wrapResponse = wrapResponse;
-      (ctx as McpRegistrationContext & {
-        wrapResponse?: (json: string) => string;
-        maxOffset?: number;
-        distinctValuesByTable?: Record<string, Record<string, unknown[]>>;
-      }).maxOffset = 10000;
-      if (distinctValuesByTable) {
-        (ctx as McpRegistrationContext & {
-          wrapResponse?: (json: string) => string;
-          maxOffset?: number;
-          distinctValuesByTable?: Record<string, Record<string, unknown[]>>;
-        }).distinctValuesByTable = distinctValuesByTable;
-      }
+      }).distinctValuesByTable = distinctValuesByTable;
     }
 
     try {
@@ -1538,9 +1526,101 @@ async function registerToolsViaAdapters(opts: RegisterAdaptersOptions): Promise<
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       state.logger?.warn(
-        `registerMcpTools failed for source "${sourceId}": ${msg}`,
+        `registerMcpTools failed for relational source "${sourceId}": ${msg}`,
         { component: `mcp/${profileName}` },
       );
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Document sources — one call to registerMergedDocumentRagTools for ALL.
+  // ---------------------------------------------------------------------------
+  if (documentPairs.length > 0) {
+    const ragRuntime = state.ragRuntime;
+    if (!ragRuntime) {
+      state.logger?.warn(
+        `Document sources present but RAG runtime is not initialized — skipping document tool registration`,
+        { component: `mcp/${profileName}` },
+      );
+    } else {
+      // Collect all document sources into the MergedSourceEntry array.
+      type MergedSourceEntry = import('@calame-ee/rag-core').MergedSourceEntry;
+      const mergedSources: MergedSourceEntry[] = [];
+
+      for (const { sourceId, scope } of documentPairs) {
+        // Cross-tenant isolation guard: verify that the RAG source actually
+        // belongs to the tenant resolved from the MCP URL before handing it
+        // to registerMergedDocumentRagTools. A mis-attributed source ID (e.g.
+        // a config that references a source owned by a different tenant) is
+        // silently excluded here — it can never leak data because it never
+        // reaches the RAG runtime. In normal operation every source passes.
+        if (state.db) {
+          let sourceTenantId: string | undefined;
+          try {
+            const row = state.db.raw
+              .prepare<[string], { tenant_id: string }>(
+                'SELECT tenant_id FROM rag_sources WHERE id = ?',
+              )
+              .get(sourceId);
+            sourceTenantId = row?.tenant_id;
+          } catch {
+            // Defensive: if rag_sources doesn't exist yet (no migration run),
+            // fall through and let resolveAdapterForSource handle it.
+          }
+          if (sourceTenantId !== undefined && sourceTenantId !== tenantId) {
+            state.logger?.warn(
+              `Document source "${sourceId}" belongs to tenant "${sourceTenantId}" but request is for tenant "${tenantId}" — excluding from tool registration`,
+              { component: `mcp/${profileName}` },
+            );
+            continue;
+          }
+        }
+
+        const resolved = resolveAdapterForSource(sourceId, scope, state);
+        if (!resolved) {
+          state.logger?.warn(
+            `No adapter found for document source "${sourceId}" — skipping`,
+            { component: `mcp/${profileName}` },
+          );
+          continue;
+        }
+
+        const config = resolveAdapterConfig(sourceId, scope, state);
+        if (config === null) {
+          state.logger?.warn(
+            `Could not resolve config for document source "${sourceId}" — skipping`,
+            { component: `mcp/${profileName}` },
+          );
+          continue;
+        }
+
+        mergedSources.push({
+          source: resolved.source,
+          selection: scope as Extract<ScopeSelection, { kind: 'document' }>,
+          config,
+        });
+      }
+
+      if (mergedSources.length > 0) {
+        try {
+          ragRuntime.ragCore.registerMergedDocumentRagTools({
+            server: mcpServer,
+            deps: ragRuntime.documentAdapterDeps,
+            tenantId,
+            sources: mergedSources,
+            profileName,
+            responseMode,
+            onAuditLog,
+          });
+          anyRegistered = true;
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          state.logger?.warn(
+            `registerMergedDocumentRagTools failed: ${msg}`,
+            { component: `mcp/${profileName}` },
+          );
+        }
+      }
     }
   }
 
@@ -1571,12 +1651,7 @@ async function registerToolsViaAdapters(opts: RegisterAdaptersOptions): Promise<
           fields: Object.keys(result.rows[0] ?? {}).map((name) => ({ name })),
         };
       },
-      onAuditLog: (entry) => {
-        if (state.auditLog) {
-          state.auditLog.addEntry({ ...entry, tokenLabel: resolvedTokenLabel, tenantId });
-          state.auditLog.save().catch(() => {});
-        }
-      },
+      onAuditLog: onAuditLogPartial,
       profileName,
       databaseType: fallbackConn.connection.databaseType,
       responseMode,

@@ -1,20 +1,26 @@
 /**
- * Tests for Phase 3c — adapter-driven MCP tool registration in serve.ts.
+ * Tests for Phase 4 — adapter-driven MCP tool registration in serve.ts.
  *
  * Scenarios covered:
  *  1. Single-DB profile (new shape) → no namespace (backward compat invariant)
  *  2. Multi-DB profile (two relational sources) → <name>_ namespace on each
- *  3. Profile with one DB + one document source → both tools registered (namespaced)
- *  4. Profile with document source only → rag tools registered (no DB tools)
- *  5. Profile with document source (allowList mode) → scope passed through to adapter
+ *  3. Profile with one DB + one document source → DB adapter namespaced, RAG merged once (no prefix)
+ *  4. Profile with document source only → registerMergedDocumentRagTools called once
+ *  5. Profile with document source (allowList mode) → scope forwarded to merged tool registration
  *  6. Profile with unknown sourceId → skipped gracefully, fallback empty tool list
+ *  7. Two document sources → registerMergedDocumentRagTools called once with both entries
+ *  8. Empty sources → no adapter called, fallback registers 0 tools
+ *  9. Two configs with allowList document scopes → union of allowlists forwarded to merged tools
+ *  10. allowAll wins over allowList when merging configs
+ *  11. Config document scopes win over stale profile.scopes for the same id
  *
  * Mocking strategy:
  *  - `@calame/core`: mock registerDynamicTools, sourceAdapterRegistry, upgradeProfileShape, etc.
  *  - `@calame/connectors`: mock getConnector
+ *  - `@calame-ee/rag-core`: mock registerMergedDocumentRagTools (the new merged path)
  *  - MCP SDK and streamable transport: minimal mocks (same as serve-empty-profile.test.ts)
- *  - The DocumentSourceAdapter's registerMcpTools is a spy so we can assert it was called
- *    with the expected toolNamespace and selection.
+ *  - Document adapters in the registry are no longer expected to have registerMcpTools called;
+ *    serve.ts now goes through registerMergedDocumentRagTools instead.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { McpRegistrationContext, ScopeSelection } from '@calame/core';
@@ -24,6 +30,7 @@ import type { McpRegistrationContext, ScopeSelection } from '@calame/core';
 // ---------------------------------------------------------------------------
 const {
   registerDynamicToolsMock,
+  registerMergedDocumentRagToolsMock,
   registeredAdapters,
   mockRegistry,
 } = vi.hoisted(() => {
@@ -38,6 +45,7 @@ const {
   };
   return {
     registerDynamicToolsMock: vi.fn(),
+    registerMergedDocumentRagToolsMock: vi.fn(),
     registeredAdapters,
     mockRegistry,
   };
@@ -218,6 +226,34 @@ function documentScope(mode: 'allowAll' | 'allowList' = 'allowAll'): ScopeSelect
   };
 }
 
+/**
+ * Build a minimal ragRuntime mock that satisfies what serve.ts now needs:
+ *  - ragRuntime.ragCore.registerMergedDocumentRagTools (the merged path)
+ *  - ragRuntime.documentAdapterDeps (passed to the above)
+ *  - ragRuntime.decryptConfig (used by resolveAdapterConfig for document sources)
+ */
+function makeRagRuntime(mockDb: { raw: { prepare: ReturnType<typeof vi.fn> } }) {
+  return {
+    vectorStore: { search: vi.fn().mockReturnValue([]) },
+    resolveEmbeddingClient: vi.fn(),
+    decryptConfig: vi.fn().mockImplementation((enc: string) => {
+      // Return a valid JSON config for any encrypted string.
+      void enc;
+      return '{"root":"/docs"}';
+    }),
+    documentAdapterDeps: {
+      resolveConnector: vi.fn().mockReturnValue(null),
+      searchIndex: { search: vi.fn().mockResolvedValue({ chunks: [] }) },
+      storage: { listFolders: vi.fn(), listDocuments: vi.fn(), getDocument: vi.fn(), listSources: vi.fn() },
+    },
+    ragCore: {
+      registerMergedDocumentRagTools: registerMergedDocumentRagToolsMock,
+    },
+    // Needed so resolveAdapterConfig can call decryptConfig
+    db: mockDb,
+  };
+}
+
 function makeApp(state: AppState): express.Express {
   state.userManager = {
     verifyToken: vi.fn().mockReturnValue({ id: 'admin', role: 'admin', status: 'active' }),
@@ -254,11 +290,37 @@ async function postInitialize(app: express.Express, profileName: string) {
     });
 }
 
+// Helper: build a mockDb that returns a given source type for rag_sources lookups.
+// Each entry may include an optional `tenant_id` field — when present it is returned
+// by both `SELECT type` and `SELECT tenant_id` queries so the cross-tenant guard in
+// registerToolsViaAdapters can verify ownership. When absent, `tenant_id` is omitted
+// from the row (simulates a source that hasn't been migrated yet — guard falls through).
+function makeRagDb(
+  sourceMap: Record<string, { type: string; name: string; tenant_id?: string }>,
+) {
+  return {
+    raw: {
+      prepare: vi.fn().mockImplementation((sql: string) => ({
+        get: vi.fn().mockImplementation((id: string) => {
+          if (sql.includes('FROM rag_sources') && sourceMap[id]) {
+            const { tenant_id, ...rest } = sourceMap[id];
+            const row: Record<string, unknown> = { ...rest, embedding_setting_name: null };
+            if (tenant_id !== undefined) row.tenant_id = tenant_id;
+            return row;
+          }
+          return null;
+        }),
+        all: vi.fn().mockReturnValue([]),
+      })),
+    },
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('serve route — Phase 3c adapter-driven tool registration', () => {
+describe('serve route — Phase 4 adapter-driven tool registration', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     registeredAdapters.clear();
@@ -344,13 +406,15 @@ describe('serve route — Phase 3c adapter-driven tool registration', () => {
   });
 
   // -------------------------------------------------------------------------
-  // Test 3: Profile with one DB + one document source → both registered
+  // Test 3: Profile with one DB + one document source
+  //         → DB adapter gets registerMcpTools (no prefix, single relational)
+  //         → registerMergedDocumentRagTools called once for the document source
   // -------------------------------------------------------------------------
-  it('mixed profile (DB + document): both adapters registerMcpTools called', async () => {
+  it('mixed profile (DB + document): DB adapter called, registerMergedDocumentRagTools called once', async () => {
     const state = new AppState();
     state.addConnection('main', makeConnectionState('main', 'Main DB'));
 
-    // Register a mock document adapter.
+    // Register a document adapter (still needed for resolveAdapterForSource lookup).
     const docAdapterMock = {
       type: 'local',
       displayName: 'Local folder',
@@ -359,29 +423,9 @@ describe('serve route — Phase 3c adapter-driven tool registration', () => {
     };
     registeredAdapters.set('local', docAdapterMock);
 
-    // Simulate a rag_sources SQLite lookup by providing a mock db.
-    const mockDb = {
-      raw: {
-        prepare: vi.fn().mockImplementation((sql: string) => ({
-          get: vi.fn().mockImplementation((id: string) => {
-            if (sql.includes('FROM rag_sources') && id === 'kb1') {
-              return { type: 'local', name: 'Knowledge Base 1', embedding_setting_name: null };
-            }
-            return null;
-          }),
-          all: vi.fn().mockReturnValue([]),
-        })),
-      },
-    };
+    const mockDb = makeRagDb({ kb1: { type: 'local', name: 'Knowledge Base 1' } });
     state.db = mockDb as unknown as typeof state.db;
-
-    // Simulate ragRuntime presence (document adapter needs it).
-    const mockRagRuntime = {
-      vectorStore: { search: vi.fn().mockReturnValue([]) },
-      resolveEmbeddingClient: vi.fn(),
-      decryptConfig: vi.fn().mockReturnValue('{"root":"/docs"}'),
-    };
-    state.ragRuntime = mockRagRuntime as unknown as typeof state.ragRuntime;
+    state.ragRuntime = makeRagRuntime(mockDb) as unknown as typeof state.ragRuntime;
 
     state.serveProfiles = {
       mixed: {
@@ -404,17 +448,24 @@ describe('serve route — Phase 3c adapter-driven tool registration', () => {
     const pgAdapter = registeredAdapters.get('postgresql');
     expect(pgAdapter?.registerMcpTools).toHaveBeenCalledOnce();
     const dbCtx = pgAdapter?.registerMcpTools.mock.calls[0][0] as McpRegistrationContext;
-    expect(dbCtx.toolNamespace).toBe(''); // single of its kind
+    expect(dbCtx.toolNamespace).toBe(''); // single relational source → no prefix
 
-    // Document adapter registered (only one document source → no prefix).
-    expect(docAdapterMock.registerMcpTools).toHaveBeenCalledOnce();
-    const docCtx = docAdapterMock.registerMcpTools.mock.calls[0][0] as McpRegistrationContext;
-    expect(docCtx.toolNamespace).toBe(''); // single of its kind
-    expect(docCtx.selection.kind).toBe('document');
+    // Document source: registerMergedDocumentRagTools called once (not docAdapter.registerMcpTools).
+    expect(docAdapterMock.registerMcpTools).not.toHaveBeenCalled();
+    expect(registerMergedDocumentRagToolsMock).toHaveBeenCalledOnce();
+
+    const mergedOpts = registerMergedDocumentRagToolsMock.mock.calls[0][0] as {
+      sources: Array<{ source: { id: string }; selection: ScopeSelection }>;
+      profileName: string;
+    };
+    expect(mergedOpts.profileName).toBe('mixed');
+    expect(mergedOpts.sources).toHaveLength(1);
+    expect(mergedOpts.sources[0].source.id).toBe('kb1');
+    expect(mergedOpts.sources[0].selection.kind).toBe('document');
   });
 
   // -------------------------------------------------------------------------
-  // Test 4: Unknown sourceId → skipped gracefully, fallback registers empty DB tools
+  // Test 4: Unknown relational source id falls back to live connections (legacy parity)
   // -------------------------------------------------------------------------
   it('unknown relational source id falls back to live connections (legacy parity)', async () => {
     const state = new AppState();
@@ -481,12 +532,13 @@ describe('serve route — Phase 3c adapter-driven tool registration', () => {
     expect(registerDynamicToolsMock).toHaveBeenCalledOnce();
     const pgAdapter = registeredAdapters.get('postgresql');
     expect(pgAdapter?.registerMcpTools).not.toHaveBeenCalled();
+    expect(registerMergedDocumentRagToolsMock).not.toHaveBeenCalled();
   });
 
   // -------------------------------------------------------------------------
-  // Test 6: Document scope allowList is forwarded to the adapter
+  // Test 6: Document scope allowList is forwarded to registerMergedDocumentRagTools
   // -------------------------------------------------------------------------
-  it('document allowList scope is forwarded to registerMcpTools unchanged', async () => {
+  it('document allowList scope is forwarded to registerMergedDocumentRagTools unchanged', async () => {
     const state = new AppState();
 
     const docAdapterMock = {
@@ -497,27 +549,9 @@ describe('serve route — Phase 3c adapter-driven tool registration', () => {
     };
     registeredAdapters.set('local', docAdapterMock);
 
-    const mockDb = {
-      raw: {
-        prepare: vi.fn().mockImplementation((sql: string) => ({
-          get: vi.fn().mockImplementation((id: string) => {
-            if (sql.includes('FROM rag_sources') && id === 'kb1') {
-              return { type: 'local', name: 'KB1', embedding_setting_name: null };
-            }
-            return null;
-          }),
-          all: vi.fn().mockReturnValue([]),
-        })),
-      },
-    };
+    const mockDb = makeRagDb({ kb1: { type: 'local', name: 'KB1' } });
     state.db = mockDb as unknown as typeof state.db;
-
-    const mockRagRuntime = {
-      vectorStore: { search: vi.fn().mockReturnValue([]) },
-      resolveEmbeddingClient: vi.fn(),
-      decryptConfig: vi.fn().mockReturnValue('{"root":"/docs"}'),
-    };
-    state.ragRuntime = mockRagRuntime as unknown as typeof state.ragRuntime;
+    state.ragRuntime = makeRagRuntime(mockDb) as unknown as typeof state.ragRuntime;
 
     const allowListScope = documentScope('allowList');
     state.serveProfiles = {
@@ -534,19 +568,27 @@ describe('serve route — Phase 3c adapter-driven tool registration', () => {
     const res = await postInitialize(app, 'restrictedKb');
     expect(res.status).toBe(200);
 
-    expect(docAdapterMock.registerMcpTools).toHaveBeenCalledOnce();
-    const ctx = docAdapterMock.registerMcpTools.mock.calls[0][0] as McpRegistrationContext;
-    expect(ctx.selection.kind).toBe('document');
-    if (ctx.selection.kind === 'document') {
-      expect(ctx.selection.mode).toBe('allowList');
-      expect(ctx.selection.allowedFolders).toEqual(['docs/faq']);
+    // Document adapter's registerMcpTools is NOT called — merged path is used.
+    expect(docAdapterMock.registerMcpTools).not.toHaveBeenCalled();
+
+    expect(registerMergedDocumentRagToolsMock).toHaveBeenCalledOnce();
+    const mergedOpts = registerMergedDocumentRagToolsMock.mock.calls[0][0] as {
+      sources: Array<{ source: { id: string }; selection: ScopeSelection }>;
+    };
+    expect(mergedOpts.sources).toHaveLength(1);
+    const sel = mergedOpts.sources[0].selection;
+    expect(sel.kind).toBe('document');
+    if (sel.kind === 'document') {
+      expect(sel.mode).toBe('allowList');
+      expect(sel.allowedFolders).toEqual(['docs/faq']);
     }
   });
 
   // -------------------------------------------------------------------------
-  // Test 7: Two document sources → prefixed namespaces
+  // Test 7: Two document sources → registerMergedDocumentRagTools called once
+  //         with both entries (no per-source namespace)
   // -------------------------------------------------------------------------
-  it('two document sources: each gets a sanitized namespace', async () => {
+  it('two document sources: registerMergedDocumentRagTools called once with two entries', async () => {
     const state = new AppState();
 
     const docAdapterMock = {
@@ -557,28 +599,12 @@ describe('serve route — Phase 3c adapter-driven tool registration', () => {
     };
     registeredAdapters.set('local', docAdapterMock);
 
-    const mockDb = {
-      raw: {
-        prepare: vi.fn().mockImplementation((sql: string) => ({
-          get: vi.fn().mockImplementation((id: string) => {
-            if (sql.includes('FROM rag_sources')) {
-              if (id === 'kb1') return { type: 'local', name: 'Knowledge Base 1', embedding_setting_name: null };
-              if (id === 'kb2') return { type: 'local', name: 'Knowledge Base 2', embedding_setting_name: null };
-            }
-            return null;
-          }),
-          all: vi.fn().mockReturnValue([]),
-        })),
-      },
-    };
+    const mockDb = makeRagDb({
+      kb1: { type: 'local', name: 'Knowledge Base 1' },
+      kb2: { type: 'local', name: 'Knowledge Base 2' },
+    });
     state.db = mockDb as unknown as typeof state.db;
-
-    const mockRagRuntime = {
-      vectorStore: { search: vi.fn().mockReturnValue([]) },
-      resolveEmbeddingClient: vi.fn(),
-      decryptConfig: vi.fn().mockReturnValue('{"root":"/docs"}'),
-    };
-    state.ragRuntime = mockRagRuntime as unknown as typeof state.ragRuntime;
+    state.ragRuntime = makeRagRuntime(mockDb) as unknown as typeof state.ragRuntime;
 
     state.serveProfiles = {
       dualKb: {
@@ -597,27 +623,22 @@ describe('serve route — Phase 3c adapter-driven tool registration', () => {
     const res = await postInitialize(app, 'dualKb');
     expect(res.status).toBe(200);
 
-    // Both document adapters called — two document sources → prefixed.
-    expect(docAdapterMock.registerMcpTools).toHaveBeenCalledTimes(2);
+    // Document adapter's registerMcpTools is NOT called for either source.
+    expect(docAdapterMock.registerMcpTools).not.toHaveBeenCalled();
 
-    const ctx1 = docAdapterMock.registerMcpTools.mock.calls[0][0] as McpRegistrationContext;
-    const ctx2 = docAdapterMock.registerMcpTools.mock.calls[1][0] as McpRegistrationContext;
-
-    expect(ctx1.toolNamespace).toBe('knowledge_base_1_');
-    expect(ctx2.toolNamespace).toBe('knowledge_base_2_');
+    // registerMergedDocumentRagTools called exactly ONCE with both sources.
+    expect(registerMergedDocumentRagToolsMock).toHaveBeenCalledOnce();
+    const mergedOpts = registerMergedDocumentRagToolsMock.mock.calls[0][0] as {
+      sources: Array<{ source: { id: string; name: string } }>;
+    };
+    expect(mergedOpts.sources).toHaveLength(2);
+    const ids = mergedOpts.sources.map((s) => s.source.id).sort();
+    expect(ids).toEqual(['kb1', 'kb2']);
   });
 
   // -------------------------------------------------------------------------
   // Test 8: Empty sources/scopes → adapter path NOT taken, fallback registers
   // zero concrete tools (but still wires the MCP tools/list handler)
-  //
-  // Validates the post-2026-05-09 contract: a profile with `sources: []` is
-  // legitimate (e.g. just created, or admin de-selected everything via the
-  // RagAccessSelector). The serve route must not throw and must register zero
-  // concrete tools. The MCP protocol nonetheless requires the tools/list
-  // handler to exist — `registerDynamicTools` is therefore called once with
-  // an empty tables/selectedTables payload to wire that handler. See the
-  // "tablesByConnection.size === 0" branch in serve.ts:549.
   // -------------------------------------------------------------------------
   it('empty sources array: no adapter is called, fallback registers 0 tools', async () => {
     const state = new AppState();
@@ -640,6 +661,7 @@ describe('serve route — Phase 3c adapter-driven tool registration', () => {
     // The adapter-driven path is not taken (Object.keys(scopes).length === 0).
     const pgAdapter = registeredAdapters.get('postgresql');
     expect(pgAdapter?.registerMcpTools).not.toHaveBeenCalled();
+    expect(registerMergedDocumentRagToolsMock).not.toHaveBeenCalled();
 
     // The legacy path runs the "fallback for empty profile" branch: 1 call to
     // registerDynamicTools with empty tables/selectedTables to wire tools/list.
@@ -654,6 +676,7 @@ describe('serve route — Phase 3c adapter-driven tool registration', () => {
 
   // -------------------------------------------------------------------------
   // Test 9: Two configurations with allowList document scopes → union of allowlists
+  //         forwarded to registerMergedDocumentRagTools
   // -------------------------------------------------------------------------
   it('two configs with allowList document scopes: merged scope is union of allowedFolders', async () => {
     const state = new AppState();
@@ -666,29 +689,9 @@ describe('serve route — Phase 3c adapter-driven tool registration', () => {
     };
     registeredAdapters.set('local', docAdapterMock);
 
-    // Provide a db for rag_sources lookup and configurations file.
-    const mockDb = {
-      raw: {
-        prepare: vi.fn().mockImplementation((sql: string) => ({
-          get: vi.fn().mockImplementation((id: string) => {
-            if (sql.includes('FROM rag_sources') && id === 'kb1') {
-              return { type: 'local', name: 'KB1', embedding_setting_name: null };
-            }
-            if (sql.includes('configurations')) return null;
-            return null;
-          }),
-          all: vi.fn().mockReturnValue([]),
-        })),
-      },
-    };
+    const mockDb = makeRagDb({ kb1: { type: 'local', name: 'KB1' } });
     state.db = mockDb as unknown as typeof state.db;
-
-    const mockRagRuntime = {
-      vectorStore: { search: vi.fn().mockReturnValue([]) },
-      resolveEmbeddingClient: vi.fn(),
-      decryptConfig: vi.fn().mockReturnValue('{"root":"/docs"}'),
-    };
-    state.ragRuntime = mockRagRuntime as unknown as typeof state.ragRuntime;
+    state.ragRuntime = makeRagRuntime(mockDb) as unknown as typeof state.ragRuntime;
 
     // Two configurations: cfg-a allows docs/public, cfg-b allows docs/legal.
     const cfgA = {
@@ -736,14 +739,21 @@ describe('serve route — Phase 3c adapter-driven tool registration', () => {
     const res = await postInitialize(app, 'cfgMerge');
     expect(res.status).toBe(200);
 
-    // Document adapter called once with the merged allowList scope.
-    expect(docAdapterMock.registerMcpTools).toHaveBeenCalledOnce();
-    const ctx = docAdapterMock.registerMcpTools.mock.calls[0][0] as McpRegistrationContext;
-    expect(ctx.selection.kind).toBe('document');
-    if (ctx.selection.kind === 'document') {
-      expect(ctx.selection.mode).toBe('allowList');
+    // Document adapter's registerMcpTools is NOT called — merged path is used.
+    expect(docAdapterMock.registerMcpTools).not.toHaveBeenCalled();
+
+    // registerMergedDocumentRagTools called once with the merged allowList scope.
+    expect(registerMergedDocumentRagToolsMock).toHaveBeenCalledOnce();
+    const mergedOpts = registerMergedDocumentRagToolsMock.mock.calls[0][0] as {
+      sources: Array<{ source: { id: string }; selection: ScopeSelection }>;
+    };
+    expect(mergedOpts.sources).toHaveLength(1);
+    const sel = mergedOpts.sources[0].selection;
+    expect(sel.kind).toBe('document');
+    if (sel.kind === 'document') {
+      expect(sel.mode).toBe('allowList');
       // Union of both folder allowlists.
-      expect([...ctx.selection.allowedFolders].sort()).toEqual(['docs/legal', 'docs/public']);
+      expect([...sel.allowedFolders].sort()).toEqual(['docs/legal', 'docs/public']);
     }
   });
 
@@ -761,27 +771,9 @@ describe('serve route — Phase 3c adapter-driven tool registration', () => {
     };
     registeredAdapters.set('local', docAdapterMock);
 
-    const mockDb = {
-      raw: {
-        prepare: vi.fn().mockImplementation((sql: string) => ({
-          get: vi.fn().mockImplementation((id: string) => {
-            if (sql.includes('FROM rag_sources') && id === 'kb1') {
-              return { type: 'local', name: 'KB1', embedding_setting_name: null };
-            }
-            return null;
-          }),
-          all: vi.fn().mockReturnValue([]),
-        })),
-      },
-    };
+    const mockDb = makeRagDb({ kb1: { type: 'local', name: 'KB1' } });
     state.db = mockDb as unknown as typeof state.db;
-
-    const mockRagRuntime = {
-      vectorStore: { search: vi.fn().mockReturnValue([]) },
-      resolveEmbeddingClient: vi.fn(),
-      decryptConfig: vi.fn().mockReturnValue('{"root":"/docs"}'),
-    };
-    state.ragRuntime = mockRagRuntime as unknown as typeof state.ragRuntime;
+    state.ragRuntime = makeRagRuntime(mockDb) as unknown as typeof state.ragRuntime;
 
     const cfgAllowAll = {
       name: 'cfg-all',
@@ -830,14 +822,88 @@ describe('serve route — Phase 3c adapter-driven tool registration', () => {
     const res = await postInitialize(app, 'allowAllWins');
     expect(res.status).toBe(200);
 
-    expect(docAdapterMock.registerMcpTools).toHaveBeenCalledOnce();
-    const ctx = docAdapterMock.registerMcpTools.mock.calls[0][0] as McpRegistrationContext;
-    expect(ctx.selection.kind).toBe('document');
-    if (ctx.selection.kind === 'document') {
+    expect(docAdapterMock.registerMcpTools).not.toHaveBeenCalled();
+    expect(registerMergedDocumentRagToolsMock).toHaveBeenCalledOnce();
+    const mergedOpts = registerMergedDocumentRagToolsMock.mock.calls[0][0] as {
+      sources: Array<{ source: { id: string }; selection: ScopeSelection }>;
+    };
+    expect(mergedOpts.sources).toHaveLength(1);
+    const sel = mergedOpts.sources[0].selection;
+    expect(sel.kind).toBe('document');
+    if (sel.kind === 'document') {
       // allowAll wins regardless of which config has it.
-      expect(ctx.selection.mode).toBe('allowAll');
-      expect(ctx.selection.allowedFolders).toEqual([]);
+      expect(sel.mode).toBe('allowAll');
+      expect(sel.allowedFolders).toEqual([]);
     }
+  });
+
+  // -------------------------------------------------------------------------
+  // Test 12: cross-tenant source isolation
+  //
+  // A document source whose rag_sources.tenant_id does not match the tenant
+  // resolved from the MCP URL must be excluded from registerMergedDocumentRagTools
+  // and a warn must be emitted. Sources belonging to the correct tenant are kept.
+  // -------------------------------------------------------------------------
+  it('cross-tenant document source is excluded and warn is logged', async () => {
+    const state = new AppState();
+
+    const docAdapterMock = {
+      type: 'local',
+      displayName: 'Local folder',
+      capabilities: ['search'],
+      registerMcpTools: vi.fn(),
+    };
+    registeredAdapters.set('local', docAdapterMock);
+
+    // kb-own belongs to 'default', kb-foreign belongs to 'other-tenant'.
+    const mockDb = makeRagDb({
+      'kb-own': { type: 'local', name: 'Own KB', tenant_id: 'default' },
+      'kb-foreign': { type: 'local', name: 'Foreign KB', tenant_id: 'other-tenant' },
+    });
+    state.db = mockDb as unknown as typeof state.db;
+
+    const warnMessages: string[] = [];
+    state.logger = {
+      info: vi.fn(),
+      warn: vi.fn((...args: unknown[]) => {
+        if (typeof args[0] === 'string') warnMessages.push(args[0]);
+      }),
+      error: vi.fn(),
+    } as unknown as typeof state.logger;
+
+    state.ragRuntime = makeRagRuntime(mockDb) as unknown as typeof state.ragRuntime;
+
+    // Profile declares both sources; request is for the default tenant.
+    state.serveProfiles = {
+      tenantProfile: {
+        name: 'tenantProfile',
+        label: 'Tenant Profile',
+        sources: ['kb-own', 'kb-foreign'],
+        scopes: {
+          'kb-own': documentScope('allowAll'),
+          'kb-foreign': documentScope('allowAll'),
+        },
+      },
+    };
+    state.activeProfileNames.add('tenantProfile');
+
+    const app = makeApp(state);
+    // Default tenant: the MCP URL is /mcp/tenantProfile (single-segment → tenant='default').
+    const res = await postInitialize(app, 'tenantProfile');
+    expect(res.status).toBe(200);
+
+    // registerMergedDocumentRagTools must have been called with only the own source.
+    expect(registerMergedDocumentRagToolsMock).toHaveBeenCalledOnce();
+    const mergedOpts = registerMergedDocumentRagToolsMock.mock.calls[0][0] as {
+      sources: Array<{ source: { id: string } }>;
+    };
+    expect(mergedOpts.sources).toHaveLength(1);
+    expect(mergedOpts.sources[0].source.id).toBe('kb-own');
+
+    // A warn must have been emitted for the excluded cross-tenant source.
+    const crossTenantWarn = warnMessages.find((m) => m.includes('kb-foreign'));
+    expect(crossTenantWarn).toBeDefined();
+    expect(crossTenantWarn).toMatch(/tenant/i);
   });
 
   // -------------------------------------------------------------------------
@@ -846,9 +912,7 @@ describe('serve route — Phase 3c adapter-driven tool registration', () => {
   // The Knowledge tab moved from MCP detail to the data Configuration view, so
   // the Configuration is now the single source of truth for document scopes.
   // A stale profile.scopes[id] (e.g. left over from the removed MCP-detail
-  // Knowledge tab) MUST NOT shadow the user's current Configuration setting —
-  // otherwise updates made in the Knowledge tab (allowed docs, piiMaskingMode)
-  // silently fail to take effect at serve time.
+  // Knowledge tab) MUST NOT shadow the user's current Configuration setting.
   // -------------------------------------------------------------------------
   it('config document scopes win over profile.scopes when both declare the same id', async () => {
     const state = new AppState();
@@ -861,27 +925,9 @@ describe('serve route — Phase 3c adapter-driven tool registration', () => {
     };
     registeredAdapters.set('local', docAdapterMock);
 
-    const mockDb = {
-      raw: {
-        prepare: vi.fn().mockImplementation((sql: string) => ({
-          get: vi.fn().mockImplementation((id: string) => {
-            if (sql.includes('FROM rag_sources') && id === 'kb1') {
-              return { type: 'local', name: 'KB1', embedding_setting_name: null };
-            }
-            return null;
-          }),
-          all: vi.fn().mockReturnValue([]),
-        })),
-      },
-    };
+    const mockDb = makeRagDb({ kb1: { type: 'local', name: 'KB1' } });
     state.db = mockDb as unknown as typeof state.db;
-
-    const mockRagRuntime = {
-      vectorStore: { search: vi.fn().mockReturnValue([]) },
-      resolveEmbeddingClient: vi.fn(),
-      decryptConfig: vi.fn().mockReturnValue('{"root":"/docs"}'),
-    };
-    state.ragRuntime = mockRagRuntime as unknown as typeof state.ragRuntime;
+    state.ragRuntime = makeRagRuntime(mockDb) as unknown as typeof state.ragRuntime;
 
     // Config declares allowAll for kb1.
     const cfgAllowAll = {
@@ -925,13 +971,18 @@ describe('serve route — Phase 3c adapter-driven tool registration', () => {
     const res = await postInitialize(app, 'configWins');
     expect(res.status).toBe(200);
 
-    expect(docAdapterMock.registerMcpTools).toHaveBeenCalledOnce();
-    const ctx = docAdapterMock.registerMcpTools.mock.calls[0][0] as McpRegistrationContext;
-    expect(ctx.selection.kind).toBe('document');
-    if (ctx.selection.kind === 'document') {
+    expect(docAdapterMock.registerMcpTools).not.toHaveBeenCalled();
+    expect(registerMergedDocumentRagToolsMock).toHaveBeenCalledOnce();
+    const mergedOpts = registerMergedDocumentRagToolsMock.mock.calls[0][0] as {
+      sources: Array<{ source: { id: string }; selection: ScopeSelection }>;
+    };
+    expect(mergedOpts.sources).toHaveLength(1);
+    const sel = mergedOpts.sources[0].selection;
+    expect(sel.kind).toBe('document');
+    if (sel.kind === 'document') {
       // Config's allowAll overrides the profile's stale allowList.
-      expect(ctx.selection.mode).toBe('allowAll');
-      expect([...ctx.selection.allowedFolders]).toEqual([]);
+      expect(sel.mode).toBe('allowAll');
+      expect([...sel.allowedFolders]).toEqual([]);
     }
   });
 });

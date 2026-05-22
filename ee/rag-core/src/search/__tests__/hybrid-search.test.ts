@@ -478,4 +478,125 @@ describe('HybridSearchIndex', () => {
 			expect(escapeFtsQuery('foo bar')).toBe('"foo" OR "bar"');
 		});
 	});
+
+	// 13. tenantId filtering — defense-in-depth at the SQL layer
+	describe('tenantId filtering', () => {
+		function insertSource(dbArg: BetterSqlite3Database, id: string, tenantId = 'default'): void {
+			dbArg.prepare(
+				`INSERT OR IGNORE INTO rag_sources
+				 (id, name, type, config_encrypted, embedding_setting_name, embedding_model_version,
+				  embedding_dimensions, tenant_id, created_at, updated_at)
+				 VALUES (?, ?, 'local', '{}', 'mock-setting', 'mock-1', 3, ?, datetime('now'), datetime('now'))`,
+			).run(id, `KB-${id}`, tenantId);
+		}
+
+		function insertDocumentWithTenant(
+			dbArg: BetterSqlite3Database,
+			seed: DocumentSeed & { tenantId?: string },
+		): void {
+			dbArg.prepare(
+				`INSERT INTO rag_documents
+				 (id, source_id, folder_id, path, name, mime_type, size, hash, etag,
+				  tenant_id, last_indexed_at, deleted_at)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), NULL)`,
+			).run(
+				seed.id,
+				seed.sourceId,
+				seed.folderId ?? null,
+				seed.path,
+				seed.name,
+				seed.mimeType ?? 'text/plain',
+				seed.path.length,
+				'hash-' + seed.id,
+				null,
+				seed.tenantId ?? 'default',
+			);
+		}
+
+		function insertChunkWithTenant(
+			dbArg: BetterSqlite3Database,
+			seed: ChunkSeed & { tenantId?: string },
+		): void {
+			dbArg.prepare(
+				`INSERT INTO rag_chunks
+				 (id, document_id, position, text, token_count, embedding_dimensions, tenant_id, created_at)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+			).run(
+				seed.chunkId,
+				seed.documentId,
+				seed.position ?? 0,
+				seed.text,
+				seed.text.split(/\s+/).length,
+				3,
+				seed.tenantId ?? 'default',
+			);
+		}
+
+		it('vector branch: excludes chunks whose tenant_id differs from the filter', async () => {
+			// Two sources: src-a (tenant A) and src-b (tenant B) — both registered
+			// but we only query with tenantId='tenant-a'.
+			insertSource(db, 'src-a', 'tenant-a');
+			insertSource(db, 'src-b', 'tenant-b');
+			insertDocumentWithTenant(db, { id: 'doc-a', sourceId: 'src-a', path: 'a.md', name: 'a.md', tenantId: 'tenant-a' });
+			insertDocumentWithTenant(db, { id: 'doc-b', sourceId: 'src-b', path: 'b.md', name: 'b.md', tenantId: 'tenant-b' });
+			insertChunkWithTenant(db, { chunkId: 'c-a', documentId: 'doc-a', text: 'tenant-a content', tenantId: 'tenant-a' });
+			insertChunkWithTenant(db, { chunkId: 'c-b', documentId: 'doc-b', text: 'tenant-a content', tenantId: 'tenant-b' });
+
+			// Vector returns both chunks, but the tenantId filter should exclude c-b.
+			const vectorStore = makeMockVectorStore(['c-a', 'c-b']);
+			const index = new HybridSearchIndex({
+				db,
+				vectorStore,
+				resolveEmbeddingClient: () => makeMockEmbeddingClient(),
+			});
+
+			const result = await index.search('src-a', 'content', { topK: 5, tenantId: 'tenant-a' });
+			const chunkIds = result.chunks.map((c) => c.documentId);
+			expect(chunkIds).toContain('doc-a');
+			expect(chunkIds).not.toContain('doc-b');
+		});
+
+		it('FTS branch: excludes chunks whose tenant_id differs from the filter', async () => {
+			insertSource(db, 'src-c', 'tenant-c');
+			insertSource(db, 'src-d', 'tenant-d');
+			insertDocumentWithTenant(db, { id: 'doc-c', sourceId: 'src-c', path: 'c.md', name: 'c.md', tenantId: 'tenant-c' });
+			insertDocumentWithTenant(db, { id: 'doc-d', sourceId: 'src-d', path: 'd.md', name: 'd.md', tenantId: 'tenant-d' });
+			insertChunkWithTenant(db, { chunkId: 'c-c', documentId: 'doc-c', text: 'uniquewordxxx', tenantId: 'tenant-c' });
+			insertChunkWithTenant(db, { chunkId: 'c-d', documentId: 'doc-d', text: 'uniquewordxxx', tenantId: 'tenant-d' });
+
+			// Vector returns nothing → keyword branch only.
+			const vectorStore = makeMockVectorStore([]);
+			const index = new HybridSearchIndex({
+				db,
+				vectorStore,
+				resolveEmbeddingClient: () => makeMockEmbeddingClient(),
+			});
+
+			const result = await index.search('src-c', 'uniquewordxxx', { topK: 5, tenantId: 'tenant-c' });
+			const docIds = result.chunks.map((c) => c.documentId);
+			expect(docIds).toContain('doc-c');
+			expect(docIds).not.toContain('doc-d');
+		});
+
+		it('no tenantId filter → returns chunks from all tenants (backward compat)', async () => {
+			insertSource(db, 'src-e', 'tenant-e');
+			insertDocumentWithTenant(db, { id: 'doc-e1', sourceId: 'src-e', path: 'e1.md', name: 'e1.md', tenantId: 'tenant-e' });
+			insertDocumentWithTenant(db, { id: 'doc-e2', sourceId: 'src-e', path: 'e2.md', name: 'e2.md', tenantId: 'tenant-other' });
+			insertChunkWithTenant(db, { chunkId: 'c-e1', documentId: 'doc-e1', text: 'sharedword', tenantId: 'tenant-e' });
+			insertChunkWithTenant(db, { chunkId: 'c-e2', documentId: 'doc-e2', text: 'sharedword', tenantId: 'tenant-other' });
+
+			const vectorStore = makeMockVectorStore(['c-e1', 'c-e2']);
+			const index = new HybridSearchIndex({
+				db,
+				vectorStore,
+				resolveEmbeddingClient: () => makeMockEmbeddingClient(),
+			});
+
+			// No tenantId — backward compat: both chunks should appear.
+			const result = await index.search('src-e', 'sharedword', { topK: 5 });
+			const docIds = result.chunks.map((c) => c.documentId);
+			expect(docIds).toContain('doc-e1');
+			expect(docIds).toContain('doc-e2');
+		});
+	});
 });

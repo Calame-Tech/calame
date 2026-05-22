@@ -80,6 +80,8 @@ export class RerankingSearchIndex implements DocumentSearchIndex {
       topK: number;
       folders?: readonly string[];
       fileTypes?: readonly string[];
+      tenantId?: string;
+      sourceIds?: readonly string[];
     },
   ): Promise<RagSearchResult> {
     const topK = Math.max(1, opts.topK);
@@ -94,6 +96,8 @@ export class RerankingSearchIndex implements DocumentSearchIndex {
       topK: fetchK,
       folders: opts.folders,
       fileTypes: opts.fileTypes,
+      tenantId: opts.tenantId,
+      sourceIds: opts.sourceIds,
     });
 
     // Short-circuit when the base index returned nothing — no point burning a

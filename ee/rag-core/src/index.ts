@@ -130,6 +130,13 @@ export type {
 	DocumentStorage,
 } from './source-adapter.js';
 
+// ---------- Merged RAG tools (Phase 4+) ----------
+export { registerMergedDocumentRagTools } from './merged-rag-tools.js';
+export type {
+	MergedSourceEntry,
+	RegisterMergedDocumentRagToolsOpts,
+} from './merged-rag-tools.js';
+
 // ---------- PII Masking ----------
 export { parseRagPiiConfig, maskSearchResult } from './pii-masking.js';
 export type { RagPiiMaskingConfig } from './pii-masking.js';

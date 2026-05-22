@@ -15,6 +15,7 @@ import type {
   WatchManager,
   RateLimiter,
   EmbeddingCapConfig,
+  DocumentAdapterDeps,
 } from '@calame-ee/rag-core';
 import { randomUUID } from 'node:crypto';
 import type { CalameDatabase } from './database.js';
@@ -87,6 +88,14 @@ export interface RagRuntime {
    * same threshold.
    */
   capConfig: EmbeddingCapConfig;
+  /**
+   * Shared DocumentAdapterDeps built once at boot.
+   * Exposed so serve.ts can pass them to `registerMergedDocumentRagTools`
+   * without re-constructing the search index / storage closures.
+   * All document source adapters (local, s3, http, gdrive, …) share the
+   * same deps instance — only the connector type differs per source.
+   */
+  documentAdapterDeps: DocumentAdapterDeps;
 }
 
 /** Default vector dimension used when bootstrapping the vec0 table eagerly.
@@ -661,6 +670,21 @@ export async function initRagRuntime(
     log.warn(`RAG: soft-delete cleanup pass failed at boot: ${msg} (continuing).`);
   }
 
+  // Build DocumentAdapterDeps early so they can be:
+  //   1. threaded into each adapter via buildDocumentSourceAdapter (below), AND
+  //   2. stored on the runtime so serve.ts can call registerMergedDocumentRagTools.
+  // The deps are built here (before the adapter registration block) so that the
+  // runtime assignment below can include them even when `sourceAdapterRegistry.has('local')`
+  // is already true (idempotent guard) — in that case the block is skipped but the
+  // runtime still needs the reference for the merged-tool path.
+  //
+  // NOTE: This forward declaration is intentional. The `deps` variable is initialised
+  // with placeholder values and will be reassigned inside the `if (!sourceAdapterRegistry.has('local'))`
+  // block when adapters are freshly registered. The placeholder satisfies TypeScript and
+  // the runtime assignment below — in practice `initRagRuntime` is only called once per
+  // process so the block always runs.
+  let documentAdapterDepsRef: DocumentAdapterDeps | undefined;
+
   state.ragDisabledReason = null;
   state.ragRuntime = {
     vectorStore,
@@ -677,6 +701,14 @@ export async function initRagRuntime(
     rateLimiter,
     ragCore,
     capConfig,
+    // Filled in right after the adapter-registration block below.
+    // Asserted non-null: the block always runs on first call and sets documentAdapterDepsRef.
+    get documentAdapterDeps(): DocumentAdapterDeps {
+      if (!documentAdapterDepsRef) {
+        throw new Error('documentAdapterDeps accessed before adapter registration completed');
+      }
+      return documentAdapterDepsRef;
+    },
   };
   ragRuntimeRef.current = state.ragRuntime;
 
@@ -1107,13 +1139,17 @@ export async function initRagRuntime(
       );
     }
 
-    // Build and register the adapter.
-    const deps: import('@calame-ee/rag-core').DocumentAdapterDeps = {
+    // Build the shared DocumentAdapterDeps and expose them on the runtime so
+    // serve.ts can call registerMergedDocumentRagTools without rebuilding the
+    // search index / storage closures.
+    const deps: DocumentAdapterDeps = {
       resolveConnector,
       searchIndex,
       storage,
       piiMasking,
     };
+    // Store a reference so the lazy getter on ragRuntime can return it.
+    documentAdapterDepsRef = deps;
 
     const ADAPTERS_TO_REGISTER: ReadonlyArray<{ type: string; displayName: string }> = [
       { type: 'local', displayName: 'Local folder' },

@@ -168,10 +168,19 @@ export class HybridSearchIndex implements DocumentSearchIndex {
 			topK: number;
 			folders?: readonly string[];
 			fileTypes?: readonly string[];
+			tenantId?: string;
+			sourceIds?: readonly string[];
 		},
 	): Promise<RagSearchResult> {
 		const topK = Math.max(1, opts.topK);
 		const candidates = Math.max(topK, this.candidatesPerMethod);
+
+		// When sourceIds is provided, fan out across each source and merge results.
+		// This is used by the merged multi-source rag_search when no specific source
+		// is targeted.
+		if (opts.sourceIds && opts.sourceIds.length > 0) {
+			return this.#searchMultipleSources(opts.sourceIds, query, opts);
+		}
 
 		// Resolve the embedding setting for this source — the vector branch
 		// needs to embed the query in the same model used at index time.
@@ -218,6 +227,7 @@ export class HybridSearchIndex implements DocumentSearchIndex {
 					// so the input array is already ranked. The hydration query loses
 					// ordering through `IN (...)`, so we re-sort against the input.
 					new Map(vecResults.map((r, i) => [r.chunkId, i])),
+					opts.tenantId,
 				);
 			}
 		} catch (err: unknown) {
@@ -239,6 +249,7 @@ export class HybridSearchIndex implements DocumentSearchIndex {
 					overFetch,
 					opts.folders,
 					opts.fileTypes,
+					opts.tenantId,
 				);
 			} catch (err: unknown) {
 				const msg = err instanceof Error ? err.message : String(err);
@@ -309,6 +320,9 @@ export class HybridSearchIndex implements DocumentSearchIndex {
 	 * and rag_folders, then re-rank them against the input vector order.
 	 * Drops chunks whose document is soft-deleted, has the wrong source_id,
 	 * or fails the folders / fileTypes filter.
+	 *
+	 * When `tenantId` is provided, adds `AND c.tenant_id = ?` to restrict
+	 * results to that tenant's data (defense-in-depth).
 	 */
 	private hydrateVectorHits(
 		chunkIds: string[],
@@ -316,12 +330,16 @@ export class HybridSearchIndex implements DocumentSearchIndex {
 		folders: readonly string[] | undefined,
 		fileTypes: readonly string[] | undefined,
 		rankByChunkId: Map<string, number>,
+		tenantId?: string,
 	): Array<{ chunkId: string; meta: ChunkMetadata }> {
 		if (chunkIds.length === 0) return [];
 		const placeholders = chunkIds.map(() => '?').join(',');
 		// Extra JOIN on rag_sources filters out chunks whose parent source
 		// has been soft-deleted (v8) — their rows are kept until the cleanup
 		// cron runs but should never surface in search results.
+		// `AND c.tenant_id = ?` is appended when tenantId is provided for
+		// defense-in-depth tenant isolation at the SQL level.
+		const tenantClause = tenantId !== undefined ? ' AND c.tenant_id = ?' : '';
 		const rows = this.db
 			.prepare<string[], VectorJoinRow>(
 				`SELECT
@@ -340,9 +358,9 @@ export class HybridSearchIndex implements DocumentSearchIndex {
 				 WHERE c.id IN (${placeholders})
 				   AND d.source_id = ?
 				   AND d.deleted_at IS NULL
-				   AND s.deleted_at IS NULL`,
+				   AND s.deleted_at IS NULL${tenantClause}`,
 			)
-			.all(...chunkIds, sourceId);
+			.all(...chunkIds, sourceId, ...(tenantId !== undefined ? [tenantId] : []));
 
 		const filtered = rows.filter((row) => passesFilters(row, folders, fileTypes));
 		// Re-order against vec0's distance ranking. Rows missing from the input
@@ -364,6 +382,9 @@ export class HybridSearchIndex implements DocumentSearchIndex {
 	 * scoring function returns a negative value (more negative = better
 	 * match) — we order ASC and rely on insertion order, not the raw
 	 * score, for RRF.
+	 *
+	 * When `tenantId` is provided, adds `AND c.tenant_id = ?` for
+	 * defense-in-depth tenant isolation.
 	 */
 	private runFtsQuery(
 		ftsPattern: string,
@@ -371,13 +392,18 @@ export class HybridSearchIndex implements DocumentSearchIndex {
 		limit: number,
 		folders: readonly string[] | undefined,
 		fileTypes: readonly string[] | undefined,
+		tenantId?: string,
 	): Array<{ chunkId: string; meta: ChunkMetadata }> {
 		// We can't push folder/fileType into the WHERE on a MATCH query without
 		// hurting the query planner, so we filter in JS after the SQL fetch.
 		// The over-fetch (caller passed candidatesPerMethod * 3 when filters
 		// are active) keeps recall acceptable.
+		const tenantClause = tenantId !== undefined ? ' AND c.tenant_id = ?' : '';
+		const params: unknown[] = tenantId !== undefined
+			? [ftsPattern, sourceId, tenantId, limit]
+			: [ftsPattern, sourceId, limit];
 		const rows = this.db
-			.prepare<[string, string, number], FtsRow>(
+			.prepare<unknown[], FtsRow>(
 				`SELECT
 				   c.id           AS chunk_id,
 				   c.text         AS chunk_text,
@@ -394,13 +420,13 @@ export class HybridSearchIndex implements DocumentSearchIndex {
 				 JOIN rag_sources s ON s.id = d.source_id
 				 LEFT JOIN rag_folders f ON f.id = d.folder_id
 				 WHERE rag_chunks_fts MATCH ?
-				   AND d.source_id = ?
+				   AND d.source_id = ?${tenantClause}
 				   AND d.deleted_at IS NULL
 				   AND s.deleted_at IS NULL
 				 ORDER BY keyword_score
 				 LIMIT ?`,
 			)
-			.all(ftsPattern, sourceId, limit);
+			.all(...params);
 
 		return rows
 			.filter((row) => passesFilters(row, folders, fileTypes))
@@ -408,6 +434,66 @@ export class HybridSearchIndex implements DocumentSearchIndex {
 				chunkId: row.chunk_id,
 				meta: rowToMeta(row),
 			}));
+	}
+
+	/**
+	 * Fan out search across multiple source IDs and merge results by re-applying
+	 * RRF across all per-source ranked lists. Each source is queried independently
+	 * (separate embedding resolution per source) and the results are interleaved.
+	 *
+	 * This is used by the merged `rag_search` tool when no specific source is
+	 * requested — it lets the host issue one search call instead of N per-source
+	 * calls while still applying per-source embedding settings.
+	 */
+	async #searchMultipleSources(
+		sourceIds: readonly string[],
+		query: string,
+		opts: {
+			topK: number;
+			folders?: readonly string[];
+			fileTypes?: readonly string[];
+			tenantId?: string;
+		},
+	): Promise<RagSearchResult> {
+		// Query each source independently (each may have a different embedding model).
+		const perSourceResults = await Promise.all(
+			sourceIds.map((sid) =>
+				this.search(sid, query, {
+					topK: opts.topK,
+					folders: opts.folders,
+					fileTypes: opts.fileTypes,
+					tenantId: opts.tenantId,
+				}),
+			),
+		);
+
+		// Merge with RRF across sources. Each source's ranked list contributes
+		// 1 / (k + rank) to the global score.
+		const fused = new Map<
+			string,
+			{ score: number; chunk: RagSearchResult['chunks'][number] }
+		>();
+		for (const result of perSourceResults) {
+			for (let i = 0; i < result.chunks.length; i++) {
+				const chunk = result.chunks[i]!;
+				const key = `${chunk.sourceId}::${chunk.documentId}::${chunk.position}`;
+				const contrib = 1 / (this.rrfK + i + 1);
+				const existing = fused.get(key);
+				if (existing) {
+					existing.score += contrib;
+				} else {
+					fused.set(key, { score: contrib, chunk });
+				}
+			}
+		}
+
+		const ordered = Array.from(fused.values()).sort((a, b) => b.score - a.score);
+		return {
+			chunks: ordered.slice(0, opts.topK).map((e) => ({
+				...e.chunk,
+				score: e.score,
+			})),
+		};
 	}
 }
 

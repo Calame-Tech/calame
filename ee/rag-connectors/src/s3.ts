@@ -419,6 +419,7 @@ export class S3Connector implements DocumentSourceConnector {
           etag: cleanedEtag,
           lastIndexedAt: '',
           deletedAt: null,
+          ingestError: null,
         });
       }
 

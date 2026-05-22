@@ -97,6 +97,51 @@ export interface RagRuntime {
  * dimension must drop the table and restart — see routes/rag-sources.ts. */
 const DEFAULT_DIMENSION = 1536;
 
+// ---------------------------------------------------------------------------
+// Pure helpers — exported for unit tests
+// ---------------------------------------------------------------------------
+
+/**
+ * Normalise a folder argument coming from an MCP tool or the UI layer.
+ *
+ * Rules:
+ *  - `undefined` → `undefined` (no constraint: all folders / all documents)
+ *  - blank after trim + strip leading/trailing slashes → `""` (root-level)
+ *  - everything else → trimmed + stripped value (id or path to resolve)
+ */
+export function normaliseFolderArg(arg: string | undefined): string | undefined {
+  if (arg === undefined) return undefined;
+  return arg.trim().replace(/^\/+|\/+$/g, '');
+}
+
+/**
+ * Minimal DB surface needed to resolve a folder id from an id-or-path value.
+ * Extracted so the helper can be called from tests without a real Database.
+ * Uses `any` in the prepare signature to remain assignable to the
+ * better-sqlite3 generic Statement shape without re-exporting its type.
+ */
+export interface FolderResolverDb {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  prepare: (sql: string) => { get: (...params: any[]) => { id: string } | undefined };
+}
+
+/**
+ * Resolve a non-empty normalised folder argument to a folder id.
+ *
+ * Accepts either a real folder id or a folder path (MCP tools pass paths,
+ * the UI may pass ids). Returns `null` when no matching folder is found.
+ */
+export function resolveFolderId(
+  db: FolderResolverDb,
+  sourceId: string,
+  normalised: string,
+): string | null {
+  const row = db
+    .prepare('SELECT id FROM rag_folders WHERE source_id = ? AND (id = ? OR path = ?) LIMIT 1')
+    .get(sourceId, normalised, normalised);
+  return row ? row.id : null;
+}
+
 /**
  * Initialize the RAG runtime on the given app state. Idempotent — safe to call
  * twice (subsequent calls are no-ops if `state.ragRuntime` is already set).
@@ -685,67 +730,114 @@ export async function initRagRuntime(
       document_count: number;
     }
 
+    // Local row-to-domain mappers (keep them co-located with the row types).
+    const mapFolder = (r: RagFolderRow) => ({
+      id: r.id,
+      sourceId: r.source_id,
+      parentId: r.parent_id,
+      path: r.path,
+      name: r.name,
+      // Defensive `?? DEFAULT_TENANT_ID` for fixtures that bypass the
+      // RAG-side migration (the column may be absent on legacy DBs that
+      // haven't replayed `runRagMigrations` yet).
+      tenantId: r.tenant_id ?? DEFAULT_TENANT_ID,
+      createdAt: r.created_at,
+    });
+
+    const mapDocument = (r: RagDocumentRow) => ({
+      id: r.id,
+      sourceId: r.source_id,
+      folderId: r.folder_id,
+      path: r.path,
+      name: r.name,
+      mimeType: r.mime_type,
+      size: r.size,
+      hash: r.hash,
+      etag: r.etag,
+      tenantId: r.tenant_id ?? DEFAULT_TENANT_ID,
+      lastIndexedAt: r.last_indexed_at,
+      deletedAt: r.deleted_at,
+      // Defensive `?? null` for fixtures or pre-v9 rows.
+      ingestError: (r as RagDocumentRow & { ingest_error?: string | null }).ingest_error ?? null,
+    });
+
     const storage: import('@calame-ee/rag-core').DocumentStorage = {
       async listFolders(sourceId: string, parent?: string) {
-        const rows: RagFolderRow[] =
-          parent !== undefined
-            ? ragDb.raw
-                .prepare<[string, string], RagFolderRow>(
-                  'SELECT * FROM rag_folders WHERE source_id = ? AND parent_id = ? ORDER BY path ASC',
-                )
-                .all(sourceId, parent)
-            : ragDb.raw
-                .prepare<[string], RagFolderRow>(
-                  'SELECT * FROM rag_folders WHERE source_id = ? ORDER BY path ASC',
-                )
-                .all(sourceId);
-        return rows.map((r) => ({
-          id: r.id,
-          sourceId: r.source_id,
-          parentId: r.parent_id,
-          path: r.path,
-          name: r.name,
-          // Defensive `?? DEFAULT_TENANT_ID` for fixtures that bypass the
-          // RAG-side migration (the column may be absent on legacy DBs that
-          // haven't replayed `runRagMigrations` yet).
-          tenantId: r.tenant_id ?? DEFAULT_TENANT_ID,
-          createdAt: r.created_at,
-        }));
+        // The `parent` argument is accepted as a folder id OR a folder path.
+        // MCP tools (rag_list_folders) pass a path (e.g. "D4.1", "/", "");
+        // the UI and other callers may pass an id. Both forms are resolved
+        // via a single lookup: SELECT id … WHERE id = ? OR path = ?.
+
+        const normalised = normaliseFolderArg(parent);
+
+        if (normalised === undefined || normalised === '') {
+          // undefined or blank (covers "", "/", whitespace-only) → list ALL folders
+          // for the source (root-level listing from the MCP tool's perspective).
+          return ragDb.raw
+            .prepare<[string], RagFolderRow>(
+              'SELECT * FROM rag_folders WHERE source_id = ? ORDER BY path ASC',
+            )
+            .all(sourceId)
+            .map(mapFolder);
+        }
+
+        // Resolve the normalised value to a folder id (id-or-path lookup).
+        const folderId = resolveFolderId(ragDb.raw, sourceId, normalised);
+        if (!folderId) return [];
+
+        return ragDb.raw
+          .prepare<[string, string], RagFolderRow>(
+            'SELECT * FROM rag_folders WHERE source_id = ? AND parent_id = ? ORDER BY path ASC',
+          )
+          .all(sourceId, folderId)
+          .map(mapFolder);
       },
 
       async listDocuments(sourceId: string, folder?: string) {
-        const rows: RagDocumentRow[] =
-          folder !== undefined
-            ? ragDb.raw
-                .prepare<[string, string], RagDocumentRow>(
-                  `SELECT * FROM rag_documents
-                   WHERE source_id = ? AND folder_id = ? AND deleted_at IS NULL
-                   ORDER BY path ASC`,
-                )
-                .all(sourceId, folder)
-            : ragDb.raw
-                .prepare<[string], RagDocumentRow>(
-                  `SELECT * FROM rag_documents
-                   WHERE source_id = ? AND deleted_at IS NULL
-                   ORDER BY path ASC`,
-                )
-                .all(sourceId);
-        return rows.map((r) => ({
-          id: r.id,
-          sourceId: r.source_id,
-          folderId: r.folder_id,
-          path: r.path,
-          name: r.name,
-          mimeType: r.mime_type,
-          size: r.size,
-          hash: r.hash,
-          etag: r.etag,
-          tenantId: r.tenant_id ?? DEFAULT_TENANT_ID,
-          lastIndexedAt: r.last_indexed_at,
-          deletedAt: r.deleted_at,
-          // Defensive `?? null` for fixtures or pre-v9 rows.
-          ingestError: (r as RagDocumentRow & { ingest_error?: string | null }).ingest_error ?? null,
-        }));
+        // The `folder` argument is accepted as a folder id OR a folder path.
+        // MCP tools (rag_list_documents) pass a path (e.g. "D4.1", "/", "");
+        // the UI and other callers may pass an id. Both forms are resolved
+        // via a single lookup: SELECT id … WHERE id = ? OR path = ?.
+
+        const normalised = normaliseFolderArg(folder);
+
+        if (normalised === undefined) {
+          // No folder constraint → list ALL non-deleted documents for the source.
+          return ragDb.raw
+            .prepare<[string], RagDocumentRow>(
+              `SELECT * FROM rag_documents
+               WHERE source_id = ? AND deleted_at IS NULL
+               ORDER BY path ASC`,
+            )
+            .all(sourceId)
+            .map(mapDocument);
+        }
+
+        if (normalised === '') {
+          // Blank after normalisation (covers "", "/") → root documents only
+          // (documents that have no parent folder).
+          return ragDb.raw
+            .prepare<[string], RagDocumentRow>(
+              `SELECT * FROM rag_documents
+               WHERE source_id = ? AND folder_id IS NULL AND deleted_at IS NULL
+               ORDER BY path ASC`,
+            )
+            .all(sourceId)
+            .map(mapDocument);
+        }
+
+        // Resolve the normalised value to a folder id (id-or-path lookup).
+        const folderId = resolveFolderId(ragDb.raw, sourceId, normalised);
+        if (!folderId) return [];
+
+        return ragDb.raw
+          .prepare<[string, string], RagDocumentRow>(
+            `SELECT * FROM rag_documents
+             WHERE source_id = ? AND folder_id = ? AND deleted_at IS NULL
+             ORDER BY path ASC`,
+          )
+          .all(sourceId, folderId)
+          .map(mapDocument);
       },
 
       async getDocument(documentId: string) {

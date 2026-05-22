@@ -717,6 +717,7 @@ export class SharePointConnector implements DocumentSourceConnector {
         etag: rawETag,
         lastIndexedAt: '',
         deletedAt: null,
+        ingestError: null,
       });
     }
     return docs;

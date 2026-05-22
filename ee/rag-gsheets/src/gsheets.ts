@@ -732,6 +732,7 @@ export class GSheetsConnector implements DocumentSourceConnector {
         etag: meta.modifiedTime,
         lastIndexedAt: '',
         deletedAt: null,
+        ingestError: null,
       });
     }
     return docs;

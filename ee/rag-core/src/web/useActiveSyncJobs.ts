@@ -25,6 +25,32 @@ export interface UseActiveSyncJobsResult {
 }
 
 /**
+ * Pure mapping function: given a list of jobs (newest-first) and a set of
+ * source IDs, returns a Map with `SourceJobInfo` for each ID.
+ *
+ * Exported separately so it can be unit-tested without mounting the hook or
+ * mocking `fetch`.
+ */
+export function buildJobMap(sourceIds: string[], jobs: RagJob[]): Map<string, SourceJobInfo> {
+  const map = new Map<string, SourceJobInfo>();
+  for (const id of sourceIds) {
+    // Jobs for this source, newest first (API already returns newest-first).
+    const sourceJobs = jobs.filter((j) => j.sourceId === id);
+    const activeJob =
+      sourceJobs.find((j) => j.status === 'pending' || j.status === 'running') ?? null;
+    // Most recent TERMINAL job (completed or failed). The badge must reflect
+    // THIS job's outcome — an old failure that a later successful sync replaced
+    // must NOT keep the badge red.
+    const lastTerminalJob =
+      sourceJobs.find((j) => j.status === 'completed' || j.status === 'failed') ?? null;
+    const lastFailedJob =
+      lastTerminalJob !== null && lastTerminalJob.status === 'failed' ? lastTerminalJob : null;
+    map.set(id, { activeJob, lastFailedJob });
+  }
+  return map;
+}
+
+/**
  * Polls `/api/rag/jobs` globally every `pollIntervalMs` milliseconds and
  * returns a Map keyed by sourceId with active and last-failed job info.
  *
@@ -51,32 +77,25 @@ export function useActiveSyncJobs(
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cancelledRef = useRef(false);
 
-  const buildMap = useCallback((jobs: RagJob[]): Map<string, SourceJobInfo> => {
-    const ids = sourceIdsRef.current;
-    const map = new Map<string, SourceJobInfo>();
-    for (const id of ids) {
-      // Jobs for this source, newest first (API already returns newest-first).
-      const sourceJobs = jobs.filter((j) => j.sourceId === id);
-      const activeJob =
-        sourceJobs.find((j) => j.status === 'pending' || j.status === 'running') ?? null;
-      const lastFailedJob =
-        sourceJobs.find((j) => j.status === 'failed') ?? null;
-      map.set(id, { activeJob, lastFailedJob });
-    }
-    return map;
-  }, []);
+  const buildMap = useCallback(
+    (jobs: RagJob[]): Map<string, SourceJobInfo> =>
+      buildJobMap(sourceIdsRef.current, jobs),
+    [],
+  );
 
   const fetchJobs = useCallback(async (): Promise<void> => {
     try {
-      // Narrow the poll to the only two job classes the badge cares about:
+      // Poll the three job classes that the badge needs:
       // - active (pending+running): drives the "in progress" indicator
       // - failed: drives the "last failed" badge
-      // This cuts the response from ~50 rows (the previous default LIMIT)
-      // to typically <10 even on a busy install. `limit=100` is generous
-      // for both classes combined and never truncates active jobs in
-      // practice.
+      // - completed: needed to determine whether a more recent successful sync
+      //   has superseded an older failure — without completed rows, a single
+      //   historical failure would keep the badge red forever even after many
+      //   successful syncs.
+      // `limit=100` is generous for all three classes combined and never
+      // truncates active jobs in practice.
       const data = await apiGet<RagJobListResponse>(
-        '/api/rag/jobs?status=active,failed&limit=100',
+        '/api/rag/jobs?status=active,failed,completed&limit=100',
       );
       if (cancelledRef.current) return;
 

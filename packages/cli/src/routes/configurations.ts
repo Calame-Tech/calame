@@ -228,6 +228,17 @@ export function registerConfigurationsRoute(app: Express, state: AppState): void
 
       writeConfigurationRow(db, name, upgraded, req);
 
+      // Invalidate the MCP tool-schema cache for all profiles. A configuration
+      // can be referenced by multiple profiles and this route doesn't know which
+      // ones are affected, so a global purge is the safest approach. Each profile
+      // will rebuild its tool list lazily on the next chat turn.
+      try {
+        const { invalidateToolSchemaCache } = await import('../chat-engine.js');
+        invalidateToolSchemaCache();
+      } catch {
+        // Non-critical — a stale cache entry will expire on its own after TTL.
+      }
+
       res.json({ success: true, name, overwritten });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown error';
@@ -252,6 +263,16 @@ export function registerConfigurationsRoute(app: Express, state: AppState): void
       }
 
       deleteConfigurationRow(db, name, tenantId);
+
+      // Invalidate the MCP tool-schema cache for all profiles. A deleted
+      // configuration may have been referenced by multiple profiles, so a
+      // global purge avoids cross-profile stale entries.
+      try {
+        const { invalidateToolSchemaCache } = await import('../chat-engine.js');
+        invalidateToolSchemaCache();
+      } catch {
+        // Non-critical — a stale cache entry will expire on its own after TTL.
+      }
 
       res.json({ success: true });
     } catch (error: unknown) {

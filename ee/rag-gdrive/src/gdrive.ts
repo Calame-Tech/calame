@@ -618,6 +618,7 @@ export class GDriveConnector implements DocumentSourceConnector {
         etag,
         lastIndexedAt: '',
         deletedAt: null,
+        ingestError: null,
       });
     }
     return docs;

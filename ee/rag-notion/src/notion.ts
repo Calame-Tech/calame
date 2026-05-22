@@ -891,6 +891,7 @@ export class NotionConnector implements DocumentSourceConnector {
       etag,
       lastIndexedAt: '',
       deletedAt,
+      ingestError: null,
     };
   }
 }

@@ -581,6 +581,7 @@ export class HttpConnector implements DocumentSourceConnector {
         etag: versionTag,
         lastIndexedAt: '',
         deletedAt: null,
+        ingestError: null,
       });
     }
     return documents;

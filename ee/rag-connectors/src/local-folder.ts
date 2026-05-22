@@ -266,6 +266,7 @@ export class LocalFolderConnector implements DocumentSourceConnector {
         // Caller (host pipeline) overwrites this when the document is indexed.
         lastIndexedAt: '',
         deletedAt: null,
+        ingestError: null,
       });
     }
     return documents;

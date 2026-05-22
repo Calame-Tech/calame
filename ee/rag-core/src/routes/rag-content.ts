@@ -175,10 +175,14 @@ export function registerRagContentRoutes(app: Express, deps: RagRouteDeps): void
 					)
 					.all(id, folder, tenantId);
 			} else {
+				// No `?folder=` param → list the SOURCE ROOT only (documents with no parent
+				// folder), mirroring the `/folders` route which returns `parent_id IS NULL`.
+				// Returning every document here made the tree view render folder-nested
+				// files a second time at the root level (duplicates).
 				rows = deps.db
 					.prepare<[string, string], DocumentRow>(
 						`SELECT * FROM rag_documents
-						 WHERE source_id = ? AND tenant_id = ? AND deleted_at IS NULL
+						 WHERE source_id = ? AND folder_id IS NULL AND tenant_id = ? AND deleted_at IS NULL
 						 ORDER BY path ASC`,
 					)
 					.all(id, tenantId);

@@ -1,6 +1,8 @@
 import crypto from 'crypto';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { parseToolArguments, formatParseError } from './tool-call-parser.js';
+import { buildCategorySelectionPrompt, parseCategoryChoice, filterToolsByCategory } from './tool-registry.js';
 
 /**
  * Per-process secret used to authenticate internal chat→MCP calls.
@@ -25,6 +27,7 @@ export interface ChatTurnOptions {
   history: Array<{ role: string; content: string | Array<Record<string, unknown>> }>;
   tools: ToolDef[];
   systemPrompt: string;
+  twoStageRouting?: boolean;
 }
 
 export interface ChatTurnResult {
@@ -333,7 +336,7 @@ export type StreamEvent =
 
 /** Execute a single chat turn with tool loop, supporting Anthropic, OpenRouter, and Custom (OpenAI-compatible) providers. */
 export async function executeChatTurn(options: ChatTurnOptions): Promise<ChatTurnResult> {
-  const { provider, apiKey, model, baseUrl, message, history: rawHistory, tools, systemPrompt } = options;
+  const { provider, apiKey, model, baseUrl, message, history: rawHistory, tools, systemPrompt, twoStageRouting } = options;
   const history = trimHistory(rawHistory);
 
   const callTool = async (name: string, args: Record<string, unknown>): Promise<string> => {
@@ -352,15 +355,17 @@ export async function executeChatTurn(options: ChatTurnOptions): Promise<ChatTur
       provider === 'openrouter' ? 'https://openrouter.ai/api/v1' : baseUrl;
     const effectiveModel =
       model || (provider === 'openrouter' ? 'anthropic/claude-sonnet-4' : 'default');
-    const effectiveSystemPrompt = systemPrompt;
+    const effectiveTools = twoStageRouting
+      ? await selectToolCategory(tools, message, apiKey, effectiveModel, effectiveBaseUrl!)
+      : tools;
     return executeOpenAITurn(
       apiKey,
       effectiveModel,
       effectiveBaseUrl!,
       message,
       history,
-      tools,
-      effectiveSystemPrompt,
+      effectiveTools,
+      systemPrompt,
       callTool,
       toolResults,
     );
@@ -467,6 +472,39 @@ async function executeAnthropicTurn(
   return { success: true, response: assistantMessage, toolResults };
 }
 
+function getToolSchema(tools: ToolDef[], name: string): Record<string, unknown> | undefined {
+  return tools.find((t) => t.name === name)?.parameters;
+}
+
+async function selectToolCategory(
+  tools: ToolDef[],
+  message: string,
+  apiKey: string,
+  model: string,
+  baseUrl: string,
+): Promise<ToolDef[]> {
+  try {
+    const OpenAI = (await import('openai')).default;
+    const openai = new OpenAI({ apiKey: apiKey || 'not-needed', baseURL: baseUrl });
+    const completion = await openai.chat.completions.create({
+      model,
+      max_tokens: 20,
+      messages: [
+        { role: 'system', content: buildCategorySelectionPrompt(tools) },
+        { role: 'user', content: message },
+      ],
+    });
+    const response = completion.choices[0]?.message?.content ?? '';
+    console.log(JSON.stringify({ component: 'chat', event: 'category_selected', response: response.trim() }));
+    const category = parseCategoryChoice(response);
+    if (!category) return tools;
+    const filtered = filterToolsByCategory(tools, category);
+    return filtered.length > 0 ? filtered : tools;
+  } catch {
+    return tools;
+  }
+}
+
 async function executeOpenAITurn(
   apiKey: string,
   model: string,
@@ -531,11 +569,20 @@ async function executeOpenAITurn(
     const toolCalls = assistantMsg.tool_calls ?? [];
     for (const tc of toolCalls) {
       if (tc.type !== 'function') continue;
-      const args = JSON.parse(tc.function.arguments || '{}');
       // Strip namespace prefix added by some models (e.g. Gemini via OpenRouter: "default_api.query" → "query")
       const toolName = tc.function.name.includes('.') ? tc.function.name.split('.').pop()! : tc.function.name;
       console.log(JSON.stringify({ component: 'chat', event: 'tool_call', name: toolName }));
-      const result = await callTool(toolName, args);
+      const parseResult = parseToolArguments(tc.function.arguments || '{}', getToolSchema(tools, toolName));
+      if (!parseResult.ok) {
+        toolResults.push({ tableName: toolName, data: parseResult.error });
+        openaiMessages.push({
+          role: 'tool',
+          tool_call_id: tc.id,
+          content: formatParseError(tc.function.arguments, toolName, tools.map((t) => t.name), getToolSchema(tools, toolName)),
+        });
+        continue;
+      }
+      const result = await callTool(toolName, parseResult.args);
       toolResults.push({ tableName: toolName, data: result });
       openaiMessages.push({
         role: 'tool',
@@ -566,7 +613,7 @@ async function executeOpenAITurn(
 // ---------------------------------------------------------------------------
 
 export async function* streamChatTurn(options: ChatTurnOptions): AsyncGenerator<StreamEvent> {
-  const { provider, apiKey, model, baseUrl, message, history: rawHistory, tools, systemPrompt } = options;
+  const { provider, apiKey, model, baseUrl, message, history: rawHistory, tools, systemPrompt, twoStageRouting } = options;
   const history = trimHistory(rawHistory);
   const MAX_TOOL_ROUNDS = 20;
 
@@ -689,7 +736,11 @@ export async function* streamChatTurn(options: ChatTurnOptions): AsyncGenerator<
     const effectiveModel = model || (provider === 'openrouter' ? 'anthropic/claude-sonnet-4' : 'default');
     const openai = new OpenAI({ apiKey: apiKey || 'not-needed', baseURL: effectiveBaseUrl });
 
-    const openaiTools = tools.map((t) => ({
+    const activeTools = twoStageRouting
+      ? await selectToolCategory(tools, message, apiKey, effectiveModel, effectiveBaseUrl!)
+      : tools;
+
+    const openaiTools = activeTools.map((t) => ({
       type: 'function' as const,
       function: {
         name: t.name,
@@ -780,12 +831,17 @@ export async function* streamChatTurn(options: ChatTurnOptions): AsyncGenerator<
           yield { type: 'tool_call', name: toolName };
           let ok = true;
           let result = '';
-          try {
-            const args = JSON.parse(tc.function.arguments || '{}') as Record<string, unknown>;
-            result = await callTool(toolName, args);
-          } catch (err) {
+          const parseResult = parseToolArguments(tc.function.arguments || '{}', getToolSchema(tools, toolName));
+          if (!parseResult.ok) {
             ok = false;
-            result = err instanceof Error ? err.message : String(err);
+            result = formatParseError(tc.function.arguments, toolName, tools.map((t) => t.name), getToolSchema(tools, toolName));
+          } else {
+            try {
+              result = await callTool(toolName, parseResult.args);
+            } catch (err) {
+              ok = false;
+              result = err instanceof Error ? err.message : String(err);
+            }
           }
           yield { type: 'tool_result', name: toolName, ok };
           openaiMessages.push({ role: 'tool', tool_call_id: tc.id, content: result });

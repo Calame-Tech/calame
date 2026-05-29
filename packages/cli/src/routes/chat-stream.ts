@@ -2,6 +2,7 @@ import type { Express } from 'express';
 import { z } from 'zod';
 import type { AppState } from '../state.js';
 import { createMcpChatTools, streamChatTurn, getDefaultSystemPrompt } from '../chat-engine.js';
+import { isFrontierModel } from '../tool-registry.js';
 import { validateSession } from '../session.js';
 import { TokenRateLimiter } from '../rate-limiter.js';
 import { parseCookies } from '../utils/cookies.js';
@@ -159,6 +160,7 @@ export function registerChatStreamRoute(app: Express, state: AppState): void {
         history: history ?? [],
         tools,
         systemPrompt: getDefaultSystemPrompt(responseMode),
+        twoStageRouting: !isFrontierModel(aiConfig.provider, aiConfig.model),
       });
 
       for await (const event of generator) {

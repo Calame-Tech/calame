@@ -321,8 +321,8 @@ export default function ChatPanel({ selectedTables, activeProfiles }: ChatPanelP
 
         {/* Input */}
         <div className="border-t border-white/5 p-3 flex gap-2">
-          <input
-            type="text"
+          <textarea
+            rows={1}
             value={chatInput}
             onChange={(e) => setChatInput(e.target.value)}
             onKeyDown={(e) => {
@@ -339,7 +339,13 @@ export default function ChatPanel({ selectedTables, activeProfiles }: ChatPanelP
                   : 'Configure AI in Settings first'
             }
             disabled={!canChat || isStreaming}
-            className="input-editorial flex-1 text-sm disabled:opacity-50"
+            className="input-editorial flex-1 text-sm disabled:opacity-50 resize-none overflow-hidden"
+            style={{ minHeight: '38px', maxHeight: '160px' }}
+            onInput={(e) => {
+              const el = e.currentTarget;
+              el.style.height = 'auto';
+              el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+            }}
           />
           {isStreaming ? (
             <button

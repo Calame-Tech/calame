@@ -297,6 +297,8 @@ VALUES (@reference, @id_client, @id_livreur, @id_depot, @poids_kg, @longueur_cm,
 const emmaClientId = clients[2];
 
 const colisIds = [];
+// colisId → { dateCreation, statut } pour garantir la cohérence des tables dépendantes
+const colisMetaMap = new Map();
 const TOTAL_COLIS = 20000;
 const EMMA_COLIS = 500;
 
@@ -320,6 +322,11 @@ for (let i = 0; i < TOTAL_COLIS; i++) {
     dateCreation = dateOffset(TODAY, -rand(0, 7));
   }
 
+  // FIX 1 : date_livraison_prevue TOUJOURS dans le futur pour les colis encore actifs
+  const dateLivraisonPrevue = ['en_cours','en_depot','en_attente'].includes(statut)
+    ? dateOffset(TODAY, rand(1, 5))
+    : dateOffset(dateCreation, rand(2, 7));
+
   const livre = statut === 'livre';
   const r = stmtColis.run({
     reference: `COL-${2024 + Math.floor(i/8000)}-${String(i+1).padStart(5,'0')}`,
@@ -338,16 +345,20 @@ for (let i = 0; i < TOTAL_COLIS; i++) {
     ville_livraison: pick(VILLES),
     code_postal_livraison: `${rand(10,99)}000`,
     date_creation: dateCreation,
-    date_expedition: ['en_attente'].includes(statut) ? null : dateOffset(dateCreation, rand(1,3)),
-    date_livraison_prevue: dateOffset(dateCreation, rand(2,7)),
+    date_expedition: statut === 'en_attente' ? null : dateOffset(dateCreation, rand(1,3)),
+    date_livraison_prevue: dateLivraisonPrevue,
     date_livraison_reelle: livre ? dateOffset(dateCreation, rand(2,10)) : null,
     tentatives_livraison: statut === 'livre' ? 1 : statut === 'echec' ? rand(2,3) : rand(0,1),
     commentaire: rand(0,5) === 0 ? 'Laisser chez le voisin si absent' : null,
     signature_requise: rand(0,4) === 0 ? 1 : 0,
   });
   colisIds.push(r.lastInsertRowid);
+  colisMetaMap.set(r.lastInsertRowid, { dateCreation, statut });
 }
 console.log(`✓ ${colisIds.length} colis`);
+
+// Découper ici pour usage dans paiements et historique
+const emmaColisIds = colisIds.slice(0, EMMA_COLIS);
 
 // Tournées (300) + tournee_colis (liées aux vrais colis des livreurs)
 const stmtTournee = db.prepare('INSERT INTO tournee (id_livreur, id_depot, date_tournee, heure_debut, heure_fin, statut, nb_colis_prevu, nb_colis_livre, nb_colis_echec, km_parcourus, note_livreur) VALUES (@id_livreur, @id_depot, @date_tournee, @heure_debut, @heure_fin, @statut, @nb_colis_prevu, @nb_colis_livre, @nb_colis_echec, @km_parcourus, @note_livreur)');
@@ -363,6 +374,9 @@ for (const c of colisLivreurRows) {
   colisByLivreur.get(c.id_livreur).push({ id: c.id, statut: c.statut });
 }
 
+// FIX 2 : un colis ne peut apparaître que dans une seule tournée
+const colisInTournee = new Set();
+
 for (let i = 0; i < 300; i++) {
   const statut = pick(STATUTS_TOURNEE);
   const livreurId = pick(livreurs);
@@ -376,7 +390,7 @@ for (let i = 0; i < 300; i++) {
     heure_fin: statut === 'terminee' ? `${rand(15,19)}:${rand(0,5)}0` : null,
     statut,
     nb_colis_prevu: prevus,
-    nb_colis_livre: 0,   // recalculé après insertion tournee_colis
+    nb_colis_livre: 0,
     nb_colis_echec: 0,
     km_parcourus: statut === 'terminee' ? Math.round(rand(20, 150) * 10) / 10 : null,
     note_livreur: statut === 'terminee' ? Math.round((3 + Math.random() * 2) * 10) / 10 : null,
@@ -384,19 +398,19 @@ for (let i = 0; i < 300; i++) {
   const tourneeId = r.lastInsertRowid;
   tourneeIds.push(tourneeId);
 
-  // Peupler tournee_colis avec de vrais colis de ce livreur
+  // Peupler tournee_colis avec de vrais colis de ce livreur, jamais déjà assignés
   if (statut !== 'planifiee' && statut !== 'annulee') {
-    const disponibles = colisByLivreur.get(livreurId) ?? [];
+    const disponibles = (colisByLivreur.get(livreurId) ?? []).filter(c => !colisInTournee.has(c.id));
     const selection = pickN(disponibles, Math.min(prevus, disponibles.length));
     let ordre = 1;
     let nbLivre = 0, nbEchec = 0;
     for (const c of selection) {
+      colisInTournee.add(c.id);
       const tcStatut = c.statut === 'livre' ? 'livre' : c.statut === 'echec' ? 'echec' : 'prevu';
       stmtTourneeColis.run({ id_tournee: tourneeId, id_colis: c.id, ordre: ordre++, statut: tcStatut });
       if (tcStatut === 'livre') nbLivre++;
       if (tcStatut === 'echec') nbEchec++;
     }
-    // Mettre à jour les compteurs avec les vraies valeurs
     db.prepare('UPDATE tournee SET nb_colis_prevu=?, nb_colis_livre=?, nb_colis_echec=? WHERE id=?')
       .run(selection.length, nbLivre, nbEchec, tourneeId);
   }
@@ -414,12 +428,16 @@ const DESCRIPTIONS = {
   accident: 'Accident de véhicule pendant la tournée.',
   autre: 'Incident divers signalé par le livreur.',
 };
+// FIX 3 : date_incident toujours >= date_creation du colis associé
 for (let i = 0; i < 400; i++) {
   const type = pick(TYPES_INCIDENT);
   const resolu = rand(0,2) > 0 ? 1 : 0;
-  const dateIncident = dateOffset('2025-01-01', rand(0, 466));
+  const idColis = rand(0,3) > 0 ? pick(colisIds) : null;
+  const colisDateCreation = idColis ? colisMetaMap.get(idColis)?.dateCreation : null;
+  const minDate = colisDateCreation ?? '2025-01-01';
+  const dateIncident = dateOffset(minDate, rand(1, 30));
   stmtIncident.run({
-    id_colis: rand(0,3) > 0 ? pick(colisIds) : null,
+    id_colis: idColis,
     id_livreur: pick(livreurs),
     id_tournee: rand(0,1) ? pick(tourneeIds) : null,
     type,
@@ -436,16 +454,27 @@ console.log(`✓ 400 incidents`);
 
 // Paiements (10000 dont ~500 pour Emma)
 const stmtPaiement = db.prepare('INSERT INTO paiement (id_client, id_colis, montant, methode, statut, reference_transaction, date_paiement, date_validation) VALUES (@id_client, @id_colis, @montant, @methode, @statut, @reference_transaction, @date_paiement, @date_validation)');
-const STATUTS_PAIEMENT = ['en_attente','valide','valide','valide','valide','rembourse','echec'];
 const TOTAL_PAIEMENTS = 10000;
 const EMMA_PAIEMENTS = 500;
+
+// FIX 4 : statut paiement cohérent avec statut du colis associé
+function statutPaiementPourColis(colisStatut) {
+  if (colisStatut === 'livre') return pick(['valide','valide','valide','rembourse']);
+  if (colisStatut === 'echec' || colisStatut === 'retour') return pick(['rembourse','echec','valide']);
+  if (colisStatut === 'perdu') return pick(['rembourse','echec']);
+  if (colisStatut === 'en_attente') return 'en_attente';
+  return pick(['en_attente','valide']); // en_cours, en_depot
+}
+
 for (let i = 0; i < TOTAL_PAIEMENTS; i++) {
   const isEmma = i < EMMA_PAIEMENTS;
-  const statut = pick(STATUTS_PAIEMENT);
+  const idColis = rand(0,3) > 0 ? (isEmma ? pick(emmaColisIds) : pick(colisIds)) : null;
+  const colisStatut = idColis ? colisMetaMap.get(idColis)?.statut : null;
+  const statut = colisStatut ? statutPaiementPourColis(colisStatut) : pick(['valide','rembourse','echec']);
   const datePaiement = dateOffset('2025-01-01', rand(0, 466));
   stmtPaiement.run({
     id_client: isEmma ? emmaClientId : pick(clients),
-    id_colis: rand(0,3) > 0 ? pick(colisIds) : null,
+    id_colis: idColis,
     montant: Math.round((3 + Math.random() * 97) * 100) / 100,
     methode: pick(METHODES_PAIEMENT),
     statut,
@@ -456,37 +485,43 @@ for (let i = 0; i < TOTAL_PAIEMENTS; i++) {
 }
 console.log(`✓ ${TOTAL_PAIEMENTS} paiements (dont ${EMMA_PAIEMENTS} pour Emma)`);
 
-// Historique statuts — tous les colis d'Emma + échantillon des autres
+// FIX 5 : historique_statut avec transitions qui se terminent sur le vrai statut du colis
 const stmtHistorique = db.prepare('INSERT INTO historique_statut (id_colis, statut_precedent, statut_nouveau, date_changement, id_livreur, commentaire) VALUES (@id_colis, @statut_precedent, @statut_nouveau, @date_changement, @id_livreur, @commentaire)');
-const CHAINE_STATUTS = [
-  [null, 'en_attente'],
-  ['en_attente', 'en_depot'],
-  ['en_depot', 'en_cours'],
-  ['en_cours', 'livre'],
-  ['en_cours', 'echec'],
-  ['echec', 'retour'],
-];
+
+// Chaîne complète jusqu'à chaque statut final
+const CHAINS_PAR_STATUT = {
+  en_attente: [[null, 'en_attente']],
+  en_depot:   [[null, 'en_attente'], ['en_attente', 'en_depot']],
+  en_cours:   [[null, 'en_attente'], ['en_attente', 'en_depot'], ['en_depot', 'en_cours']],
+  livre:      [[null, 'en_attente'], ['en_attente', 'en_depot'], ['en_depot', 'en_cours'], ['en_cours', 'livre']],
+  echec:      [[null, 'en_attente'], ['en_attente', 'en_depot'], ['en_depot', 'en_cours'], ['en_cours', 'echec']],
+  retour:     [[null, 'en_attente'], ['en_attente', 'en_depot'], ['en_depot', 'en_cours'], ['en_cours', 'echec'], ['echec', 'retour']],
+  perdu:      [[null, 'en_attente'], ['en_attente', 'en_depot'], ['en_depot', 'en_cours'], ['en_cours', 'perdu']],
+};
+
 // Tous les colis d'Emma (500) + 5000 autres
-const emmaColisIds = colisIds.slice(0, EMMA_COLIS);
 const autresColisIds = colisIds.slice(EMMA_COLIS, EMMA_COLIS + 5000);
 const colisIdsSample = [...emmaColisIds, ...autresColisIds];
+let totalHistorique = 0;
 for (const idColis of colisIdsSample) {
-  const nb = rand(1, 5);
-  let date = dateOffset('2025-01-01', rand(0, 400));
-  for (let j = 0; j < nb; j++) {
-    const transition = pick(CHAINE_STATUTS);
-    date = dateOffset(date, rand(0, 3));
+  const meta = colisMetaMap.get(idColis);
+  if (!meta) continue;
+  const chain = CHAINS_PAR_STATUT[meta.statut] ?? CHAINS_PAR_STATUT['en_attente'];
+  let date = meta.dateCreation;
+  for (const [prev, next] of chain) {
+    date = dateOffset(date, rand(1, 3));
     stmtHistorique.run({
       id_colis: idColis,
-      statut_precedent: transition[0],
-      statut_nouveau: transition[1],
+      statut_precedent: prev,
+      statut_nouveau: next,
       date_changement: date,
       id_livreur: rand(0,1) ? pick(livreurs) : null,
       commentaire: rand(0,4) === 0 ? 'Mise à jour automatique du statut' : null,
     });
+    totalHistorique++;
   }
 }
-console.log(`✓ ~${2000 * 3} entrées historique`);
+console.log(`✓ ${totalHistorique} entrées historique`);
 
 // Notifications (6000 dont ~500 pour Emma)
 const stmtNotif = db.prepare('INSERT INTO notification (id_client, id_colis, type, sujet, message, date_envoi, lu, date_lecture) VALUES (@id_client, @id_colis, @type, @sujet, @message, @date_envoi, @lu, @date_lecture)');

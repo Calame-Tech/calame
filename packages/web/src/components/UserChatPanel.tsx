@@ -138,14 +138,14 @@ export default function UserChatPanel({ profiles }: UserChatPanelProps) {
                   msg.content
                 ) : (
                   <>
-                    {msg.streaming && !msg.content && !currentText ? (
+                    {msg.streaming && !msg.content ? (
                       <span className="inline-flex gap-1 items-center h-4">
                         <span className="w-1 h-1 rounded-full bg-gray-400 animate-bounce [animation-delay:-0.3s]" />
                         <span className="w-1 h-1 rounded-full bg-gray-400 animate-bounce [animation-delay:-0.15s]" />
                         <span className="w-1 h-1 rounded-full bg-gray-400 animate-bounce" />
                       </span>
                     ) : (
-                      <MarkdownMessage content={msg.content || (msg.streaming ? currentText : '')} />
+                      <MarkdownMessage content={msg.content} />
                     )}
                     {msg.streaming && toolStatus && (
                       <p className="text-xs text-gray-500 mt-1 italic">{toolStatus}</p>
@@ -167,8 +167,8 @@ export default function UserChatPanel({ profiles }: UserChatPanelProps) {
 
         {/* Input */}
         <div className="border-t border-white/5 p-3 flex gap-2">
-          <input
-            type="text"
+          <textarea
+            rows={1}
             value={chatInput}
             onChange={(e) => setChatInput(e.target.value)}
             onKeyDown={(e) => {
@@ -179,7 +179,13 @@ export default function UserChatPanel({ profiles }: UserChatPanelProps) {
             }}
             placeholder="Ask about your data..."
             disabled={isStreaming}
-            className="input-editorial flex-1 text-sm disabled:opacity-50"
+            className="input-editorial flex-1 text-sm disabled:opacity-50 resize-none overflow-hidden"
+            style={{ minHeight: '38px', maxHeight: '160px' }}
+            onInput={(e) => {
+              const el = e.currentTarget;
+              el.style.height = 'auto';
+              el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+            }}
           />
           {isStreaming ? (
             <button

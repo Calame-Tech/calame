@@ -673,7 +673,7 @@ export function registerMergedDocumentRagTools(opts: RegisterMergedDocumentRagTo
         // Reject any document that does not belong to the request tenant — and surface
         // it as a generic "not found" so the existence of cross-tenant documents is
         // never leaked.
-        if (doc.tenantId !== undefined && doc.tenantId !== tenantId) {
+        if (doc.tenantId !== tenantId) {
           audit('rag_get_document', { documentId: args.documentId }, 'cross-tenant document blocked', 'error', t0);
           return {
             content: [

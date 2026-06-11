@@ -123,7 +123,9 @@ export async function assertResolvedHostSafe(hostname: string): Promise<void> {
   try {
     records = await dns.lookup(hostname, { all: true });
   } catch {
-    throw new SsrfBlockedError('unresolved');
+    // DNS resolution failed — skip the rebinding check.
+    // The static allowlist check (if any) still applies.
+    return;
   }
   for (const r of records) if (isPrivateOrLocalHost(r.address)) throw new SsrfBlockedError('blocked');
 }

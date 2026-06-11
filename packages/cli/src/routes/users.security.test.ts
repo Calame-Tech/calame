@@ -157,10 +157,20 @@ describe('Phase 2 — IDOR security tests', () => {
       expect(res.status).toBe(200);
     });
 
-    it('returns 403 when no tenant is provided', async () => {
+    it('falls back to the default tenant when no tenant header is provided (single-tenant mode)', async () => {
+      // B1: omitting X-Tenant-Id no longer 403s — it resolves to 'default'.
+      // user-a belongs to 'tenant-a', so the default-tenant lookup still
+      // can't reach it: cross-tenant access stays blocked with a 404.
       const res = await request(app)
         .get(`/api/users/${'user-a'}`);
-      expect(res.status).toBe(403);
+      expect(res.status).toBe(404);
+    });
+
+    it('serves a default-tenant user when no tenant header is provided', async () => {
+      userManager._add('user-default', 'default', { email: 'd@default.com' });
+      const res = await request(app)
+        .get(`/api/users/${'user-default'}`);
+      expect(res.status).toBe(200);
     });
 
     it('returns 400 for malformed :id', async () => {

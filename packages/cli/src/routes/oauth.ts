@@ -174,6 +174,20 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
       return;
     }
 
+    // PKCE is mandatory for the authorization-code flow (fail-closed):
+    // a missing / empty code_challenge can no longer mint a code that the
+    // /token endpoint would later accept without a verifier.
+    if (!code_challenge) {
+      res.status(400).json({ error: 'invalid_request', error_description: 'code_challenge is required (PKCE).' });
+      return;
+    }
+    // Only S256 is supported. Reject 'plain' (and any other) explicitly; an
+    // omitted method is treated as S256, matching the /token verification.
+    if (code_challenge_method && code_challenge_method !== 'S256') {
+      res.status(400).json({ error: 'invalid_request', error_description: 'code_challenge_method must be S256.' });
+      return;
+    }
+
     // Determine authMode from the profile
     const profileName = typeof profileParam === 'string' ? profileParam : '';
     const profile = profileName ? state.serveProfiles[profileName] : undefined;
@@ -353,6 +367,13 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
       auth_mode,
       profile: profileName,
     } = req.body as Record<string, string | undefined>;
+
+    // PKCE is mandatory (fail-closed) — the code minted below must always be
+    // bound to a challenge so /token cannot be redeemed without a verifier.
+    if (!code_challenge) {
+      res.status(400).json({ error: 'invalid_request', error_description: 'code_challenge is required (PKCE).' });
+      return;
+    }
 
     let forgeToken: string | null = null;
 

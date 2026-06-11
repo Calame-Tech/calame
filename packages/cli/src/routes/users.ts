@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { AppState } from '../state.js';
 import type { UserRole, AccessMode, UserProfileAccess } from '../user.js';
 import { EmailService } from '../email.js';
-import { getTenantId, getTenantIdStrict } from '../tenancy.js';
+import { getTenantId } from '../tenancy.js';
 
 /**
  * Accepted shape for a user `:id` path param. Intentionally narrow
@@ -25,14 +25,20 @@ class HttpError extends Error {
 }
 
 /**
- * Resolve the request tenant, failing closed: a missing / malformed
- * `X-Tenant-Id` (and no auth tenant) yields a `403` rather than the
- * implicit default tenant.
+ * Resolve the request tenant for a per-id, tenant-scoped route.
+ *
+ * Single-tenant compatibility (Phase B): a missing / malformed
+ * `X-Tenant-Id` falls back to the implicit `'default'` tenant rather than
+ * a `403`. This keeps the admin UI working in normal single-tenant mode
+ * (the web client only sends the header for non-default tenants) while
+ * {@link assertUserInTenant} still blocks cross-tenant access — a forged
+ * or default request can never reach a row tagged with another tenant.
+ *
+ * Phase C (auth-derived tenant) will reintroduce a strict `403` once the
+ * tenant comes from the session rather than a forgeable header.
  */
 function requireTenantId(req: Request): string {
-  const tenantId = getTenantIdStrict(req);
-  if (!tenantId) throw new HttpError(403, 'Tenant required.');
-  return tenantId;
+  return getTenantId(req);
 }
 
 /** Validate a `:id` path param against {@link USER_ID_RE} (400 on miss). */
@@ -264,6 +270,9 @@ export function registerUsersRoute(app: Express, state: AppState): void {
         role: role as UserRole,
         profiles,
         customAttributes: req.body.customAttributes ?? null,
+        // Phase B multi-tenancy — stamp the new user with the caller's
+        // tenant so it lands in the right workspace (not the implicit default).
+        tenantId: getTenantId(req),
       });
       await userManager.save();
 
@@ -641,6 +650,11 @@ export function registerUsersRoute(app: Express, state: AppState): void {
         return;
       }
 
+      // Resolve the caller's tenant up front so every upsert below is
+      // scoped to it — without this guard the route resolved users by a
+      // global email lookup, allowing cross-tenant writes (IDOR).
+      const tenantId = requireTenantId(req);
+
       const importParsed = importUsersSchema.safeParse(req.body);
       if (!importParsed.success) {
         res.status(400).json({
@@ -678,17 +692,25 @@ export function registerUsersRoute(app: Express, state: AppState): void {
           : null;
 
         try {
-          const existing = userManager.getUserByEmail(email);
+          // Tenant guard: email is globally unique, so an address owned by
+          // another tenant must never be updated (or re-created) from here.
+          const ownerTenant = userManager.getTenantIdByEmail(email);
+          if (ownerTenant !== null && ownerTenant !== tenantId) {
+            errors.push({ index: i, email, reason: 'Email belongs to another tenant.' });
+            continue;
+          }
+
+          const existing = ownerTenant === tenantId ? userManager.getUserByEmail(email) : null;
           if (existing) {
             // Update customAttributes only
             userManager.updateUser(existing.id, { customAttributes });
             updated++;
           } else {
-            // Create new user with the specified profile
+            // Create new user with the specified profile, scoped to the tenant
             const profiles: UserProfileAccess[] = profileName
               ? [{ profileName, allowedTables: null, allowedTools: null, accessMode }]
               : [];
-            userManager.createUser({ name, email, role: 'user', profiles, customAttributes });
+            userManager.createUser({ name, email, role: 'user', profiles, customAttributes, tenantId });
             created++;
           }
         } catch (err) {

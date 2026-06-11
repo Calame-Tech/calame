@@ -1,8 +1,13 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import crypto from 'node:crypto';
 import express, { type Express } from 'express';
 import request from 'supertest';
 import { registerOAuthRoutes } from './oauth.js';
 import { AppState } from '../state.js';
+
+/** A valid PKCE verifier + its S256 challenge, shared across the tests below. */
+const PKCE_VERIFIER = 'test-verifier-0123456789-abcdefghijklmnopqrstuvwxyz';
+const PKCE_CHALLENGE = crypto.createHash('sha256').update(PKCE_VERIFIER).digest('base64url');
 
 /**
  * Security regression tests (Phase 3): OAuth open-redirect + PKCE bypass.
@@ -55,11 +60,40 @@ describe('OAuth security — redirect_uri validation (GET /authorize)', () => {
     app = buildApp(state);
   });
 
+  it('rejects /authorize when PKCE code_challenge is omitted', async () => {
+    const clientId = await registerClient(app, ['https://client.example/cb']);
+    const res = await request(app).get('/authorize').query({
+      profile: 'openp',
+      response_type: 'code',
+      client_id: clientId,
+      redirect_uri: 'https://client.example/cb',
+      // code_challenge intentionally omitted
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('invalid_request');
+    expect(res.body.error_description).toMatch(/code_challenge/i);
+  });
+
+  it('rejects /authorize when code_challenge_method is not S256', async () => {
+    const clientId = await registerClient(app, ['https://client.example/cb']);
+    const res = await request(app).get('/authorize').query({
+      profile: 'openp',
+      response_type: 'code',
+      client_id: clientId,
+      redirect_uri: 'https://client.example/cb',
+      code_challenge: PKCE_CHALLENGE,
+      code_challenge_method: 'plain',
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('invalid_request');
+  });
+
   it('open mode without client_id -> 400', async () => {
     const res = await request(app).get('/authorize').query({
       profile: 'openp',
       response_type: 'code',
       redirect_uri: 'https://client.example/cb',
+      code_challenge: PKCE_CHALLENGE,
     });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('invalid_request');
@@ -72,6 +106,7 @@ describe('OAuth security — redirect_uri validation (GET /authorize)', () => {
       response_type: 'code',
       client_id: clientId,
       redirect_uri: 'https://attacker.example/steal',
+      code_challenge: PKCE_CHALLENGE,
     });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('invalid_request');
@@ -96,6 +131,7 @@ describe('OAuth security — redirect_uri validation (GET /authorize)', () => {
       response_type: 'code',
       client_id: clientId,
       redirect_uri: 'https://attacker.example/steal',
+      code_challenge: PKCE_CHALLENGE,
     });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('invalid_request');
@@ -111,7 +147,11 @@ describe('OAuth security — /token PKCE + redirect_uri', () => {
     app = buildApp(state);
   });
 
-  /** Drive the open-mode flow to mint an auth code; returns the code. */
+  /**
+   * Drive the open-mode flow to mint an auth code; returns the code. PKCE is
+   * mandatory at /authorize, so a code_challenge is always supplied (defaults
+   * to the shared S256 challenge whose verifier is {@link PKCE_VERIFIER}).
+   */
   async function mintCode(opts: {
     clientId: string;
     redirectUri: string;
@@ -122,7 +162,7 @@ describe('OAuth security — /token PKCE + redirect_uri', () => {
       response_type: 'code',
       client_id: opts.clientId,
       redirect_uri: opts.redirectUri,
-      ...(opts.codeChallenge ? { code_challenge: opts.codeChallenge } : {}),
+      code_challenge: opts.codeChallenge ?? PKCE_CHALLENGE,
     });
     expect(res.status).toBe(302);
     const location = res.headers.location as string;
@@ -149,12 +189,14 @@ describe('OAuth security — /token PKCE + redirect_uri', () => {
   it('with redirect_uri different from /authorize -> 400', async () => {
     const redirectUri = 'https://client.example/cb';
     const clientId = await registerClient(app, [redirectUri]);
-    // No code_challenge -> PKCE check is skipped, isolating the redirect_uri check.
+    // Supply a matching verifier so PKCE passes and the redirect_uri mismatch
+    // is the check that fails.
     const code = await mintCode({ clientId, redirectUri });
 
     const res = await request(app).post('/token').send({
       grant_type: 'authorization_code',
       code,
+      code_verifier: PKCE_VERIFIER,
       redirect_uri: 'https://attacker.example/steal',
     });
     expect(res.status).toBe(400);

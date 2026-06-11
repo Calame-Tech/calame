@@ -43,6 +43,9 @@ importers:
       '@calame-ee/rag-core':
         specifier: workspace:*
         version: link:../rag-core
+      '@calame/connectors':
+        specifier: workspace:*
+        version: link:../../packages/connectors
       chokidar:
         specifier: ^4.0.0
         version: 4.0.3

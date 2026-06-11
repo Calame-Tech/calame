@@ -10,6 +10,10 @@
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
+    },
+    "./ssrf": {
+      "import": "./dist/utils/ssrf.js",
+      "types": "./dist/utils/ssrf.d.ts"
     }
   },
   "scripts": {

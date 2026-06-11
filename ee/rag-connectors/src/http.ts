@@ -232,7 +232,7 @@ async function timedFetch(url: string, opts: FetchOptions): Promise<Response> {
       method: opts.method,
       headers: { 'user-agent': opts.userAgent },
       signal: controller.signal,
-      redirect: opts.redirect ?? 'follow',
+      redirect: opts.redirect ?? 'error',
     });
     return response;
   } catch (err: unknown) {

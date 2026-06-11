@@ -96,6 +96,19 @@ export function registerUsersRoute(app: Express, state: AppState): void {
         return;
       }
 
+      const tenantId = getTenantId(req);
+      // Security: verify the target user belongs to the request's tenant.
+      const userRow =
+        state.db?.raw
+          .prepare<[string, string], { tenant_id: string }>(
+            'SELECT tenant_id FROM users WHERE id = ? AND tenant_id = ?',
+          )
+          .get(req.params.id, tenantId);
+      if (!userRow) {
+        res.status(404).json({ success: false, message: 'User not found.' });
+        return;
+      }
+
       const user = userManager.getUserById(req.params.id);
       if (!user) {
         res.status(404).json({ success: false, message: 'User not found.' });
@@ -410,6 +423,19 @@ export function registerUsersRoute(app: Express, state: AppState): void {
         return;
       }
 
+      const tenantId = getTenantId(req);
+      // Security: verify the target user belongs to the request's tenant.
+      const userRow =
+        state.db?.raw
+          .prepare<[string, string], { tenant_id: string }>(
+            'SELECT tenant_id FROM users WHERE id = ? AND tenant_id = ?',
+          )
+          .get(req.params.id, tenantId);
+      if (!userRow) {
+        res.status(404).json({ success: false, message: 'User not found.' });
+        return;
+      }
+
       const result = userManager.regenerateToken(req.params.id);
       if (!result) {
         res.status(404).json({ success: false, message: 'User not found.' });
@@ -490,6 +516,19 @@ export function registerUsersRoute(app: Express, state: AppState): void {
       const userManager = state.userManager;
       if (!userManager) {
         res.status(500).json({ success: false, message: 'User manager not initialized.' });
+        return;
+      }
+
+      const tenantId = getTenantId(req);
+      // Security: verify the target user belongs to the request's tenant.
+      const userRow =
+        state.db?.raw
+          .prepare<[string, string], { tenant_id: string }>(
+            'SELECT tenant_id FROM users WHERE id = ? AND tenant_id = ?',
+          )
+          .get(req.params.id, tenantId);
+      if (!userRow) {
+        res.status(404).json({ success: false, message: 'User not found.' });
         return;
       }
 

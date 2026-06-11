@@ -161,11 +161,72 @@ function buildUrl(
 }
 
 /**
- * Returns true when `hostHeader` matches one of the entries in `allowed`.
+ * Returns `true` when `host` resolves to a private, loopback, or cloud
+ * metadata IP range. Used to block SSRF attempts targeting internal
+ * services or cloud instance metadata endpoints.
+ *
+ * Blocked ranges:
+ *   - 127.0.0.0/8, ::1 (loopback)
+ *   - 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 (RFC 1918 private)
+ *   - 169.254.169.254 (AWS/GCP/Azure metadata)
+ *   - 0.0.0.0/8, 100.64.0.0/10 (CGNAT / shared address space)
+ *   - 198.18.0.0/15 (benchmarking)
+ *   - fe80::/10 (link-local)
+ *   - Names: localhost, *.local, *.internal
+ */
+function isPrivateOrLocalHost(host: string): boolean {
+  // Strip brackets for IPv6
+  const clean = host.replace(/^\[|\]$/g, '');
+  const lowered = clean.toLowerCase();
+
+  // Block hostnames
+  if (lowered === 'localhost' || lowered.endsWith('.local') || lowered.endsWith('.internal')) {
+    return true;
+  }
+
+  // Extract IP:port or just IP
+  const ipPart = lowered.split(':')[0];
+
+  // Check for IPv6 loopback
+  if (ipPart === '::1') return true;
+
+  // Check for IPv4
+  const ipv4Match = ipPart.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (!ipv4Match) return false; // not an IPv4 address (could be a hostname not blocked above)
+
+  const [, a, b, c, d] = ipv4Match.map(Number);
+
+  // 0.0.0.0/8
+  if (a === 0) return true;
+  // 10.0.0.0/8
+  if (a === 10) return true;
+  // 100.64.0.0/10 (CGNAT)
+  if (a === 100 && b >= 64 && b <= 127) return true;
+  // 127.0.0.0/8
+  if (a === 127) return true;
+  // 169.254.0.0/16
+  if (a === 169 && b === 254) return true;
+  // 172.16.0.0/12
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  // 192.168.0.0/16
+  if (a === 192 && b === 168) return true;
+  // 198.18.0.0/15
+  if (a === 198 && (b === 18 || b === 19)) return true;
+
+  return false;
+}
+
+/**
+ * Returns true when `host` is in the `allowed` list.
  * Comparison is case-insensitive. Matching is exact (host:port included as
  * present in the URL) — wildcards are intentionally not supported in MVP.
  */
 function isHostAllowed(host: string, allowed: readonly string[]): boolean {
+  // Security: block private/local IPs BEFORE checking allowlist.
+  // An allowlist entry like "api.example.com" should NOT resolve to an
+  // internal IP via DNS rebinding or local configuration.
+  if (isPrivateOrLocalHost(host)) return false;
+
   const lowered = host.toLowerCase();
   for (const a of allowed) {
     if (a.toLowerCase() === lowered) return true;

@@ -1350,6 +1350,17 @@ async function registerToolsViaAdapters(opts: RegisterAdaptersOptions): Promise<
         continue;
       }
       for (const realId of liveConnIds) {
+        // Security: filter fan-out to only connections belonging to this tenant.
+        const connRow = state.db?.raw.prepare<[string], { tenant_id: string }>(
+          'SELECT tenant_id FROM rag_connections WHERE id = ?',
+        ).get(realId);
+        if (!connRow?.tenant_id || connRow.tenant_id !== tenantId) {
+          state.logger?.warn(
+            `Fan-out: connection "${realId}" (tenant="${connRow?.tenant_id ?? 'null'}) does not match profile tenant "${tenantId}" — skipping`,
+            { component: `mcp/${profileName}` },
+          );
+          continue;
+        }
         resolvedPairs.push({ sourceId: realId, scope });
       }
     } else {

@@ -28,6 +28,23 @@ import type { OidcProvider, OidcSettingsConfig } from '@calame-ee/sso';
 // ---------------------------------------------------------------------------
 
 const registeredClients = new Map<string, { clientId: string; redirectUris: string[] }>();
+
+/**
+ * Validate that `redirectUri` is registered for `clientId`.
+ * Returns true when:
+ *   - No client_id is provided (legacy / unregistered clients)
+ *   - The client exists AND redirectUri is in its redirectUris list
+ *
+ * Security: prevents redirect_uri injection attacks where an attacker
+ * supplies a malicious URI to receive the auth code.
+ */
+function validateRedirectUri(clientId: string | undefined, redirectUri: string | undefined): boolean {
+  if (!clientId) return true; // unregistered client — no registration to validate against
+  const client = registeredClients.get(clientId);
+  if (!client) return true; // client not registered — no validation to enforce
+  if (!redirectUri) return false;
+  return client.redirectUris.includes(redirectUri);
+}
 const authCodes = new Map<
   string,
   { forgeToken: string; clientId: string; redirectUri: string; codeChallenge?: string; expiresAt: number }
@@ -175,6 +192,12 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
       // ------------------------------------------------------------------
       case 'open': {
         // Auto-authorize immediately — no user interaction required.
+        // Security: validate redirect_uri against registered client.
+        if (!validateRedirectUri(client_id, redirect_uri)) {
+          res.status(400).json({ error: 'invalid_request', error_description: 'redirect_uri does not match registered client.' });
+          return;
+        }
+
         const code = crypto.randomBytes(32).toString('hex');
         authCodes.set(code, {
           forgeToken: '__open__',
@@ -495,6 +518,12 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
     }
 
     // Generate auth code that maps to the forge token
+    // Security: validate redirect_uri against registered client.
+    if (!validateRedirectUri(client_id, redirect_uri)) {
+      res.status(400).json({ error: 'invalid_request', error_description: 'redirect_uri does not match registered client.' });
+      return;
+    }
+
     const code = crypto.randomBytes(32).toString('hex');
     authCodes.set(code, {
       forgeToken,

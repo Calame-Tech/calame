@@ -1,9 +1,72 @@
-import type { Express, Request } from 'express';
+import type { Express, Request, Response } from 'express';
 import { z } from 'zod';
 import type { AppState } from '../state.js';
 import type { UserRole, AccessMode, UserProfileAccess } from '../user.js';
 import { EmailService } from '../email.js';
-import { getTenantId } from '../tenancy.js';
+import { getTenantId, getTenantIdStrict } from '../tenancy.js';
+
+/**
+ * Accepted shape for a user `:id` path param. Intentionally narrow
+ * (letters, digits, underscore, hyphen) — rejects path-traversal
+ * sequences and oversized inputs as defence-in-depth before the value
+ * is bound into any statement. Bounded to 64 chars — comfortably above
+ * the 36-char UUIDs we issue, well below anything pathological.
+ */
+const USER_ID_RE = /^[a-zA-Z0-9_-]{1,64}$/;
+
+/**
+ * Lightweight HTTP error carrying a status code. Thrown by the route
+ * guards below and translated to a JSON response by {@link handleGuardError}.
+ */
+class HttpError extends Error {
+  constructor(public readonly status: number, message: string) {
+    super(message);
+  }
+}
+
+/**
+ * Resolve the request tenant, failing closed: a missing / malformed
+ * `X-Tenant-Id` (and no auth tenant) yields a `403` rather than the
+ * implicit default tenant.
+ */
+function requireTenantId(req: Request): string {
+  const tenantId = getTenantIdStrict(req);
+  if (!tenantId) throw new HttpError(403, 'Tenant required.');
+  return tenantId;
+}
+
+/** Validate a `:id` path param against {@link USER_ID_RE} (400 on miss). */
+function validateUserId(id: string): string {
+  if (!USER_ID_RE.test(id)) throw new HttpError(400, 'Invalid user id.');
+  return id;
+}
+
+/**
+ * Assert that the target user exists within the caller's tenant. Throws
+ * a `404` (never leaking the existence of a foreign-tenant row) when the
+ * user is absent or belongs to another tenant.
+ */
+function assertUserInTenant(state: AppState, id: string, tenantId: string): void {
+  const userRow = state.db?.raw
+    .prepare<[string, string], { tenant_id: string }>(
+      'SELECT tenant_id FROM users WHERE id = ? AND tenant_id = ?',
+    )
+    .get(id, tenantId);
+  if (!userRow) throw new HttpError(404, 'User not found.');
+}
+
+/**
+ * Translate a guard error ({@link HttpError}) to a JSON response. Returns
+ * `true` when it handled the error so the caller's `catch` can early-return;
+ * `false` for any other error, leaving the existing fallback handling intact.
+ */
+function handleGuardError(res: Response, error: unknown): boolean {
+  if (error instanceof HttpError) {
+    res.status(error.status).json({ success: false, message: error.message });
+    return true;
+  }
+  return false;
+}
 
 const accessModeEnum = z.enum(['mcp', 'chat', 'both']);
 
@@ -96,20 +159,11 @@ export function registerUsersRoute(app: Express, state: AppState): void {
         return;
       }
 
-      const tenantId = getTenantId(req);
-      // Security: verify the target user belongs to the request's tenant.
-      const userRow =
-        state.db?.raw
-          .prepare<[string, string], { tenant_id: string }>(
-            'SELECT tenant_id FROM users WHERE id = ? AND tenant_id = ?',
-          )
-          .get(req.params.id, tenantId);
-      if (!userRow) {
-        res.status(404).json({ success: false, message: 'User not found.' });
-        return;
-      }
+      const tenantId = requireTenantId(req);
+      const userId = validateUserId(req.params.id);
+      assertUserInTenant(state, userId, tenantId);
 
-      const user = userManager.getUserById(req.params.id);
+      const user = userManager.getUserById(userId);
       if (!user) {
         res.status(404).json({ success: false, message: 'User not found.' });
         return;
@@ -134,6 +188,7 @@ export function registerUsersRoute(app: Express, state: AppState): void {
         },
       });
     } catch (error: unknown) {
+      if (handleGuardError(res, error)) return;
       const message = error instanceof Error ? error.message : 'Unknown error';
       res.status(500).json({ success: false, message });
     }
@@ -269,7 +324,11 @@ export function registerUsersRoute(app: Express, state: AppState): void {
         return;
       }
 
-      const user = userManager.updateUser(req.params.id, req.body);
+      const tenantId = requireTenantId(req);
+      const userId = validateUserId(req.params.id);
+      assertUserInTenant(state, userId, tenantId);
+
+      const user = userManager.updateUser(userId, req.body);
       if (!user) {
         res.status(404).json({ success: false, message: 'User not found.' });
         return;
@@ -278,6 +337,7 @@ export function registerUsersRoute(app: Express, state: AppState): void {
       await userManager.save();
       res.json({ success: true, user });
     } catch (error: unknown) {
+      if (handleGuardError(res, error)) return;
       const message = error instanceof Error ? error.message : 'Unknown error';
       res.status(400).json({ success: false, message });
     }
@@ -305,9 +365,13 @@ export function registerUsersRoute(app: Express, state: AppState): void {
         return;
       }
 
+      const tenantId = requireTenantId(req);
+      const userId = validateUserId(req.params.id);
+      assertUserInTenant(state, userId, tenantId);
+
       const { profileName, accessMode, allowedTables, allowedTools } = profileParsed.data;
 
-      const user = userManager.addProfileAccess(req.params.id, {
+      const user = userManager.addProfileAccess(userId, {
         profileName,
         allowedTables: allowedTables ?? null,
         allowedTools: allowedTools ?? null,
@@ -322,6 +386,7 @@ export function registerUsersRoute(app: Express, state: AppState): void {
       await userManager.save();
       res.json({ success: true, user });
     } catch (error: unknown) {
+      if (handleGuardError(res, error)) return;
       const message = error instanceof Error ? error.message : 'Unknown error';
       res.status(400).json({ success: false, message });
     }
@@ -338,7 +403,11 @@ export function registerUsersRoute(app: Express, state: AppState): void {
         return;
       }
 
-      const user = userManager.removeProfileAccess(req.params.id, req.params.profileName);
+      const tenantId = requireTenantId(req);
+      const userId = validateUserId(req.params.id);
+      assertUserInTenant(state, userId, tenantId);
+
+      const user = userManager.removeProfileAccess(userId, req.params.profileName);
       if (!user) {
         res.status(404).json({ success: false, message: 'User not found.' });
         return;
@@ -347,6 +416,7 @@ export function registerUsersRoute(app: Express, state: AppState): void {
       await userManager.save();
       res.json({ success: true, user });
     } catch (error: unknown) {
+      if (handleGuardError(res, error)) return;
       const message = error instanceof Error ? error.message : 'Unknown error';
       res.status(400).json({ success: false, message });
     }
@@ -363,8 +433,12 @@ export function registerUsersRoute(app: Express, state: AppState): void {
         return;
       }
 
+      const tenantId = requireTenantId(req);
+      const userId = validateUserId(req.params.id);
+      assertUserInTenant(state, userId, tenantId);
+
       const { reason } = req.body as { reason?: string };
-      const user = userManager.disableUser(req.params.id, reason);
+      const user = userManager.disableUser(userId, reason);
       if (!user) {
         res.status(404).json({ success: false, message: 'User not found.' });
         return;
@@ -373,6 +447,7 @@ export function registerUsersRoute(app: Express, state: AppState): void {
       await userManager.save();
       res.json({ success: true, user });
     } catch (error: unknown) {
+      if (handleGuardError(res, error)) return;
       const message = error instanceof Error ? error.message : 'Unknown error';
       res.status(500).json({ success: false, message });
     }
@@ -389,7 +464,11 @@ export function registerUsersRoute(app: Express, state: AppState): void {
         return;
       }
 
-      const result = userManager.enableUser(req.params.id);
+      const tenantId = requireTenantId(req);
+      const userId = validateUserId(req.params.id);
+      assertUserInTenant(state, userId, tenantId);
+
+      const result = userManager.enableUser(userId);
       if (!result) {
         res.status(404).json({ success: false, message: 'User not found.' });
         return;
@@ -407,6 +486,7 @@ export function registerUsersRoute(app: Express, state: AppState): void {
         plaintextToken: result._plaintextToken,
       });
     } catch (error: unknown) {
+      if (handleGuardError(res, error)) return;
       const message = error instanceof Error ? error.message : 'Unknown error';
       res.status(500).json({ success: false, message });
     }
@@ -423,20 +503,11 @@ export function registerUsersRoute(app: Express, state: AppState): void {
         return;
       }
 
-      const tenantId = getTenantId(req);
-      // Security: verify the target user belongs to the request's tenant.
-      const userRow =
-        state.db?.raw
-          .prepare<[string, string], { tenant_id: string }>(
-            'SELECT tenant_id FROM users WHERE id = ? AND tenant_id = ?',
-          )
-          .get(req.params.id, tenantId);
-      if (!userRow) {
-        res.status(404).json({ success: false, message: 'User not found.' });
-        return;
-      }
+      const tenantId = requireTenantId(req);
+      const userId = validateUserId(req.params.id);
+      assertUserInTenant(state, userId, tenantId);
 
-      const result = userManager.regenerateToken(req.params.id);
+      const result = userManager.regenerateToken(userId);
       if (!result) {
         res.status(404).json({ success: false, message: 'User not found.' });
         return;
@@ -448,6 +519,7 @@ export function registerUsersRoute(app: Express, state: AppState): void {
         plaintextToken: result._plaintextToken,
       });
     } catch (error: unknown) {
+      if (handleGuardError(res, error)) return;
       const message = error instanceof Error ? error.message : 'Unknown error';
       res.status(500).json({ success: false, message });
     }
@@ -479,14 +551,18 @@ export function registerUsersRoute(app: Express, state: AppState): void {
         return;
       }
 
-      const user = userManager.getUserById(req.params.id);
+      const tenantId = requireTenantId(req);
+      const userId = validateUserId(req.params.id);
+      assertUserInTenant(state, userId, tenantId);
+
+      const user = userManager.getUserById(userId);
       if (!user) {
         res.status(404).json({ success: false, message: 'User not found.' });
         return;
       }
 
       // Regenerate the onboarding code
-      const updated = userManager.regenerateOnboardingCode(req.params.id);
+      const updated = userManager.regenerateOnboardingCode(userId);
       if (!updated || !updated.onboardingCode) {
         res.status(500).json({ success: false, message: 'Failed to regenerate onboarding code.' });
         return;
@@ -503,6 +579,7 @@ export function registerUsersRoute(app: Express, state: AppState): void {
 
       res.json({ success: true, onboardingCode: updated.onboardingCode });
     } catch (error: unknown) {
+      if (handleGuardError(res, error)) return;
       const message = error instanceof Error ? error.message : 'Unknown error';
       res.status(500).json({ success: false, message });
     }
@@ -519,20 +596,11 @@ export function registerUsersRoute(app: Express, state: AppState): void {
         return;
       }
 
-      const tenantId = getTenantId(req);
-      // Security: verify the target user belongs to the request's tenant.
-      const userRow =
-        state.db?.raw
-          .prepare<[string, string], { tenant_id: string }>(
-            'SELECT tenant_id FROM users WHERE id = ? AND tenant_id = ?',
-          )
-          .get(req.params.id, tenantId);
-      if (!userRow) {
-        res.status(404).json({ success: false, message: 'User not found.' });
-        return;
-      }
+      const tenantId = requireTenantId(req);
+      const userId = validateUserId(req.params.id);
+      assertUserInTenant(state, userId, tenantId);
 
-      const deleted = userManager.deleteUser(req.params.id);
+      const deleted = userManager.deleteUser(userId);
       if (!deleted) {
         res.status(404).json({ success: false, message: 'User not found.' });
         return;
@@ -544,9 +612,9 @@ export function registerUsersRoute(app: Express, state: AppState): void {
         state.auditLog.addEntry({
           profileName: '_admin',
           toolName: 'delete_user',
-          toolArgs: { userId: req.params.id },
+          toolArgs: { userId },
           result: 'success',
-          resultSummary: `User ${req.params.id} deleted`,
+          resultSummary: `User ${userId} deleted`,
           durationMs: 0,
         });
         await state.auditLog.save();
@@ -554,6 +622,7 @@ export function registerUsersRoute(app: Express, state: AppState): void {
 
       res.json({ success: true });
     } catch (error: unknown) {
+      if (handleGuardError(res, error)) return;
       const message = error instanceof Error ? error.message : 'Unknown error';
       res.status(500).json({ success: false, message });
     }

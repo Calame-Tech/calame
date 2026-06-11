@@ -31,17 +31,17 @@ const registeredClients = new Map<string, { clientId: string; redirectUris: stri
 
 /**
  * Validate that `redirectUri` is registered for `clientId`.
- * Returns true when:
- *   - No client_id is provided (legacy / unregistered clients)
- *   - The client exists AND redirectUri is in its redirectUris list
+ * Fail-closed: returns true ONLY when the client exists AND redirectUri is in
+ * its registered redirectUris list. A missing client_id, an unknown client, or
+ * a missing redirect_uri all fail validation.
  *
  * Security: prevents redirect_uri injection attacks where an attacker
  * supplies a malicious URI to receive the auth code.
  */
 function validateRedirectUri(clientId: string | undefined, redirectUri: string | undefined): boolean {
-  if (!clientId) return true; // unregistered client — no registration to validate against
+  if (!clientId) return false;
   const client = registeredClients.get(clientId);
-  if (!client) return true; // client not registered — no validation to enforce
+  if (!client) return false;
   if (!redirectUri) return false;
   return client.redirectUris.includes(redirectUri);
 }
@@ -236,6 +236,11 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
 
         cleanupPendingAuthorizations();
 
+        if (!validateRedirectUri(client_id, redirect_uri)) {
+          res.status(400).json({ error: 'invalid_request', error_description: 'redirect_uri does not match registered client.' });
+          return;
+        }
+
         const ssoState = crypto.randomBytes(16).toString('hex');
         const codeVerifier = generateCodeVerifier();
 
@@ -266,6 +271,11 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
         }
 
         cleanupPendingAuthorizations();
+
+        if (!validateRedirectUri(client_id, redirect_uri)) {
+          res.status(400).json({ error: 'invalid_request', error_description: 'redirect_uri does not match registered client.' });
+          return;
+        }
 
         const providerState = crypto.randomBytes(16).toString('hex');
         const codeVerifier = generateCodeVerifier();
@@ -762,7 +772,7 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
 
   // --- Token Endpoint ---
   app.post('/token', (req: Request, res: Response) => {
-    const { grant_type, code, code_verifier } = req.body as Record<string, string | undefined>;
+    const { grant_type, code, code_verifier, redirect_uri } = req.body as Record<string, string | undefined>;
 
     if (grant_type !== 'authorization_code') {
       res.status(400).json({ error: 'unsupported_grant_type' });
@@ -782,13 +792,24 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
       return;
     }
 
-    // Verify PKCE code_verifier if code_challenge was provided
-    if (entry.codeChallenge && code_verifier) {
+    // Verify PKCE: when a code_challenge was bound to the code, a matching
+    // code_verifier is MANDATORY (fail-closed — cannot be bypassed by omitting it).
+    if (entry.codeChallenge) {
+      if (!code_verifier) {
+        res.status(400).json({ error: 'invalid_grant', error_description: 'code_verifier is required.' });
+        return;
+      }
       const hash = crypto.createHash('sha256').update(code_verifier).digest('base64url');
       if (hash !== entry.codeChallenge) {
         res.status(400).json({ error: 'invalid_grant', error_description: 'Invalid code_verifier.' });
         return;
       }
+    }
+
+    // The redirect_uri presented at /token must match the one bound at /authorize.
+    if (entry.redirectUri && entry.redirectUri !== redirect_uri) {
+      res.status(400).json({ error: 'invalid_grant', error_description: 'redirect_uri mismatch.' });
+      return;
     }
 
     // Consume the code (one-time use)

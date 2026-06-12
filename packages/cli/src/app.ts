@@ -49,6 +49,7 @@ import { registerChatAuthRoute } from './routes/chat-auth.js';
 import { registerAiSettingsRoute } from './routes/ai-settings.js';
 import { registerSmtpSettingsRoute } from './routes/smtp-settings.js';
 import { registerHealthRoute } from './routes/health.js';
+import { registerBrandingRoutes } from './routes/branding.js';
 import { registerMetricsRoute } from './routes/metrics.js';
 import { registerProfileScopesRoute } from './routes/profile-scopes.js';
 import { registerTenantsRoutes } from './routes/tenants.js';
@@ -192,6 +193,12 @@ export function createApp(
     corsOptions.origin = true;
   }
   app.use(cors(corsOptions));
+  // Branding accepts inline data-URL images (logo/favicon up to ~1.5 MB), so it
+  // needs a larger body limit than the 100 KB default. Mount it before the global
+  // json parser — body-parser sets req._body once parsed, so the global parser
+  // below skips already-parsed branding requests while keeping the tight default
+  // for every other route.
+  app.use('/api/branding', express.json({ limit: '2mb' }));
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 
@@ -202,6 +209,9 @@ export function createApp(
 
   // Health check — public, no auth
   registerHealthRoute(app, appState);
+
+  // Branding — GET is public (logo loads pre-login); POST enforces admin in-handler.
+  registerBrandingRoutes(app, appState);
 
   // Auth routes (login/logout/status/setup) — must be before auth middleware
   registerAuthRoute(app, appState);

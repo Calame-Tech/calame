@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useBranding, DEFAULT_LOGO_SRC } from '../lib/branding.js';
 import { Button } from './ui/index.js';
 import WorkspaceSwitcher from './WorkspaceSwitcher.js';
 
@@ -272,6 +273,7 @@ function getInitials(email?: string): string {
 }
 
 export default function Sidebar({ currentPage, onNavigate, user, onLogout }: SidebarProps) {
+  const branding = useBranding();
   const [isOpen, setIsOpen] = useState(false);
 
   // Lock body scroll when the mobile drawer is open
@@ -361,7 +363,11 @@ export default function Sidebar({ currentPage, onNavigate, user, onLogout }: Sid
         {/* Branding block */}
         <div className="flex flex-col px-3 py-4 hairline-b shrink-0">
           <div className="flex items-center gap-2.5">
-            <img src="/logo.png" alt="Calame" className="h-8 w-8 object-contain" />
+            <img
+              src={branding.logo || DEFAULT_LOGO_SRC}
+              alt="Calame"
+              className="h-8 w-8 object-contain"
+            />
             <div>
               <p className="text-base font-bold tracking-tight text-gray-100 leading-tight">
                 Calame

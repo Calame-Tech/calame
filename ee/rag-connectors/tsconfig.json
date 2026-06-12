@@ -4,5 +4,8 @@
     "outDir": "./dist",
     "rootDir": "./src"
   },
+  "references": [
+    { "path": "../../packages/connectors" }
+  ],
   "include": ["src/**/*"]
 }

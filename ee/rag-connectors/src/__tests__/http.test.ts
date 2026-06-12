@@ -225,7 +225,7 @@ describe('HttpConnector.listDocuments', () => {
 
     const connector = new HttpConnector();
     const docs = await connector.listDocuments(
-      { urls: ['https://example.com/a', 'https://example.com/b.pdf'] },
+      { urls: ['https://example.com/a', 'https://example.com/b.pdf'], allowedHosts: ['example.com'] },
       'src-1',
     );
     expect(docs).toHaveLength(2);
@@ -261,7 +261,7 @@ describe('HttpConnector.listDocuments', () => {
 
     const connector = new HttpConnector();
     const docs = await connector.listDocuments(
-      { sitemapUrl: 'https://x.test/sitemap.xml' },
+      { sitemapUrl: 'https://x.test/sitemap.xml', allowedHosts: ['x.test'] },
       'src-1',
     );
     expect(docs.map((d) => d.path).sort()).toEqual(['/p1', '/p2']);
@@ -322,6 +322,7 @@ describe('HttpConnector.listDocuments', () => {
           'https://example.com/forbidden',
           'https://example.com/down',
         ],
+        allowedHosts: ['example.com'],
       },
       'src-1',
     );
@@ -361,6 +362,7 @@ describe('HttpConnector.listDocuments', () => {
           'https://e.test/lm-only',
           'https://e.test/no-version',
         ],
+        allowedHosts: ['e.test'],
       },
       'src-1',
     );
@@ -388,7 +390,7 @@ describe('HttpConnector.fetchDocument', () => {
     const connector = new HttpConnector();
     const docId = __testing.encodeDocId('https://example.com/data.json');
     const out = await connector.fetchDocument(
-      { urls: ['https://example.com/data.json'] },
+      { urls: ['https://example.com/data.json'], allowedHosts: ['example.com'] },
       'src-1',
       docId,
     );
@@ -403,7 +405,7 @@ describe('HttpConnector.fetchDocument', () => {
     const docId = __testing.encodeDocId('https://example.com/missing');
     await expect(
       connector.fetchDocument(
-        { urls: ['https://example.com/missing'] },
+        { urls: ['https://example.com/missing'], allowedHosts: ['example.com'] },
         'src-1',
         docId,
       ),
@@ -486,8 +488,9 @@ describe('helpers', () => {
 
   it('isHostAllowed compares hosts case-insensitively', () => {
     const url = new URL('https://Example.COM:443/x');
-    expect(__testing.isHostAllowed(url, undefined)).toBe(true);
-    expect(__testing.isHostAllowed(url, [])).toBe(true);
+    // Fail-closed: empty/undefined allowlist blocks all hosts (SSRF hardening).
+    expect(__testing.isHostAllowed(url, undefined)).toBe(false);
+    expect(__testing.isHostAllowed(url, [])).toBe(false);
     expect(__testing.isHostAllowed(url, ['example.com'])).toBe(true);
     expect(__testing.isHostAllowed(url, ['other.test'])).toBe(false);
   });

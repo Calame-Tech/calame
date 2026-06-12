@@ -223,13 +223,13 @@ export class UserManager {
    * INSERT boundary in Phase A) — better-sqlite3 binds named params
    * strictly, so the two statements need distinct shapes.
    *
-   * Phase A multi-tenancy — `UserManager` doesn't have an Express request
-   * in scope (it's called from /api/users which already resolved auth), so
-   * every fresh user lands under the literal default. Phase B will surface
-   * a per-request tenant via the route layer.
+   * Phase B multi-tenancy — the route layer resolves a per-request tenant
+   * and threads it through {@link createUser}; callers without a request in
+   * scope (background workers, legacy paths) omit it and land under the
+   * literal default, preserving Phase A behaviour.
    */
-  private toInsertParams(entry: UserEntry): Record<string, unknown> {
-    return { ...this.toParams(entry), tenant_id: DEFAULT_TENANT_ID };
+  private toInsertParams(entry: UserEntry, tenantId: string): Record<string, unknown> {
+    return { ...this.toParams(entry), tenant_id: tenantId };
   }
 
   /** Sync profile access rows for a user (delete all, re-insert). */
@@ -258,6 +258,8 @@ export class UserManager {
     role: UserRole;
     profiles: UserProfileAccess[];
     customAttributes?: Record<string, string> | null;
+    /** Tenant the new user belongs to. Defaults to the implicit default. */
+    tenantId?: string;
   }): UserEntry & { _plaintextToken: string } {
     // Check for duplicate email
     const existing = this.stmtSelectByEmail.get(params.email) as UserRow | undefined;
@@ -295,8 +297,9 @@ export class UserManager {
       customAttributes: params.customAttributes ?? null,
     };
 
+    const tenantId = params.tenantId ?? DEFAULT_TENANT_ID;
     const insertAll = this.db.transaction(() => {
-      this.stmtInsertUser.run(this.toInsertParams(entry));
+      this.stmtInsertUser.run(this.toInsertParams(entry, tenantId));
       if (entry.customAttributes) {
         this.setCustomAttributes(id, entry.customAttributes);
       }
@@ -362,6 +365,19 @@ export class UserManager {
   getUserByEmail(email: string): UserEntry | null {
     const row = this.stmtSelectByEmail.get(email) as UserRow | undefined;
     return row ? this.buildEntry(row) : null;
+  }
+
+  /**
+   * Return the tenant id owning the user with this email, or `null` when no
+   * user has it. Used by tenant-scoped write paths (e.g. bulk import) to
+   * detect — and refuse — cross-tenant upserts, since email is globally
+   * unique (the {@link createUser} duplicate check spans every tenant).
+   */
+  getTenantIdByEmail(email: string): string | null {
+    const row = this.db
+      .prepare<[string], { tenant_id: string }>('SELECT tenant_id FROM users WHERE email = ? COLLATE NOCASE')
+      .get(email);
+    return row?.tenant_id ?? null;
   }
 
   getUserByOnboardingCode(code: string): UserEntry | null {
@@ -546,7 +562,7 @@ export class UserManager {
       customAttributes: null,
     };
 
-    this.stmtInsertUser.run(this.toInsertParams(entry));
+    this.stmtInsertUser.run(this.toInsertParams(entry, DEFAULT_TENANT_ID));
     return { ...entry, _plaintextToken: plaintextToken };
   }
 

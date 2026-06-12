@@ -200,6 +200,57 @@ describe('users routes', () => {
     });
   });
 
+  describe('multi-tenancy write scoping (M2)', () => {
+    it('stamps a created user with the request tenant', async () => {
+      await request(app)
+        .post('/api/users')
+        .set('Cookie', cookie)
+        .set('X-Tenant-Id', 'tenant-x')
+        .send({ name: 'X', email: 'x@x.com', role: 'user', profiles: [{ profileName: 'prod', accessMode: 'both' }] })
+        .expect(200);
+
+      expect(state.userManager!.listUsers({}, 'tenant-x').some((u) => u.email === 'x@x.com')).toBe(true);
+      // Must NOT leak into the default tenant.
+      expect(state.userManager!.listUsers({}, 'default').some((u) => u.email === 'x@x.com')).toBe(false);
+    });
+
+    it('import refuses to cross-tenant update an email owned by another tenant', async () => {
+      await request(app)
+        .post('/api/users')
+        .set('Cookie', cookie)
+        .set('X-Tenant-Id', 'tenant-a')
+        .send({ name: 'A', email: 'shared@x.com', role: 'user', profiles: [{ profileName: 'prod', accessMode: 'both' }] })
+        .expect(200);
+
+      const res = await request(app)
+        .post('/api/users/import')
+        .set('Cookie', cookie)
+        .set('X-Tenant-Id', 'tenant-b')
+        .send({ users: [{ email: 'shared@x.com', customAttributes: { hacked: 'yes' } }] })
+        .expect(200);
+
+      expect(res.body.created).toBe(0);
+      expect(res.body.updated).toBe(0);
+      expect(res.body.errors).toHaveLength(1);
+      expect(res.body.errors[0].reason).toMatch(/another tenant/i);
+      // The foreign-tenant user must be untouched.
+      expect(state.userManager!.getUserByEmail('shared@x.com')?.customAttributes?.hacked).toBeUndefined();
+    });
+
+    it('import creates new users scoped to the request tenant', async () => {
+      const res = await request(app)
+        .post('/api/users/import')
+        .set('Cookie', cookie)
+        .set('X-Tenant-Id', 'tenant-c')
+        .send({ users: [{ email: 'newimport@x.com', name: 'New' }], profileName: 'prod' })
+        .expect(200);
+
+      expect(res.body.created).toBe(1);
+      expect(state.userManager!.listUsers({}, 'tenant-c').some((u) => u.email === 'newimport@x.com')).toBe(true);
+      expect(state.userManager!.listUsers({}, 'default').some((u) => u.email === 'newimport@x.com')).toBe(false);
+    });
+  });
+
   describe('DELETE /api/users/:id', () => {
     it('deletes a user permanently', async () => {
       const createRes = await request(app)

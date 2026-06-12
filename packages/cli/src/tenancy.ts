@@ -127,6 +127,31 @@ export function getTenantId(req?: TenantRequestLike): string {
 }
 
 /**
+ * Fail-closed variant of {@link getTenantId}. Resolves the tenant from
+ * the auth context / `X-Tenant-Id` header using the exact same rules,
+ * but returns `null` instead of falling back to {@link DEFAULT_TENANT_ID}
+ * when neither source yields a valid tenant.
+ *
+ * Routes that expose tenant-scoped, security-sensitive resources (e.g.
+ * the user-admin endpoints, some of which return plaintext tokens) use
+ * this and translate a `null` result into a `403 Forbidden`, so an
+ * untenanted request can never silently operate on the default tenant.
+ */
+export function getTenantIdStrict(req?: TenantRequestLike): string | null {
+	const authTenant = req?.auth?.tenantId;
+	if (typeof authTenant === 'string' && TENANT_ID_RE.test(authTenant)) {
+		return authTenant;
+	}
+
+	const headerValue = readHeader(req?.headers?.['x-tenant-id']);
+	if (headerValue !== null && TENANT_ID_RE.test(headerValue)) {
+		return headerValue;
+	}
+
+	return null;
+}
+
+/**
  * Returns `true` when the supplied tenant id is the implicit default.
  * Used by code paths that need to behave differently outside of single-
  * tenant mode (e.g. hide the tenant column in the UI until at least one

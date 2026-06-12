@@ -5,6 +5,7 @@
 import { Readable } from 'node:stream';
 import mime from 'mime-types';
 import { minimatch } from 'minimatch';
+import { assertResolvedHostSafe, SsrfBlockedError } from '@calame/connectors/ssrf';
 
 import type { RagDocument, RagFolder, RagSourceType } from '@calame-ee/rag-core';
 
@@ -228,21 +229,29 @@ async function timedFetch(url: string, opts: FetchOptions): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), opts.timeoutMs);
   try {
+    // Anti-SSRF / anti-DNS-rebinding: resolve the host and reject if it (or
+    // any resolved address) targets a private/internal range, before fetching.
+    await assertResolvedHostSafe(new URL(url).hostname);
     const response = await globalThis.fetch(url, {
       method: opts.method,
       headers: { 'user-agent': opts.userAgent },
       signal: controller.signal,
-      redirect: opts.redirect ?? 'follow',
+      redirect: opts.redirect ?? 'error',
     });
     return response;
   } catch (err: unknown) {
+    if (err instanceof SsrfBlockedError) {
+      throw new HttpFetchError('Request blocked: the host resolves to a disallowed address.', {
+        cause: err,
+      });
+    }
     if (isAbortError(err)) {
       throw new HttpFetchError(`Request to ${url} timed out after ${opts.timeoutMs}ms`, {
         cause: err,
       });
     }
-    const reason = err instanceof Error ? err.message : String(err);
-    throw new HttpFetchError(`Network error for ${url}: ${reason}`, { cause: err });
+    // Mask the underlying network reason — do not echo it back to callers.
+    throw new HttpFetchError('Network error while contacting the remote host.', { cause: err });
   } finally {
     clearTimeout(timer);
   }
@@ -313,11 +322,13 @@ function decodeBasicXmlEntities(s: string): string {
 // ---------------------------------------------------------------------------
 
 /**
- * Return true if `url` is allowed by the optional `allowedHosts` allowlist.
- * Hosts compare case-insensitively. An empty / undefined list means "any host".
+ * Return true if `url` is allowed by the `allowedHosts` allowlist. Hosts
+ * compare case-insensitively. An empty / undefined list is fail-closed: with
+ * no allowlist configured, no host is permitted (SSRF hardening — an absent
+ * allowlist must never mean "any host").
  */
 function isHostAllowed(url: URL, allowedHosts: string[] | undefined): boolean {
-  if (!allowedHosts || allowedHosts.length === 0) return true;
+  if (!allowedHosts || allowedHosts.length === 0) return false;
   const host = url.host.toLowerCase();
   return allowedHosts.some((h) => h.toLowerCase() === host);
 }
@@ -610,9 +621,7 @@ export class HttpConnector implements DocumentSourceConnector {
     // Defense-in-depth: a malicious docId could encode a host outside the
     // configured allowlist. Validate before issuing the GET.
     if (!isHostAllowed(parsed, config.allowedHosts)) {
-      throw new Error(
-        `HttpConnector: host "${parsed.host}" decoded from docId is not in the configured allowedHosts.`,
-      );
+      throw new Error('HttpConnector: requested host is not in the configured allowedHosts.');
     }
 
     const response = await this.#limitedFetch(url, { method: 'GET', userAgent, timeoutMs });

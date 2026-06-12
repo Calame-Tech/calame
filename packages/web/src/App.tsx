@@ -1,8 +1,9 @@
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect, lazy, Suspense } from 'react';
+import { apiFetch, getCurrentTenant } from './lib/api.js';
+import { buildMcpPath } from './lib/mcp-url.js';
 import { Button, Card, PageHeader, Eyebrow, KpiCard, EmptyState, Breadcrumb } from './components/ui/index.js';
 import Sidebar from './components/Sidebar.js';
 import HelpTip from './components/HelpTip.js';
-import ConnectionManager from './components/ConnectionManager.js';
 import SchemaExplorer from './components/SchemaExplorer.js';
 import ConfigPanel from './components/ConfigPanel.js';
 import ServePanel from './components/ServePanel.js';
@@ -14,10 +15,68 @@ import WelcomePage from './components/WelcomePage.js';
 import AiSettings from './components/AiSettings.js';
 import AiSettingsAssignment from './components/AiSettingsAssignment.js';
 import SmtpSettings from './components/SmtpSettings.js';
-import { OidcSettings, ProfileSsoNotice, DataScopingSection } from '@calame-ee/sso/web';
+/**
+ * Lazy-loaded SSO components from the ee package. Deferred so the main Apache
+ * bundle never statically imports the BUSL chunk — the SSO module is only
+ * fetched at runtime when the relevant UI section is rendered.
+ */
+const OidcSettings = lazy(() =>
+  import('@calame-ee/sso/web')
+    .then((m) => ({ default: m.OidcSettings }))
+    .catch(() => ({
+      default: function OidcSettingsUnavailable() {
+        return (
+          <div className="p-6 text-sm text-gray-400 text-center">
+            Les fonctionnalités SSO ne sont pas disponibles sur cette instance.
+          </div>
+        );
+      },
+    })),
+);
+
+const ProfileSsoNotice = lazy(() =>
+  import('@calame-ee/sso/web')
+    .then((m) => ({ default: m.ProfileSsoNotice }))
+    .catch(() => ({
+      // Informational banner — disappear silently when SSO is absent.
+      // Return a Fragment (not `null`) so the type matches React.lazy's expected
+      // `ComponentType<{}>` shape (() => JSX.Element, not () => null).
+      default: function ProfileSsoNoticeUnavailable() {
+        return <></>;
+      },
+    })),
+);
+
+const DataScopingSection = lazy(() =>
+  import('@calame-ee/sso/web')
+    .then((m) => ({ default: m.DataScopingSection }))
+    .catch(() => ({
+      default: function DataScopingSectionUnavailable() {
+        return (
+          <div className="p-6 text-sm text-gray-400 text-center">
+            Les fonctionnalités de scoping ne sont pas disponibles sur cette instance.
+          </div>
+        );
+      },
+    })),
+);
 import ProfilePreview from './components/ProfilePreview.js';
 import MetricsDashboard from './components/MetricsDashboard.js';
 import ChatEntryPage from './components/ChatEntryPage.js';
+import SourcesPage from './components/SourcesPage.js';
+import TenantManagement from './components/TenantManagement.js';
+import {
+  pickMaskingTargetSourceId,
+  getProfileSelectedTables,
+  getProfileTableOptions,
+  getProfileColumnMasking,
+} from './lib/profile-accessors.js';
+import {
+  getConfigurationTableNames,
+  getConfigurationSelectedTables,
+  getConfigurationTableOptions,
+  getConfigurationColumnMasking,
+} from './lib/configuration-accessors.js';
 import type {
   DatabaseSchema,
   Config,
@@ -33,11 +92,58 @@ import type {
   OAuthConfig,
   ExternalAuthConfig,
   DataScopeRule,
+  ScopeSelection,
 } from './types/schema.js';
+
+/**
+ * Lazy-loaded KnowledgeBaseManager from the ee package. The import is deferred
+ * at runtime so the main bundle stays lean and the RAG chunk is only loaded when
+ * the user explicitly navigates to the "Bases de connaissance" view.
+ */
+const KnowledgeBaseManager = lazy(() =>
+  import('@calame-ee/rag-core/web')
+    .then((m) => ({ default: m.KnowledgeBaseManager }))
+    .catch(() => ({
+      default: function RagUnavailable() {
+        return (
+          <div className="p-6 text-sm text-gray-400 text-center">
+            Les fonctionnalités RAG ne sont pas disponibles sur cette instance.
+          </div>
+        );
+      },
+    })),
+);
+
+/**
+ * Lazy-loaded RagAccessSelector from the ee package. Only loaded when the user
+ * navigates to the "Knowledge Bases" section of an MCP detail view.
+ */
+const RagAccessSelector = lazy(() =>
+  import('@calame-ee/rag-core/web')
+    .then((m) => ({ default: m.RagAccessSelector }))
+    .catch(() => ({
+      default: function RagAccessSelectorUnavailable() {
+        return (
+          <div className="p-6 text-sm text-gray-400 text-center">
+            Les fonctionnalités RAG ne sont pas disponibles sur cette instance.
+          </div>
+        );
+      },
+    })),
+);
 
 /** View-based navigation replacing the old step wizard */
 type View =
   | { page: 'dashboard' }
+  /**
+   * Unified sources page — databases and knowledge bases in one place.
+   * `tab` defaults to 'databases' when omitted.
+   */
+  | { page: 'sources'; tab?: 'databases' | 'knowledge'; backTo?: View; editConnectionName?: string }
+  /**
+   * Legacy alias for `{ page: 'sources', tab: 'databases' }`.
+   * Kept for backwards-compat (existing navigation calls, deep links).
+   */
   | { page: 'connections'; backTo?: View; editConnectionName?: string }
   | { page: 'configurations' }
   | { page: 'config-detail'; configName: string; backTo?: View }
@@ -45,10 +151,20 @@ type View =
   | { page: 'mcp-detail'; profileName: string; activeSection?: string }
   | { page: 'users'; selectedUserId?: string; backTo?: View }
   | { page: 'settings'; backTo?: View; initialTab?: 'ai' | 'email' | 'sso' }
-  | { page: 'metrics' };
+  | { page: 'metrics' }
+  /**
+   * Tenant administration page — lists every distinct tenant id discovered
+   * across tenanted tables and lets the admin hard-delete one.
+   */
+  | { page: 'tenants' }
+  /**
+   * Legacy alias for `{ page: 'sources', tab: 'knowledge' }`.
+   * Kept for backwards-compat.
+   */
+  | { page: 'knowledge' };
 
 function createDefaultProfile(): Profile {
-  return { name: 'default', label: 'Default', selectedTables: {}, tableOptions: {} };
+  return { name: 'default', label: 'Default' };
 }
 
 /** Convert Set-based selection to array-based for Profile storage */
@@ -75,11 +191,39 @@ function arraysToSets(sel: Record<string, string[]>): Record<string, Set<string>
  * chained .then()).
  */
 function persistProfiles(profiles: Record<string, Record<string, unknown>>): Promise<Response> {
-  return fetch('/api/profiles/save', {
+  return apiFetch('/api/profiles/save', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ profiles }),
   });
+}
+
+/**
+ * Serialize a Profile array into the shape expected by persistProfiles / /api/profiles/save.
+ *
+ * Phase 5: drops the legacy `selectedTables` / `tableOptions` / `columnMasking` /
+ * `connections` projections — the backend `upgradeProfileShape` migrator runs at
+ * the save boundary and folds anything legacy back into `sources` / `scopes` when
+ * needed. New writes therefore carry only the unified shape.
+ */
+function buildProfilesData(profiles: Profile[]): Record<string, Record<string, unknown>> {
+  const result: Record<string, Record<string, unknown>> = {};
+  for (const p of profiles) {
+    result[p.name] = {
+      label: p.label,
+      configurations: p.configurations,
+      authMode: p.authMode,
+      oauthConfig: p.oauthConfig,
+      externalAuthConfig: p.externalAuthConfig,
+      responseMode: p.responseMode,
+      dataScopeRules: p.dataScopeRules,
+      sharedTables: p.sharedTables,
+      aiSettingNames: p.aiSettingNames,
+      sources: p.sources,
+      scopes: p.scopes,
+    };
+  }
+  return result;
 }
 
 /**
@@ -98,6 +242,10 @@ export default function App() {
   // --- Auth state ---
   const [authChecked, setAuthChecked] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
+  // Whether the RAG runtime is available on this instance (from /health).
+  const [ragEnabled, setRagEnabled] = useState(false);
+  // Human-readable reason when RAG is unavailable (null when ragEnabled is true).
+  const [ragDisabledReason, setRagDisabledReason] = useState<string | null>(null);
   const [authRequired, setAuthRequired] = useState(false);
   const [needsSetup, setNeedsSetup] = useState(false);
 
@@ -121,11 +269,25 @@ export default function App() {
     }
     (async () => {
       try {
-        // Always check both admin and user auth status
-        const [adminRes, userRes] = await Promise.all([
-          fetch('/api/auth/status', { credentials: 'include' }),
-          fetch('/api/auth/user-status', { credentials: 'include' }),
+        // Always check both admin and user auth status and health (for ragEnabled).
+        const [adminRes, userRes, healthRes] = await Promise.all([
+          apiFetch('/api/auth/status', { credentials: 'include' }),
+          apiFetch('/api/auth/user-status', { credentials: 'include' }),
+          apiFetch('/health').catch(() => null),
         ]);
+
+        if (healthRes?.ok) {
+          try {
+            const healthData = (await healthRes.json()) as {
+              ragEnabled?: boolean;
+              ragDisabledReason?: string | null;
+            };
+            setRagEnabled(healthData.ragEnabled === true);
+            setRagDisabledReason(healthData.ragDisabledReason ?? null);
+          } catch {
+            // Ignore parse errors — ragEnabled stays false.
+          }
+        }
         const adminData = await adminRes.json();
         const userData = await userRes.json();
 
@@ -193,7 +355,7 @@ export default function App() {
     (async () => {
       // 1. Fetch connections and schemas
       try {
-        const res = await fetch('/api/connections', { credentials: 'include' });
+        const res = await apiFetch('/api/connections', { credentials: 'include' });
         const data = await res.json();
         if (data.success && data.connections) {
           const loadedConns: NamedConnection[] = Object.entries(data.connections).map(
@@ -215,7 +377,7 @@ export default function App() {
             Record<string, unknown>,
           ][]) {
             if (info.connected && (info.tableCount as number) > 0) {
-              const schemaRes = await fetch(`/api/schema/${name}`, { credentials: 'include' });
+              const schemaRes = await apiFetch(`/api/schema/${name}`, { credentials: 'include' });
               const schemaData = await schemaRes.json();
               const schema = schemaData.schema ?? schemaData;
               if (schema.tables) {
@@ -230,7 +392,7 @@ export default function App() {
 
       // 2. Fetch configurations
       try {
-        const configRes = await fetch('/api/configurations', { credentials: 'include' });
+        const configRes = await apiFetch('/api/configurations', { credentials: 'include' });
         const configData = await configRes.json();
         if (configData.success && configData.configurations) {
           const configs: Configuration[] = Object.entries(
@@ -244,17 +406,18 @@ export default function App() {
 
       // 3. Fetch profiles
       try {
-        const res = await fetch('/api/profiles/load', { credentials: 'include' });
+        const res = await apiFetch('/api/profiles/load', { credentials: 'include' });
         const data = await res.json();
         if (data.found && data.profiles) {
           const loaded: Record<string, Omit<Profile, 'name'>> = data.profiles;
+          // Phase 5 — load uses the unified shape only. The backend
+          // `upgradeProfileShape` runs at every read boundary and synthesises
+          // `sources` / `scopes` for legacy profiles before they reach this
+          // code, so the frontend never has to handle the legacy fields.
           const loadedProfiles: Profile[] = Object.entries(loaded).map(([name, p]) => ({
             name,
             label: p.label,
             configurations: p.configurations,
-            connections: p.connections ?? ['default'],
-            selectedTables: p.selectedTables ?? {},
-            tableOptions: p.tableOptions ?? {},
             authMode: p.authMode,
             oauthConfig: p.oauthConfig,
             externalAuthConfig: p.externalAuthConfig,
@@ -262,6 +425,8 @@ export default function App() {
             dataScopeRules: p.dataScopeRules,
             sharedTables: p.sharedTables,
             aiSettingNames: p.aiSettingNames,
+            sources: p.sources,
+            scopes: p.scopes,
           }));
           if (loadedProfiles.length > 0) {
             setProfiles(loadedProfiles);
@@ -277,7 +442,7 @@ export default function App() {
   // Fetch serve status — shared between the 5s poller and the ServePanel action callback
   const fetchServeStatus = useCallback(async () => {
     try {
-      const res = await fetch('/api/serve/status', { credentials: 'include' });
+      const res = await apiFetch('/api/serve/status', { credentials: 'include' });
       const data = await res.json();
       if (data.success !== false) {
         setServeStatus({
@@ -310,7 +475,7 @@ export default function App() {
     if (!authenticated || isUserPage) return;
     const fetchRecent = async () => {
       try {
-        const res = await fetch('/api/audit?limit=10&offset=0', { credentials: 'include' });
+        const res = await apiFetch('/api/audit?limit=10&offset=0', { credentials: 'include' });
         const data = await res.json();
         if (data.success !== false && data.entries) {
           setRecentActivity(data.entries);
@@ -335,16 +500,16 @@ export default function App() {
   const safeActiveIndex = Math.max(0, Math.min(activeProfileIndex, profiles.length - 1));
   const activeProfile = profiles[safeActiveIndex] ?? createDefaultProfile();
 
-  // Derive selectedTables (Set-based) from active profile
+  // Derive selectedTables (Set-based) from active profile's relational scopes
   const selectedTables = useMemo(
-    () => arraysToSets(activeProfile.selectedTables ?? {}),
-    [activeProfile.selectedTables],
+    () => arraysToSets(getProfileSelectedTables(activeProfile)),
+    [activeProfile],
   );
 
   // Derive config with active profile's tableOptions
   const configWithProfileOptions = useMemo(
-    () => ({ ...config, tableOptions: activeProfile.tableOptions ?? {} }),
-    [config, activeProfile.tableOptions],
+    () => ({ ...config, tableOptions: getProfileTableOptions(activeProfile) }),
+    [config, activeProfile],
   );
 
   const handlePiiOverride = useCallback(
@@ -375,7 +540,7 @@ export default function App() {
   const handleScanPii = useCallback(async () => {
     setScanning(true);
     try {
-      const res = await fetch('/api/pii/scan', { method: 'POST' });
+      const res = await apiFetch('/api/pii/scan', { method: 'POST' });
       const data = await res.json();
       if (data.detections) {
         setPiiDetections(data.detections);
@@ -395,7 +560,21 @@ export default function App() {
       setProfiles((prev) => {
         const updated = [...prev];
         const profile = { ...updated[activeProfileIndex] };
-        const masking = { ...(profile.columnMasking ?? {}) };
+
+        // Phase 5 — write masking into the unified scope shape rather than the
+        // legacy `profile.columnMasking` field. Pick a single relational scope
+        // as target (multi-DB profiles get the masking on their first source —
+        // good enough for the global-rules use case; per-source overrides can
+        // still be done from RagAccessSelector / TableOptionsCard).
+        const targetSourceId = pickMaskingTargetSourceId(profile);
+        const scopes = { ...(profile.scopes ?? {}) };
+        const existingScope = scopes[targetSourceId];
+        const baseMasking =
+          existingScope?.kind === 'relational'
+            ? { ...(existingScope.columnMasking ?? {}) }
+            : { ...getProfileColumnMasking(profile) };
+
+        const masking = baseMasking;
 
         for (const [tableName, colDetections] of Object.entries(piiDetections)) {
           const tableMasking = { ...(masking[tableName] ?? {}) };
@@ -413,7 +592,20 @@ export default function App() {
           masking[tableName] = tableMasking;
         }
 
-        profile.columnMasking = masking;
+        // Reflect the masking into the relational scope (creating the scope
+        // skeleton if the profile didn't have one yet).
+        const existingRelational =
+          existingScope?.kind === 'relational' ? existingScope : null;
+        scopes[targetSourceId] = {
+          kind: 'relational',
+          selectedTables: existingRelational?.selectedTables ?? getProfileSelectedTables(profile),
+          tableOptions: existingRelational?.tableOptions ?? getProfileTableOptions(profile),
+          columnMasking: masking,
+        };
+        profile.scopes = scopes;
+        if (!profile.sources?.includes(targetSourceId)) {
+          profile.sources = [...(profile.sources ?? []), targetSourceId];
+        }
         updated[activeProfileIndex] = profile;
         return updated;
       });
@@ -428,7 +620,7 @@ export default function App() {
 
   // Profile CRUD
   const handleProfileCreate = useCallback((name: string, label: string) => {
-    setProfiles((prev) => [...prev, { name, label, selectedTables: {}, tableOptions: {} }]);
+    setProfiles((prev) => [...prev, { name, label }]);
     setActiveProfileIndex((prev) => prev + 1);
   }, []);
 
@@ -439,7 +631,7 @@ export default function App() {
 
       // Stop the profile if active
       try {
-        await fetch('/api/serve/stop', {
+        await apiFetch('/api/serve/stop', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ profiles: [profileToDelete.name] }),
@@ -458,22 +650,8 @@ export default function App() {
       });
 
       // Persist the deletion to backend
-      const profilesData: Record<string, Record<string, unknown>> = {};
-      for (const p of newProfiles) {
-        profilesData[p.name] = {
-          label: p.label,
-          configurations: p.configurations,
-          selectedTables: p.selectedTables,
-          tableOptions: p.tableOptions,
-          authMode: p.authMode,
-          oauthConfig: p.oauthConfig,
-          externalAuthConfig: p.externalAuthConfig,
-          responseMode: p.responseMode,
-          aiSettingNames: p.aiSettingNames,
-        };
-      }
       try {
-        await persistProfiles(profilesData);
+        await persistProfiles(buildProfilesData(newProfiles));
       } catch {
         // ignore save errors
       }
@@ -507,7 +685,7 @@ export default function App() {
   // Configuration CRUD handlers
   const handleConfigurationSave = useCallback(async (config: Configuration): Promise<boolean> => {
     try {
-      const res = await fetch('/api/configurations', {
+      const res = await apiFetch('/api/configurations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(config),
@@ -524,7 +702,7 @@ export default function App() {
           return [...prev, config];
         });
         // Silently refresh active MCP servers so they pick up the new configuration
-        fetch('/api/serve/refresh', { method: 'POST' }).catch(() => {});
+        apiFetch('/api/serve/refresh', { method: 'POST' }).catch(() => {});
         return true;
       }
       return false;
@@ -535,7 +713,7 @@ export default function App() {
 
   const handleConfigurationDelete = useCallback(async (name: string) => {
     try {
-      const res = await fetch(`/api/configurations/${encodeURIComponent(name)}`, {
+      const res = await apiFetch(`/api/configurations/${encodeURIComponent(name)}`, {
         method: 'DELETE',
       });
       const data = await res.json();
@@ -625,7 +803,7 @@ export default function App() {
   /** Logout handler — extracted from the old header for reuse in Sidebar footer */
   const handleLogout = async () => {
     try {
-      await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+      await apiFetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
     } catch {
       /* ignore network errors */
     }
@@ -770,7 +948,7 @@ export default function App() {
                     footer={
                       <div className="space-y-0 max-h-40 overflow-y-auto">
                         {configurations.slice(0, 4).map((cfg) => {
-                          const tCount = Object.keys(cfg.selectedTables).length;
+                          const tCount = getConfigurationTableNames(cfg).length;
                           return (
                             <button
                               key={cfg.name}
@@ -958,25 +1136,38 @@ export default function App() {
               </div>
             )}
 
+            {/* Unified Sources page */}
+            {view.page === 'sources' && (
+              <SourcesPage
+                currentTab={view.tab ?? 'databases'}
+                onTabChange={(tab) =>
+                  setView({ page: 'sources', tab, backTo: view.backTo })
+                }
+                connections={connections}
+                onConnectionsChange={setConnections}
+                onSchemaLoaded={handleSchemaLoaded}
+                editConnectionName={view.editConnectionName}
+                ragEnabled={ragEnabled}
+                ragDisabledReason={ragDisabledReason}
+                KnowledgeBaseManagerComponent={KnowledgeBaseManager}
+              />
+            )}
+
+            {/* Legacy alias: 'connections' → sources/databases tab */}
             {view.page === 'connections' && (
-              <div className="space-y-4">
-                <PageHeader
-                  breadcrumb={[
-                    { label: 'Dashboard', onClick: () => setView({ page: 'dashboard' }) },
-                    { label: 'Connections' },
-                  ]}
-                  title="Database Connections"
-                  description="Connect your databases to start building MCP servers. Supports PostgreSQL, MySQL, and SQLite."
-                />
-                <ConnectionManager
-                  connections={connections}
-                  onConnectionsChange={setConnections}
-                  onSchemaLoaded={handleSchemaLoaded}
-                  editConnectionName={
-                    view.page === 'connections' ? view.editConnectionName : undefined
-                  }
-                />
-              </div>
+              <SourcesPage
+                currentTab="databases"
+                onTabChange={(tab) =>
+                  setView({ page: 'sources', tab, backTo: view.backTo })
+                }
+                connections={connections}
+                onConnectionsChange={setConnections}
+                onSchemaLoaded={handleSchemaLoaded}
+                editConnectionName={view.editConnectionName}
+                ragEnabled={ragEnabled}
+                ragDisabledReason={ragDisabledReason}
+                KnowledgeBaseManagerComponent={KnowledgeBaseManager}
+              />
             )}
 
             {view.page === 'configurations' && (
@@ -995,8 +1186,6 @@ export default function App() {
                     const newConfig: Configuration = {
                       name,
                       label,
-                      connections: [],
-                      selectedTables: {},
                     };
                     // Add to local state immediately so detail view can find it
                     setConfigurations((prev) => [...prev, newConfig]);
@@ -1048,6 +1237,7 @@ export default function App() {
                   onNavigateToEditConnection={(c: string) =>
                     setView({ page: 'connections', backTo: view, editConnectionName: c })
                   }
+                  ragEnabled={ragEnabled}
                 />
               </div>
             )}
@@ -1118,8 +1308,6 @@ export default function App() {
                       const newConfig: Configuration = {
                         name: slug,
                         label: 'New Configuration',
-                        connections: [],
-                        selectedTables: {},
                       };
                       setConfigurations((prev) => [...prev, newConfig]);
                       handleConfigurationSave(newConfig);
@@ -1199,6 +1387,34 @@ export default function App() {
                 <MetricsDashboard />
               </div>
             )}
+
+            {view.page === 'tenants' && (
+              <div className="space-y-4">
+                <PageHeader
+                  breadcrumb={[
+                    { label: 'Dashboard', onClick: () => setView({ page: 'dashboard' }) },
+                    { label: 'Workspaces' },
+                  ]}
+                  title="Workspaces"
+                  description="Liste de tous les workspaces (tenants) découverts sur cette instance. Les workspaces sont créés implicitement lors de la première écriture avec un identifiant donné."
+                />
+                <TenantManagement />
+              </div>
+            )}
+
+            {/* Legacy alias: 'knowledge' → sources/knowledge tab */}
+            {view.page === 'knowledge' && (
+              <SourcesPage
+                currentTab="knowledge"
+                onTabChange={(tab) => setView({ page: 'sources', tab })}
+                connections={connections}
+                onConnectionsChange={setConnections}
+                onSchemaLoaded={handleSchemaLoaded}
+                ragEnabled={ragEnabled}
+                ragDisabledReason={ragDisabledReason}
+                KnowledgeBaseManagerComponent={KnowledgeBaseManager}
+              />
+            )}
           </div>
         </main>
 
@@ -1255,9 +1471,15 @@ function McpDetailView({
   const [activeSection, setActiveSection] = useState<
     'tables' | 'config' | 'tokens' | 'audit' | 'users' | 'scoping'
   >(
-    (initialActiveSection as 'tables' | 'config' | 'tokens' | 'audit' | 'users' | 'scoping') ??
-      'tables',
+    (initialActiveSection as
+      | 'tables'
+      | 'config'
+      | 'tokens'
+      | 'audit'
+      | 'users'
+      | 'scoping') ?? 'tables',
   );
+
   const [editingLabel, setEditingLabel] = useState(false);
   const [editLabel, setEditLabel] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -1274,25 +1496,7 @@ function McpDetailView({
     onProfilesChange((prev) => {
       const updated = [...prev];
       updated[profileIndex] = { ...updated[profileIndex], authMode: mode };
-      const profilesData: Record<string, Record<string, unknown>> = {};
-      for (const prof of updated) {
-        profilesData[prof.name] = {
-          label: prof.label,
-          configurations: prof.configurations,
-          connections: prof.connections,
-          selectedTables: prof.selectedTables,
-          tableOptions: prof.tableOptions,
-          columnMasking: prof.columnMasking,
-          authMode: prof.authMode,
-          oauthConfig: prof.oauthConfig,
-          externalAuthConfig: prof.externalAuthConfig,
-          responseMode: prof.responseMode,
-          dataScopeRules: prof.dataScopeRules,
-          sharedTables: prof.sharedTables,
-          aiSettingNames: prof.aiSettingNames,
-        };
-      }
-      persistProfiles(profilesData).catch(() => {});
+      persistProfiles(buildProfilesData(updated)).catch(() => {});
       return updated;
     });
   };
@@ -1311,25 +1515,7 @@ function McpDetailView({
         ...current,
         oauthConfig: { ...existingOauth, ...partial },
       };
-      const profilesData: Record<string, Record<string, unknown>> = {};
-      for (const prof of updated) {
-        profilesData[prof.name] = {
-          label: prof.label,
-          configurations: prof.configurations,
-          connections: prof.connections,
-          selectedTables: prof.selectedTables,
-          tableOptions: prof.tableOptions,
-          columnMasking: prof.columnMasking,
-          authMode: prof.authMode,
-          oauthConfig: prof.oauthConfig,
-          externalAuthConfig: prof.externalAuthConfig,
-          responseMode: prof.responseMode,
-          dataScopeRules: prof.dataScopeRules,
-          sharedTables: prof.sharedTables,
-          aiSettingNames: prof.aiSettingNames,
-        };
-      }
-      persistProfiles(profilesData).catch(() => {});
+      persistProfiles(buildProfilesData(updated)).catch(() => {});
       return updated;
     });
   };
@@ -1346,25 +1532,7 @@ function McpDetailView({
         ...current,
         externalAuthConfig: { ...existingExternal, ...partial },
       };
-      const profilesData: Record<string, Record<string, unknown>> = {};
-      for (const prof of updated) {
-        profilesData[prof.name] = {
-          label: prof.label,
-          configurations: prof.configurations,
-          connections: prof.connections,
-          selectedTables: prof.selectedTables,
-          tableOptions: prof.tableOptions,
-          columnMasking: prof.columnMasking,
-          authMode: prof.authMode,
-          oauthConfig: prof.oauthConfig,
-          externalAuthConfig: prof.externalAuthConfig,
-          responseMode: prof.responseMode,
-          dataScopeRules: prof.dataScopeRules,
-          sharedTables: prof.sharedTables,
-          aiSettingNames: prof.aiSettingNames,
-        };
-      }
-      persistProfiles(profilesData).catch(() => {});
+      persistProfiles(buildProfilesData(updated)).catch(() => {});
       return updated;
     });
   };
@@ -1374,25 +1542,7 @@ function McpDetailView({
     onProfilesChange((prev) => {
       const updated = [...prev];
       updated[profileIndex] = { ...updated[profileIndex], aiSettingNames };
-      const profilesData: Record<string, Record<string, unknown>> = {};
-      for (const prof of updated) {
-        profilesData[prof.name] = {
-          label: prof.label,
-          configurations: prof.configurations,
-          connections: prof.connections,
-          selectedTables: prof.selectedTables,
-          tableOptions: prof.tableOptions,
-          columnMasking: prof.columnMasking,
-          authMode: prof.authMode,
-          oauthConfig: prof.oauthConfig,
-          externalAuthConfig: prof.externalAuthConfig,
-          responseMode: prof.responseMode,
-          dataScopeRules: prof.dataScopeRules,
-          sharedTables: prof.sharedTables,
-          aiSettingNames: prof.aiSettingNames,
-        };
-      }
-      persistProfiles(profilesData).catch(() => {});
+      persistProfiles(buildProfilesData(updated)).catch(() => {});
       return updated;
     });
   };
@@ -1402,25 +1552,7 @@ function McpDetailView({
     onProfilesChange((prev) => {
       const updated = [...prev];
       updated[profileIndex] = { ...updated[profileIndex], dataScopeRules, sharedTables };
-      const profilesData: Record<string, Record<string, unknown>> = {};
-      for (const prof of updated) {
-        profilesData[prof.name] = {
-          label: prof.label,
-          configurations: prof.configurations,
-          connections: prof.connections,
-          selectedTables: prof.selectedTables,
-          tableOptions: prof.tableOptions,
-          columnMasking: prof.columnMasking,
-          authMode: prof.authMode,
-          oauthConfig: prof.oauthConfig,
-          externalAuthConfig: prof.externalAuthConfig,
-          responseMode: prof.responseMode,
-          dataScopeRules: prof.dataScopeRules,
-          sharedTables: prof.sharedTables,
-          aiSettingNames: prof.aiSettingNames,
-        };
-      }
-      persistProfiles(profilesData).catch(() => {});
+      persistProfiles(buildProfilesData(updated)).catch(() => {});
       return updated;
     });
   };
@@ -1442,7 +1574,13 @@ function McpDetailView({
 
   const profileStatus = serveStatus.profileStatuses?.[profile.name];
   const isActive = profileStatus?.active === true;
-  const basePath = profileStatus?.endpoint ?? `/mcp/${profile.name}`;
+  // Tenant-qualified path when the current workspace is non-default — the
+  // backend's `profileStatus.endpoint` is a default-tenant string so we
+  // override it here for other workspaces (matches ServePanel.tsx).
+  const _tenant = getCurrentTenant();
+  const basePath = _tenant === 'default'
+    ? (profileStatus?.endpoint ?? `/mcp/${profile.name}`)
+    : buildMcpPath(profile.name, _tenant);
   const endpoint = `${window.location.origin}${basePath}`;
 
   // Count effective tables from configurations
@@ -1452,7 +1590,7 @@ function McpDetailView({
     for (const cfgName of profileConfigurations) {
       const cfg = configurations.find((c) => c.name === cfgName);
       if (cfg) {
-        for (const t of Object.keys(cfg.selectedTables)) tables.add(t);
+        for (const t of getConfigurationTableNames(cfg)) tables.add(t);
       }
     }
     return tables.size;
@@ -1460,18 +1598,7 @@ function McpDetailView({
 
   /** Save all profiles to backend before starting, so new profiles are known */
   const saveProfiles = async () => {
-    const profilesData: Record<string, Record<string, unknown>> = {};
-    for (const p of profiles) {
-      profilesData[p.name] = {
-        label: p.label,
-        configurations: p.configurations,
-        authMode: p.authMode,
-        oauthConfig: p.oauthConfig,
-        externalAuthConfig: p.externalAuthConfig,
-        responseMode: p.responseMode,
-      };
-    }
-    await persistProfiles(profilesData);
+    await persistProfiles(buildProfilesData(profiles));
   };
 
   const handleStartProfile = async () => {
@@ -1481,7 +1608,7 @@ function McpDetailView({
       // Save profiles first so the backend knows about new profiles
       await saveProfiles();
 
-      const res = await fetch('/api/serve/start', {
+      const res = await apiFetch('/api/serve/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1504,7 +1631,7 @@ function McpDetailView({
     setTogglingProfile(true);
     setError(null);
     try {
-      const res = await fetch('/api/serve/stop', {
+      const res = await apiFetch('/api/serve/stop', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ profiles: [profile.name] }),
@@ -1531,7 +1658,7 @@ function McpDetailView({
     setRefreshing(true);
     setError(null);
     try {
-      const res = await fetch('/api/serve/refresh', { method: 'POST' });
+      const res = await apiFetch('/api/serve/refresh', { method: 'POST' });
       const data = await res.json();
       if (data.success === false) {
         setError(data.message || 'Failed to refresh.');
@@ -1556,26 +1683,8 @@ function McpDetailView({
       updated[profileIndex] = p;
 
       // Persist to backend and refresh active MCP servers
-      const profilesData: Record<string, Record<string, unknown>> = {};
-      for (const prof of updated) {
-        profilesData[prof.name] = {
-          label: prof.label,
-          configurations: prof.configurations,
-          connections: prof.connections,
-          selectedTables: prof.selectedTables,
-          tableOptions: prof.tableOptions,
-          columnMasking: prof.columnMasking,
-          authMode: prof.authMode,
-          oauthConfig: prof.oauthConfig,
-          externalAuthConfig: prof.externalAuthConfig,
-          responseMode: prof.responseMode,
-          dataScopeRules: prof.dataScopeRules,
-          sharedTables: prof.sharedTables,
-          aiSettingNames: prof.aiSettingNames,
-        };
-      }
-      persistProfiles(profilesData)
-        .then(() => fetch('/api/serve/refresh', { method: 'POST' }))
+      persistProfiles(buildProfilesData(updated))
+        .then(() => apiFetch('/api/serve/refresh', { method: 'POST' }))
         .catch(() => {});
 
       return updated;
@@ -1592,7 +1701,7 @@ function McpDetailView({
     setResponseModeError(null);
     const newMode = isRawMode ? 'friendly' : 'raw';
     try {
-      const res = await fetch(`/api/profiles/${encodeURIComponent(profileName)}/response-mode`, {
+      const res = await apiFetch(`/api/profiles/${encodeURIComponent(profileName)}/response-mode`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -2028,7 +2137,11 @@ function McpDetailView({
           )}
 
           {/* SSO info — rendered only when authMode is 'sso' */}
-          {(profile.authMode ?? 'token') === 'sso' && <ProfileSsoNotice />}
+          {(profile.authMode ?? 'token') === 'sso' && (
+            <Suspense fallback={null}>
+              <ProfileSsoNotice />
+            </Suspense>
+          )}
 
           {/* External auth config */}
           {(profile.authMode ?? 'token') === 'external' && (
@@ -2343,7 +2456,8 @@ function McpDetailView({
               <div className="flex flex-wrap gap-2">
                 {configurations.map((cfg) => {
                   const isSelected = profileConfigurations.includes(cfg.name);
-                  const tableCount = Object.keys(cfg.selectedTables).length;
+                  const tableCount = getConfigurationTableNames(cfg).length;
+                  const sourceCount = (cfg.sources ?? []).length;
                   return (
                     <div key={cfg.name} className="flex items-center gap-1">
                       <button
@@ -2361,8 +2475,8 @@ function McpDetailView({
                         />
                         {cfg.label}
                         <span className="text-xs text-gray-500">
-                          ({tableCount} table{tableCount !== 1 ? 's' : ''}, {cfg.connections.length}{' '}
-                          base{cfg.connections.length !== 1 ? 's' : ''})
+                          ({tableCount} table{tableCount !== 1 ? 's' : ''}, {sourceCount}{' '}
+                          base{sourceCount !== 1 ? 's' : ''})
                         </span>
                       </button>
                       <button
@@ -2403,7 +2517,7 @@ function McpDetailView({
                 for (const cfgName of profileConfigurations) {
                   const cfg = configurations.find((c) => c.name === cfgName);
                   if (!cfg) continue;
-                  for (const [table, cols] of Object.entries(cfg.selectedTables)) {
+                  for (const [table, cols] of Object.entries(getConfigurationSelectedTables(cfg))) {
                     if (!mergedTables[table]) {
                       mergedTables[table] = [...cols];
                     } else {
@@ -2450,11 +2564,17 @@ function McpDetailView({
       )}
 
       {activeSection === 'scoping' && (
-        <DataScopingSection
-          profile={profile}
-          configurations={configurations}
-          onScopeRulesChange={handleScopeRulesChange}
-        />
+        <Suspense
+          fallback={
+            <div className="p-6 text-sm text-gray-500 italic">Chargement…</div>
+          }
+        >
+          <DataScopingSection
+            profile={profile}
+            configurations={configurations}
+            onScopeRulesChange={handleScopeRulesChange}
+          />
+        </Suspense>
       )}
 
       {activeSection === 'tokens' && (
@@ -2580,7 +2700,7 @@ function ConfigurationListView({
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {configurations.map((cfg) => {
-            const tableCount = Object.keys(cfg.selectedTables).length;
+            const tableCount = getConfigurationTableNames(cfg).length;
             return (
               <div
                 key={cfg.name}
@@ -2618,7 +2738,7 @@ function ConfigurationListView({
                 </div>
                 <div className="flex gap-3 text-sm text-gray-500">
                   <span>
-                    {cfg.connections.length} connection{cfg.connections.length !== 1 ? 's' : ''}
+                    {(cfg.sources ?? []).length} source{(cfg.sources ?? []).length !== 1 ? 's' : ''}
                   </span>
                   <span>&middot;</span>
                   <span>
@@ -2660,6 +2780,8 @@ interface ConfigurationDetailViewProps {
   onGlobalMaskingRulesChange: (rules: GlobalMaskingRule[]) => void;
   onNavigateToConnections?: () => void;
   onNavigateToEditConnection?: (connName: string) => void;
+  /** Whether the RAG runtime is available on this instance. Controls visibility of the Knowledge tab. */
+  ragEnabled?: boolean;
 }
 
 function ConfigurationDetailView({
@@ -2679,28 +2801,32 @@ function ConfigurationDetailView({
   onGlobalMaskingRulesChange,
   onNavigateToConnections,
   onNavigateToEditConnection,
+  ragEnabled = false,
 }: ConfigurationDetailViewProps) {
   const config = configurations.find((c) => c.name === configName);
 
   // Local editing state
   const [label, setLabel] = useState(config?.label ?? configName);
   const [selectedConns, setSelectedConns] = useState<Set<string>>(
-    new Set(config?.connections ?? []),
+    new Set(config?.sources ?? []),
   );
   const [localSelectedTables, setLocalSelectedTables] = useState<Record<string, Set<string>>>(
-    config ? arraysToSets(config.selectedTables) : {},
+    config ? arraysToSets(getConfigurationSelectedTables(config)) : {},
   );
   const [localTableOptions, setLocalTableOptions] = useState<
     Record<string, import('./types/schema.js').TableToolOptions>
-  >(config?.tableOptions ?? {});
+  >(config ? getConfigurationTableOptions(config) : {});
   const [localColumnMasking, setLocalColumnMasking] = useState<
     Record<string, Record<string, ColumnMasking>>
-  >(config?.columnMasking ?? {});
+  >(config ? getConfigurationColumnMasking(config) : {});
   const [editingLabel, setEditingLabel] = useState(false);
   const [loadingSchemas, setLoadingSchemas] = useState(false);
   const [saved, setSaved] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  // Tab switcher: 'databases' mirrors the existing UI, 'knowledge' mounts RagAccessSelector.
+  const [activeConfigTab, setActiveConfigTab] = useState<'databases' | 'knowledge'>('databases');
 
   const availableConnectionNames = connections.map((c) => c.name);
 
@@ -2761,6 +2887,56 @@ function ConfigurationDetailView({
 
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  // ---------------------------------------------------------------------------
+  // RAG scope helpers — extract document-kind entries from the current config.
+  // These are preserved verbatim when the Databases tab is saved, and updated
+  // by RagAccessSelector when the Knowledge tab is saved.
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Returns a Record of only the `kind: 'document'` scopes in the config.
+   * Used to seed RagAccessSelector with the existing document scopes.
+   */
+  const configDocumentScopes = useMemo<Record<string, ScopeSelection>>(() => {
+    if (!config?.scopes) return {};
+    const result: Record<string, ScopeSelection> = {};
+    for (const [id, scope] of Object.entries(config.scopes)) {
+      if (scope.kind === 'document') result[id] = scope;
+    }
+    return result;
+  }, [config]);
+
+  /**
+   * Returns the list of sourceIds whose scope kind is 'document'.
+   * Used to seed RagAccessSelector#initialSources.
+   */
+  const configDocumentSources = useMemo<string[]>(() => {
+    if (!config?.sources || !config?.scopes) return [];
+    return config.sources.filter(
+      (id) => config.scopes !== undefined && config.scopes[id]?.kind === 'document',
+    );
+  }, [config]);
+
+  /**
+   * Returns the non-document (relational) scopes and sources from the config.
+   * Preserved when saving from the Knowledge tab so relational settings aren't lost.
+   */
+  const configRelationalScopes = useMemo<Record<string, ScopeSelection>>(() => {
+    if (!config?.scopes) return {};
+    const result: Record<string, ScopeSelection> = {};
+    for (const [id, scope] of Object.entries(config.scopes)) {
+      if (scope.kind !== 'document') result[id] = scope;
+    }
+    return result;
+  }, [config]);
+
+  const configRelationalSources = useMemo<string[]>(() => {
+    if (!config?.sources || !config?.scopes) return [];
+    return config.sources.filter(
+      (id) => config.scopes === undefined || config.scopes[id]?.kind !== 'document',
+    );
+  }, [config]);
+
   const handleSave = async () => {
     setSaveError(null);
 
@@ -2788,13 +2964,43 @@ function ConfigurationDetailView({
       }
     }
 
-    const configToSave = {
+    // Build the Phase 5 unified shape. Each selected connection becomes a
+    // relational scope carrying the cleaned tables/options/masking. When
+    // multiple connections are selected they all share the same selection for
+    // now (per-source differentiation can be added later via RagAccessSelector).
+    //
+    // Critical: PRESERVE any document-kind sources/scopes already on the
+    // config. This save runs from the Databases tab but the top-level Save
+    // button is visible on the Knowledge tab too — without the merge below
+    // a click here would discard every RAG selection configured via
+    // RagAccessSelector.
+    //
+    // Also critical: `selectedConns` is seeded from `config.sources` which can
+    // contain non-DB source ids (e.g. a RAG nanoid that found its way in via
+    // an earlier save). Filtering to actual DB connection names is what stops
+    // the relational loop from overwriting `scopes[ragSourceId]` with
+    // `kind: 'relational'` — which would clobber the document scope we just
+    // spread above.
+    const validConnNames = new Set(connections.map((c) => c.name));
+    const relationalSources = [...selectedConns].filter((id) => validConnNames.has(id));
+
+    const sourcesArray = [...relationalSources, ...configDocumentSources];
+    const scopes: Record<string, import('./types/schema.js').ScopeSelection> = {
+      ...configDocumentScopes,
+    };
+    for (const sourceId of relationalSources) {
+      scopes[sourceId] = {
+        kind: 'relational',
+        selectedTables: cleanedTables,
+        tableOptions: cleanedTableOptions,
+        columnMasking: cleanedColumnMasking,
+      };
+    }
+    const configToSave: Configuration = {
       name: configName,
       label,
-      connections: [...selectedConns],
-      selectedTables: cleanedTables,
-      tableOptions: cleanedTableOptions,
-      columnMasking: cleanedColumnMasking,
+      sources: sourcesArray,
+      scopes,
     };
     const success = await onSave(configToSave);
     if (success) {
@@ -2984,6 +3190,53 @@ function ConfigurationDetailView({
         </div>
       </div>
 
+      {/* Tab switcher — Databases / Knowledge */}
+      <div className="border-b border-gray-700">
+        <div className="flex gap-0">
+          {(
+            [
+              { id: 'databases', label: 'Databases', disabled: false },
+              { id: 'knowledge', label: 'Knowledge bases', disabled: !ragEnabled },
+            ] as const
+          ).map((tab) => {
+            const isActive = activeConfigTab === tab.id;
+            if (tab.disabled) {
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  disabled
+                  aria-disabled="true"
+                  title="Les bases de connaissance RAG ne sont pas disponibles sur cette instance."
+                  className="px-5 py-3 text-sm font-medium border-b-2 border-transparent text-gray-600 cursor-not-allowed opacity-50"
+                >
+                  {tab.label}
+                </button>
+              );
+            }
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveConfigTab(tab.id)}
+                aria-current={isActive ? 'true' : undefined}
+                className={[
+                  'px-5 py-3 text-sm font-medium border-b-2 transition-all duration-200',
+                  isActive
+                    ? 'border-os-500 text-os-400'
+                    : 'border-transparent text-gray-500 hover:text-gray-300 hover:border-gray-600',
+                ].join(' ')}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* --- DATABASES TAB --- */}
+      {activeConfigTab === 'databases' && (
+        <>
       {/* Connections selection */}
       <div className="card-primary p-4">
         <div className="mb-3"><Eyebrow>Databases</Eyebrow></div>
@@ -3110,6 +3363,75 @@ function ConfigurationDetailView({
           />
         </div>
       )}
+        </>
+      )}
+
+      {/* --- KNOWLEDGE TAB --- */}
+      {activeConfigTab === 'knowledge' && ragEnabled && (
+        <div className="card-primary">
+          {/*
+           * NOTE: `profileName` below is intentionally `configName` — RagAccessSelector
+           * uses this value only as an identifier label and as part of the default POST
+           * URL (which we override via `saveEndpoint`). A future refactor should rename
+           * the prop to `entityName` on the component side.
+           */}
+          <Suspense
+            fallback={
+              <div className="p-6 text-sm text-gray-500 italic flex items-center gap-2">
+                <svg
+                  className="w-3 h-3 animate-spin"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                  />
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  />
+                </svg>
+                Chargement…
+              </div>
+            }
+          >
+            <RagAccessSelector
+              profileName={configName}
+              initialScopes={configDocumentScopes}
+              initialSources={configDocumentSources}
+              saveEndpoint="/api/configurations"
+              saveBodyTransform={({ sources, scopes }) => ({
+                // Merge relational sources/scopes back in so the Databases tab settings
+                // are not overwritten when saving from the Knowledge tab.
+                name: configName,
+                label,
+                sources: [...configRelationalSources, ...sources],
+                scopes: { ...configRelationalScopes, ...scopes },
+              })}
+              onSaved={(newScopes, newSources) => {
+                // Reflect the merged update in local configurations state so the UI
+                // stays consistent without a full page refresh.
+                onSave({
+                  name: configName,
+                  label,
+                  sources: [...configRelationalSources, ...newSources],
+                  scopes: {
+                    ...configRelationalScopes,
+                    ...newScopes,
+                  },
+                });
+              }}
+            />
+          </Suspense>
+        </div>
+      )}
     </div>
   );
 }
@@ -3233,7 +3555,11 @@ function SettingsPage({
         <Card padded={true} key={activeTab} className="animate-fade-in-up">
           {activeTab === 'ai' && <AiSettings />}
           {activeTab === 'email' && <SmtpSettings />}
-          {activeTab === 'sso' && <OidcSettings availableProfiles={[...allProfileNames]} />}
+          {activeTab === 'sso' && (
+            <Suspense fallback={<div className="p-6 text-sm text-gray-500 italic">Chargement…</div>}>
+              <OidcSettings availableProfiles={[...allProfileNames]} />
+            </Suspense>
+          )}
         </Card>
       </div>
 
@@ -3241,7 +3567,11 @@ function SettingsPage({
       <Card padded={true} key={`mobile-${activeTab}`} className="animate-fade-in-up md:hidden">
         {activeTab === 'ai' && <AiSettings />}
         {activeTab === 'email' && <SmtpSettings />}
-        {activeTab === 'sso' && <OidcSettings availableProfiles={[...allProfileNames]} />}
+        {activeTab === 'sso' && (
+          <Suspense fallback={<div className="p-6 text-sm text-gray-500 italic">Chargement…</div>}>
+            <OidcSettings availableProfiles={[...allProfileNames]} />
+          </Suspense>
+        )}
       </Card>
     </div>
   );

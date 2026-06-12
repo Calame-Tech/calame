@@ -1,7 +1,14 @@
 import type { Config } from 'tailwindcss';
 
 const config: Config = {
-  content: ['./src/**/*.{ts,tsx}'],
+  content: [
+    './src/**/*.{ts,tsx}',
+    // EE packages whose React components are consumed via direct TS source
+    // (their `./web` export points at `src/web/index.ts`, not a compiled bundle).
+    // Tailwind needs to scan them so utility classes are not purged.
+    '../../ee/sso/src/web/**/*.{ts,tsx}',
+    '../../ee/rag-core/src/web/**/*.{ts,tsx}',
+  ],
   darkMode: 'class',
   theme: {
     extend: {

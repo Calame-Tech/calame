@@ -1,5 +1,22 @@
-import { useState } from 'react';
-import { SsoLoginButton } from '@calame-ee/sso/web';
+import { useState, lazy, Suspense } from 'react';
+import { apiFetch } from '../lib/api.js';
+
+/**
+ * Lazy-loaded SSO login button. Deferred so the Apache bundle never statically
+ * imports the BUSL chunk. Renders nothing when the ee package is absent.
+ */
+const SsoLoginButton = lazy(() =>
+  import('@calame-ee/sso/web')
+    .then((m) => ({ default: m.SsoLoginButton }))
+    .catch(() => ({
+      // The real component self-hides when OIDC is not configured; the
+      // fallback matches that contract. Returns a Fragment (not `null`)
+      // so the type matches React.lazy's expected ComponentType.
+      default: function SsoLoginButtonUnavailable() {
+        return <></>;
+      },
+    })),
+);
 
 interface LoginPageProps {
   onAdminLogin: () => void;
@@ -19,7 +36,7 @@ export default function LoginPage({ onAdminLogin, onUserLogin }: LoginPageProps)
 
     try {
       // Try admin login first
-      const adminRes = await fetch('/api/auth/login', {
+      const adminRes = await apiFetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -34,7 +51,7 @@ export default function LoginPage({ onAdminLogin, onUserLogin }: LoginPageProps)
 
       // If not admin (403), try user login
       if (adminRes.status === 403 || adminRes.status === 401) {
-        const userRes = await fetch('/api/auth/user-login', {
+        const userRes = await apiFetch('/api/auth/user-login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
@@ -71,7 +88,9 @@ export default function LoginPage({ onAdminLogin, onUserLogin }: LoginPageProps)
         </div>
 
         {/* SSO button — self-hides when OIDC is not configured */}
-        <SsoLoginButton />
+        <Suspense fallback={null}>
+          <SsoLoginButton />
+        </Suspense>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>

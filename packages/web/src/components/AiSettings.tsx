@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
+import { apiFetch } from '../lib/api.js';
 import HelpTip from './HelpTip.js';
 
 type Provider = 'anthropic' | 'openrouter' | 'custom';
 type ClassifierProvider = 'anthropic' | 'openrouter' | 'custom';
+type AiCapability = 'chat' | 'embeddings' | 'rerank';
 
 interface MaskedAiSetting {
   name: string;
@@ -12,6 +14,9 @@ interface MaskedAiSetting {
   model?: string;
   baseUrl?: string;
   configured: boolean;
+  capabilities?: AiCapability[];
+  embeddingModel?: string;
+  rerankModel?: string;
 }
 
 interface AiConfigDisplay {
@@ -69,6 +74,13 @@ export default function AiSettings() {
   const [saveResult, setSaveResult] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
 
+  // Capabilities form state (per-setting form — not global)
+  const [capChat, setCapChat] = useState(true);
+  const [capEmbeddings, setCapEmbeddings] = useState(false);
+  const [embeddingModel, setEmbeddingModel] = useState('');
+  const [capRerank, setCapRerank] = useState(false);
+  const [rerankModel, setRerankModel] = useState('');
+
   // LLM Router state — global, independent of individual AI settings
   const [routerEnabled, setRouterEnabled] = useState(false);
   const [classifierProvider, setClassifierProvider] = useState<ClassifierProvider>('anthropic');
@@ -92,7 +104,7 @@ export default function AiSettings() {
 
   const refresh = useCallback(async () => {
     try {
-      const res = await fetch('/api/ai-settings', { credentials: 'include' });
+      const res = await apiFetch('/api/ai-settings', { credentials: 'include' });
       const data = await res.json();
       if (data.success) {
         setSettings((data.settings ?? []) as MaskedAiSetting[]);
@@ -125,6 +137,15 @@ export default function AiSettings() {
     setTestResult(null);
   };
 
+  /** Build the capabilities array from the three checkboxes. */
+  const buildCapabilities = (): AiCapability[] => {
+    const caps: AiCapability[] = [];
+    if (capChat) caps.push('chat');
+    if (capEmbeddings) caps.push('embeddings');
+    if (capRerank) caps.push('rerank');
+    return caps;
+  };
+
   const startCreate = () => {
     if (isCreating) {
       setEditingName(null);
@@ -135,6 +156,11 @@ export default function AiSettings() {
     setFormLabel('');
     setProvider('anthropic');
     setPerProvider(emptyPerProvider());
+    setCapChat(true);
+    setCapEmbeddings(false);
+    setEmbeddingModel('');
+    setCapRerank(false);
+    setRerankModel('');
     resetForm();
   };
 
@@ -156,6 +182,13 @@ export default function AiSettings() {
         baseUrl: s.baseUrl ?? '',
       },
     });
+    // Restore capabilities — default to ['chat'] if not set (legacy settings).
+    const caps = s.capabilities ?? ['chat'];
+    setCapChat(caps.includes('chat'));
+    setCapEmbeddings(caps.includes('embeddings'));
+    setEmbeddingModel(s.embeddingModel ?? '');
+    setCapRerank(caps.includes('rerank'));
+    setRerankModel(s.rerankModel ?? '');
     resetForm();
   };
 
@@ -186,9 +219,22 @@ export default function AiSettings() {
       setFormError('Base URL is required for the custom provider.');
       return;
     }
+    if (!capChat && !capEmbeddings) {
+      setFormError('Au moins une capacité doit être sélectionnée (Chat ou Embeddings).');
+      return;
+    }
+    if (capEmbeddings && !embeddingModel.trim()) {
+      setFormError("Le modèle d'embeddings est requis lorsque la capacité Embeddings est activée.");
+      return;
+    }
+    if (capRerank && !rerankModel.trim()) {
+      setFormError('Rerank model is required when the rerank capability is enabled.');
+      return;
+    }
 
     setSaving(true);
     try {
+      const capabilities = buildCapabilities();
       const body = {
         name: formName,
         label: formLabel,
@@ -196,6 +242,10 @@ export default function AiSettings() {
         apiKey,
         model: model || undefined,
         baseUrl: baseUrl || undefined,
+        // Capabilities — tells the backend which features this setting provides.
+        capabilities,
+        embeddingModel: capEmbeddings ? embeddingModel.trim() || undefined : undefined,
+        rerankModel: capRerank ? rerankModel.trim() || undefined : undefined,
         // LLM Router fields are global but still transported here for backward-compat
         routerEnabled,
         classifierProvider: routerEnabled ? classifierProvider : undefined,
@@ -262,7 +312,7 @@ export default function AiSettings() {
         await refresh();
       } else {
         // No `name` yet → fall back to the legacy single-config endpoint, which writes to 'default'.
-        await fetch('/api/ai-settings', {
+        await apiFetch('/api/ai-settings', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
@@ -273,7 +323,7 @@ export default function AiSettings() {
             baseUrl: baseUrl || undefined,
           }),
         });
-        const res = await fetch('/api/ai-settings/test', { method: 'POST', credentials: 'include' });
+        const res = await apiFetch('/api/ai-settings/test', { method: 'POST', credentials: 'include' });
         const data = await res.json();
         setTestResult(
           data.success
@@ -328,7 +378,7 @@ export default function AiSettings() {
     setSaving(true);
     try {
       const fallback = settings[0];
-      await fetch('/api/ai-settings', {
+      await apiFetch('/api/ai-settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -435,19 +485,149 @@ export default function AiSettings() {
         </div>
       </div>
 
-      {/* Model — shown above the API key */}
-      {(provider === 'openrouter' || provider === 'custom') && (
-        <div>
-          <label className="text-sm text-gray-400">Model</label>
-          <input
-            type="text"
-            value={model}
-            onChange={(e) => updateField('model', e.target.value)}
-            placeholder={provider === 'openrouter' ? 'anthropic/claude-sonnet-4' : 'llama3, mistral, etc.'}
-            className="input-editorial w-full text-sm mt-1"
+      {/* Capabilities section */}
+      <div>
+        <div className="flex items-center gap-1.5 mb-2">
+          <label className="text-sm text-gray-400">Capacités</label>
+          <HelpTip
+            content="Chat : ce setting peut être utilisé pour les conversations avec le LLM. Embeddings : ce setting peut générer des vecteurs pour le RAG (OpenAI/Ollama uniquement)."
+            position="right"
+            maxWidth={320}
           />
         </div>
-      )}
+        <div className="space-y-3 pl-1">
+          {/* Chat capability */}
+          <div className="flex items-start gap-3">
+            <input
+              id="cap-chat"
+              type="checkbox"
+              checked={capChat}
+              onChange={(e) => setCapChat(e.target.checked)}
+              className="mt-0.5 rounded border-gray-600 bg-gray-700 text-os-500 focus:ring-os-500/30"
+            />
+            <div className="flex-1">
+              <label htmlFor="cap-chat" className="text-sm text-gray-200 cursor-pointer">
+                Chat
+              </label>
+              {capChat && (
+                <div className="mt-1">
+                  <label className="text-xs text-gray-400">Modèle (Chat)</label>
+                  <input
+                    type="text"
+                    value={model}
+                    onChange={(e) => updateField('model', e.target.value)}
+                    placeholder={
+                      provider === 'anthropic'
+                        ? 'claude-sonnet-4-20250514'
+                        : provider === 'openrouter'
+                          ? 'anthropic/claude-sonnet-4'
+                          : 'llama3, mistral, etc.'
+                    }
+                    className="input-editorial w-full text-sm mt-1"
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Embeddings capability */}
+          <div className="flex items-start gap-3">
+            <div className="relative mt-0.5">
+              <input
+                id="cap-embeddings"
+                type="checkbox"
+                checked={capEmbeddings}
+                onChange={(e) => {
+                  setCapEmbeddings(e.target.checked);
+                  if (!e.target.checked) setEmbeddingModel('');
+                }}
+                disabled={provider === 'anthropic'}
+                className="rounded border-gray-600 bg-gray-700 text-os-500 focus:ring-os-500/30 disabled:opacity-40 disabled:cursor-not-allowed"
+              />
+            </div>
+            <div className="flex-1">
+              <div className="flex items-center gap-2">
+                <label
+                  htmlFor="cap-embeddings"
+                  className={`text-sm cursor-pointer ${provider === 'anthropic' ? 'text-gray-500' : 'text-gray-200'}`}
+                >
+                  Embeddings
+                </label>
+                {provider === 'anthropic' && (
+                  <span
+                    className="text-xs text-amber-400 cursor-default"
+                    title="Anthropic ne propose pas de modèles d'embeddings — utilisez OpenAI, Ollama ou un endpoint custom"
+                  >
+                    Non disponible
+                  </span>
+                )}
+              </div>
+              {capEmbeddings && provider !== 'anthropic' && (
+                <div className="mt-1">
+                  <label className="text-xs text-gray-400">
+                    Modèle d'embeddings <span className="text-red-400">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={embeddingModel}
+                    onChange={(e) => setEmbeddingModel(e.target.value)}
+                    placeholder="text-embedding-3-small, nomic-embed-text, etc."
+                    className="input-editorial w-full text-sm mt-1"
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Rerank capability */}
+          <div className="flex items-start gap-3">
+            <div className="relative mt-0.5">
+              <input
+                id="cap-rerank"
+                type="checkbox"
+                checked={capRerank}
+                onChange={(e) => {
+                  setCapRerank(e.target.checked);
+                  if (!e.target.checked) setRerankModel('');
+                }}
+                className="rounded border-gray-600 bg-gray-700 text-os-500 focus:ring-os-500/30"
+              />
+            </div>
+            <div className="flex-1">
+              <div className="flex items-center gap-2">
+                <label htmlFor="cap-rerank" className="text-sm text-gray-200 cursor-pointer">
+                  Rerank
+                </label>
+              </div>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Used by RAG hybrid search to re-order results for better relevance (Cohere API). When a
+                valid rerank setting is configured, it activates automatically — no extra toggle needed.
+              </p>
+              {capRerank && (
+                <div className="mt-2">
+                  <label className="text-xs text-gray-400">
+                    Rerank model <span className="text-red-400">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={rerankModel}
+                    onChange={(e) => setRerankModel(e.target.value)}
+                    placeholder="rerank-multilingual-v3.0"
+                    className="input-editorial w-full text-sm mt-1"
+                  />
+                  <p className="text-xs text-gray-600 mt-1">
+                    Cohere model name.{' '}
+                    <code className="text-gray-500">rerank-multilingual-v3.0</code> works for FR/EN mixed
+                    corpora. <code className="text-gray-500">rerank-english-v3.0</code> is English-only.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* The model field is now embedded inside the Chat capability section above. */}
 
       {/* API Key */}
       {provider !== 'custom' && (
@@ -606,9 +786,28 @@ export default function AiSettings() {
                       title={s.configured ? 'Configured' : 'Not configured'}
                     />
                   </div>
-                  <div className="text-xs text-gray-500 mt-0.5">
-                    {s.provider}
-                    {s.model ? ` · ${s.model}` : ''}
+                  <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                    <span className="text-xs text-gray-500">
+                      {s.provider}
+                      {s.model ? ` · ${s.model}` : ''}
+                    </span>
+                    {/* Capability badges */}
+                    {(() => {
+                      const caps = s.capabilities ?? ['chat'];
+                      const hasChat = caps.includes('chat');
+                      const hasEmb = caps.includes('embeddings');
+                      const hasRerank = caps.includes('rerank');
+                      const parts: string[] = [];
+                      if (hasChat) parts.push('Chat');
+                      if (hasEmb) parts.push('Embeddings');
+                      if (hasRerank) parts.push('Rerank');
+                      const label = parts.length > 0 ? parts.join(' + ') : 'Chat';
+                      return (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-os-500/10 text-os-300 ring-1 ring-os-500/20">
+                          {label}
+                        </span>
+                      );
+                    })()}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">

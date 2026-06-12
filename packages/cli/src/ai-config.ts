@@ -1,7 +1,12 @@
 import type { Database, Statement } from 'better-sqlite3';
 import type { CalameDatabase } from './database.js';
+import { DEFAULT_TENANT_ID } from './tenancy.js';
 
 export type AiProvider = 'anthropic' | 'openrouter' | 'custom';
+
+export type AiCapability = 'chat' | 'embeddings' | 'rerank';
+
+const VALID_CAPABILITIES: ReadonlySet<AiCapability> = new Set(['chat', 'embeddings', 'rerank']);
 
 export interface AiConfig {
   provider: AiProvider;
@@ -13,9 +18,33 @@ export interface AiConfig {
 export interface AiSetting extends AiConfig {
   name: string;
   label: string;
+  /** What this setting can do. undefined = legacy — assume ['chat']. */
+  capabilities?: AiCapability[];
+  /** Embedding-specific model name. Required when 'embeddings' is in capabilities. */
+  embeddingModel?: string;
+  /** Discovered at save time by probing the embeddings endpoint. Required for RAG sources. */
+  embeddingDimensions?: number;
+  /**
+   * Reranker model name (e.g. 'rerank-multilingual-v3.0'). Required when
+   * 'rerank' is in capabilities. Unlike embeddings, rerankers don't have a
+   * fixed output dimension so nothing else needs to be cached.
+   */
+  rerankModel?: string;
 }
 
 export type MaskedAiSetting = AiSetting & { configured: boolean };
+
+/**
+ * Returns true if the setting supports the given capability.
+ * For backward compatibility, a setting with no capabilities field is assumed
+ * to support 'chat' only.
+ */
+export function settingSupports(setting: AiSetting, capability: AiCapability): boolean {
+  if (setting.capabilities === undefined) {
+    return capability === 'chat';
+  }
+  return setting.capabilities.includes(capability);
+}
 
 interface AiSettingRow {
   name: string;
@@ -24,9 +53,27 @@ interface AiSettingRow {
   api_key: string;
   model: string | null;
   base_url: string | null;
+  capabilities: string | null;
+  embedding_model: string | null;
+  embedding_dimensions: number | null;
+  rerank_model: string | null;
 }
 
 const VALID_PROVIDERS: ReadonlySet<AiProvider> = new Set(['anthropic', 'openrouter', 'custom']);
+
+function parseCapabilities(raw: string | null): AiCapability[] | undefined {
+  if (raw === null) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return undefined;
+    const valid = parsed.filter(
+      (item): item is AiCapability => typeof item === 'string' && VALID_CAPABILITIES.has(item as AiCapability),
+    );
+    return valid.length > 0 ? valid : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 function rowToSetting(row: AiSettingRow): AiSetting {
   return {
@@ -36,7 +83,35 @@ function rowToSetting(row: AiSettingRow): AiSetting {
     apiKey: row.api_key,
     model: row.model ?? undefined,
     baseUrl: row.base_url ?? undefined,
+    capabilities: parseCapabilities(row.capabilities),
+    embeddingModel: row.embedding_model ?? undefined,
+    embeddingDimensions: row.embedding_dimensions ?? undefined,
+    rerankModel: row.rerank_model ?? undefined,
   };
+}
+
+function validateCapabilities(
+  capabilities: AiCapability[] | undefined,
+  embeddingModel: string | undefined,
+  rerankModel: string | undefined,
+): void {
+  if (capabilities === undefined) return;
+  for (const cap of capabilities) {
+    if (!VALID_CAPABILITIES.has(cap)) {
+      throw new Error(`Unknown capability "${cap}". Valid values: chat, embeddings, rerank.`);
+    }
+  }
+  if (capabilities.includes('embeddings') && !embeddingModel) {
+    throw new Error('embeddingModel is required when capabilities includes "embeddings".');
+  }
+  if (capabilities.includes('rerank') && !rerankModel) {
+    throw new Error('rerankModel is required when capabilities includes "rerank".');
+  }
+}
+
+function serializeCapabilities(capabilities: AiCapability[] | undefined): string | null {
+  if (capabilities === undefined) return null;
+  return JSON.stringify(capabilities);
 }
 
 function maskApiKey(key: string): string {
@@ -64,17 +139,33 @@ export class AiSettingsManager {
 
   constructor(database: CalameDatabase) {
     this.db = database.raw;
-    this.stmtList = this.db.prepare(`SELECT * FROM ai_settings ORDER BY created_at ASC, name ASC`);
-    this.stmtGet = this.db.prepare(`SELECT * FROM ai_settings WHERE name = ?`);
+    // Phase B multi-tenancy: every read binds `tenant_id`. Callers that
+    // do not pass a tenant land on the literal default — that preserves
+    // the Phase A behaviour for boot-time consumers (the host wires the
+    // manager at boot, before any request is available) while letting
+    // request handlers thread the resolved tenant through explicitly.
+    this.stmtList = this.db.prepare(
+      `SELECT * FROM ai_settings WHERE tenant_id = ? ORDER BY created_at ASC, name ASC`,
+    );
+    this.stmtGet = this.db.prepare(
+      `SELECT * FROM ai_settings WHERE name = ? AND tenant_id = ?`,
+    );
     this.stmtInsert = this.db.prepare(
-      `INSERT INTO ai_settings (name, label, provider, api_key, model, base_url)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      // The INSERT carries `tenant_id` explicitly. Callers pass the
+      // request-resolved tenant in; legacy call sites that don't yet
+      // surface a request fall back to DEFAULT_TENANT_ID.
+      `INSERT INTO ai_settings (name, label, provider, api_key, model, base_url, capabilities,
+                                embedding_model, embedding_dimensions, rerank_model, tenant_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     this.stmtUpdate = this.db.prepare(
-      `UPDATE ai_settings SET label = ?, provider = ?, api_key = ?, model = ?, base_url = ?
-       WHERE name = ?`,
+      `UPDATE ai_settings SET label = ?, provider = ?, api_key = ?, model = ?, base_url = ?,
+       capabilities = ?, embedding_model = ?, embedding_dimensions = ?, rerank_model = ?
+       WHERE name = ? AND tenant_id = ?`,
     );
-    this.stmtDelete = this.db.prepare(`DELETE FROM ai_settings WHERE name = ?`);
+    this.stmtDelete = this.db.prepare(
+      `DELETE FROM ai_settings WHERE name = ? AND tenant_id = ?`,
+    );
   }
 
   /** No-op — kept for backward compatibility. */
@@ -82,29 +173,37 @@ export class AiSettingsManager {
   /** No-op — kept for backward compatibility. */
   async save(): Promise<void> {}
 
-  listSettings(): AiSetting[] {
-    return (this.stmtList.all() as AiSettingRow[]).map(rowToSetting);
+  /**
+   * List every AI setting visible to the supplied tenant. Defaults to
+   * the literal `'default'` so background consumers (boot-time wiring,
+   * RAG pipeline construction) keep seeing the historic row set.
+   */
+  listSettings(tenantId: string = DEFAULT_TENANT_ID): AiSetting[] {
+    return (this.stmtList.all(tenantId) as AiSettingRow[]).map(rowToSetting);
   }
 
-  getSetting(name: string): AiSetting | null {
-    const row = this.stmtGet.get(name) as AiSettingRow | undefined;
+  getSetting(name: string, tenantId: string = DEFAULT_TENANT_ID): AiSetting | null {
+    const row = this.stmtGet.get(name, tenantId) as AiSettingRow | undefined;
     return row ? rowToSetting(row) : null;
   }
 
-  listMaskedSettings(): MaskedAiSetting[] {
-    return this.listSettings().map(maskSetting);
+  listMaskedSettings(tenantId: string = DEFAULT_TENANT_ID): MaskedAiSetting[] {
+    return this.listSettings(tenantId).map(maskSetting);
   }
 
-  getMaskedSetting(name: string): MaskedAiSetting | null {
-    const s = this.getSetting(name);
+  getMaskedSetting(name: string, tenantId: string = DEFAULT_TENANT_ID): MaskedAiSetting | null {
+    const s = this.getSetting(name, tenantId);
     return s ? maskSetting(s) : null;
   }
 
-  createSetting(setting: AiSetting): void {
+  createSetting(setting: AiSetting, tenantId: string = DEFAULT_TENANT_ID): void {
     if (!VALID_PROVIDERS.has(setting.provider)) throw new Error('Invalid provider.');
     if (!setting.name) throw new Error('Setting name is required.');
     if (!setting.label) throw new Error('Setting label is required.');
-    if (this.getSetting(setting.name)) throw new Error(`Setting "${setting.name}" already exists.`);
+    if (this.getSetting(setting.name, tenantId)) {
+      throw new Error(`Setting "${setting.name}" already exists.`);
+    }
+    validateCapabilities(setting.capabilities, setting.embeddingModel, setting.rerankModel);
     this.stmtInsert.run(
       setting.name,
       setting.label,
@@ -112,11 +211,20 @@ export class AiSettingsManager {
       setting.apiKey,
       setting.model ?? null,
       setting.baseUrl ?? null,
+      serializeCapabilities(setting.capabilities),
+      setting.embeddingModel ?? null,
+      setting.embeddingDimensions ?? null,
+      setting.rerankModel ?? null,
+      tenantId,
     );
   }
 
-  updateSetting(name: string, partial: Partial<Omit<AiSetting, 'name'>>): void {
-    const current = this.getSetting(name);
+  updateSetting(
+    name: string,
+    partial: Partial<Omit<AiSetting, 'name'>>,
+    tenantId: string = DEFAULT_TENANT_ID,
+  ): void {
+    const current = this.getSetting(name, tenantId);
     if (!current) throw new Error(`Setting "${name}" does not exist.`);
     const next: AiSetting = {
       ...current,
@@ -124,47 +232,53 @@ export class AiSettingsManager {
       name: current.name,
     };
     if (!VALID_PROVIDERS.has(next.provider)) throw new Error('Invalid provider.');
+    validateCapabilities(next.capabilities, next.embeddingModel, next.rerankModel);
     this.stmtUpdate.run(
       next.label,
       next.provider,
       next.apiKey,
       next.model ?? null,
       next.baseUrl ?? null,
+      serializeCapabilities(next.capabilities),
+      next.embeddingModel ?? null,
+      next.embeddingDimensions ?? null,
+      next.rerankModel ?? null,
       name,
+      tenantId,
     );
   }
 
-  deleteSetting(name: string): void {
-    this.stmtDelete.run(name);
+  deleteSetting(name: string, tenantId: string = DEFAULT_TENANT_ID): void {
+    this.stmtDelete.run(name, tenantId);
   }
 
-  isConfigured(): boolean {
-    return this.listSettings().some(isSettingConfigured);
+  isConfigured(tenantId: string = DEFAULT_TENANT_ID): boolean {
+    return this.listSettings(tenantId).some(isSettingConfigured);
   }
 
   // ---------- Backward-compat shims ----------
 
   /** Returns the first setting as a legacy AiConfig (used by callers that don't yet know about multi-settings). */
-  getConfig(): AiConfig | null {
-    const first = this.listSettings()[0];
+  getConfig(tenantId: string = DEFAULT_TENANT_ID): AiConfig | null {
+    const first = this.listSettings(tenantId)[0];
     if (!first) return null;
     const { provider, apiKey, model, baseUrl } = first;
     return { provider, apiKey, model, baseUrl };
   }
 
   /** Legacy single-config setter — upserts a setting named 'default'. */
-  async setConfig(config: AiConfig): Promise<void> {
-    const existing = this.getSetting('default');
+  async setConfig(config: AiConfig, tenantId: string = DEFAULT_TENANT_ID): Promise<void> {
+    const existing = this.getSetting('default', tenantId);
     if (existing) {
-      this.updateSetting('default', config);
+      this.updateSetting('default', config, tenantId);
     } else {
-      this.createSetting({ name: 'default', label: 'Default', ...config });
+      this.createSetting({ name: 'default', label: 'Default', ...config }, tenantId);
     }
   }
 
   /** Returns the legacy single-config view (first setting, masked). */
-  getMaskedConfig(): (AiConfig & { configured: boolean }) | null {
-    const first = this.listMaskedSettings()[0];
+  getMaskedConfig(tenantId: string = DEFAULT_TENANT_ID): (AiConfig & { configured: boolean }) | null {
+    const first = this.listMaskedSettings(tenantId)[0];
     if (!first) return null;
     const { provider, apiKey, model, baseUrl, configured } = first;
     return { provider, apiKey, model, baseUrl, configured };

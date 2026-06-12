@@ -14,6 +14,13 @@ export interface AuditLogEntry {
   durationMs: number;
   /** Label of the token that triggered this entry (optional). */
   tokenLabel?: string;
+  /**
+   * Tenant id that owned the request, when known. Serialized inside the
+   * `tool_args` JSON blob under the `__tenantId` key so we don't need a
+   * schema migration on `audit_log`. Older entries without a tenant_id
+   * column on the table itself surface `undefined` here.
+   */
+  tenantId?: string;
 }
 
 /** Row shape returned by better-sqlite3 for audit_log queries. */
@@ -31,17 +38,27 @@ interface AuditRow {
 }
 
 function rowToEntry(row: AuditRow): AuditLogEntry {
+  const args = JSON.parse(row.tool_args) as Record<string, unknown>;
+  // Lift the tenant id out of the toolArgs payload — it was stashed there
+  // under a reserved key on write so older `audit_log` rows that pre-date
+  // multi-tenancy still round-trip cleanly.
+  let tenantId: string | undefined;
+  if (typeof args.__tenantId === 'string') {
+    tenantId = args.__tenantId;
+    delete args.__tenantId;
+  }
   return {
     id: row.id,
     timestamp: row.timestamp,
     profileName: row.profile_name,
     toolName: row.tool_name,
-    toolArgs: JSON.parse(row.tool_args) as Record<string, unknown>,
+    toolArgs: args,
     result: row.result,
     resultSummary: row.result_summary ?? undefined,
     resultData: row.result_data ?? undefined,
     durationMs: row.duration_ms,
     tokenLabel: row.token_label ?? undefined,
+    tenantId,
   };
 }
 
@@ -100,12 +117,20 @@ export class AuditLog {
       timestamp: new Date().toISOString(),
     };
 
+    // Persist the tenant id inside the tool_args JSON blob under a reserved
+    // key. This sidesteps the need for an `ALTER TABLE audit_log ADD COLUMN
+    // tenant_id` migration while still surfacing the tenant on every entry
+    // (lifted back out by `rowToEntry`).
+    const toolArgsForPersist = full.tenantId
+      ? { ...full.toolArgs, __tenantId: full.tenantId }
+      : full.toolArgs;
+
     this.stmtInsert.run({
       id: full.id,
       timestamp: full.timestamp,
       profile_name: full.profileName,
       tool_name: full.toolName,
-      tool_args: JSON.stringify(full.toolArgs),
+      tool_args: JSON.stringify(toolArgsForPersist),
       result: full.result,
       result_summary: full.resultSummary ?? null,
       result_data: full.resultData ?? null,

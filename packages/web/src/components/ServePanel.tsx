@@ -1,5 +1,14 @@
 import { useState, useCallback, useMemo } from 'react';
+import { apiFetch, getCurrentTenant } from '../lib/api.js';
 import type { AuthMode, Config, Profile, ServeStatus } from '../types/schema.js';
+import {
+  getProfileTableNames,
+  getProfileRelationalSources,
+  getProfileSelectedTables,
+  getProfileTableOptions,
+  getProfileColumnMasking,
+} from '../lib/profile-accessors.js';
+import { buildMcpPath } from '../lib/mcp-url.js';
 import ChatPanel from './ChatPanel.js';
 import TokenManager from './TokenManager.js';
 import AuditLogViewer from './AuditLogViewer.js';
@@ -84,7 +93,7 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
       setTogglingProfile(profileName);
       setError(null);
       try {
-        const res = await fetch('/api/serve/start', {
+        const res = await apiFetch('/api/serve/start', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -114,7 +123,7 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
       setTogglingProfile(profileName);
       setError(null);
       try {
-        const res = await fetch('/api/serve/stop', {
+        const res = await apiFetch('/api/serve/stop', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ profiles: [profileName] }),
@@ -139,7 +148,7 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
     setStoppingAll(true);
     setError(null);
     try {
-      const res = await fetch('/api/serve/stop', { method: 'POST' });
+      const res = await apiFetch('/api/serve/stop', { method: 'POST' });
       const data = await res.json();
       if (data.success === false) {
         setError(data.message || 'Failed to stop all servers.');
@@ -178,9 +187,16 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
   if (selectedProfile && detailProfile) {
     const profileStatus = serveStatus.profileStatuses?.[detailProfile.name];
     const isActive = profileStatus?.active === true;
-    const basePath = profileStatus?.endpoint ?? `/mcp/${detailProfile.name}`;
+    // Build the MCP endpoint path on the client so non-default workspaces
+    // surface the tenant-qualified shape (/mcp/<tenant>/<profile>). The
+    // backend's `profileStatus.endpoint` is left as a default-tenant string
+    // and is only used as a fallback for the default workspace.
+    const tenant = getCurrentTenant();
+    const basePath = tenant === 'default'
+      ? (profileStatus?.endpoint ?? `/mcp/${detailProfile.name}`)
+      : buildMcpPath(detailProfile.name, tenant);
     const endpoint = `${window.location.origin}${basePath}`;
-    const tableCount = Object.keys(detailProfile.selectedTables).length;
+    const tableCount = getProfileTableNames(detailProfile).length;
 
     return (
       <div className="space-y-4">
@@ -214,10 +230,10 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
                   {isActive ? 'Active' : 'Inactive'} &middot; {tableCount} table
                   {tableCount !== 1 ? 's' : ''}
                 </p>
-                {detailProfile.connections && detailProfile.connections.length > 0 && (
+                {getProfileRelationalSources(detailProfile).length > 0 && (
                   <div className="flex items-center gap-1.5 mt-1">
                     <span className="text-xs text-gray-500">Connections:</span>
-                    {detailProfile.connections.map((conn) => (
+                    {getProfileRelationalSources(detailProfile).map((conn) => (
                       <span
                         key={conn}
                         className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-os-700/20 text-os-400 border border-os-600/30"
@@ -301,7 +317,7 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
             <p className="text-sm text-gray-500">No tables selected.</p>
           ) : (
             <div className="space-y-2">
-              {Object.entries(detailProfile.selectedTables).map(([table, columns]) => (
+              {Object.entries(getProfileSelectedTables(detailProfile)).map(([table, columns]) => (
                 <div
                   key={table}
                   className="card-nested px-4 py-3"
@@ -324,8 +340,8 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
             <p className="text-sm text-gray-500">No tables selected.</p>
           ) : (
             <div className="space-y-2">
-              {Object.keys(detailProfile.selectedTables).map((table) => {
-                const opts = detailProfile.tableOptions?.[table];
+              {Object.keys(getProfileSelectedTables(detailProfile)).map((table) => {
+                const opts = getProfileTableOptions(detailProfile)[table];
                 const tools = opts?.enabledTools ?? ['describe', 'aggregate', 'query'];
                 return (
                   <div
@@ -355,12 +371,11 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
           <h3 className="eyebrow mb-3">Profile</h3>
           <div className="space-y-3">
             {/* Table options summary */}
-            {detailProfile.tableOptions &&
-            Object.keys(detailProfile.tableOptions).length > 0 ? (
+            {Object.keys(getProfileTableOptions(detailProfile)).length > 0 ? (
               <div>
                 <p className="text-xs text-gray-500 mb-1">Table Options</p>
                 <div className="space-y-2">
-                  {Object.entries(detailProfile.tableOptions).map(([table, opts]) => (
+                  {Object.entries(getProfileTableOptions(detailProfile)).map(([table, opts]) => (
                     <div
                       key={table}
                       className="card-nested px-4 py-3"
@@ -384,12 +399,11 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
             )}
 
             {/* Column masking summary */}
-            {detailProfile.columnMasking &&
-            Object.keys(detailProfile.columnMasking).length > 0 ? (
+            {Object.keys(getProfileColumnMasking(detailProfile)).length > 0 ? (
               <div>
                 <p className="text-xs text-gray-500 mb-1 mt-3">Column Masking</p>
                 <div className="space-y-2">
-                  {Object.entries(detailProfile.columnMasking).map(([table, columns]) => (
+                  {Object.entries(getProfileColumnMasking(detailProfile)).map(([table, columns]) => (
                     <div
                       key={table}
                       className="card-nested px-4 py-3"
@@ -534,9 +548,15 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
         {allProfiles.map((profile) => {
           const profileStatus = serveStatus.profileStatuses?.[profile.name];
           const isActive = profileStatus?.active === true;
-          const basePath = profileStatus?.endpoint ?? `/mcp/${profile.name}`;
+          // Tenant-qualified path for non-default workspaces (same logic as
+          // the detail view above — see comment there for the rationale).
+          const tenant = getCurrentTenant();
+          const basePath = tenant === 'default'
+            ? (profileStatus?.endpoint ?? `/mcp/${profile.name}`)
+            : buildMcpPath(profile.name, tenant);
           const endpoint = `${window.location.origin}${basePath}`;
-          const tableCount = Object.keys(profile.selectedTables).length;
+          const tableCount = getProfileTableNames(profile).length;
+          const profileSources = getProfileRelationalSources(profile);
 
           const profileIdx = profiles.findIndex((p) => p.name === profile.name);
 
@@ -617,9 +637,9 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
                 <p className="text-xs text-gray-500">
                   {tableCount} table{tableCount !== 1 ? 's' : ''}
                 </p>
-                {profile.connections && profile.connections.length > 0 && (
+                {profileSources.length > 0 && (
                   <p className="text-xs text-gray-600 mt-0.5 truncate">
-                    {profile.connections.join(', ')}
+                    {profileSources.join(', ')}
                   </p>
                 )}
 

@@ -1,14 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from './ui/index.js';
+import WorkspaceSwitcher from './WorkspaceSwitcher.js';
 
 type NavigablePage =
   | 'dashboard'
   | 'mcp-list'
   | 'configurations'
+  | 'sources'
   | 'connections'
   | 'users'
   | 'metrics'
-  | 'settings';
+  | 'settings'
+  | 'knowledge'
+  | 'tenants';
 
 interface SidebarUser {
   email?: string;
@@ -144,6 +148,25 @@ const IconChartBar = (
   </svg>
 );
 
+// Building icon — workspaces / tenants
+const IconBuildingOffice = (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    fill="none"
+    viewBox="0 0 24 24"
+    strokeWidth={1.5}
+    stroke="currentColor"
+    className="w-4 h-4"
+    aria-hidden="true"
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21"
+    />
+  </svg>
+);
+
 const IconCog = (
   <svg
     xmlns="http://www.w3.org/2000/svg"
@@ -214,13 +237,20 @@ const NAV_SECTIONS: NavSection[] = [
         activeWhen: ['config-detail'],
         icon: IconRectangleStack,
       },
-      { page: 'connections', label: 'Connections', icon: IconCircleStack },
+      {
+        page: 'sources',
+        label: 'Sources',
+        // Highlight this entry when on the legacy 'connections' or 'knowledge' pages too
+        activeWhen: ['connections', 'knowledge'],
+        icon: IconCircleStack,
+      },
     ],
   },
   {
     label: 'Admin',
     items: [
       { page: 'users', label: 'Users', icon: IconUsers },
+      { page: 'tenants', label: 'Workspaces', icon: IconBuildingOffice },
       { page: 'metrics', label: 'Metrics', icon: IconChartBar },
       { page: 'settings', label: 'Settings', icon: IconCog },
     ],
@@ -241,7 +271,12 @@ function getInitials(email?: string): string {
   return (parts[0][0] + parts[1][0]).toUpperCase();
 }
 
-export default function Sidebar({ currentPage, onNavigate, user, onLogout }: SidebarProps) {
+export default function Sidebar({
+  currentPage,
+  onNavigate,
+  user,
+  onLogout,
+}: SidebarProps) {
   const [isOpen, setIsOpen] = useState(false);
 
   // Lock body scroll when the mobile drawer is open
@@ -341,6 +376,14 @@ export default function Sidebar({ currentPage, onNavigate, user, onLogout }: Sid
               </p>
             </div>
           </div>
+
+          {/* Workspace switcher — always visible, subtle when on 'default'.
+              We pass `onManageWorkspaces` so the dropdown surfaces a link to
+              the tenant CRUD page; the Sidebar already knows how to navigate. */}
+          <WorkspaceSwitcher
+            className="mt-3"
+            onManageWorkspaces={() => onNavigate('tenants')}
+          />
         </div>
 
         {/* Navigation sections — flex-1 so user footer is pushed to the bottom */}
@@ -385,6 +428,7 @@ export default function Sidebar({ currentPage, onNavigate, user, onLogout }: Sid
                     </li>
                   );
                 })}
+
               </ul>
             </div>
           ))}

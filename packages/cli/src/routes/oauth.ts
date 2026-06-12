@@ -2,7 +2,7 @@ import type { Express, Request, Response } from 'express';
 import crypto from 'crypto';
 import type { AppState } from '../state.js';
 import { getOAuthProvider } from '../oauth-providers.js';
-import { OidcProvider, type OidcSettingsConfig } from '@calame-ee/sso';
+import type { OidcProvider, OidcSettingsConfig } from '@calame-ee/sso';
 
 /**
  * Minimal OAuth 2.1 implementation for MCP auth (claude.ai compatibility).
@@ -804,11 +804,20 @@ function generateCodeChallenge(verifier: string): string {
   return crypto.createHash('sha256').update(verifier).digest('base64url');
 }
 
-/** Build an OidcProvider from app-state OIDC config (DB config preferred over env vars). */
+/** Build an OidcProvider from app-state OIDC config (DB config preferred over env vars).
+ *
+ * Returns `null` when the SSO runtime is not loaded (EE package absent) or when
+ * neither the DB config nor the env-var config have OIDC enabled. The callers that
+ * receive `null` already return 503 "SSO is not configured", so the apache-only
+ * code path is fully graceful.
+ */
 function buildOidcProvider(state: AppState): OidcProvider | null {
+  const Oidc = state.ssoRuntime?.OidcProvider;
+  if (!Oidc) return null;
+
   const dbConfig = state.oidcConfigManager?.getConfig() as OidcSettingsConfig | null | undefined;
   if (dbConfig?.enabled && dbConfig.issuerUrl && dbConfig.clientId) {
-    return new OidcProvider({
+    return new Oidc({
       issuerUrl: dbConfig.issuerUrl,
       clientId: dbConfig.clientId,
       clientSecret: dbConfig.clientSecret || undefined,
@@ -833,7 +842,7 @@ function buildOidcProvider(state: AppState): OidcProvider | null {
     }
   }
 
-  return new OidcProvider({
+  return new Oidc({
     issuerUrl: cfg.oidcIssuerUrl,
     clientId: cfg.oidcClientId,
     clientSecret: cfg.oidcClientSecret ?? undefined,

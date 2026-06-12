@@ -182,6 +182,9 @@ export class CalameDatabase {
         api_key TEXT NOT NULL,
         model TEXT,
         base_url TEXT,
+        capabilities TEXT,
+        embedding_model TEXT,
+        embedding_dimensions INTEGER,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
     `);

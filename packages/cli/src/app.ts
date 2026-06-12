@@ -17,12 +17,7 @@ import { AuditLog } from './audit.js';
 import { CalameDatabase } from './database.js';
 import { AiSettingsManager } from './ai-config.js';
 import { SmtpConfigManager } from './smtp-config.js';
-import {
-  OidcConfigManager,
-  registerOidcAuthRoutes,
-  registerOidcSettingsRoute,
-  type OidcSessionDeps,
-} from '@calame-ee/sso';
+import type { OidcSessionDeps } from '@calame-ee/sso';
 import { EmailService, isSmtpConfigured } from './email.js';
 import { loadYamlConfig } from './yaml-config.js';
 import type { AppConfig } from './config.js';
@@ -55,9 +50,13 @@ import { registerAiSettingsRoute } from './routes/ai-settings.js';
 import { registerSmtpSettingsRoute } from './routes/smtp-settings.js';
 import { registerHealthRoute } from './routes/health.js';
 import { registerMetricsRoute } from './routes/metrics.js';
+import { registerProfileScopesRoute } from './routes/profile-scopes.js';
+import { registerTenantsRoutes } from './routes/tenants.js';
+import { legacyPathDeprecationMiddleware } from './routes/source-aliases.js';
 import { TokenRateLimiter } from './rate-limiter.js';
 import { createSecretsProvider } from './secrets.js';
 import { LlmRouter } from './llm-router.js';
+import { getTenantId } from './tenancy.js';
 
 export function createApp(
   stateOrOptions?: AppState | { state?: AppState; config?: AppConfig; logger?: Logger },
@@ -115,8 +114,11 @@ export function createApp(
   if (!appState.smtpConfigManager) {
     appState.smtpConfigManager = new SmtpConfigManager(appState.db);
   }
-  if (!appState.oidcConfigManager) {
-    appState.oidcConfigManager = new OidcConfigManager(appState.db);
+  // OidcConfigManager is instantiated only when the EE SSO runtime is loaded.
+  // When @calame-ee/sso is absent, oidcConfigManager stays undefined and OIDC
+  // routes are not registered (see below).
+  if (!appState.oidcConfigManager && appState.ssoRuntime) {
+    appState.oidcConfigManager = new appState.ssoRuntime.OidcConfigManager(appState.db);
   }
   if (!appState.rateLimiter) {
     appState.rateLimiter = new TokenRateLimiter();
@@ -193,6 +195,11 @@ export function createApp(
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 
+  // Deprecation middleware for legacy path prefixes (Phase 2: logger-only).
+  // Adds Sunset header and logs once per unique path.
+  // TODO(Phase 3): flip to actual URL rewriting once canonical /api/sources/* handlers exist.
+  app.use(legacyPathDeprecationMiddleware());
+
   // Health check — public, no auth
   registerHealthRoute(app, appState);
 
@@ -202,9 +209,10 @@ export function createApp(
   // OAuth routes must be registered early (before SPA fallback)
   registerOAuthRoutes(app, appState);
 
-  // OIDC auth routes — always registered before admin session middleware (callback is public).
+  // OIDC auth routes — registered iff ssoRuntime is loaded (i.e. @calame-ee/sso is installed).
   // Each handler calls buildOidcProvider() at request time and returns 503 when not configured,
-  // so routes are safe to expose unconditionally — no restart needed after OIDC is enabled via UI.
+  // so routes are safe to expose unconditionally once the EE package is present — no restart
+  // needed after OIDC is enabled via the settings UI.
   const ssoDeps: OidcSessionDeps = {
     createSession,
     setSessionCookie,
@@ -220,7 +228,9 @@ export function createApp(
       return row?.password_hash ?? null;
     },
   };
-  registerOidcAuthRoutes(app, appState, ssoDeps);
+  if (appState.ssoRuntime) {
+    appState.ssoRuntime.registerOidcAuthRoutes(app, appState, ssoDeps);
+  }
 
   // Per-profile OAuth routes — registered before admin session middleware (callbacks are public).
   registerProfileOAuthRoutes(app, appState);
@@ -248,6 +258,7 @@ export function createApp(
   registerQueryRoute(app, appState);
   registerChatRoute(app, appState);
   registerProfilesRoute(app, appState);
+  registerProfileScopesRoute(app, appState);
   registerPiiRoute(app, appState);
   registerTokensRoute(app, appState);
   registerAuditRoute(app, appState);
@@ -257,9 +268,52 @@ export function createApp(
   registerUsersRoute(app, appState);
   registerAiSettingsRoute(app, appState);
   registerSmtpSettingsRoute(app, appState);
-  registerOidcSettingsRoute(app, appState, ssoDeps);
+  if (appState.ssoRuntime) {
+    appState.ssoRuntime.registerOidcSettingsRoute(app, appState, ssoDeps);
+  }
   registerMetricsRoute(app, appState);
   registerProfilePreviewRoute(app, appState);
+  registerTenantsRoutes(app, appState);
+
+  // Optional RAG routes — only registered when the EE rag-core package is
+  // installed AND `initRagRuntime` has been called against this state. The
+  // helper lazy-imports `@calame-ee/rag-core` and stashes the module on
+  // `state.ragRuntime.ragCore` so we can register routes synchronously here.
+  if (appState.ragRuntime && appState.db) {
+    const rt = appState.ragRuntime;
+    const db = appState.db;
+    const ragDeps = {
+      db: db.raw,
+      pipeline: rt.pipeline,
+      vectorStore: rt.vectorStore,
+      resolveEmbeddingClient: rt.resolveEmbeddingClient,
+      resolveEmbeddingSetting: rt.resolveEmbeddingSetting,
+      resolveConnector: rt.resolveConnector,
+      encryptConfig: rt.encryptConfig,
+      decryptConfig: rt.decryptConfig,
+      syncQueue: rt.syncQueue,
+      pollScheduler: rt.pollScheduler,
+      watchManager: rt.watchManager,
+      // Phase A multi-tenancy bridge — `ee/rag-core` MUST NOT import from
+      // `packages/cli`, so we wire the resolver here. Phase B will swap the
+      // helper to read from `req.auth` without touching this site.
+      getTenantId,
+      // Forward the cap config so the usage route can include the
+      // progress / threshold rollup in its response. The pipeline already
+      // received the same config at construction time inside rag-runtime.
+      capConfig: rt.capConfig,
+      onAudit: (entry: { type: string; payload: unknown; timestamp: string }) => {
+        log.info(`[rag-audit] ${entry.type} ${JSON.stringify(entry.payload)}`);
+      },
+    };
+    rt.ragCore.registerRagSourcesRoutes(app, ragDeps);
+    rt.ragCore.registerRagContentRoutes(app, ragDeps);
+    rt.ragCore.registerRagUploadRoutes(app, ragDeps);
+    rt.ragCore.registerRagIndexRoutes(app, ragDeps);
+    rt.ragCore.registerRagSearchRoutes(app, ragDeps);
+    rt.ragCore.registerRagUsageRoutes(app, ragDeps);
+    log.info('RAG routes registered on /api/rag/*');
+  }
 
   // GET /api/oauth-providers — list available OAuth provider options for the UI
   app.get('/api/oauth-providers', (_req, res) => {

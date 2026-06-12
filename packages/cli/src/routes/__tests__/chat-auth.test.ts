@@ -50,7 +50,6 @@ describe('POST /api/chat-auth/token', () => {
     const tokenProfile: ServeProfile = {
       name: 'data',
       label: 'Data',
-      selectedTables: {},
       authMode: 'token',
     };
     state.serveProfiles = { data: tokenProfile };
@@ -91,7 +90,7 @@ describe('POST /api/chat-auth/token', () => {
 
   it('returns 403 when profile authMode is "open"', async () => {
     state.serveProfiles = {
-      data: { name: 'data', label: 'Data', selectedTables: {}, authMode: 'open' },
+      data: { name: 'data', label: 'Data', authMode: 'open' },
     };
 
     const res = await request(app)
@@ -104,7 +103,7 @@ describe('POST /api/chat-auth/token', () => {
 
   it('accepts token when profile authMode is "calame"', async () => {
     state.serveProfiles = {
-      data: { name: 'data', label: 'Data', selectedTables: {}, authMode: 'calame' },
+      data: { name: 'data', label: 'Data', authMode: 'calame' },
     };
 
     const res = await request(app)

@@ -1,0 +1,2143 @@
+// SPDX-License-Identifier: BUSL-1.1
+// Copyright (c) 2026 Calame Tech inc. Licensed under the Business Source License 1.1.
+// See ee/LICENSE.BUSL at the root of the ee/ directory for terms.
+
+import { useMemo, useState } from 'react';
+import type { RagSourceType } from '../types.js';
+import type { RagSourcePublic } from '../routes/api-types.js';
+import { apiPost, apiPatch, ApiError } from './api.js';
+
+/**
+ * Minimal projection of `AiSetting` needed by the embeddings dropdown. The
+ * host (packages/web) owns the full type — we accept just the fields we need
+ * to keep this package decoupled from the AI Settings module.
+ */
+export interface AiSettingOption {
+  name: string;
+  label: string;
+  capabilities?: string[];
+  embeddingModel?: string;
+}
+
+interface SourceFormProps {
+  /** Pre-filled values when editing an existing source (API projection — decrypted). */
+  initial?: Partial<RagSourcePublic>;
+  onSave: (source: RagSourcePublic) => void;
+  onCancel: () => void;
+  aiSettings: AiSettingOption[];
+}
+
+interface SourceTypeMeta {
+  value: RagSourceType;
+  label: string;
+  available: boolean;
+}
+
+/**
+ * Allowed polling intervals exposed in the UI. Restricting the picker to a
+ * fixed enum (rather than a free-form number input) trades flexibility for
+ * an unambiguous UX:
+ *   - users can't accidentally configure a 1-second poll that DDoSes the
+ *     connector,
+ *   - the dropdown communicates the available cadences at a glance.
+ *
+ * The backend Zod schema accepts any integer in [60, 86400], so a future
+ * "Custom…" option can be added without a server change.
+ */
+interface PollingIntervalOption {
+  value: number | null;
+  label: string;
+}
+
+const POLLING_INTERVAL_OPTIONS: readonly PollingIntervalOption[] = [
+  { value: null, label: 'Désactivé (sync manuelle uniquement)' },
+  { value: 300, label: 'Toutes les 5 minutes' },
+  { value: 900, label: 'Toutes les 15 minutes' },
+  { value: 3600, label: 'Toutes les heures' },
+  { value: 21600, label: 'Toutes les 6 heures' },
+  { value: 86400, label: 'Tous les jours' },
+];
+
+const SOURCE_TYPES: readonly SourceTypeMeta[] = [
+  { value: 'local', label: 'Local (dossier)', available: true },
+  { value: 's3', label: 'S3 / R2 / MinIO', available: true },
+  { value: 'http', label: 'HTTP / URL', available: true },
+  { value: 'gdrive', label: 'Google Drive', available: true },
+  { value: 'gsheets', label: 'Google Sheets', available: true },
+  { value: 'sharepoint', label: 'SharePoint', available: true },
+  { value: 'notion', label: 'Notion', available: true },
+  { value: 'git', label: 'Git', available: false },
+];
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+interface LocalConfig {
+  rootPath: string;
+}
+
+interface S3Config {
+  bucket: string;
+  region: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  prefix?: string;
+  endpoint?: string;
+  forcePathStyle?: boolean;
+  includeGlobs?: string[];
+  excludeGlobs?: string[];
+}
+
+interface HttpConfig {
+  urls?: string[];
+  sitemapUrl?: string;
+  userAgent?: string;
+  timeoutMs?: number;
+  allowedHosts?: string[];
+  includeGlobs?: string[];
+  excludeGlobs?: string[];
+}
+
+interface GDriveConfig {
+  serviceAccountKey: Record<string, unknown>;
+  rootFolderId: string;
+  impersonateAs?: string;
+  recursive?: boolean;
+  includeMimeTypes?: string[];
+  excludeMimeTypes?: string[];
+}
+
+interface GSheetsConfig {
+  serviceAccountKey: Record<string, unknown>;
+  spreadsheetIds?: string[];
+  driveFolderId?: string;
+  impersonateAs?: string;
+  defaultRange?: string;
+  includeArchived?: boolean;
+}
+
+interface NotionConfig {
+  apiKey: string;
+  rootIds?: string[];
+  includeArchived?: boolean;
+}
+
+interface SharePointConfig {
+  tenantId: string;
+  clientId: string;
+  clientSecret: string;
+  siteUrl: string;
+  driveName?: string;
+  rootFolderPath?: string;
+  recursive?: boolean;
+  includeMimeTypes?: string[];
+  excludeMimeTypes?: string[];
+}
+
+/**
+ * Result of validating a pasted Service Account JSON. We surface a friendly
+ * message rather than `JSON.parse` exceptions so the admin sees what's wrong
+ * (and we never leak the parser's internal positional message).
+ */
+interface ServiceAccountKeyValidation {
+  /** Parsed object on success; null on failure. */
+  key: Record<string, unknown> | null;
+  /** Service account email pulled from the key (helper hint in the UI). */
+  clientEmail: string | null;
+  /** Human-readable error, or null when the key parses & has the required fields. */
+  error: string | null;
+}
+
+function validateServiceAccountKey(raw: string): ServiceAccountKeyValidation {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return { key: null, clientEmail: null, error: null };
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return { key: null, clientEmail: null, error: 'JSON invalide.' };
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { key: null, clientEmail: null, error: "Doit être un objet JSON." };
+  }
+  const obj = parsed as Record<string, unknown>;
+  const email = typeof obj.client_email === 'string' ? obj.client_email : null;
+  if (!email) {
+    return { key: null, clientEmail: null, error: 'Champ `client_email` manquant.' };
+  }
+  if (typeof obj.private_key !== 'string' || obj.private_key.length === 0) {
+    return { key: null, clientEmail: email, error: 'Champ `private_key` manquant.' };
+  }
+  return { key: obj, clientEmail: email, error: null };
+}
+
+/** Split a multi-line textarea value into trimmed, non-empty lines. */
+function parseLines(value: string): string[] {
+  return value
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+}
+
+/** Same as parseLines, used for glob patterns. */
+function parseGlobs(value: string): string[] {
+  return parseLines(value);
+}
+
+/**
+ * Extract the rootPath from the decrypted `config` object returned by the API.
+ * Falls back to an empty string so the admin can re-enter the path when the
+ * config object is null (decryption failure surfaced via `configError`).
+ */
+function extractRootPath(config: Record<string, unknown> | null | undefined): string {
+  if (!config) return '';
+  return typeof config.rootPath === 'string' ? config.rootPath : '';
+}
+
+function extractStr(config: Record<string, unknown> | null | undefined, key: string): string {
+  if (!config) return '';
+  return typeof config[key] === 'string' ? (config[key] as string) : '';
+}
+
+function extractBool(config: Record<string, unknown> | null | undefined, key: string): boolean {
+  if (!config) return false;
+  return config[key] === true;
+}
+
+function extractGlobsAsText(
+  config: Record<string, unknown> | null | undefined,
+  key: string,
+): string {
+  if (!config) return '';
+  const value = config[key];
+  if (!Array.isArray(value)) return '';
+  return (value as unknown[]).filter((v) => typeof v === 'string').join('\n');
+}
+
+/** Validate that a string is a valid http(s) URL. */
+function isValidHttpUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Sub-components (inline — small enough to keep in one file)
+// ---------------------------------------------------------------------------
+
+interface FieldLabelProps {
+  htmlFor: string;
+  required?: boolean;
+  children: React.ReactNode;
+}
+
+function FieldLabel({ htmlFor, required, children }: FieldLabelProps) {
+  return (
+    <label htmlFor={htmlFor} className="text-sm text-gray-400">
+      {children}
+      {required && <span className="text-red-400 ml-0.5">*</span>}
+    </label>
+  );
+}
+
+interface HelperTextProps {
+  children: React.ReactNode;
+}
+
+function HelperText({ children }: HelperTextProps) {
+  return <p className="text-xs text-gray-600 mt-1">{children}</p>;
+}
+
+// ---------------------------------------------------------------------------
+// Main component
+// ---------------------------------------------------------------------------
+
+export default function SourceForm({ initial, onSave, onCancel, aiSettings }: SourceFormProps) {
+  const isEditing = Boolean(initial?.id);
+
+  // ---- shared fields ----
+  const [name, setName] = useState(initial?.name ?? '');
+  const [type, setType] = useState<RagSourceType>(initial?.type ?? 'local');
+  const [embeddingSettingName, setEmbeddingSettingName] = useState(
+    initial?.embeddingSettingName ?? '',
+  );
+  // Polling interval — null means "manual sync only". Pre-fill from the
+  // existing source on edit so the dropdown shows the saved cadence rather
+  // than defaulting back to "off".
+  const [pollingIntervalSeconds, setPollingIntervalSeconds] = useState<number | null>(
+    initial?.pollingIntervalSeconds ?? null,
+  );
+
+  // ---- local fields ----
+  const [rootPath, setRootPath] = useState(extractRootPath(initial?.config));
+
+  // ---- s3 fields ----
+  const [s3Bucket, setS3Bucket] = useState(extractStr(initial?.config, 'bucket'));
+  const [s3Region, setS3Region] = useState(extractStr(initial?.config, 'region'));
+  const [s3AccessKeyId, setS3AccessKeyId] = useState(extractStr(initial?.config, 'accessKeyId'));
+  // Never pre-fill the secret — show "(unchanged)" placeholder in edit mode.
+  const [s3SecretAccessKey, setS3SecretAccessKey] = useState('');
+  const [s3Prefix, setS3Prefix] = useState(extractStr(initial?.config, 'prefix'));
+  const [s3Endpoint, setS3Endpoint] = useState(extractStr(initial?.config, 'endpoint'));
+  const [s3ForcePathStyle, setS3ForcePathStyle] = useState(
+    extractBool(initial?.config, 'forcePathStyle'),
+  );
+  const [s3IncludeGlobs, setS3IncludeGlobs] = useState(
+    extractGlobsAsText(initial?.config, 'includeGlobs'),
+  );
+  const [s3ExcludeGlobs, setS3ExcludeGlobs] = useState(
+    extractGlobsAsText(initial?.config, 'excludeGlobs'),
+  );
+  const [s3ShowAdvanced, setS3ShowAdvanced] = useState(false);
+
+  // ---- http fields ----
+  // 'urls' | 'sitemap' — determines which primary input is shown.
+  const [httpMode, setHttpMode] = useState<'urls' | 'sitemap'>(
+    initial?.config?.sitemapUrl && !initial?.config?.urls ? 'sitemap' : 'urls',
+  );
+  const [httpUrls, setHttpUrls] = useState(() => {
+    const v = initial?.config?.urls;
+    if (!Array.isArray(v)) return '';
+    return (v as unknown[]).filter((u) => typeof u === 'string').join('\n');
+  });
+  const [httpSitemapUrl, setHttpSitemapUrl] = useState(extractStr(initial?.config, 'sitemapUrl'));
+  const [httpUserAgent, setHttpUserAgent] = useState(extractStr(initial?.config, 'userAgent'));
+  const [httpTimeoutMs, setHttpTimeoutMs] = useState<number>(() => {
+    const v = initial?.config?.timeoutMs;
+    return typeof v === 'number' ? v : 10000;
+  });
+  const [httpAllowedHosts, setHttpAllowedHosts] = useState(
+    extractGlobsAsText(initial?.config, 'allowedHosts'),
+  );
+  const [httpIncludeGlobs, setHttpIncludeGlobs] = useState(
+    extractGlobsAsText(initial?.config, 'includeGlobs'),
+  );
+  const [httpExcludeGlobs, setHttpExcludeGlobs] = useState(
+    extractGlobsAsText(initial?.config, 'excludeGlobs'),
+  );
+  const [httpShowAdvanced, setHttpShowAdvanced] = useState(false);
+
+  // ---- URL validation for http mode ----
+  const httpUrlErrors = useMemo(() => {
+    if (httpMode !== 'urls') return [];
+    return parseLines(httpUrls).filter((u) => !isValidHttpUrl(u));
+  }, [httpMode, httpUrls]);
+
+  // ---- gdrive fields ----
+  // The Service Account JSON is sensitive; we never pre-fill the textarea.
+  // In edit mode the user leaves it blank to "keep the existing key" — same
+  // pattern as the S3 secretAccessKey field. The decrypted config returned
+  // from GET still carries the key so buildConfig() can re-inject it on save.
+  const [gdriveServiceAccountKey, setGdriveServiceAccountKey] = useState('');
+  const [gdriveRootFolderId, setGdriveRootFolderId] = useState(
+    extractStr(initial?.config, 'rootFolderId'),
+  );
+  const [gdriveImpersonateAs, setGdriveImpersonateAs] = useState(
+    extractStr(initial?.config, 'impersonateAs'),
+  );
+  const [gdriveRecursive, setGdriveRecursive] = useState<boolean>(() => {
+    if (!initial?.config) return true;
+    return initial.config.recursive === false ? false : true;
+  });
+  const [gdriveIncludeMimes, setGdriveIncludeMimes] = useState(
+    extractGlobsAsText(initial?.config, 'includeMimeTypes'),
+  );
+  const [gdriveExcludeMimes, setGdriveExcludeMimes] = useState(
+    extractGlobsAsText(initial?.config, 'excludeMimeTypes'),
+  );
+  const [gdriveShowAdvanced, setGdriveShowAdvanced] = useState(false);
+
+  // Live-validate the pasted JSON so we can show the service account email
+  // (so the user knows whom to share the folder with) and a clear error.
+  const gdriveKeyValidation = useMemo(
+    () => validateServiceAccountKey(gdriveServiceAccountKey),
+    [gdriveServiceAccountKey],
+  );
+
+  // ---- gsheets fields ----
+  // The Service Account JSON is sensitive — same edit-mode "(unchanged)"
+  // pattern as gdrive. The source mode toggles between explicit spreadsheet
+  // IDs and Drive folder enumeration; both can technically coexist, but the
+  // form keeps a single primary mode for clarity.
+  const [gsheetsServiceAccountKey, setGsheetsServiceAccountKey] = useState('');
+  const [gsheetsMode, setGsheetsMode] = useState<'ids' | 'folder'>(() => {
+    if (initial?.config?.driveFolderId && !initial?.config?.spreadsheetIds) return 'folder';
+    return 'ids';
+  });
+  const [gsheetsSpreadsheetIds, setGsheetsSpreadsheetIds] = useState(
+    extractGlobsAsText(initial?.config, 'spreadsheetIds'),
+  );
+  const [gsheetsDriveFolderId, setGsheetsDriveFolderId] = useState(
+    extractStr(initial?.config, 'driveFolderId'),
+  );
+  const [gsheetsImpersonateAs, setGsheetsImpersonateAs] = useState(
+    extractStr(initial?.config, 'impersonateAs'),
+  );
+  const [gsheetsDefaultRange, setGsheetsDefaultRange] = useState(
+    extractStr(initial?.config, 'defaultRange'),
+  );
+  const [gsheetsIncludeArchived, setGsheetsIncludeArchived] = useState<boolean>(
+    extractBool(initial?.config, 'includeArchived'),
+  );
+  const [gsheetsShowAdvanced, setGsheetsShowAdvanced] = useState(false);
+
+  const gsheetsKeyValidation = useMemo(
+    () => validateServiceAccountKey(gsheetsServiceAccountKey),
+    [gsheetsServiceAccountKey],
+  );
+
+  // ---- notion fields ----
+  // The API key is sensitive — never pre-fill in edit mode. Same pattern as
+  // the S3 secretAccessKey: blank field on edit means "keep current".
+  const [notionApiKey, setNotionApiKey] = useState('');
+  const [notionRootIds, setNotionRootIds] = useState(
+    extractGlobsAsText(initial?.config, 'rootIds'),
+  );
+  const [notionIncludeArchived, setNotionIncludeArchived] = useState<boolean>(
+    extractBool(initial?.config, 'includeArchived'),
+  );
+
+  // ---- sharepoint fields ----
+  // The client secret is sensitive — never pre-fill in edit mode. Same pattern
+  // as the S3 secretAccessKey: blank field on edit means "keep current".
+  const [spTenantId, setSpTenantId] = useState(extractStr(initial?.config, 'tenantId'));
+  const [spClientId, setSpClientId] = useState(extractStr(initial?.config, 'clientId'));
+  const [spClientSecret, setSpClientSecret] = useState('');
+  const [spSiteUrl, setSpSiteUrl] = useState(extractStr(initial?.config, 'siteUrl'));
+  const [spDriveName, setSpDriveName] = useState(extractStr(initial?.config, 'driveName'));
+  const [spRootFolderPath, setSpRootFolderPath] = useState(
+    extractStr(initial?.config, 'rootFolderPath'),
+  );
+  const [spRecursive, setSpRecursive] = useState<boolean>(() => {
+    if (!initial?.config) return true;
+    return initial.config.recursive === false ? false : true;
+  });
+  const [spIncludeMimes, setSpIncludeMimes] = useState(
+    extractGlobsAsText(initial?.config, 'includeMimeTypes'),
+  );
+  const [spExcludeMimes, setSpExcludeMimes] = useState(
+    extractGlobsAsText(initial?.config, 'excludeMimeTypes'),
+  );
+  const [spShowAdvanced, setSpShowAdvanced] = useState(false);
+
+  // ---- ui state ----
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [serverError, setServerError] = useState<string | null>(null);
+
+  const embeddingsCapableSettings = useMemo(
+    () => aiSettings.filter((s) => s.capabilities?.includes('embeddings')),
+    [aiSettings],
+  );
+
+  const selectedSetting = useMemo(
+    () => aiSettings.find((s) => s.name === embeddingSettingName) ?? null,
+    [aiSettings, embeddingSettingName],
+  );
+
+  const selectedSettingSupportsEmbeddings = Boolean(
+    selectedSetting?.capabilities?.includes('embeddings'),
+  );
+
+  // ---------------------------------------------------------------------------
+  // Validation
+  // ---------------------------------------------------------------------------
+
+  const validate = (): string | null => {
+    if (!name.trim()) return 'Le nom de la source est requis.';
+
+    if (type === 'local' && !rootPath.trim()) {
+      return 'Le chemin du dossier est requis.';
+    }
+
+    if (type === 's3') {
+      if (!s3Bucket.trim()) return 'Le nom du bucket S3 est requis.';
+      if (!s3Region.trim()) return 'La région S3 est requise.';
+      if (!s3AccessKeyId.trim()) return "L'Access Key ID est requis.";
+      // In edit mode the secret may be left blank (means "unchanged").
+      if (!isEditing && !s3SecretAccessKey) return 'Le Secret Access Key est requis.';
+    }
+
+    if (type === 'http') {
+      if (httpMode === 'urls') {
+        const urls = parseLines(httpUrls);
+        if (urls.length === 0) return 'Saisissez au moins une URL.';
+        if (httpUrlErrors.length > 0) {
+          return `${httpUrlErrors.length} URL(s) invalide(s) — vérifiez le format http(s)://.`;
+        }
+      }
+      if (httpMode === 'sitemap') {
+        if (!httpSitemapUrl.trim()) return "L'URL du sitemap est requise.";
+        if (!isValidHttpUrl(httpSitemapUrl.trim()))
+          return "L'URL du sitemap doit être une URL http(s):// valide.";
+      }
+    }
+
+    if (type === 'gdrive') {
+      if (!gdriveRootFolderId.trim()) return "L'ID du dossier Google Drive est requis.";
+      // In edit mode the JSON textarea may be left blank (means "keep current").
+      if (!isEditing && !gdriveServiceAccountKey.trim()) {
+        return 'Collez la clé JSON du Service Account.';
+      }
+      // If the user pasted something, it must validate.
+      if (gdriveServiceAccountKey.trim() && gdriveKeyValidation.error) {
+        return `Service Account JSON invalide : ${gdriveKeyValidation.error}`;
+      }
+    }
+
+    if (type === 'gsheets') {
+      // In edit mode the JSON textarea may be left blank (means "keep current").
+      if (!isEditing && !gsheetsServiceAccountKey.trim()) {
+        return 'Collez la clé JSON du Service Account.';
+      }
+      if (gsheetsServiceAccountKey.trim() && gsheetsKeyValidation.error) {
+        return `Service Account JSON invalide : ${gsheetsKeyValidation.error}`;
+      }
+      if (gsheetsMode === 'ids' && parseLines(gsheetsSpreadsheetIds).length === 0) {
+        return 'Renseignez au moins un ID de Google Sheet.';
+      }
+      if (gsheetsMode === 'folder' && !gsheetsDriveFolderId.trim()) {
+        return "L'ID du dossier Drive est requis.";
+      }
+    }
+
+    if (type === 'notion') {
+      // In edit mode the API key textarea may be left blank (means "keep current").
+      if (!isEditing && !notionApiKey.trim()) {
+        return "Le secret de l'intégration Notion est requis.";
+      }
+      if (notionApiKey.trim()) {
+        const k = notionApiKey.trim();
+        if (!k.startsWith('secret_') && !k.startsWith('ntn_')) {
+          return "La clé Notion doit commencer par `secret_` ou `ntn_`.";
+        }
+      }
+    }
+
+    if (type === 'sharepoint') {
+      if (!spTenantId.trim()) return "L'ID du tenant Azure AD est requis.";
+      if (!spClientId.trim()) return "L'ID de l'application (client ID) est requis.";
+      // In edit mode the secret may be left blank (means "unchanged").
+      if (!isEditing && !spClientSecret) {
+        return 'Le client secret de l\'application est requis.';
+      }
+      if (!spSiteUrl.trim()) return "L'URL du site SharePoint est requise.";
+    }
+
+    if (!embeddingSettingName) {
+      return 'Sélectionnez une configuration IA pour les embeddings.';
+    }
+    if (!selectedSettingSupportsEmbeddings) {
+      return "La configuration IA sélectionnée ne supporte pas les embeddings.";
+    }
+    return null;
+  };
+
+  // ---------------------------------------------------------------------------
+  // Payload builders
+  // ---------------------------------------------------------------------------
+
+  const buildLocalConfig = (): LocalConfig => ({
+    rootPath: rootPath.trim(),
+  });
+
+  const buildS3Config = (): S3Config => {
+    const config: S3Config = {
+      bucket: s3Bucket.trim(),
+      region: s3Region.trim(),
+      accessKeyId: s3AccessKeyId.trim(),
+      // If editing and the user left the field blank, omit it so the backend
+      // keeps the existing encrypted value. The PATCH handler merges partial config.
+      secretAccessKey: s3SecretAccessKey,
+    };
+    if (s3Prefix.trim()) config.prefix = s3Prefix.trim();
+    if (s3Endpoint.trim()) config.endpoint = s3Endpoint.trim();
+    if (s3ForcePathStyle) config.forcePathStyle = true;
+    const ig = parseGlobs(s3IncludeGlobs);
+    if (ig.length > 0) config.includeGlobs = ig;
+    const eg = parseGlobs(s3ExcludeGlobs);
+    if (eg.length > 0) config.excludeGlobs = eg;
+    return config;
+  };
+
+  const buildHttpConfig = (): HttpConfig => {
+    const config: HttpConfig = {};
+    if (httpMode === 'urls') {
+      const urls = parseLines(httpUrls);
+      if (urls.length > 0) config.urls = urls;
+    }
+    if (httpMode === 'sitemap' && httpSitemapUrl.trim()) {
+      config.sitemapUrl = httpSitemapUrl.trim();
+    }
+    if (httpUserAgent.trim()) config.userAgent = httpUserAgent.trim();
+    if (httpTimeoutMs !== 10000) config.timeoutMs = httpTimeoutMs;
+    const ah = parseLines(httpAllowedHosts);
+    if (ah.length > 0) config.allowedHosts = ah;
+    const ig = parseGlobs(httpIncludeGlobs);
+    if (ig.length > 0) config.includeGlobs = ig;
+    const eg = parseGlobs(httpExcludeGlobs);
+    if (eg.length > 0) config.excludeGlobs = eg;
+    return config;
+  };
+
+  const buildGDriveConfig = (): GDriveConfig => {
+    // When the JSON is blank in edit mode, re-inject the previously-saved key
+    // (decrypted by the GET endpoint and present in initial.config) so the
+    // PATCH payload doesn't wipe it. Same pattern as the S3 secretAccessKey.
+    let key: Record<string, unknown> | null = gdriveKeyValidation.key;
+    if (!key && isEditing) {
+      const existing = initial?.config?.['serviceAccountKey'];
+      if (existing && typeof existing === 'object' && !Array.isArray(existing)) {
+        key = existing as Record<string, unknown>;
+      } else if (typeof existing === 'string' && existing.length > 0) {
+        try {
+          key = JSON.parse(existing) as Record<string, unknown>;
+        } catch {
+          // Surface as validation error rather than crashing — but the
+          // validate() call above already gates on `gdriveKeyValidation.error`.
+          key = null;
+        }
+      }
+    }
+    const config: GDriveConfig = {
+      serviceAccountKey: key ?? {},
+      rootFolderId: gdriveRootFolderId.trim(),
+    };
+    if (gdriveImpersonateAs.trim()) config.impersonateAs = gdriveImpersonateAs.trim();
+    // Only send `recursive` when it differs from the default (true) — keeps
+    // the persisted config minimal.
+    if (gdriveRecursive === false) config.recursive = false;
+    const inc = parseLines(gdriveIncludeMimes);
+    if (inc.length > 0) config.includeMimeTypes = inc;
+    const exc = parseLines(gdriveExcludeMimes);
+    if (exc.length > 0) config.excludeMimeTypes = exc;
+    return config;
+  };
+
+  const buildGSheetsConfig = (): GSheetsConfig => {
+    // Re-inject the existing key when editing + blank field (same pattern as
+    // gdrive). The GET endpoint returns the decrypted key, so initial.config
+    // carries it.
+    let key: Record<string, unknown> | null = gsheetsKeyValidation.key;
+    if (!key && isEditing) {
+      const existing = initial?.config?.['serviceAccountKey'];
+      if (existing && typeof existing === 'object' && !Array.isArray(existing)) {
+        key = existing as Record<string, unknown>;
+      } else if (typeof existing === 'string' && existing.length > 0) {
+        try {
+          key = JSON.parse(existing) as Record<string, unknown>;
+        } catch {
+          key = null;
+        }
+      }
+    }
+    const config: GSheetsConfig = {
+      serviceAccountKey: key ?? {},
+    };
+    if (gsheetsMode === 'ids') {
+      const ids = parseLines(gsheetsSpreadsheetIds);
+      if (ids.length > 0) config.spreadsheetIds = ids;
+    } else {
+      if (gsheetsDriveFolderId.trim()) config.driveFolderId = gsheetsDriveFolderId.trim();
+    }
+    if (gsheetsImpersonateAs.trim()) config.impersonateAs = gsheetsImpersonateAs.trim();
+    if (gsheetsDefaultRange.trim()) config.defaultRange = gsheetsDefaultRange.trim();
+    if (gsheetsIncludeArchived) config.includeArchived = true;
+    return config;
+  };
+
+  const buildNotionConfig = (): NotionConfig => {
+    // Re-inject the existing apiKey when editing and the field is blank
+    // (same pattern as S3 secretAccessKey / GDrive serviceAccountKey).
+    let apiKey = notionApiKey.trim();
+    if (!apiKey && isEditing) {
+      const existing = initial?.config?.['apiKey'];
+      if (typeof existing === 'string' && existing.length > 0) {
+        apiKey = existing;
+      }
+    }
+    const config: NotionConfig = { apiKey };
+    const ids = parseLines(notionRootIds);
+    if (ids.length > 0) config.rootIds = ids;
+    if (notionIncludeArchived) config.includeArchived = true;
+    return config;
+  };
+
+  const buildSharePointConfig = (): SharePointConfig => {
+    // Re-inject the existing clientSecret when editing and the field is blank
+    // (same pattern as S3 secretAccessKey).
+    let clientSecret = spClientSecret;
+    if (!clientSecret && isEditing) {
+      const existing = initial?.config?.['clientSecret'];
+      if (typeof existing === 'string' && existing.length > 0) {
+        clientSecret = existing;
+      }
+    }
+    const config: SharePointConfig = {
+      tenantId: spTenantId.trim(),
+      clientId: spClientId.trim(),
+      clientSecret,
+      siteUrl: spSiteUrl.trim(),
+    };
+    if (spDriveName.trim()) config.driveName = spDriveName.trim();
+    if (spRootFolderPath.trim()) config.rootFolderPath = spRootFolderPath.trim();
+    // Only send `recursive` when it differs from the default (true) — keeps
+    // the persisted config minimal.
+    if (spRecursive === false) config.recursive = false;
+    const inc = parseLines(spIncludeMimes);
+    if (inc.length > 0) config.includeMimeTypes = inc;
+    const exc = parseLines(spExcludeMimes);
+    if (exc.length > 0) config.excludeMimeTypes = exc;
+    return config;
+  };
+
+  const buildConfig = (): Record<string, unknown> => {
+    if (type === 's3') {
+      const cfg = buildS3Config();
+      // Edit mode + blank secret field: re-inject the existing secret so the
+      // PATCH payload (full-replace semantics) doesn't wipe it. The GET
+      // returns the decrypted config to the frontend, so `initial.config`
+      // already carries the previous secret.
+      if (isEditing && !cfg.secretAccessKey) {
+        const existing = initial?.config?.['secretAccessKey'];
+        if (typeof existing === 'string' && existing.length > 0) {
+          return { ...cfg, secretAccessKey: existing } as unknown as Record<string, unknown>;
+        }
+      }
+      return cfg as unknown as Record<string, unknown>;
+    }
+    if (type === 'http') {
+      return buildHttpConfig() as unknown as Record<string, unknown>;
+    }
+    if (type === 'gdrive') {
+      return buildGDriveConfig() as unknown as Record<string, unknown>;
+    }
+    if (type === 'gsheets') {
+      return buildGSheetsConfig() as unknown as Record<string, unknown>;
+    }
+    if (type === 'notion') {
+      return buildNotionConfig() as unknown as Record<string, unknown>;
+    }
+    if (type === 'sharepoint') {
+      return buildSharePointConfig() as unknown as Record<string, unknown>;
+    }
+    return buildLocalConfig() as unknown as Record<string, unknown>;
+  };
+
+  const buildPayload = () => ({
+    name: name.trim(),
+    type,
+    config: buildConfig(),
+    embeddingSettingName,
+    // Always include the polling field. On PATCH this ensures a transition
+    // from "every 15 min" → "off" (null) actually clears the timer in the
+    // scheduler — the route handler keys off `hasOwnProperty` for that.
+    pollingIntervalSeconds,
+  });
+
+  // ---------------------------------------------------------------------------
+  // Actions
+  // ---------------------------------------------------------------------------
+
+  const handleSave = async () => {
+    setError(null);
+    setServerError(null);
+    setTestResult(null);
+    const validationError = validate();
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+    setSaving(true);
+    try {
+      const payload = buildPayload();
+      const saved =
+        isEditing && initial?.id
+          ? await apiPatch<RagSourcePublic>(
+              `/api/rag/sources/${encodeURIComponent(initial.id)}`,
+              payload,
+            )
+          : await apiPost<RagSourcePublic>('/api/rag/sources', payload);
+      onSave(saved);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        setError(
+          "Toutes les sources RAG doivent utiliser le même modèle d'embeddings (dimension fixe). " +
+            "Réessaie avec une config IA dont le modèle a la même dimension que les sources existantes.",
+        );
+        setServerError(err.message);
+      } else {
+        const message =
+          err instanceof ApiError
+            ? err.message
+            : err instanceof Error
+              ? err.message
+              : "Échec de l'enregistrement.";
+        setError(message);
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleTest = async () => {
+    setError(null);
+    setTestResult(null);
+    const validationError = validate();
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+    setTesting(true);
+    try {
+      if (isEditing && initial?.id) {
+        // Save current values first so the test runs against them.
+        await apiPatch<RagSourcePublic>(
+          `/api/rag/sources/${encodeURIComponent(initial.id)}`,
+          buildPayload(),
+        );
+        await apiPost(`/api/rag/sources/${encodeURIComponent(initial.id)}/test`, {});
+        setTestResult({ success: true, message: 'Connexion validée.' });
+      } else {
+        // For a new source there is no id yet; create-then-test.
+        const created = await apiPost<RagSourcePublic>('/api/rag/sources', buildPayload());
+        try {
+          await apiPost(`/api/rag/sources/${encodeURIComponent(created.id)}/test`, {});
+          setTestResult({ success: true, message: 'Source créée et connexion validée.' });
+        } catch (testErr) {
+          const message =
+            testErr instanceof ApiError
+              ? testErr.message
+              : testErr instanceof Error
+                ? testErr.message
+                : 'Échec du test.';
+          setTestResult({
+            success: false,
+            message: `Source créée, mais test échoué : ${message}`,
+          });
+        }
+        onSave(created);
+      }
+    } catch (err) {
+      const message =
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : 'Échec du test.';
+      setTestResult({ success: false, message });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  // ---------------------------------------------------------------------------
+  // Render
+  // ---------------------------------------------------------------------------
+
+  return (
+    <div className="card-primary p-5 space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="heading-md text-xl">
+          {isEditing ? 'Modifier la source' : 'Nouvelle source'}
+        </h3>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="text-xs text-gray-400 hover:text-gray-200"
+        >
+          Fermer
+        </button>
+      </div>
+
+      {/* Name */}
+      <div>
+        <FieldLabel htmlFor="rag-source-name" required>
+          Nom de la source
+        </FieldLabel>
+        <input
+          id="rag-source-name"
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Documentation produit"
+          className="input-editorial w-full text-sm mt-1"
+        />
+      </div>
+
+      {/* Type */}
+      <div>
+        <FieldLabel htmlFor="rag-source-type" required>
+          Type
+        </FieldLabel>
+        <select
+          id="rag-source-type"
+          value={type}
+          onChange={(e) => setType(e.target.value as RagSourceType)}
+          disabled={isEditing}
+          className="input-editorial w-full text-sm mt-1 disabled:opacity-60"
+        >
+          {SOURCE_TYPES.map((t) => (
+            <option key={t.value} value={t.value} disabled={!t.available} className="bg-gray-800">
+              {t.label}
+              {!t.available ? ' — Bientôt' : ''}
+            </option>
+          ))}
+        </select>
+        {isEditing && (
+          <p className="text-xs text-gray-600 mt-1">
+            Le type d'une source ne peut pas être modifié après création.
+          </p>
+        )}
+      </div>
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Local config                                                         */}
+      {/* ------------------------------------------------------------------ */}
+      {type === 'local' && (
+        <div>
+          <FieldLabel htmlFor="rag-source-rootpath" required>
+            Chemin absolu du dossier
+          </FieldLabel>
+          <div className="flex items-center gap-2 mt-1">
+            <input
+              id="rag-source-rootpath"
+              type="text"
+              value={rootPath}
+              onChange={(e) => setRootPath(e.target.value)}
+              placeholder="/data/kb/produit"
+              className="input-editorial flex-1 text-sm"
+            />
+            <button
+              type="button"
+              onClick={() => void handleTest()}
+              disabled={testing || saving}
+              className="px-3 py-2 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-300 text-sm font-medium transition-all duration-200 disabled:opacity-50"
+            >
+              {testing ? 'Test…' : 'Tester'}
+            </button>
+          </div>
+          <HelperText>
+            Le serveur doit pouvoir lire ce chemin. Les fichiers ajoutés ultérieurement sont indexés
+            à la prochaine synchronisation.
+          </HelperText>
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* S3 / R2 / MinIO config                                               */}
+      {/* ------------------------------------------------------------------ */}
+      {type === 's3' && (
+        <div className="space-y-4">
+          {/* Required fields */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <FieldLabel htmlFor="s3-bucket" required>
+                Bucket
+              </FieldLabel>
+              <input
+                id="s3-bucket"
+                type="text"
+                value={s3Bucket}
+                onChange={(e) => setS3Bucket(e.target.value)}
+                placeholder="my-knowledge-bucket"
+                className="input-editorial w-full text-sm mt-1"
+                autoComplete="off"
+              />
+            </div>
+            <div>
+              <FieldLabel htmlFor="s3-region" required>
+                Région
+              </FieldLabel>
+              <input
+                id="s3-region"
+                type="text"
+                value={s3Region}
+                onChange={(e) => setS3Region(e.target.value)}
+                placeholder="us-east-1"
+                className="input-editorial w-full text-sm mt-1"
+                autoComplete="off"
+              />
+              <HelperText>Utilisez 'auto' pour Cloudflare R2.</HelperText>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <FieldLabel htmlFor="s3-access-key-id" required>
+                Access Key ID
+              </FieldLabel>
+              <input
+                id="s3-access-key-id"
+                type="text"
+                value={s3AccessKeyId}
+                onChange={(e) => setS3AccessKeyId(e.target.value)}
+                placeholder="AKIAIOSFODNN7EXAMPLE"
+                className="input-editorial w-full text-sm mt-1"
+                autoComplete="off"
+              />
+            </div>
+            <div>
+              <FieldLabel htmlFor="s3-secret-access-key" required={!isEditing}>
+                Secret Access Key
+              </FieldLabel>
+              <input
+                id="s3-secret-access-key"
+                type="password"
+                value={s3SecretAccessKey}
+                onChange={(e) => setS3SecretAccessKey(e.target.value)}
+                placeholder={isEditing ? '(inchangé)' : '••••••••••••••••••••'}
+                className="input-editorial w-full text-sm mt-1"
+                autoComplete="new-password"
+              />
+              {isEditing && (
+                <HelperText>Laissez vide pour conserver la clé existante.</HelperText>
+              )}
+            </div>
+          </div>
+
+          {/* Advanced section */}
+          <div className="border border-white/5 rounded-lg overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setS3ShowAdvanced((v) => !v)}
+              className="w-full flex items-center justify-between px-3 py-2.5 text-xs text-gray-400 hover:text-gray-300 hover:bg-white/[0.03] transition-colors"
+              aria-expanded={s3ShowAdvanced}
+            >
+              <span className="font-medium">Avancé (optionnel)</span>
+              <span aria-hidden="true" className="text-gray-600">
+                {s3ShowAdvanced ? '▲' : '▼'}
+              </span>
+            </button>
+
+            {s3ShowAdvanced && (
+              <div className="px-3 pb-4 pt-1 space-y-3 border-t border-white/5">
+                <div>
+                  <FieldLabel htmlFor="s3-prefix">Préfixe (racine logique)</FieldLabel>
+                  <input
+                    id="s3-prefix"
+                    type="text"
+                    value={s3Prefix}
+                    onChange={(e) => setS3Prefix(e.target.value)}
+                    placeholder="docs/"
+                    className="input-editorial w-full text-sm mt-1"
+                  />
+                  <HelperText>Racine logique dans le bucket. Laisser vide pour tout le bucket.</HelperText>
+                </div>
+
+                <div>
+                  <FieldLabel htmlFor="s3-endpoint">Endpoint personnalisé</FieldLabel>
+                  <input
+                    id="s3-endpoint"
+                    type="text"
+                    value={s3Endpoint}
+                    onChange={(e) => setS3Endpoint(e.target.value)}
+                    placeholder="https://<account>.r2.cloudflarestorage.com"
+                    className="input-editorial w-full text-sm mt-1"
+                  />
+                  <HelperText>Pour R2 / MinIO. Laisser vide pour AWS S3 standard.</HelperText>
+                </div>
+
+                <div className="flex items-start gap-2 pt-1">
+                  <input
+                    id="s3-force-path-style"
+                    type="checkbox"
+                    checked={s3ForcePathStyle}
+                    onChange={(e) => setS3ForcePathStyle(e.target.checked)}
+                    className="mt-0.5 accent-os-500 focus:ring-2 focus:ring-os-500"
+                  />
+                  <label htmlFor="s3-force-path-style" className="text-sm text-gray-400 select-none">
+                    Force path-style
+                    <HelperText>Requis pour MinIO. Désactiver pour AWS S3 et Cloudflare R2.</HelperText>
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <FieldLabel htmlFor="s3-include-globs">Include globs</FieldLabel>
+                    <textarea
+                      id="s3-include-globs"
+                      value={s3IncludeGlobs}
+                      onChange={(e) => setS3IncludeGlobs(e.target.value)}
+                      placeholder={'**/*.md\n**/*.pdf'}
+                      rows={3}
+                      className="input-editorial w-full text-sm mt-1 font-mono-plex resize-y"
+                    />
+                    <HelperText>Une glob par ligne. Vide = tout inclure.</HelperText>
+                  </div>
+                  <div>
+                    <FieldLabel htmlFor="s3-exclude-globs">Exclude globs</FieldLabel>
+                    <textarea
+                      id="s3-exclude-globs"
+                      value={s3ExcludeGlobs}
+                      onChange={(e) => setS3ExcludeGlobs(e.target.value)}
+                      placeholder={'**/node_modules/**\n**/.git/**'}
+                      rows={3}
+                      className="input-editorial w-full text-sm mt-1 font-mono-plex resize-y"
+                    />
+                    <HelperText>Une glob par ligne.</HelperText>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Test button */}
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => void handleTest()}
+              disabled={testing || saving}
+              className="px-3 py-2 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-300 text-sm font-medium transition-all duration-200 disabled:opacity-50"
+            >
+              {testing ? 'Test…' : 'Tester la connexion'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* HTTP / URL config                                                    */}
+      {/* ------------------------------------------------------------------ */}
+      {type === 'http' && (
+        <div className="space-y-4">
+          {/* Mode picker */}
+          <div>
+            <fieldset>
+              <legend className="text-sm text-gray-400 mb-2">
+                Mode d'indexation <span className="text-red-400">*</span>
+              </legend>
+              <div className="flex gap-4">
+                <label className="flex items-center gap-2 cursor-pointer select-none text-sm text-gray-300">
+                  <input
+                    type="radio"
+                    name="http-mode"
+                    value="urls"
+                    checked={httpMode === 'urls'}
+                    onChange={() => setHttpMode('urls')}
+                    className="accent-os-500"
+                  />
+                  Liste d'URLs fixe
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer select-none text-sm text-gray-300">
+                  <input
+                    type="radio"
+                    name="http-mode"
+                    value="sitemap"
+                    checked={httpMode === 'sitemap'}
+                    onChange={() => setHttpMode('sitemap')}
+                    className="accent-os-500"
+                  />
+                  Sitemap XML
+                </label>
+              </div>
+            </fieldset>
+          </div>
+
+          {/* URLs textarea */}
+          {httpMode === 'urls' && (
+            <div>
+              <FieldLabel htmlFor="http-urls" required>
+                URLs à indexer
+              </FieldLabel>
+              <textarea
+                id="http-urls"
+                value={httpUrls}
+                onChange={(e) => setHttpUrls(e.target.value)}
+                placeholder={'https://docs.exemple.com/guide\nhttps://docs.exemple.com/api'}
+                rows={5}
+                className={`input-editorial w-full text-sm mt-1 font-mono-plex resize-y ${
+                  httpUrlErrors.length > 0 ? 'border-red-600/60' : ''
+                }`}
+              />
+              {httpUrlErrors.length > 0 && (
+                <div className="mt-1 space-y-0.5">
+                  {httpUrlErrors.map((url) => (
+                    <p key={url} className="text-xs text-red-400 font-mono-plex">
+                      URL invalide : {url}
+                    </p>
+                  ))}
+                </div>
+              )}
+              <HelperText>Une URL http(s):// par ligne.</HelperText>
+            </div>
+          )}
+
+          {/* Sitemap URL */}
+          {httpMode === 'sitemap' && (
+            <div>
+              <FieldLabel htmlFor="http-sitemap-url" required>
+                URL du sitemap
+              </FieldLabel>
+              <input
+                id="http-sitemap-url"
+                type="text"
+                value={httpSitemapUrl}
+                onChange={(e) => setHttpSitemapUrl(e.target.value)}
+                placeholder="https://docs.exemple.com/sitemap.xml"
+                className="input-editorial w-full text-sm mt-1"
+              />
+              <HelperText>
+                Le connecteur fetche le XML et indexe chaque entrée &lt;loc&gt;.
+              </HelperText>
+            </div>
+          )}
+
+          {/* Common fields (always visible) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <FieldLabel htmlFor="http-user-agent">User-Agent</FieldLabel>
+              <input
+                id="http-user-agent"
+                type="text"
+                value={httpUserAgent}
+                onChange={(e) => setHttpUserAgent(e.target.value)}
+                placeholder="CalameRAG/1.0"
+                className="input-editorial w-full text-sm mt-1"
+              />
+              <HelperText>Envoyé dans chaque requête HTTP.</HelperText>
+            </div>
+            <div>
+              <FieldLabel htmlFor="http-timeout">Timeout (ms)</FieldLabel>
+              <input
+                id="http-timeout"
+                type="number"
+                value={httpTimeoutMs}
+                min={1000}
+                max={60000}
+                step={1000}
+                onChange={(e) => setHttpTimeoutMs(Number(e.target.value))}
+                className="input-editorial w-full text-sm mt-1"
+              />
+              <HelperText>Min 1 000 ms, max 60 000 ms. Défaut : 10 000.</HelperText>
+            </div>
+          </div>
+
+          {/* Advanced section */}
+          <div className="border border-white/5 rounded-lg overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setHttpShowAdvanced((v) => !v)}
+              className="w-full flex items-center justify-between px-3 py-2.5 text-xs text-gray-400 hover:text-gray-300 hover:bg-white/[0.03] transition-colors"
+              aria-expanded={httpShowAdvanced}
+            >
+              <span className="font-medium">Avancé (filtres, sécurité)</span>
+              <span aria-hidden="true" className="text-gray-600">
+                {httpShowAdvanced ? '▲' : '▼'}
+              </span>
+            </button>
+
+            {httpShowAdvanced && (
+              <div className="px-3 pb-4 pt-1 space-y-3 border-t border-white/5">
+                <div>
+                  <FieldLabel htmlFor="http-allowed-hosts">Hosts autorisés</FieldLabel>
+                  <textarea
+                    id="http-allowed-hosts"
+                    value={httpAllowedHosts}
+                    onChange={(e) => setHttpAllowedHosts(e.target.value)}
+                    placeholder={'docs.exemple.com\nblog.exemple.com'}
+                    rows={3}
+                    className="input-editorial w-full text-sm mt-1 font-mono-plex resize-y"
+                  />
+                  <HelperText>
+                    Allowlist de sécurité. Laisser vide pour autoriser tous les hosts des URLs
+                    indexées. Protège contre les docIds malicieux.
+                  </HelperText>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <FieldLabel htmlFor="http-include-globs">Include globs (pathname)</FieldLabel>
+                    <textarea
+                      id="http-include-globs"
+                      value={httpIncludeGlobs}
+                      onChange={(e) => setHttpIncludeGlobs(e.target.value)}
+                      placeholder={'/docs/**\n/blog/**'}
+                      rows={3}
+                      className="input-editorial w-full text-sm mt-1 font-mono-plex resize-y"
+                    />
+                    <HelperText>Appliqués au pathname de l'URL. Vide = tout inclure.</HelperText>
+                  </div>
+                  <div>
+                    <FieldLabel htmlFor="http-exclude-globs">Exclude globs (pathname)</FieldLabel>
+                    <textarea
+                      id="http-exclude-globs"
+                      value={httpExcludeGlobs}
+                      onChange={(e) => setHttpExcludeGlobs(e.target.value)}
+                      placeholder={'/private/**\n/admin/**'}
+                      rows={3}
+                      className="input-editorial w-full text-sm mt-1 font-mono-plex resize-y"
+                    />
+                    <HelperText>Une glob par ligne.</HelperText>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Test button */}
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => void handleTest()}
+              disabled={testing || saving}
+              className="px-3 py-2 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-300 text-sm font-medium transition-all duration-200 disabled:opacity-50"
+            >
+              {testing ? 'Test…' : 'Tester la connexion'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Google Drive config                                                  */}
+      {/* ------------------------------------------------------------------ */}
+      {type === 'gdrive' && (
+        <div className="space-y-4">
+          {/* Setup helper — admin-facing onboarding steps. */}
+          <div className="p-3 rounded-lg bg-os-950/30 border border-os-900/40 text-xs text-gray-400 space-y-1">
+            <p className="font-medium text-gray-300">Préparation du Service Account</p>
+            <ol className="list-decimal list-inside space-y-0.5 ml-1">
+              <li>Créer un Service Account dans Google Cloud Console.</li>
+              <li>Activer l'API Google Drive sur le projet.</li>
+              <li>Générer et télécharger la clé JSON du Service Account.</li>
+              <li>
+                Partager le dossier Drive avec l'email du Service Account
+                (champ <span className="font-mono-plex">client_email</span> de la clé JSON,
+                accès Viewer suffisant).
+              </li>
+            </ol>
+          </div>
+
+          {/* Service Account JSON */}
+          <div>
+            <FieldLabel htmlFor="gdrive-key" required={!isEditing}>
+              Clé JSON du Service Account
+            </FieldLabel>
+            <textarea
+              id="gdrive-key"
+              value={gdriveServiceAccountKey}
+              onChange={(e) => setGdriveServiceAccountKey(e.target.value)}
+              placeholder={
+                isEditing
+                  ? '(inchangé — laissez vide pour conserver la clé existante)'
+                  : '{ "type": "service_account", "client_email": "...", "private_key": "...", ... }'
+              }
+              rows={7}
+              autoComplete="off"
+              spellCheck={false}
+              className={`input-editorial w-full text-xs mt-1 font-mono-plex resize-y ${
+                gdriveKeyValidation.error ? 'border-red-600/60' : ''
+              }`}
+            />
+            {gdriveKeyValidation.error && (
+              <p className="text-xs text-red-400 mt-1">
+                {gdriveKeyValidation.error}
+              </p>
+            )}
+            {gdriveKeyValidation.clientEmail && !gdriveKeyValidation.error && (
+              <p className="text-xs text-green-400 mt-1">
+                Service Account détecté :{' '}
+                <span className="font-mono-plex">{gdriveKeyValidation.clientEmail}</span>
+              </p>
+            )}
+            {isEditing && (
+              <HelperText>Laissez vide pour conserver la clé enregistrée.</HelperText>
+            )}
+          </div>
+
+          {/* Root folder ID */}
+          <div>
+            <FieldLabel htmlFor="gdrive-root" required>
+              ID du dossier racine
+            </FieldLabel>
+            <input
+              id="gdrive-root"
+              type="text"
+              value={gdriveRootFolderId}
+              onChange={(e) => setGdriveRootFolderId(e.target.value)}
+              placeholder="1A2B3C4D5E6F7G8H9I0J"
+              className="input-editorial w-full text-sm mt-1 font-mono-plex"
+              autoComplete="off"
+            />
+            <HelperText>
+              Dans l'URL{' '}
+              <span className="font-mono-plex">drive.google.com/drive/folders/</span>
+              <span className="font-mono-plex font-semibold text-gray-400">&lt;cet ID&gt;</span>.
+              Le dossier doit être partagé avec le Service Account.
+            </HelperText>
+          </div>
+
+          {/* Recursive checkbox */}
+          <div className="flex items-start gap-2">
+            <input
+              id="gdrive-recursive"
+              type="checkbox"
+              checked={gdriveRecursive}
+              onChange={(e) => setGdriveRecursive(e.target.checked)}
+              className="mt-0.5 accent-os-500 focus:ring-2 focus:ring-os-500"
+            />
+            <label htmlFor="gdrive-recursive" className="text-sm text-gray-400 select-none">
+              Indexer récursivement les sous-dossiers
+              <HelperText>Désactivez pour n'indexer que le dossier racine.</HelperText>
+            </label>
+          </div>
+
+          {/* Advanced section */}
+          <div className="border border-white/5 rounded-lg overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setGdriveShowAdvanced((v) => !v)}
+              className="w-full flex items-center justify-between px-3 py-2.5 text-xs text-gray-400 hover:text-gray-300 hover:bg-white/[0.03] transition-colors"
+              aria-expanded={gdriveShowAdvanced}
+            >
+              <span className="font-medium">Avancé (impersonation, filtres mime)</span>
+              <span aria-hidden="true" className="text-gray-600">
+                {gdriveShowAdvanced ? '▲' : '▼'}
+              </span>
+            </button>
+
+            {gdriveShowAdvanced && (
+              <div className="px-3 pb-4 pt-1 space-y-3 border-t border-white/5">
+                <div>
+                  <FieldLabel htmlFor="gdrive-impersonate">Impersonate as</FieldLabel>
+                  <input
+                    id="gdrive-impersonate"
+                    type="text"
+                    value={gdriveImpersonateAs}
+                    onChange={(e) => setGdriveImpersonateAs(e.target.value)}
+                    placeholder="user@example.com"
+                    className="input-editorial w-full text-sm mt-1"
+                    autoComplete="off"
+                  />
+                  <HelperText>
+                    Délégation à l'échelle du domaine (Domain-wide delegation) uniquement.
+                    Laissez vide dans la plupart des cas.
+                  </HelperText>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <FieldLabel htmlFor="gdrive-include-mimes">Include mime types</FieldLabel>
+                    <textarea
+                      id="gdrive-include-mimes"
+                      value={gdriveIncludeMimes}
+                      onChange={(e) => setGdriveIncludeMimes(e.target.value)}
+                      placeholder={'application/pdf\napplication/vnd.google-apps.document'}
+                      rows={3}
+                      className="input-editorial w-full text-sm mt-1 font-mono-plex resize-y"
+                    />
+                    <HelperText>Un mime type par ligne. Vide = tout inclure.</HelperText>
+                  </div>
+                  <div>
+                    <FieldLabel htmlFor="gdrive-exclude-mimes">Exclude mime types</FieldLabel>
+                    <textarea
+                      id="gdrive-exclude-mimes"
+                      value={gdriveExcludeMimes}
+                      onChange={(e) => setGdriveExcludeMimes(e.target.value)}
+                      placeholder={'application/vnd.google-apps.drawing\nimage/png'}
+                      rows={3}
+                      className="input-editorial w-full text-sm mt-1 font-mono-plex resize-y"
+                    />
+                    <HelperText>Un mime type par ligne.</HelperText>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Test button */}
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => void handleTest()}
+              disabled={testing || saving}
+              className="px-3 py-2 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-300 text-sm font-medium transition-all duration-200 disabled:opacity-50"
+            >
+              {testing ? 'Test…' : 'Tester la connexion'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Google Sheets config                                                 */}
+      {/* ------------------------------------------------------------------ */}
+      {type === 'gsheets' && (
+        <div className="space-y-4">
+          {/* Setup helper — admin-facing onboarding steps. */}
+          <div className="p-3 rounded-lg bg-os-950/30 border border-os-900/40 text-xs text-gray-400 space-y-1">
+            <p className="font-medium text-gray-300">Préparation du Service Account</p>
+            <ol className="list-decimal list-inside space-y-0.5 ml-1">
+              <li>
+                Réutiliser le Service Account de Google Drive si vous en avez déjà configuré un.
+              </li>
+              <li>
+                Activer l'API Google Sheets <em>et</em> l'API Google Drive sur le projet GCP.
+              </li>
+              <li>
+                Partager chaque Google Sheet (ou le dossier Drive d'énumération) avec l'email
+                du Service Account (accès Viewer suffisant).
+              </li>
+            </ol>
+          </div>
+
+          {/* Service Account JSON */}
+          <div>
+            <FieldLabel htmlFor="gsheets-key" required={!isEditing}>
+              Clé JSON du Service Account
+            </FieldLabel>
+            <textarea
+              id="gsheets-key"
+              value={gsheetsServiceAccountKey}
+              onChange={(e) => setGsheetsServiceAccountKey(e.target.value)}
+              placeholder={
+                isEditing
+                  ? '(inchangé — laissez vide pour conserver la clé existante)'
+                  : '{ "type": "service_account", "client_email": "...", "private_key": "...", ... }'
+              }
+              rows={7}
+              autoComplete="off"
+              spellCheck={false}
+              className={`input-editorial w-full text-xs mt-1 font-mono-plex resize-y ${
+                gsheetsKeyValidation.error ? 'border-red-600/60' : ''
+              }`}
+            />
+            {gsheetsKeyValidation.error && (
+              <p className="text-xs text-red-400 mt-1">{gsheetsKeyValidation.error}</p>
+            )}
+            {gsheetsKeyValidation.clientEmail && !gsheetsKeyValidation.error && (
+              <p className="text-xs text-green-400 mt-1">
+                Service Account détecté :{' '}
+                <span className="font-mono-plex">{gsheetsKeyValidation.clientEmail}</span>
+              </p>
+            )}
+            {isEditing && (
+              <HelperText>Laissez vide pour conserver la clé enregistrée.</HelperText>
+            )}
+          </div>
+
+          {/* Mode toggle: explicit IDs vs Drive folder enumeration */}
+          <div>
+            <FieldLabel htmlFor="gsheets-mode" required>
+              Source des Google Sheets
+            </FieldLabel>
+            <div className="flex items-center gap-3 mt-1.5">
+              <label className="flex items-center gap-1.5 text-sm text-gray-300 cursor-pointer">
+                <input
+                  type="radio"
+                  name="gsheets-mode"
+                  value="ids"
+                  checked={gsheetsMode === 'ids'}
+                  onChange={() => setGsheetsMode('ids')}
+                  className="accent-os-500 focus:ring-2 focus:ring-os-500"
+                />
+                IDs explicites
+              </label>
+              <label className="flex items-center gap-1.5 text-sm text-gray-300 cursor-pointer">
+                <input
+                  type="radio"
+                  name="gsheets-mode"
+                  value="folder"
+                  checked={gsheetsMode === 'folder'}
+                  onChange={() => setGsheetsMode('folder')}
+                  className="accent-os-500 focus:ring-2 focus:ring-os-500"
+                />
+                Dossier Drive
+              </label>
+            </div>
+          </div>
+
+          {gsheetsMode === 'ids' && (
+            <div>
+              <FieldLabel htmlFor="gsheets-ids" required>
+                IDs des Google Sheets (un par ligne)
+              </FieldLabel>
+              <textarea
+                id="gsheets-ids"
+                value={gsheetsSpreadsheetIds}
+                onChange={(e) => setGsheetsSpreadsheetIds(e.target.value)}
+                placeholder={'1A2B3C4D5E6F7G8H9I0J\n2B3C4D5E6F7G8H9I0J1A'}
+                rows={4}
+                className="input-editorial w-full text-sm mt-1 font-mono-plex resize-y"
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <HelperText>
+                Dans l'URL{' '}
+                <span className="font-mono-plex">docs.google.com/spreadsheets/d/</span>
+                <span className="font-mono-plex font-semibold text-gray-400">
+                  &lt;cet ID&gt;
+                </span>
+                /edit. Chaque onglet du classeur devient un document distinct.
+              </HelperText>
+            </div>
+          )}
+
+          {gsheetsMode === 'folder' && (
+            <div>
+              <FieldLabel htmlFor="gsheets-folder" required>
+                ID du dossier Drive
+              </FieldLabel>
+              <input
+                id="gsheets-folder"
+                type="text"
+                value={gsheetsDriveFolderId}
+                onChange={(e) => setGsheetsDriveFolderId(e.target.value)}
+                placeholder="1A2B3C4D5E6F7G8H9I0J"
+                className="input-editorial w-full text-sm mt-1 font-mono-plex"
+                autoComplete="off"
+              />
+              <HelperText>
+                Tous les Google Sheets <em>directement</em> dans ce dossier seront indexés.
+                Aucune récursion (les sous-dossiers sont ignorés).
+              </HelperText>
+            </div>
+          )}
+
+          {/* Include archived */}
+          <div className="flex items-start gap-2">
+            <input
+              id="gsheets-include-archived"
+              type="checkbox"
+              checked={gsheetsIncludeArchived}
+              onChange={(e) => setGsheetsIncludeArchived(e.target.checked)}
+              className="mt-0.5 accent-os-500 focus:ring-2 focus:ring-os-500"
+            />
+            <label
+              htmlFor="gsheets-include-archived"
+              className="text-sm text-gray-400 select-none"
+            >
+              Inclure les onglets archivés
+              <HelperText>
+                Les onglets dont le nom commence par <span className="font-mono-plex">archive_</span>{' '}
+                ou <span className="font-mono-plex">_old</span> sont ignorés par défaut.
+              </HelperText>
+            </label>
+          </div>
+
+          {/* Advanced section */}
+          <div className="border border-white/5 rounded-lg overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setGsheetsShowAdvanced((v) => !v)}
+              className="w-full flex items-center justify-between px-3 py-2.5 text-xs text-gray-400 hover:text-gray-300 hover:bg-white/[0.03] transition-colors"
+              aria-expanded={gsheetsShowAdvanced}
+            >
+              <span className="font-medium">Avancé (impersonation, plage par défaut)</span>
+              <span aria-hidden="true" className="text-gray-600">
+                {gsheetsShowAdvanced ? '▲' : '▼'}
+              </span>
+            </button>
+
+            {gsheetsShowAdvanced && (
+              <div className="px-3 pb-4 pt-1 space-y-3 border-t border-white/5">
+                <div>
+                  <FieldLabel htmlFor="gsheets-impersonate">Impersonate as</FieldLabel>
+                  <input
+                    id="gsheets-impersonate"
+                    type="text"
+                    value={gsheetsImpersonateAs}
+                    onChange={(e) => setGsheetsImpersonateAs(e.target.value)}
+                    placeholder="user@example.com"
+                    className="input-editorial w-full text-sm mt-1"
+                    autoComplete="off"
+                  />
+                  <HelperText>
+                    Délégation à l'échelle du domaine (Domain-wide delegation) uniquement.
+                    Laissez vide dans la plupart des cas.
+                  </HelperText>
+                </div>
+
+                <div>
+                  <FieldLabel htmlFor="gsheets-range">Plage par défaut</FieldLabel>
+                  <input
+                    id="gsheets-range"
+                    type="text"
+                    value={gsheetsDefaultRange}
+                    onChange={(e) => setGsheetsDefaultRange(e.target.value)}
+                    placeholder="A:Z"
+                    className="input-editorial w-full text-sm mt-1 font-mono-plex"
+                    autoComplete="off"
+                  />
+                  <HelperText>
+                    Notation A1 (par exemple <span className="font-mono-plex">A:Z</span> ou{' '}
+                    <span className="font-mono-plex">A1:D100</span>). Vide = toute la plage
+                    utilisée de chaque onglet.
+                  </HelperText>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Test button */}
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => void handleTest()}
+              disabled={testing || saving}
+              className="px-3 py-2 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-300 text-sm font-medium transition-all duration-200 disabled:opacity-50"
+            >
+              {testing ? 'Test…' : 'Tester la connexion'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Notion config                                                        */}
+      {/* ------------------------------------------------------------------ */}
+      {type === 'notion' && (
+        <div className="space-y-4">
+          {/* Setup helper — admin-facing onboarding steps. */}
+          <div className="p-3 rounded-lg bg-os-950/30 border border-os-900/40 text-xs text-gray-400 space-y-1">
+            <p className="font-medium text-gray-300">Préparation de l'intégration Notion</p>
+            <ol className="list-decimal list-inside space-y-0.5 ml-1">
+              <li>
+                Ouvrir{' '}
+                <span className="font-mono-plex">notion.so/profile/integrations</span> →
+                {' '}«&nbsp;New integration&nbsp;» → copier le secret.
+              </li>
+              <li>
+                Dans chaque page/database à indexer, cliquer «&nbsp;Share&nbsp;» et inviter
+                l'intégration.
+              </li>
+            </ol>
+          </div>
+
+          {/* API key */}
+          <div>
+            <FieldLabel htmlFor="notion-api-key" required={!isEditing}>
+              Secret de l'intégration
+            </FieldLabel>
+            <input
+              id="notion-api-key"
+              type="password"
+              value={notionApiKey}
+              onChange={(e) => setNotionApiKey(e.target.value)}
+              placeholder={
+                isEditing ? '(inchangé — laissez vide pour conserver la clé)' : 'secret_… ou ntn_…'
+              }
+              className="input-editorial w-full text-sm mt-1 font-mono-plex"
+              autoComplete="new-password"
+              spellCheck={false}
+            />
+            {isEditing && (
+              <HelperText>Laissez vide pour conserver la clé enregistrée.</HelperText>
+            )}
+          </div>
+
+          {/* Root IDs */}
+          <div>
+            <FieldLabel htmlFor="notion-root-ids">IDs racines (optionnel)</FieldLabel>
+            <textarea
+              id="notion-root-ids"
+              value={notionRootIds}
+              onChange={(e) => setNotionRootIds(e.target.value)}
+              placeholder={'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nbbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'}
+              rows={4}
+              className="input-editorial w-full text-sm mt-1 font-mono-plex resize-y"
+              autoComplete="off"
+              spellCheck={false}
+            />
+            <HelperText>
+              IDs de pages ou databases à utiliser comme racines (un par ligne, avec ou sans
+              tirets). Laissez vide pour indexer tout le contenu partagé avec l'intégration.
+            </HelperText>
+          </div>
+
+          {/* Include archived */}
+          <div className="flex items-start gap-2">
+            <input
+              id="notion-include-archived"
+              type="checkbox"
+              checked={notionIncludeArchived}
+              onChange={(e) => setNotionIncludeArchived(e.target.checked)}
+              className="mt-0.5 accent-os-500 focus:ring-2 focus:ring-os-500"
+            />
+            <label
+              htmlFor="notion-include-archived"
+              className="text-sm text-gray-400 select-none"
+            >
+              Inclure les pages archivées
+              <HelperText>
+                Désactivé par défaut. Activez pour indexer les pages déplacées vers la corbeille.
+              </HelperText>
+            </label>
+          </div>
+
+          {/* Test button */}
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => void handleTest()}
+              disabled={testing || saving}
+              className="px-3 py-2 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-300 text-sm font-medium transition-all duration-200 disabled:opacity-50"
+            >
+              {testing ? 'Test…' : 'Tester la connexion'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* SharePoint config                                                    */}
+      {/* ------------------------------------------------------------------ */}
+      {type === 'sharepoint' && (
+        <div className="space-y-4">
+          {/* Setup helper — admin-facing onboarding steps. */}
+          <div className="p-3 rounded-lg bg-os-950/30 border border-os-900/40 text-xs text-gray-400 space-y-1">
+            <p className="font-medium text-gray-300">Préparation de l'application Azure AD</p>
+            <ol className="list-decimal list-inside space-y-0.5 ml-1">
+              <li>
+                Enregistrer une application dans Azure AD (
+                <span className="font-mono-plex">portal.azure.com</span> → App registrations).
+              </li>
+              <li>
+                Ajouter la permission <span className="font-mono-plex">Application</span> :{' '}
+                <span className="font-mono-plex">Sites.Read.All</span> (large) ou{' '}
+                <span className="font-mono-plex">Sites.Selected</span> (portée par site).
+              </li>
+              <li>
+                Cliquer «&nbsp;Grant admin consent&nbsp;» pour activer la permission au niveau du
+                tenant.
+              </li>
+              <li>
+                Sous «&nbsp;Certificates &amp; secrets&nbsp;», créer un client secret et le copier
+                (affiché une seule fois).
+              </li>
+              <li>Renseigner tenantId, clientId et le secret ci-dessous.</li>
+            </ol>
+          </div>
+
+          {/* Tenant + client IDs */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <FieldLabel htmlFor="sp-tenant-id" required>
+                Tenant ID
+              </FieldLabel>
+              <input
+                id="sp-tenant-id"
+                type="text"
+                value={spTenantId}
+                onChange={(e) => setSpTenantId(e.target.value)}
+                placeholder="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+                className="input-editorial w-full text-sm mt-1 font-mono-plex"
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <HelperText>GUID du tenant Azure AD.</HelperText>
+            </div>
+            <div>
+              <FieldLabel htmlFor="sp-client-id" required>
+                Client ID
+              </FieldLabel>
+              <input
+                id="sp-client-id"
+                type="text"
+                value={spClientId}
+                onChange={(e) => setSpClientId(e.target.value)}
+                placeholder="ffffffff-1111-2222-3333-444444444444"
+                className="input-editorial w-full text-sm mt-1 font-mono-plex"
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <HelperText>GUID de l'application enregistrée.</HelperText>
+            </div>
+          </div>
+
+          {/* Client secret */}
+          <div>
+            <FieldLabel htmlFor="sp-client-secret" required={!isEditing}>
+              Client secret
+            </FieldLabel>
+            <input
+              id="sp-client-secret"
+              type="password"
+              value={spClientSecret}
+              onChange={(e) => setSpClientSecret(e.target.value)}
+              placeholder={isEditing ? '(inchangé)' : '••••••••••••••••••••'}
+              className="input-editorial w-full text-sm mt-1 font-mono-plex"
+              autoComplete="new-password"
+              spellCheck={false}
+            />
+            {isEditing && (
+              <HelperText>Laissez vide pour conserver le secret existant.</HelperText>
+            )}
+          </div>
+
+          {/* Site URL */}
+          <div>
+            <FieldLabel htmlFor="sp-site-url" required>
+              URL du site SharePoint
+            </FieldLabel>
+            <input
+              id="sp-site-url"
+              type="text"
+              value={spSiteUrl}
+              onChange={(e) => setSpSiteUrl(e.target.value)}
+              placeholder="https://contoso.sharepoint.com/sites/intranet"
+              className="input-editorial w-full text-sm mt-1 font-mono-plex"
+              autoComplete="off"
+              spellCheck={false}
+            />
+            <HelperText>
+              URL complète (
+              <span className="font-mono-plex">https://contoso.sharepoint.com/sites/...</span>) ou
+              forme hôte-relative (
+              <span className="font-mono-plex">contoso.sharepoint.com:/sites/...</span>).
+            </HelperText>
+          </div>
+
+          {/* Recursive */}
+          <div className="flex items-start gap-2">
+            <input
+              id="sp-recursive"
+              type="checkbox"
+              checked={spRecursive}
+              onChange={(e) => setSpRecursive(e.target.checked)}
+              className="mt-0.5 accent-os-500 focus:ring-2 focus:ring-os-500"
+            />
+            <label htmlFor="sp-recursive" className="text-sm text-gray-400 select-none">
+              Indexer récursivement les sous-dossiers
+              <HelperText>Désactivez pour n'indexer que le dossier racine.</HelperText>
+            </label>
+          </div>
+
+          {/* Advanced section */}
+          <div className="border border-white/5 rounded-lg overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setSpShowAdvanced((v) => !v)}
+              className="w-full flex items-center justify-between px-3 py-2.5 text-xs text-gray-400 hover:text-gray-300 hover:bg-white/[0.03] transition-colors"
+              aria-expanded={spShowAdvanced}
+            >
+              <span className="font-medium">Avancé (drive, sous-dossier, filtres mime)</span>
+              <span aria-hidden="true" className="text-gray-600">
+                {spShowAdvanced ? '▲' : '▼'}
+              </span>
+            </button>
+
+            {spShowAdvanced && (
+              <div className="px-3 pb-4 pt-1 space-y-3 border-t border-white/5">
+                <div>
+                  <FieldLabel htmlFor="sp-drive-name">Nom du Document Library</FieldLabel>
+                  <input
+                    id="sp-drive-name"
+                    type="text"
+                    value={spDriveName}
+                    onChange={(e) => setSpDriveName(e.target.value)}
+                    placeholder="Documents"
+                    className="input-editorial w-full text-sm mt-1"
+                  />
+                  <HelperText>
+                    Par défaut : la bibliothèque «&nbsp;Documents&nbsp;» principale du site.
+                  </HelperText>
+                </div>
+
+                <div>
+                  <FieldLabel htmlFor="sp-root-path">Sous-dossier racine</FieldLabel>
+                  <input
+                    id="sp-root-path"
+                    type="text"
+                    value={spRootFolderPath}
+                    onChange={(e) => setSpRootFolderPath(e.target.value)}
+                    placeholder="/Shared Documents/Projects"
+                    className="input-editorial w-full text-sm mt-1 font-mono-plex"
+                  />
+                  <HelperText>
+                    Chemin à l'intérieur du drive (ex. <span className="font-mono-plex">/Shared
+                    Documents/Projects</span>). Laissez vide pour indexer toute la bibliothèque.
+                  </HelperText>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <FieldLabel htmlFor="sp-include-mimes">Include mime types</FieldLabel>
+                    <textarea
+                      id="sp-include-mimes"
+                      value={spIncludeMimes}
+                      onChange={(e) => setSpIncludeMimes(e.target.value)}
+                      placeholder={'application/pdf\napplication/vnd.openxmlformats-officedocument.wordprocessingml.document'}
+                      rows={3}
+                      className="input-editorial w-full text-sm mt-1 font-mono-plex resize-y"
+                    />
+                    <HelperText>Un mime type par ligne. Vide = tout inclure.</HelperText>
+                  </div>
+                  <div>
+                    <FieldLabel htmlFor="sp-exclude-mimes">Exclude mime types</FieldLabel>
+                    <textarea
+                      id="sp-exclude-mimes"
+                      value={spExcludeMimes}
+                      onChange={(e) => setSpExcludeMimes(e.target.value)}
+                      placeholder={'image/png\napplication/x-zip-compressed'}
+                      rows={3}
+                      className="input-editorial w-full text-sm mt-1 font-mono-plex resize-y"
+                    />
+                    <HelperText>Un mime type par ligne.</HelperText>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Test button */}
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => void handleTest()}
+              disabled={testing || saving}
+              className="px-3 py-2 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-300 text-sm font-medium transition-all duration-200 disabled:opacity-50"
+            >
+              {testing ? 'Test…' : 'Tester la connexion'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Embeddings AI setting                                                */}
+      {/* ------------------------------------------------------------------ */}
+      <div>
+        <FieldLabel htmlFor="rag-source-embedding" required>
+          Configuration d'embeddings
+        </FieldLabel>
+        {aiSettings.length === 0 ? (
+          <p className="text-xs text-amber-400 mt-1">
+            Aucune configuration IA enregistrée. Créez-en une dans la section "AI Settings" avec la
+            capacité <span className="font-mono-plex">embeddings</span>.
+          </p>
+        ) : (
+          <select
+            id="rag-source-embedding"
+            value={embeddingSettingName}
+            onChange={(e) => setEmbeddingSettingName(e.target.value)}
+            className="input-editorial w-full text-sm mt-1"
+          >
+            <option value="" className="bg-gray-800">
+              Sélectionner une configuration IA…
+            </option>
+            {aiSettings.map((s) => {
+              const supports = s.capabilities?.includes('embeddings');
+              return (
+                <option
+                  key={s.name}
+                  value={s.name}
+                  disabled={!supports}
+                  title={supports ? undefined : 'Cette config IA ne supporte pas les embeddings'}
+                  className="bg-gray-800"
+                >
+                  {s.label}
+                  {supports
+                    ? s.embeddingModel
+                      ? ` — ${s.embeddingModel}`
+                      : ''
+                    : ' — embeddings non supportés'}
+                </option>
+              );
+            })}
+          </select>
+        )}
+        {embeddingsCapableSettings.length === 0 && aiSettings.length > 0 && (
+          <p className="text-xs text-amber-400 mt-1">
+            Aucune configuration IA disponible ne supporte les embeddings. Activez la capacité
+            <span className="font-mono-plex"> embeddings</span> sur l'une de vos configurations.
+          </p>
+        )}
+        {selectedSetting && selectedSettingSupportsEmbeddings && (
+          <div className="flex items-center gap-4 mt-1">
+            <p className="text-xs text-gray-500">
+              Modèle :{' '}
+              <span className="font-mono-plex text-gray-400">
+                {selectedSetting.embeddingModel ?? '(non spécifié)'}
+              </span>
+            </p>
+            {initial?.embeddingDimensions !== undefined && (
+              <p className="text-xs text-gray-500">
+                Dimension :{' '}
+                <span className="font-mono-plex text-gray-400">
+                  {initial.embeddingDimensions} tokens
+                </span>
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Polling interval (auto-sync)                                         */}
+      {/* ------------------------------------------------------------------ */}
+      <div>
+        <FieldLabel htmlFor="rag-source-polling">Intervalle de synchronisation auto</FieldLabel>
+        <select
+          id="rag-source-polling"
+          value={pollingIntervalSeconds === null ? '' : String(pollingIntervalSeconds)}
+          onChange={(e) => {
+            const v = e.target.value;
+            setPollingIntervalSeconds(v === '' ? null : Number(v));
+          }}
+          className="input-editorial w-full text-sm mt-1"
+        >
+          {POLLING_INTERVAL_OPTIONS.map((opt) => (
+            <option
+              key={opt.value === null ? 'off' : String(opt.value)}
+              value={opt.value === null ? '' : String(opt.value)}
+              className="bg-gray-800"
+            >
+              {opt.label}
+            </option>
+          ))}
+        </select>
+        <HelperText>
+          Choisissez la fréquence à laquelle la source est interrogée pour détecter les changements.
+          La synchronisation manuelle reste toujours disponible.
+        </HelperText>
+      </div>
+
+      {/* Error / test result banners */}
+      {error && (
+        <div className="p-2.5 rounded-lg text-sm bg-red-950/30 border border-red-800/50 text-red-400 space-y-1">
+          <p>{error}</p>
+          {serverError && <p className="text-xs text-red-300 opacity-80">{serverError}</p>}
+        </div>
+      )}
+      {testResult && (
+        <div
+          className={`p-2.5 rounded-lg text-sm ${
+            testResult.success
+              ? 'bg-green-950/30 border border-green-800/50 text-green-400'
+              : 'bg-red-950/30 border border-red-800/50 text-red-400'
+          }`}
+        >
+          {testResult.message}
+        </div>
+      )}
+
+      <div className="flex items-center gap-3 pt-2">
+        <button
+          type="button"
+          onClick={() => void handleSave()}
+          disabled={saving}
+          className="px-4 py-2 rounded-lg bg-os-700 hover:bg-os-600 text-white text-sm font-medium transition-all duration-200 disabled:opacity-50 shadow-md shadow-os-900/20"
+        >
+          {saving ? 'Enregistrement…' : 'Enregistrer'}
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="px-4 py-2 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-300 text-sm font-medium transition-all duration-200"
+        >
+          Annuler
+        </button>
+      </div>
+    </div>
+  );
+}

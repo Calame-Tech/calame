@@ -62,6 +62,16 @@ interface DynamicToolsOptions {
    * Default: 100. Set to a very large number to force the verbose form.
    */
   catalogueCompactThreshold?: number;
+  /**
+   * Optional prefix applied to every registered tool name. When empty (the
+   * default), tool names are unchanged (e.g. `query`). When set to a
+   * non-empty string, every tool name is prefixed (e.g. `prod_query`).
+   *
+   * The host computes this based on multi-source detection in the active
+   * profile — see packages/cli/src/routes/serve.ts (Phase 3c). Phase 3a only
+   * delivers the prefixing mechanism.
+   */
+  toolNamespace?: string;
 }
 
 /** Shared context passed to register* helpers to avoid long parameter lists. */
@@ -75,6 +85,8 @@ interface ToolContext {
   wrapResponse: (json: string) => string;
   maxOffset: number;
   scopeGuard: ScopeGuard;
+  /** Applies the optional toolNamespace prefix to a tool name suffix. */
+  toolName: (suffix: string) => string;
 }
 
 // ---------------------------------------------------------------------------
@@ -634,9 +646,10 @@ async function executeWithAudit(
 //   catalogue baked in the tool descriptions.
 // ===========================================================================
 
-function registerCalcTool(
+export function registerCalcTool(
   server: McpServer,
   profileName: string,
+  toolName: (suffix: string) => string,
   onAuditLog?: DynamicToolsOptions['onAuditLog'],
 ): void {
   const inputShape = {
@@ -655,7 +668,7 @@ function registerCalcTool(
     'Never compute these mentally.';
 
   server.tool(
-    'calc',
+    toolName('calc'),
     description,
     inputShape as AnyToolArgs,
     async (args: Record<string, unknown>) => {
@@ -693,7 +706,7 @@ function registerCalcTool(
       if (onAuditLog) {
         onAuditLog({
           profileName,
-          toolName: 'calc',
+          toolName: toolName('calc'),
           toolArgs: { op, values },
           result: 'success',
           resultSummary: `${op}([${values.join(', ')}]) = ${result}`,
@@ -710,6 +723,13 @@ function registerCalcTool(
 export function registerDynamicTools(options: DynamicToolsOptions): void {
   const dialect = makeDialect(options.databaseType);
   const scopeGuard: ScopeGuard = options.scopeGuard ?? createScopeGuard([]);
+
+  // Tool name helper: when toolNamespace is set, every registered tool gets
+  // prefixed with it (e.g. 'prod_' → 'prod_query'). When unset or empty, the
+  // name is returned unchanged for full backward compatibility.
+  const ns = options.toolNamespace ?? '';
+  const toolName = (suffix: string): string => `${ns}${suffix}`;
+
   const ctx: ToolContext = {
     server: options.server,
     executeQuery: options.executeQuery,
@@ -720,9 +740,8 @@ export function registerDynamicTools(options: DynamicToolsOptions): void {
     wrapResponse: options.wrapResponse ?? ((j) => j),
     maxOffset: options.maxOffset ?? 10000,
     scopeGuard,
+    toolName,
   };
-
-  registerCalcTool(options.server, options.profileName, options.onAuditLog);
 
   const accessible = buildAccessibleTables(options, scopeGuard);
   if (accessible.length === 0) return;
@@ -861,7 +880,7 @@ function resolveTable(
 // ---------------------------------------------------------------------------
 
 function registerListTablesGeneric(ctx: ToolContext, accessible: AccessibleTable[]): void {
-  const { server, executeQuery, dialect, onAuditLog, profileName, responseMode, wrapResponse } = ctx;
+  const { server, executeQuery, dialect, onAuditLog, profileName, responseMode, wrapResponse, toolName } = ctx;
   const friendly = responseMode === 'friendly';
 
   const tableList = accessible.map(at => {
@@ -881,12 +900,12 @@ function registerListTablesGeneric(ctx: ToolContext, accessible: AccessibleTable
   const desc = 'List all tables you have access to. Call this first if you are unsure which tables exist. Detailed schema (column types, enums, FK relations) is available via describe or in the aggregate/query tool descriptions.';
 
   server.tool(
-    'list_tables',
+    toolName('list_tables'),
     desc,
     {},
     async () =>
       executeWithAudit(
-        { executeQuery, dialect, onAuditLog, profileName, toolName: 'list_tables', toolArgs: {} },
+        { executeQuery, dialect, onAuditLog, profileName, toolName: toolName('list_tables'), toolArgs: {} },
         async () => {
           const text = wrapResponse(JSON.stringify(tableList, null, 2));
           return {
@@ -932,7 +951,7 @@ function registerAggregateGeneric(
   accessible: AccessibleTable[],
   catalogue: string,
 ): void {
-  const { server, executeQuery, dialect, onAuditLog, profileName, responseMode, wrapResponse, maxOffset, scopeGuard } = ctx;
+  const { server, executeQuery, dialect, onAuditLog, profileName, responseMode, wrapResponse, maxOffset, scopeGuard, toolName } = ctx;
 
   const eligible = accessible.filter(at => at.enabledTools.includes('aggregate') && at.numericCols.length > 0);
   if (eligible.length === 0) return;
@@ -1029,7 +1048,7 @@ function registerAggregateGeneric(
   const desc = `Single-table analytics: COUNT, SUM, AVG, MIN, MAX, ratio, conditional ratio (ratio_filter), period-over-period comparison (compare_to), top-N per group (top_n_per_group), HAVING filter (having_min_total), pagination (offset). Use this for any aggregation on ONE table — reach for join_aggregate only when you need columns from a second table. Statistical aggregations (median, stddev, variance, percentile) require PostgreSQL. When counting or ranking individuals (persons, drivers, customers...), group by their unique \`id\` column — name columns (nom, prenom, name) are rarely unique and will merge records with identical names.\n\nKey advanced params with examples:\n- compare_to: {"period": "previous_year", "date_column": "date_creation"} → rolling year-over-year\n- compare_to: {"period": "previous_calendar_month", "date_column": "date_creation"} → full calendar month comparison (e.g. April vs March)\n- top_n_per_group: {"n": 3, "partition_by": "id_depot", "order_by": "result"} → top 3 per group via window function\n- ratio_filter: {"statut": {"op": "eq", "value": "livre"}} → conditional ratio (numerator filter)\n- having_min_total: 100 → HAVING COUNT(*) >= 100\n- offset: 1000 → pagination beyond limit\n\n${catalogue}`;
 
   server.tool(
-    'aggregate',
+    toolName('aggregate'),
     desc,
     inputShape as AnyToolArgs,
     async (args: Record<string, unknown>) => {
@@ -1098,7 +1117,7 @@ function registerAggregateGeneric(
       };
 
       return executeWithAudit(
-        { executeQuery, dialect, onAuditLog, profileName, toolName: 'aggregate', toolArgs: args },
+        { executeQuery, dialect, onAuditLog, profileName, toolName: toolName('aggregate'), toolArgs: args },
         async (exec) => {
           const cappedLimit = Math.min(limit ?? 20, maxLimit);
           const cappedOffset = Math.min(offset ?? 0, maxOffset ?? 10_000);
@@ -1624,7 +1643,7 @@ function registerJoinAggregateGeneric(
   accessible: AccessibleTable[],
   allRelations: Relation[],
 ): void {
-  const { server, executeQuery, dialect, onAuditLog, profileName, responseMode, wrapResponse, maxOffset, scopeGuard } = ctx;
+  const { server, executeQuery, dialect, onAuditLog, profileName, responseMode, wrapResponse, maxOffset, scopeGuard, toolName } = ctx;
 
   // Only tables where aggregate is enabled. Disabling aggregate on a table
   // must also block joins against it.
@@ -1726,7 +1745,7 @@ function registerJoinAggregateGeneric(
     '- weighted_ratio: SUM(numerator_column)/SUM(denominator_column) on same JOIN side';
 
   server.tool(
-    'join_aggregate',
+    toolName('join_aggregate'),
     desc,
     inputShape as AnyToolArgs,
     async (args: Record<string, unknown>) => {
@@ -1775,7 +1794,7 @@ function registerJoinAggregateGeneric(
       };
 
       return executeWithAudit(
-        { executeQuery, dialect, onAuditLog, profileName, toolName: 'join_aggregate', toolArgs: args },
+        { executeQuery, dialect, onAuditLog, profileName, toolName: toolName('join_aggregate'), toolArgs: args },
         async (exec) => {
           if (typeof primary_table !== 'string' || typeof join_table !== 'string') {
             return structuredError({
@@ -2319,7 +2338,7 @@ function registerQueryGeneric(
   accessible: AccessibleTable[],
   catalogue: string,
 ): void {
-  const { server, executeQuery, dialect, onAuditLog, profileName, responseMode, wrapResponse, maxOffset, scopeGuard } = ctx;
+  const { server, executeQuery, dialect, onAuditLog, profileName, responseMode, wrapResponse, maxOffset, scopeGuard, toolName } = ctx;
 
   const eligible = accessible.filter(at => at.enabledTools.includes('query') && at.allColumnNames.length > 0);
   if (eligible.length === 0) return;
@@ -2340,7 +2359,7 @@ function registerQueryGeneric(
   const desc = `Fetch individual rows from any table with filters, ordering, and pagination. Use this to LIST or SEARCH records (e.g. find all colis for a client, show recent incidents). For counts, sums, averages, or grouped analytics — use aggregate or join_aggregate instead.\n\n${catalogue}`;
 
   server.tool(
-    'query',
+    toolName('query'),
     desc,
     inputShape as AnyToolArgs,
     async (args: Record<string, unknown>) => {
@@ -2384,7 +2403,7 @@ function registerQueryGeneric(
       };
 
       return executeWithAudit(
-        { executeQuery, dialect, onAuditLog, profileName, toolName: 'query', toolArgs: args },
+        { executeQuery, dialect, onAuditLog, profileName, toolName: toolName('query'), toolArgs: args },
         async (exec) => {
           const cappedLimit = Math.min(limit ?? 20, maxLimit);
           const cappedOffset = Math.min(offset ?? 0, maxOffset);
@@ -2495,7 +2514,7 @@ function registerDescribeGeneric(
   accessible: AccessibleTable[],
   distinctValuesByTable: Record<string, Record<string, unknown[]>>,
 ): void {
-  const { server, executeQuery, dialect, onAuditLog, profileName, responseMode, wrapResponse, scopeGuard } = ctx;
+  const { server, executeQuery, dialect, onAuditLog, profileName, responseMode, wrapResponse, scopeGuard, toolName } = ctx;
   const friendly = responseMode === 'friendly';
 
   const eligible = accessible.filter(at => at.enabledTools.includes('describe'));
@@ -2510,7 +2529,7 @@ function registerDescribeGeneric(
   const desc = 'Explore a table schema at runtime: row count, column types, null rates, distinct counts, low-cardinality enum values, text samples, numeric min/max/avg, and FK relations to other tables. Call this when unsure about column names, valid values, or how tables relate.';
 
   server.tool(
-    'describe',
+    toolName('describe'),
     desc,
     inputShape as AnyToolArgs,
     async (args: Record<string, unknown>) => {
@@ -2526,7 +2545,7 @@ function registerDescribeGeneric(
       const textCols = includeStats ? at.visibleColumns.filter(c => isTextType(c.type)).map(c => c.name) : [];
 
       return executeWithAudit(
-        { executeQuery, dialect, onAuditLog, profileName, toolName: 'describe', toolArgs: args },
+        { executeQuery, dialect, onAuditLog, profileName, toolName: toolName('describe'), toolArgs: args },
         async (exec) => {
           const { clause: scopeWhere, values: scopeValues } = scopeGuard.buildScopeOnlyWhereClause(
             tableName,
@@ -2747,7 +2766,7 @@ function registerWriteGeneric(
   accessible: AccessibleTable[],
   onWriteRequest: (query: Omit<PendingWriteQuery, 'id' | 'timestamp' | 'status'>) => string,
 ): void {
-  const { server, dialect, onAuditLog, profileName, scopeGuard } = ctx;
+  const { server, dialect, onAuditLog, profileName, scopeGuard, toolName } = ctx;
 
   const eligible = accessible.filter(at => at.enabledTools.includes('write'));
   if (eligible.length === 0) return;
@@ -2765,7 +2784,7 @@ function registerWriteGeneric(
   const desc = 'Propose a write (INSERT/UPDATE/DELETE). Queued for admin approval — nothing executes immediately.';
 
   server.tool(
-    'write',
+    toolName('write'),
     desc,
     inputShape as AnyToolArgs,
     async (args: Record<string, unknown>) => {
@@ -2884,7 +2903,7 @@ function registerWriteGeneric(
         if (onAuditLog) {
           onAuditLog({
             profileName,
-            toolName: 'write',
+            toolName: toolName('write'),
             toolArgs: args,
             result: 'success',
             resultSummary: `Write request queued (ID: ${id})`,
@@ -2905,7 +2924,7 @@ function registerWriteGeneric(
         if (onAuditLog) {
           onAuditLog({
             profileName,
-            toolName: 'write',
+            toolName: toolName('write'),
             toolArgs: args,
             result: 'error',
             resultSummary: (err as Error).message,

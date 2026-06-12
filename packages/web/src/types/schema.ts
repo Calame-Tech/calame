@@ -99,10 +99,10 @@ export interface NamedConnection {
 export interface Configuration {
   name: string;
   label: string;
-  connections: string[];
-  selectedTables: Record<string, string[]>;
-  tableOptions?: Record<string, TableToolOptions>;
-  columnMasking?: Record<string, Record<string, ColumnMasking>>;
+  /** Source ids associated with this configuration (Phase 5+). */
+  sources?: string[];
+  /** Per-source access scopes (Phase 5+). Discriminated by `kind`. */
+  scopes?: Record<string, ScopeSelection>;
 }
 
 export interface ConfigurationsFile {
@@ -151,14 +151,10 @@ export interface Profile {
   dataScopeRules?: DataScopeRule[];
   /** Tables explicitly shared (no scoping) when dataScopeRules is non-empty. */
   sharedTables?: string[];
-  /** @deprecated Use configurations instead */
-  connections?: string[];
-  /** @deprecated Use configurations instead */
-  selectedTables: Record<string, string[]>;
-  /** @deprecated Use configurations instead */
-  tableOptions?: Record<string, TableToolOptions>;
-  /** @deprecated Use configurations instead */
-  columnMasking?: Record<string, Record<string, ColumnMasking>>;
+  /** Source ids active in this profile (Phase 2+). */
+  sources?: string[];
+  /** Per-source access scopes (Phase 2+). Discriminated by `kind`. */
+  scopes?: Record<string, ScopeSelection>;
 }
 
 export interface ProfilesFile {
@@ -253,6 +249,38 @@ export interface PoolStats {
   connectionName: string;
   stats: { active: number; idle: number; waiting: number; total: number };
 }
+
+// RAG / Sources access scoping — mirrors @calame/core ScopeSelection.
+// Keep the arms in sync with `packages/core/src/sources/types.ts:ScopeSelection`
+// so that values flowing from @calame-ee/rag-core/web components type-check
+// without `unknown` casts. New arms added on the core side must be reflected
+// here even if the web does not render them — the components on this side
+// preserve them inertly via the override pattern.
+export type ScopeSelection =
+  | {
+      kind: 'relational';
+      selectedTables: Record<string, string[]>;
+      tableOptions?: Record<string, TableToolOptions>;
+      columnMasking?: Record<string, Record<string, ColumnMasking>>;
+    }
+  | {
+      kind: 'document';
+      mode: 'allowAll' | 'allowList';
+      allowedFolders: readonly string[];
+      allowedDocuments: readonly string[];
+      piiMaskingMode?: 'inherit' | 'off';
+      directFetchDisabled?: boolean;
+    }
+  | {
+      kind: 'api';
+      /**
+       * Allowlist of operation ids the LLM may invoke via this source.
+       * Mirrors `packages/core/src/sources/types.ts:ScopeSelection`'s `api` arm.
+       * The web layer doesn't render API scopes today — `RagAccessSelector`
+       * preserves them inertly through its scope-merge pattern.
+       */
+      allowedOperations: readonly string[];
+    };
 
 // Serve status
 export interface ServeStatus {

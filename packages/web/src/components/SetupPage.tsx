@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { apiFetch } from '../lib/api.js';
 
 interface SetupPageProps {
   onSetupComplete: () => void;
@@ -36,7 +37,7 @@ export default function SetupPage({ onSetupComplete }: SetupPageProps) {
     setLoading(true);
 
     try {
-      const res = await fetch('/api/auth/setup', {
+      const res = await apiFetch('/api/auth/setup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',

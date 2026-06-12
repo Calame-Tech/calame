@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
+import { apiFetch, getCurrentTenant } from '../lib/api.js';
 import type { Profile, TokenEntry } from '../types/schema.js';
+import { buildMcpPath } from '../lib/mcp-url.js';
 import HelpTip from './HelpTip.js';
 
 interface TokenManagerProps {
@@ -34,7 +36,7 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/tokens');
+      const res = await apiFetch('/api/tokens');
       const data = await res.json();
       if (data.success !== false) {
         setTokens(data.tokens ?? []);
@@ -57,7 +59,7 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
     setGenerating(true);
     setError(null);
     try {
-      const res = await fetch('/api/tokens/generate', {
+      const res = await apiFetch('/api/tokens/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ profileName, label: newLabel.trim() }),
@@ -179,57 +181,67 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                 </button>
               </div>
 
-              {/* MCP URL for claude.ai (token in query param) */}
-              <div className="mt-3">
-                <p className="text-xs text-gray-400 mb-1">claude.ai (paste this URL in Settings &gt; Integrations):</p>
-                <div className="flex items-center gap-2">
-                  <code className="flex-1 px-3 py-2 rounded bg-gray-900 border border-gray-700 text-xs text-os-400 font-mono truncate">
-                    {`${window.location.origin}/mcp/${newlyGenerated.profileName}?token=${newlyGenerated.token}`}
-                  </code>
-                  <button
-                    onClick={() => handleCopy(
-                      `${window.location.origin}/mcp/${newlyGenerated.profileName}?token=${newlyGenerated.token}`,
-                      'mcp-url',
-                    )}
-                    className="px-3 py-2 rounded-lg bg-os-700 hover:bg-os-600 text-white text-xs font-medium transition-all duration-200 flex-shrink-0"
-                  >
-                    {copied === 'mcp-url' ? 'Copied!' : 'Copy URL'}
-                  </button>
-                </div>
-                <p className="text-xs text-gray-600 mt-1">
-                  For remote access, expose via ngrok: <code className="text-gray-500">ngrok http {port}</code> then replace the origin.
-                </p>
-              </div>
+              {/* MCP URL for claude.ai (token in query param).
+                  Tenant-qualified when the current workspace is non-default
+                  so external clients (which cannot inject X-Tenant-Id) reach
+                  the right tenant via the URL alone. */}
+              {(() => {
+                const tenant = getCurrentTenant();
+                const mcpPath = buildMcpPath(newlyGenerated.profileName, tenant);
+                const mcpUrl = `${window.location.origin}${mcpPath}?token=${newlyGenerated.token}`;
+                const mcpServerUrl = `http://localhost:${port}${mcpPath}`;
+                return (
+                  <>
+                    <div className="mt-3">
+                      <p className="text-xs text-gray-400 mb-1">claude.ai (paste this URL in Settings &gt; Integrations):</p>
+                      <div className="flex items-center gap-2">
+                        <code className="flex-1 px-3 py-2 rounded bg-gray-900 border border-gray-700 text-xs text-os-400 font-mono truncate">
+                          {mcpUrl}
+                        </code>
+                        <button
+                          onClick={() => handleCopy(mcpUrl, 'mcp-url')}
+                          className="px-3 py-2 rounded-lg bg-os-700 hover:bg-os-600 text-white text-xs font-medium transition-all duration-200 flex-shrink-0"
+                        >
+                          {copied === 'mcp-url' ? 'Copied!' : 'Copy URL'}
+                        </button>
+                      </div>
+                      <p className="text-xs text-gray-600 mt-1">
+                        For remote access, expose via ngrok: <code className="text-gray-500">ngrok http {port}</code> then replace the origin.
+                      </p>
+                    </div>
 
-              {/* MCP client config for Claude Desktop */}
-              <div className="mt-3">
-                <p className="text-xs text-gray-400 mb-1">Claude Desktop / Cursor config:</p>
-                <div className="relative">
-                  <pre className="p-3 rounded bg-gray-900 border border-gray-700 text-xs text-gray-300 font-mono overflow-x-auto whitespace-pre">{`{
+                    {/* MCP client config for Claude Desktop */}
+                    <div className="mt-3">
+                      <p className="text-xs text-gray-400 mb-1">Claude Desktop / Cursor config:</p>
+                      <div className="relative">
+                        <pre className="p-3 rounded bg-gray-900 border border-gray-700 text-xs text-gray-300 font-mono overflow-x-auto whitespace-pre">{`{
   "mcpServers": {
     "forge-${newlyGenerated.profileName}": {
-      "url": "http://localhost:${port}/mcp/${newlyGenerated.profileName}",
+      "url": "${mcpServerUrl}",
       "headers": {
         "Authorization": "Bearer ${newlyGenerated.token}"
       }
     }
   }
 }`}</pre>
-                  <button
-                    onClick={() => handleCopy(JSON.stringify({
-                      mcpServers: {
-                        [`forge-${newlyGenerated.profileName}`]: {
-                          url: `http://localhost:${port}/mcp/${newlyGenerated.profileName}`,
-                          headers: { Authorization: `Bearer ${newlyGenerated.token}` },
-                        },
-                      },
-                    }, null, 2), 'config-snippet')}
-                    className="absolute top-2 right-2 px-2 py-1 text-xs rounded border border-gray-600 text-gray-400 hover:text-gray-200 hover:bg-gray-700 transition-colors"
-                  >
-                    {copied === 'config-snippet' ? 'Copied!' : 'Copy'}
-                  </button>
-                </div>
-              </div>
+                        <button
+                          onClick={() => handleCopy(JSON.stringify({
+                            mcpServers: {
+                              [`forge-${newlyGenerated.profileName}`]: {
+                                url: mcpServerUrl,
+                                headers: { Authorization: `Bearer ${newlyGenerated.token}` },
+                              },
+                            },
+                          }, null, 2), 'config-snippet')}
+                          className="absolute top-2 right-2 px-2 py-1 text-xs rounded border border-gray-600 text-gray-400 hover:text-gray-200 hover:bg-gray-700 transition-colors"
+                        >
+                          {copied === 'config-snippet' ? 'Copied!' : 'Copy'}
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
 
               <button
                 onClick={() => setNewlyGenerated(null)}
@@ -470,22 +482,31 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
       {/* Endpoint URL reference */}
       <div className="card-primary p-4">
         <h3 className="eyebrow mb-2">MCP Endpoints</h3>
-        <p className="text-xs text-gray-500 mb-3">Each profile has its own MCP endpoint:</p>
+        <p className="text-xs text-gray-500 mb-3">
+          Each profile has its own MCP endpoint
+          {getCurrentTenant() !== 'default' && (
+            <> — URLs include the workspace id (<code className="text-os-400">{getCurrentTenant()}</code>) so external MCP clients reach the right tenant</>
+          )}:
+        </p>
         <div className="space-y-1">
-          {profiles.map((profile) => (
+          {profiles.map((profile) => {
+            const path = buildMcpPath(profile.name, getCurrentTenant());
+            const url = `http://localhost:${port}${path}`;
+            return (
             <div key={profile.name} className="flex items-center gap-2">
               <code className="text-xs text-os-400 font-mono">
-                http://localhost:{port}/mcp/{profile.name}
+                {url}
               </code>
               <button
-                onClick={() => handleCopy(`http://localhost:${port}/mcp/${profile.name}`, `url-${profile.name}`)}
+                onClick={() => handleCopy(url, `url-${profile.name}`)}
                 title="Copier l'URL de l'endpoint MCP dans le presse-papiers"
                 className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
               >
                 {copied === `url-${profile.name}` ? 'Copied!' : 'Copy'}
               </button>
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>

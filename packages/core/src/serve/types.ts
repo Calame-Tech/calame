@@ -29,9 +29,57 @@ export interface NamedConnection {
 export interface ServeConfiguration {
   name: string;
   label: string;
-  connections: string[];
-  selectedTables: Record<string, string[]>;
+
+  /**
+   * Multi-tenancy (Phase A) — see migration v12 in `packages/cli/src/migration.ts`.
+   * Always `'default'` today; the host writes the column on every INSERT but no
+   * route filters by it yet. Optional in the type so in-memory test fixtures
+   * (which don't go through the migrator) keep compiling. Once Phase B lands
+   * and route-level scoping is enabled, this will become required.
+   */
+  tenantId?: string;
+
+  /**
+   * Source ids active in this configuration. Phase 2+ canonical replacement for
+   * the legacy `connections` array. When both are present, `sources` wins; the
+   * migrator reconciles older shapes on read.
+   */
+  sources?: string[];
+
+  /**
+   * Per-source allowlist. Phase 2+ canonical replacement for the legacy
+   * `selectedTables`/`tableOptions`/`columnMasking` triple. Discriminated by `kind`.
+   */
+  scopes?: Record<string, import('../sources/index.js').ScopeSelection>;
+
+  /**
+   * @deprecated since Phase 2. Use `sources` instead. The migrator
+   * (`upgradeConfigurationShape`) folds this into `sources` on read and deletes
+   * this field (Phase 5). Present only on pre-migration v10 rows; absent on all
+   * rows written after Phase 5. Use `getConfigurationRelationalSources()` instead
+   * of reading this directly.
+   */
+  connections?: string[];
+
+  /**
+   * @deprecated since Phase 2. Use `scopes[sourceId].selectedTables` instead.
+   * The migrator (`upgradeConfigurationShape`) folds this into `scopes` on read
+   * and deletes this field (Phase 5). Present only on pre-migration v10 rows;
+   * absent on all rows written after Phase 5. Use `getConfigurationSelectedTables()`
+   * instead of reading this directly.
+   */
+  selectedTables?: Record<string, string[]>;
+
+  /**
+   * @deprecated since Phase 2. Use `scopes[sourceId].tableOptions` instead.
+   * Will be removed in Phase 5.
+   */
   tableOptions?: Record<string, import('../introspect/types.js').TableToolOptions>;
+
+  /**
+   * @deprecated since Phase 2. Use `scopes[sourceId].columnMasking` instead.
+   * Will be removed in Phase 5.
+   */
   columnMasking?: Record<string, Record<string, import('../pii/types.js').ColumnMasking>>;
 }
 
@@ -74,6 +122,14 @@ export interface ServeProfile {
   name: string;
   label: string;
   /**
+   * Multi-tenancy (Phase A) — see migration v12 in `packages/cli/src/migration.ts`.
+   * Always `'default'` today; the host writes the column on every INSERT but no
+   * route filters by it yet. Optional in the type so in-memory test fixtures
+   * (which don't go through the migrator) keep compiling. Once Phase B lands
+   * and route-level scoping is enabled, this will become required.
+   */
+  tenantId?: string;
+  /**
    * Controls how MCP tool responses are formatted.
    * - 'friendly' (default): column names are replaced with human-readable labels,
    *   SQL types are translated to simple terms, technical details are hidden.
@@ -83,14 +139,29 @@ export interface ServeProfile {
   configurations?: string[]; // References to ServeConfiguration names
   /** Names of AI settings (from ai_settings table) usable by clients of this MCP. First = default. */
   aiSettingNames?: string[];
-  /** @deprecated Use configurations instead */
-  connections?: string[]; // Named connection references
-  /** @deprecated Use configurations instead */
-  selectedTables: Record<string, string[]>; // tableName -> selected columns
-  /** @deprecated Use configurations instead */
-  tableOptions?: Record<string, import('../introspect/types.js').TableToolOptions>;
-  /** @deprecated Use configurations instead */
-  columnMasking?: Record<string, Record<string, import('../pii/types.js').ColumnMasking>>;
+
+  /**
+   * Source ids active in this profile. Phase 2+ canonical replacement for
+   * `connections`. When both are present, `sources` wins; the migrator
+   * (`upgradeProfileShape`) reconciles older shapes on read.
+   * New writes should populate `sources` only. Will be the sole field in Phase 5.
+   */
+  sources?: string[];
+
+  /**
+   * Per-source allowlist. Phase 2+ canonical replacement for the legacy
+   * `selectedTables`/`tableOptions`/`columnMasking` triple at the profile root.
+   * Discriminated by `kind`.
+   */
+  scopes?: Record<string, import('../sources/index.js').ScopeSelection>;
+
+  // Phase 5 — legacy fields (`connections`, `selectedTables`, `tableOptions`,
+  // `columnMasking`) were dropped from `ServeProfile`. Profiles authored in
+  // the legacy shape are read via `upgradeProfileShape` (which folds them into
+  // `sources` / `scopes` and drops the root fields). Code that still needs to
+  // accept the legacy shape on input should use `ProfileScopeShape` from
+  // `@calame/core/sources/accessors` (carries the legacy fields as optional
+  // reads).
   token?: string; // auth token for this profile
   /** Authentication mode for this MCP server endpoint */
   authMode?: 'open' | 'token' | 'calame' | 'sso' | 'oauth' | 'external';

@@ -59,11 +59,22 @@ describe('profiles routes', () => {
 
       expect(res.body.success).toBe(true);
 
-      // Verify data is in SQLite
-      const row = db.raw.prepare("SELECT data FROM profiles WHERE key = 'main'").get() as { data: string };
+      // Verify data is in SQLite. Phase 5: the migrator drops legacy fields
+      // from the persisted shape, so the same data lives under
+      // `scopes[sourceId].selectedTables` instead of `selectedTables`.
+      const row = db.raw
+        .prepare("SELECT data, tenant_id FROM profiles WHERE key = 'main'")
+        .get() as { data: string; tenant_id: string };
       const saved = JSON.parse(row.data);
       expect(saved.profiles.finance.label).toBe('Finance');
-      expect(saved.profiles.finance.selectedTables.invoices).toEqual(['id', 'amount']);
+      expect(saved.profiles.finance.selectedTables).toBeUndefined();
+      const sourceId = saved.profiles.finance.sources[0];
+      expect(saved.profiles.finance.scopes[sourceId].selectedTables.invoices).toEqual([
+        'id',
+        'amount',
+      ]);
+      // Phase A multi-tenancy — every fresh save must land under 'default'.
+      expect(row.tenant_id).toBe('default');
     });
 
     it('should return error when profiles data is missing', async () => {
@@ -96,6 +107,69 @@ describe('profiles routes', () => {
       const saved = JSON.parse(row.data);
       expect(saved.profiles.v2).toBeDefined();
       expect(saved.profiles.v1).toBeUndefined();
+    });
+
+    it('normalises legacy shape to sources/scopes on save', async () => {
+      const profilesData = {
+        profiles: {
+          legacy: {
+            name: 'legacy',
+            label: 'Legacy',
+            connections: ['prod'],
+            selectedTables: { orders: ['id', 'amount'] },
+            tableOptions: {},
+          },
+        },
+      };
+
+      await request(app)
+        .post('/api/profiles/save')
+        .set('Cookie', cookie)
+        .send(profilesData)
+        .expect(200);
+
+      const row = db.raw.prepare("SELECT data FROM profiles WHERE key = 'main'").get() as { data: string };
+      const saved = JSON.parse(row.data) as { profiles: Record<string, Record<string, unknown>> };
+
+      // upgradeProfileShape should have synthesised sources from connections
+      expect(Array.isArray(saved.profiles['legacy']['sources'])).toBe(true);
+      // scopes should be synthesised from selectedTables
+      expect(typeof saved.profiles['legacy']['scopes']).toBe('object');
+    });
+
+    it('accepts a new-shape POST body (sources + scopes) without modification', async () => {
+      const profilesData = {
+        profiles: {
+          modern: {
+            name: 'modern',
+            label: 'Modern',
+            sources: ['dw'],
+            scopes: {
+              dw: {
+                kind: 'relational',
+                selectedTables: { events: ['id', 'type'] },
+              },
+            },
+            // Provide minimal legacy fields so that the migrator stays idempotent
+            connections: ['dw'],
+            selectedTables: { events: ['id', 'type'] },
+          },
+        },
+      };
+
+      const res = await request(app)
+        .post('/api/profiles/save')
+        .set('Cookie', cookie)
+        .send(profilesData)
+        .expect(200);
+
+      expect(res.body.success).toBe(true);
+
+      const row = db.raw.prepare("SELECT data FROM profiles WHERE key = 'main'").get() as { data: string };
+      const saved = JSON.parse(row.data) as { profiles: Record<string, Record<string, unknown>> };
+      expect(saved.profiles['modern']['sources']).toEqual(['dw']);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((saved.profiles['modern']['scopes'] as any)['dw'].kind).toBe('relational');
     });
 
     it('should save multiple profiles', async () => {
@@ -150,7 +224,73 @@ describe('profiles routes', () => {
 
       expect(res.body.found).toBe(true);
       expect(res.body.profiles.dev.label).toBe('Dev Team');
-      expect(res.body.profiles.dev.selectedTables.users).toEqual(['id', 'name']);
+      // Phase 5: legacy `selectedTables` is folded into `scopes[sourceId]` by
+      // the migrator on read.
+      const sourceId = res.body.profiles.dev.sources[0];
+      expect(res.body.profiles.dev.scopes[sourceId].selectedTables.users).toEqual([
+        'id',
+        'name',
+      ]);
+    });
+
+    it('upgrades legacy-shape profiles to new shape on load', async () => {
+      // Insert a raw legacy profile (no sources/scopes) directly into SQLite
+      const legacyData = {
+        profiles: {
+          old: {
+            name: 'old',
+            label: 'Old Profile',
+            connections: ['primary'],
+            selectedTables: { users: ['id', 'email'] },
+            tableOptions: {
+              users: { enabledTools: ['query'], maxLimit: 100, filterableColumns: [], groupableColumns: [] },
+            },
+          },
+        },
+      };
+      db.raw.prepare("INSERT OR REPLACE INTO profiles (key, data) VALUES ('main', ?)").run(JSON.stringify(legacyData));
+
+      const res = await request(app)
+        .get('/api/profiles/load')
+        .set('Cookie', cookie)
+        .expect(200);
+
+      expect(res.body.found).toBe(true);
+      // upgradeProfileShape must have synthesised sources from connections
+      expect(Array.isArray(res.body.profiles.old.sources)).toBe(true);
+      expect(res.body.profiles.old.sources).toContain('primary');
+      // scopes must be synthesised from selectedTables
+      expect(typeof res.body.profiles.old.scopes).toBe('object');
+    });
+
+    it('returns new-shape profiles unchanged on load (idempotent)', async () => {
+      const newShapeData = {
+        profiles: {
+          modern: {
+            name: 'modern',
+            label: 'Modern',
+            sources: ['dw'],
+            scopes: {
+              dw: {
+                kind: 'relational',
+                selectedTables: { events: ['id', 'type'] },
+              },
+            },
+            connections: ['dw'],
+            selectedTables: { events: ['id', 'type'] },
+          },
+        },
+      };
+      db.raw.prepare("INSERT OR REPLACE INTO profiles (key, data) VALUES ('main', ?)").run(JSON.stringify(newShapeData));
+
+      const res = await request(app)
+        .get('/api/profiles/load')
+        .set('Cookie', cookie)
+        .expect(200);
+
+      expect(res.body.found).toBe(true);
+      expect(res.body.profiles.modern.sources).toEqual(['dw']);
+      expect(res.body.profiles.modern.scopes['dw'].kind).toBe('relational');
     });
 
     it('should handle malformed JSON gracefully', async () => {
@@ -198,8 +338,13 @@ describe('profiles routes', () => {
 
       expect(res.body.found).toBe(true);
       expect(res.body.connection.envVar).toBe('MY_DB_URL');
-      expect(res.body.profiles.analytics.tableOptions.events.maxLimit).toBe(50);
-      expect(res.body.profiles.analytics.tableOptions.events.enabledTools).toEqual(['describe', 'aggregate']);
+      // Phase 5: legacy tableOptions live in scopes[sourceId].tableOptions.
+      const sourceId = res.body.profiles.analytics.sources[0];
+      expect(res.body.profiles.analytics.scopes[sourceId].tableOptions.events.maxLimit).toBe(50);
+      expect(res.body.profiles.analytics.scopes[sourceId].tableOptions.events.enabledTools).toEqual([
+        'describe',
+        'aggregate',
+      ]);
     });
 
     it('should return warnings when schema is available and profiles reference missing tables', async () => {
@@ -469,10 +614,20 @@ describe('PATCH /api/profiles/:name/response-mode', () => {
 
     const row = db.raw.prepare("SELECT data FROM profiles WHERE key = 'main'").get() as { data: string };
     const saved = JSON.parse(row.data) as {
-      profiles: Record<string, { label: string; selectedTables: Record<string, string[]>; responseMode?: string }>;
+      profiles: Record<
+        string,
+        {
+          label: string;
+          sources?: string[];
+          scopes?: Record<string, { kind: string; selectedTables: Record<string, string[]> }>;
+          responseMode?: string;
+        }
+      >;
     };
     expect(saved.profiles.sales.label).toBe('Sales');
-    expect(saved.profiles.sales.selectedTables.orders).toEqual(['id', 'amount']);
+    // Phase 5: legacy selectedTables now lives in scopes[sourceId].selectedTables
+    const sourceId = saved.profiles.sales.sources![0];
+    expect(saved.profiles.sales.scopes![sourceId].selectedTables.orders).toEqual(['id', 'amount']);
     expect(saved.profiles.sales.responseMode).toBe('friendly');
   });
 
@@ -558,7 +713,12 @@ describe('PATCH /api/profiles/:name/response-mode', () => {
     state.db = localDb;
     state.userManager = new UserManager(localDb);
     state.serveProfiles = {
-      live: { name: 'live', label: 'Live', selectedTables: { users: ['id'] } },
+      live: {
+        name: 'live',
+        label: 'Live',
+        sources: ['main'],
+        scopes: { main: { kind: 'relational', selectedTables: { users: ['id'] } } },
+      },
     };
     const appWithState = createApp(state);
     const localCookie = await setupAdminAndGetCookie(appWithState);
@@ -649,5 +809,158 @@ describe('validateProfiles', () => {
     };
     const warnings = validateProfiles(profiles, schemaTables);
     expect(warnings).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase B multi-tenancy — cross-tenant isolation tests.
+// ---------------------------------------------------------------------------
+describe('profiles routes — Phase B tenant isolation', () => {
+  let app: ReturnType<typeof createApp>;
+  let originalCwd: string;
+  let tmpDir: string;
+  let db: CalameDatabase;
+  let cookie: string;
+
+  beforeEach(async () => {
+    originalCwd = process.cwd();
+    tmpDir = path.join(os.tmpdir(), `calame-profiles-tenant-test-${Date.now()}`);
+    await fs.mkdir(tmpDir, { recursive: true });
+    process.chdir(tmpDir);
+
+    const state = new AppState();
+    db = new CalameDatabase(tmpDir);
+    state.db = db;
+    state.userManager = new UserManager(db);
+    app = createApp(state);
+    cookie = await setupAdminAndGetCookie(app);
+  });
+
+  afterEach(async () => {
+    process.chdir(originalCwd);
+    db.close();
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+  });
+
+  it('POST /api/profiles/save tags the row with the caller tenant', async () => {
+    await request(app)
+      .post('/api/profiles/save')
+      .set('Cookie', cookie)
+      .set('X-Tenant-Id', 'acme')
+      .send({
+        profiles: {
+          acmeProfile: { label: 'Acme', selectedTables: {}, tableOptions: {} },
+        },
+      })
+      .expect(200);
+
+    const row = db.raw
+      .prepare("SELECT tenant_id FROM profiles WHERE key = 'main'")
+      .get() as { tenant_id: string };
+    expect(row.tenant_id).toBe('acme');
+  });
+
+  it('GET /api/profiles/load is scoped to the caller tenant', async () => {
+    // Save under acme.
+    await request(app)
+      .post('/api/profiles/save')
+      .set('Cookie', cookie)
+      .set('X-Tenant-Id', 'acme')
+      .send({
+        profiles: {
+          acmeProfile: { label: 'Acme', selectedTables: {}, tableOptions: {} },
+        },
+      })
+      .expect(200);
+
+    // Beta tenant must see "no profiles" (`found: false`), not the acme blob.
+    const betaRes = await request(app)
+      .get('/api/profiles/load')
+      .set('Cookie', cookie)
+      .set('X-Tenant-Id', 'beta')
+      .expect(200);
+    expect(betaRes.body.found).toBe(false);
+
+    // Acme tenant sees its own blob.
+    const acmeRes = await request(app)
+      .get('/api/profiles/load')
+      .set('Cookie', cookie)
+      .set('X-Tenant-Id', 'acme')
+      .expect(200);
+    expect(acmeRes.body.found).toBe(true);
+    expect(acmeRes.body.profiles.acmeProfile).toBeDefined();
+  });
+
+  it('legacy callers (no header) continue to see the default-tenant blob', async () => {
+    // Save without any tenant header — lands under 'default'.
+    await request(app)
+      .post('/api/profiles/save')
+      .set('Cookie', cookie)
+      .send({
+        profiles: {
+          defaultProfile: { label: 'Default', selectedTables: {}, tableOptions: {} },
+        },
+      })
+      .expect(200);
+
+    // Header-less load returns the row exactly as before Phase B.
+    const res = await request(app)
+      .get('/api/profiles/load')
+      .set('Cookie', cookie)
+      .expect(200);
+    expect(res.body.found).toBe(true);
+    expect(res.body.profiles.defaultProfile).toBeDefined();
+
+    // Default row sits under 'default' in storage.
+    const row = db.raw
+      .prepare("SELECT tenant_id FROM profiles WHERE key = 'main'")
+      .get() as { tenant_id: string };
+    expect(row.tenant_id).toBe('default');
+  });
+
+  it('PATCH /api/profiles/:name/response-mode is a 404 across tenants', async () => {
+    // Acme creates a profile.
+    await request(app)
+      .post('/api/profiles/save')
+      .set('Cookie', cookie)
+      .set('X-Tenant-Id', 'acme')
+      .send({
+        profiles: {
+          acmeProfile: { label: 'Acme', selectedTables: {}, tableOptions: {} },
+        },
+      })
+      .expect(200);
+
+    // Beta tries to patch it — must 404 even though the name exists in
+    // another tenant's row.
+    const betaRes = await request(app)
+      .patch('/api/profiles/acmeProfile/response-mode')
+      .set('Cookie', cookie)
+      .set('X-Tenant-Id', 'beta')
+      .send({ mode: 'raw' })
+      .expect(404);
+    expect(betaRes.body.success).toBe(false);
+  });
+
+  it('rejects malformed X-Tenant-Id by falling back to default (no 400)', async () => {
+    // Headers with semicolons / spaces fail the regex; the route falls
+    // back to 'default' rather than erroring. This guarantees a forged
+    // header never crashes the API.
+    await request(app)
+      .post('/api/profiles/save')
+      .set('Cookie', cookie)
+      .set('X-Tenant-Id', "acme'; DROP--")
+      .send({
+        profiles: {
+          safe: { label: 'Safe', selectedTables: {}, tableOptions: {} },
+        },
+      })
+      .expect(200);
+
+    // Row landed under 'default' (the fallback).
+    const row = db.raw
+      .prepare("SELECT tenant_id FROM profiles WHERE key = 'main'")
+      .get() as { tenant_id: string };
+    expect(row.tenant_id).toBe('default');
   });
 });

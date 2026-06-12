@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { apiFetch } from '../lib/api.js';
 import DarkSelect from './ui/DarkSelect.js';
 import { useChatStream } from '../hooks/useChatStream.js';
 import type { UsageInfo } from '../hooks/useChatStream.js';
@@ -48,7 +49,7 @@ export default function ChatPanel({ selectedTables, activeProfiles }: ChatPanelP
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch('/api/ai-settings', { credentials: 'include' });
+        const res = await apiFetch('/api/ai-settings', { credentials: 'include' });
         const data = await res.json();
         if (data.success) {
           setAllAiSettings((data.settings ?? []) as AiSettingMeta[]);

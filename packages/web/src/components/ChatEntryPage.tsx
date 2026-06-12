@@ -1,7 +1,26 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, lazy, Suspense } from 'react';
+import { apiFetch, getCurrentTenant } from '../lib/api.js';
+import { buildMcpPath } from '../lib/mcp-url.js';
 import type { AuthMode } from '../types/schema.js';
 import DarkSelect from './ui/DarkSelect.js';
-import { ChatSsoLogin } from '@calame-ee/sso/web';
+
+/**
+ * Lazy-loaded SSO login screen for chat entry. Deferred so the Apache bundle
+ * never statically imports the BUSL chunk.
+ */
+const ChatSsoLogin = lazy(() =>
+  import('@calame-ee/sso/web')
+    .then((m) => ({ default: m.ChatSsoLogin }))
+    .catch(() => ({
+      default: function ChatSsoLoginUnavailable() {
+        return (
+          <div className="p-6 text-sm text-gray-400 text-center">
+            Les fonctionnalités SSO ne sont pas disponibles sur cette instance.
+          </div>
+        );
+      },
+    })),
+);
 import { useChatStream } from '../hooks/useChatStream.js';
 import type { UsageInfo } from '../hooks/useChatStream.js';
 import MarkdownMessage from './MarkdownMessage.js';
@@ -233,7 +252,7 @@ function TokenLoginForm({
     setLoading(true);
 
     try {
-      const res = await fetch('/api/chat-auth/token', {
+      const res = await apiFetch('/api/chat-auth/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -328,7 +347,7 @@ function CalameLoginForm({
     setLoading(true);
 
     try {
-      const res = await fetch('/api/auth/user-login', {
+      const res = await apiFetch('/api/auth/user-login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -435,7 +454,7 @@ function ExternalLoginForm({
     setError('');
     setLoading(true);
     try {
-      const res = await fetch('/api/chat-auth/token', {
+      const res = await apiFetch('/api/chat-auth/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -524,7 +543,7 @@ function OAuthLoginForm({ profile }: { profile: ChatProfile }) {
         <p className="text-sm text-gray-500 mb-8">Sign in to access this chat.</p>
 
         <a
-          href={`/mcp/${encodeURIComponent(profile.name)}/oauth/login?redirect=${encodeURIComponent(redirectUrl)}`}
+          href={`${buildMcpPath(profile.name, getCurrentTenant())}/oauth/login?redirect=${encodeURIComponent(redirectUrl)}`}
           className="inline-flex items-center justify-center w-full py-2.5 px-4 rounded-lg bg-gray-700 hover:bg-gray-600 text-sm font-medium text-white transition-colors focus:outline-none focus:ring-2 focus:ring-gray-500"
         >
           Sign in with {providerLabel}
@@ -540,7 +559,7 @@ function OAuthLoginForm({ profile }: { profile: ChatProfile }) {
 function ChatView({ profile, onLogout }: { profile: ChatProfile; onLogout: () => void }) {
   const handleLogout = async () => {
     try {
-      await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+      await apiFetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
     } catch {
       // Ignore errors — clear local state anyway
     }
@@ -633,7 +652,7 @@ export default function ChatEntryPage({ profileName }: ChatEntryPageProps) {
         const urlToken = urlParams.get('token');
         if (urlToken) {
           try {
-            const tokenRes = await fetch('/api/chat-auth/token', {
+            const tokenRes = await apiFetch('/api/chat-auth/token', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               credentials: 'include',
@@ -654,7 +673,7 @@ export default function ChatEntryPage({ profileName }: ChatEntryPageProps) {
 
       // 3. Check if already authenticated
       try {
-        const statusRes = await fetch('/api/auth/user-status', { credentials: 'include' });
+        const statusRes = await apiFetch('/api/auth/user-status', { credentials: 'include' });
         const statusData = await statusRes.json();
 
         if (statusData.success && statusData.authenticated) {
@@ -740,7 +759,7 @@ export default function ChatEntryPage({ profileName }: ChatEntryPageProps) {
   if (pageState.step === 'denied') {
     const handleSignOut = async () => {
       try {
-        await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+        await apiFetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
       } catch {
         // Ignore network errors — reload regardless so the user can start fresh
       }
@@ -840,7 +859,11 @@ export default function ChatEntryPage({ profileName }: ChatEntryPageProps) {
       return <CalameLoginForm profile={profile} onSuccess={handleAuthSuccess} />;
 
     case 'sso':
-      return <ChatSsoLogin profile={profile} />;
+      return (
+        <Suspense fallback={<div className="p-6 text-sm text-gray-500 italic">Chargement…</div>}>
+          <ChatSsoLogin profile={profile} />
+        </Suspense>
+      );
 
     case 'oauth':
       return <OAuthLoginForm profile={profile} />;

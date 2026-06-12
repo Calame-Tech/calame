@@ -61,7 +61,6 @@ describe('GET /api/chat-profile/:profileName', () => {
     loadProfile({
       name: 'finance',
       label: 'Finance',
-      selectedTables: {},
       authMode: 'calame',
     });
 
@@ -80,7 +79,6 @@ describe('GET /api/chat-profile/:profileName', () => {
     loadProfile({
       name: 'analytics',
       label: 'Analytics',
-      selectedTables: {},
       authMode: 'token',
     });
     activateProfile('analytics');
@@ -95,7 +93,6 @@ describe('GET /api/chat-profile/:profileName', () => {
     loadProfile({
       name: 'legacy',
       label: 'Legacy',
-      selectedTables: {},
       // no authMode field
     });
 
@@ -107,7 +104,6 @@ describe('GET /api/chat-profile/:profileName', () => {
     loadProfile({
       name: 'secured',
       label: 'Secured',
-      selectedTables: {},
       authMode: 'oauth',
       oauthConfig: {
         provider: 'github',
@@ -128,7 +124,6 @@ describe('GET /api/chat-profile/:profileName', () => {
     loadProfile({
       name: 'ssoProfile',
       label: 'SSO Profile',
-      selectedTables: {},
       authMode: 'sso',
     });
 
@@ -141,7 +136,6 @@ describe('GET /api/chat-profile/:profileName', () => {
     loadProfile({
       name: 'public',
       label: 'Public',
-      selectedTables: {},
       authMode: 'open',
     });
 

@@ -13,6 +13,8 @@
 import type { Express } from 'express';
 import type { AppState } from '../state.js';
 import type { ServeProfile } from '@calame/core';
+import { upgradeProfileShape } from '@calame/core';
+import { DEFAULT_TENANT_ID } from '../tenancy.js';
 
 /** Shape of the response profile object. */
 interface ChatProfileInfo {
@@ -36,9 +38,13 @@ async function loadProfileFromDb(
   if (!state.db) return null;
 
   try {
+    // Phase B multi-tenancy: this is a PUBLIC endpoint consumed by login
+    // pages that cannot inject an `X-Tenant-Id` header. We pin the lookup
+    // to the default tenant for the MVP. Phase C will revisit this when
+    // the session-derived tenant is available before this handler runs.
     const row = state.db.raw
-      .prepare("SELECT data FROM profiles WHERE key = 'main'")
-      .get() as { data: string } | undefined;
+      .prepare("SELECT data FROM profiles WHERE key = 'main' AND tenant_id = ?")
+      .get(DEFAULT_TENANT_ID) as { data: string } | undefined;
 
     if (!row) return null;
 
@@ -49,20 +55,11 @@ async function loadProfileFromDb(
     const profileRaw = profilesRaw[profileName];
     if (!profileRaw || typeof profileRaw !== 'object') return null;
 
-    const p = profileRaw as Record<string, unknown>;
-
-    return {
-      name: profileName,
-      label: (p.label as string) ?? profileName,
-      configurations: p.configurations as string[] | undefined,
-      aiSettingNames: p.aiSettingNames as string[] | undefined,
-      selectedTables: (p.selectedTables as Record<string, string[]>) ?? {},
-      tableOptions: p.tableOptions,
-      columnMasking: p.columnMasking,
-      authMode: (p.authMode as ServeProfile['authMode']) ?? undefined,
-      oauthConfig: p.oauthConfig as ServeProfile['oauthConfig'] | undefined,
-      externalAuthConfig: p.externalAuthConfig as ServeProfile['externalAuthConfig'] | undefined,
-    } as ServeProfile;
+    // Run the raw JSON through the shape migrator so legacy and unified
+    // profiles emerge with the same structure. Field names from the storage
+    // (e.g. `selectedTables`, `tableOptions`) are preserved when present so
+    // they remain visible to legacy consumers reading the result directly.
+    return upgradeProfileShape({ ...profileRaw, name: profileName });
   } catch (err: unknown) {
     state.logger?.warn(`Failed to load profile "${profileName}" from DB`, {
       error: err instanceof Error ? err.message : String(err),

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { apiFetch } from '../lib/api.js';
 import HelpTip from './HelpTip.js';
 
 interface AiSettingMeta {
@@ -29,7 +30,7 @@ export default function AiSettingsAssignment({
 
   const refresh = useCallback(async () => {
     try {
-      const res = await fetch('/api/ai-settings', { credentials: 'include' });
+      const res = await apiFetch('/api/ai-settings', { credentials: 'include' });
       const data = await res.json();
       if (data.success) setAvailable((data.settings ?? []) as AiSettingMeta[]);
     } catch {

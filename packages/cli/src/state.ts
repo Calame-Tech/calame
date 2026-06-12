@@ -8,11 +8,13 @@ import type { WriteQueue } from './write-queue.js';
 import type { AiSettingsManager } from './ai-config.js';
 import type { SmtpConfigManager } from './smtp-config.js';
 import type { OidcConfigManager } from '@calame-ee/sso';
+import type { SsoRuntime } from './sso-runtime.js';
 import type { AppConfig } from './config.js';
 import type { Logger } from './logger.js';
 import type { EmailService } from './email.js';
 import type { SecretsProvider } from './secrets.js';
 import type { LlmRouter } from './llm-router.js';
+import type { RagRuntime } from './rag-runtime.js';
 import { TokenRateLimiter } from './rate-limiter.js';
 
 export interface ConnectionState {
@@ -43,6 +45,10 @@ export class AppState {
   private _emailService: EmailService | null = null;
   private _secretsProvider: SecretsProvider | null = null;
   private _llmRouter: LlmRouter | null = null;
+  private _ragRuntime: RagRuntime | undefined = undefined;
+  private _ragDisabledReason: string | null = null;
+  private _ssoRuntime: SsoRuntime | undefined = undefined;
+  private _ssoDisabledReason: string | null = null;
 
   // --- Multi-connection API ---
 
@@ -336,5 +342,47 @@ export class AppState {
 
   set llmRouter(value: LlmRouter | null) {
     this._llmRouter = value;
+  }
+
+  // --- RAG runtime (optional, lazy-loaded from @calame-ee/rag-core) ---
+
+  get ragRuntime(): RagRuntime | undefined {
+    return this._ragRuntime;
+  }
+
+  set ragRuntime(value: RagRuntime | undefined) {
+    this._ragRuntime = value;
+  }
+
+  /** Human-readable reason why the RAG runtime failed to initialize, or `null`
+   *  when RAG is enabled or has not been attempted yet. Exposed via `/health`
+   *  so the frontend can show a disabled entry with a reason tooltip instead of
+   *  silently hiding the nav entry. */
+  get ragDisabledReason(): string | null {
+    return this._ragDisabledReason;
+  }
+
+  set ragDisabledReason(value: string | null) {
+    this._ragDisabledReason = value;
+  }
+
+  // --- SSO runtime (optional, lazy-loaded from @calame-ee/sso) ---
+
+  get ssoRuntime(): SsoRuntime | undefined {
+    return this._ssoRuntime;
+  }
+
+  set ssoRuntime(value: SsoRuntime | undefined) {
+    this._ssoRuntime = value;
+  }
+
+  /** Human-readable reason why the SSO runtime failed to initialize, or `null`
+   *  when SSO is enabled or has not been attempted yet. */
+  get ssoDisabledReason(): string | null {
+    return this._ssoDisabledReason;
+  }
+
+  set ssoDisabledReason(value: string | null) {
+    this._ssoDisabledReason = value;
   }
 }

@@ -1,8 +1,10 @@
 import type { Express } from 'express';
 import type { AppState } from '../state.js';
-import type { AiProvider, AiSetting } from '../ai-config.js';
+import type { AiCapability, AiProvider, AiSetting } from '../ai-config.js';
+import { getTenantId } from '../tenancy.js';
 
 const VALID_PROVIDERS: ReadonlySet<AiProvider> = new Set(['anthropic', 'openrouter', 'custom']);
+const VALID_CAPABILITIES: ReadonlySet<AiCapability> = new Set(['chat', 'embeddings']);
 
 /** Slug-style names: lowercase letters, digits, dash, underscore. */
 const NAME_RE = /^[a-z0-9_-]{1,64}$/;
@@ -14,6 +16,22 @@ interface SettingPayload {
   apiKey?: string;
   model?: string;
   baseUrl?: string;
+  capabilities?: string[];
+  embeddingModel?: string;
+}
+
+function validateCapabilitiesPayload(payload: SettingPayload): string | null {
+  if (payload.capabilities === undefined) return null;
+  if (!Array.isArray(payload.capabilities)) return 'capabilities must be an array.';
+  for (const cap of payload.capabilities) {
+    if (typeof cap !== 'string' || !VALID_CAPABILITIES.has(cap as AiCapability)) {
+      return `Unknown capability "${cap}". Valid values: chat, embeddings.`;
+    }
+  }
+  if (payload.capabilities.includes('embeddings') && !payload.embeddingModel) {
+    return 'embeddingModel is required when capabilities includes "embeddings".';
+  }
+  return null;
 }
 
 function validateProviderFields(body: SettingPayload): string | null {
@@ -31,7 +49,14 @@ function validateProviderFields(body: SettingPayload): string | null {
 
 async function testConnection(setting: AiSetting): Promise<{ ok: true; response: string } | { ok: false; message: string }> {
   try {
+    const capabilities = setting.capabilities ?? ['chat'];
+    const hasChat = capabilities.includes('chat');
+    const hasEmbeddings = capabilities.includes('embeddings');
+
     if (setting.provider === 'anthropic') {
+      if (!hasChat) {
+        return { ok: false, message: 'Anthropic ne propose pas de modèles d\'embeddings.' };
+      }
       const Anthropic = (await import('@anthropic-ai/sdk')).default;
       const anthropic = new Anthropic({ apiKey: setting.apiKey });
       const response = await anthropic.messages.create({
@@ -45,34 +70,91 @@ async function testConnection(setting: AiSetting): Promise<{ ok: true; response:
         .join('');
       return { ok: true, response: text };
     }
+
     const OpenAI = (await import('openai')).default;
     const baseUrl =
       setting.provider === 'openrouter' ? 'https://openrouter.ai/api/v1' : setting.baseUrl;
     const openai = new OpenAI({ apiKey: setting.apiKey || 'not-needed', baseURL: baseUrl });
-    const completion = await openai.chat.completions.create({
-      model:
-        setting.model || (setting.provider === 'openrouter' ? 'anthropic/claude-sonnet-4' : 'default'),
-      max_tokens: 50,
-      messages: [
-        { role: 'system', content: 'You are a test assistant.' },
-        { role: 'user', content: 'Say "OK" if you can hear me.' },
-      ],
-    });
-    return { ok: true, response: completion.choices[0]?.message?.content ?? '' };
+
+    if (hasChat) {
+      const completion = await openai.chat.completions.create({
+        model:
+          setting.model || (setting.provider === 'openrouter' ? 'anthropic/claude-sonnet-4' : 'default'),
+        max_tokens: 50,
+        messages: [
+          { role: 'system', content: 'You are a test assistant.' },
+          { role: 'user', content: 'Say "OK" if you can hear me.' },
+        ],
+      });
+      return { ok: true, response: completion.choices[0]?.message?.content ?? '' };
+    }
+
+    if (hasEmbeddings) {
+      if (!setting.embeddingModel) {
+        return { ok: false, message: 'Aucun modèle d\'embeddings configuré.' };
+      }
+      const embedding = await openai.embeddings.create({
+        model: setting.embeddingModel,
+        input: 'test',
+      });
+      const dims = embedding.data[0]?.embedding?.length ?? 0;
+      return { ok: true, response: `Embeddings OK (${dims} dimensions)` };
+    }
+
+    return { ok: false, message: 'Aucune capacité activée pour cette configuration.' };
   } catch (error: unknown) {
     return { ok: false, message: error instanceof Error ? error.message : 'Connection test failed.' };
   }
 }
 
+/**
+ * Probe the embeddings endpoint to discover the model's output vector dimension.
+ * Called on save when capabilities includes 'embeddings'. The discovered dimension
+ * is persisted on the AI setting so the RAG layer can use it without a hardcoded map.
+ */
+async function probeEmbeddingDimensions(
+  payload: SettingPayload,
+): Promise<{ ok: true; dimensions: number } | { ok: false; message: string }> {
+  try {
+    const provider = payload.provider as AiProvider;
+    if (provider === 'anthropic') {
+      return { ok: false, message: 'Anthropic ne propose pas de modèles d\'embeddings.' };
+    }
+    if (!payload.embeddingModel) {
+      return { ok: false, message: 'embeddingModel manquant.' };
+    }
+    const OpenAI = (await import('openai')).default;
+    const baseUrl = provider === 'openrouter' ? 'https://openrouter.ai/api/v1' : payload.baseUrl;
+    const client = new OpenAI({ apiKey: payload.apiKey || 'not-needed', baseURL: baseUrl });
+    const response = await client.embeddings.create({
+      model: payload.embeddingModel,
+      input: 'probe',
+    });
+    const dims = response.data[0]?.embedding?.length ?? 0;
+    if (!dims) {
+      return { ok: false, message: 'La réponse de l\'API ne contient pas de vecteur d\'embedding.' };
+    }
+    return { ok: true, dimensions: dims };
+  } catch (error: unknown) {
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : 'Échec de la détection de dimensions.',
+    };
+  }
+}
+
 export function registerAiSettingsRoute(app: Express, state: AppState): void {
   /** GET /api/ai-settings — list all settings (api keys masked). */
-  app.get('/api/ai-settings', (_req, res) => {
+  app.get('/api/ai-settings', (req, res) => {
     const mgr = state.aiSettingsManager;
     if (!mgr) {
       res.json({ success: true, settings: [], config: null });
       return;
     }
-    const settings = mgr.listMaskedSettings();
+    // Phase B multi-tenancy — thread the resolved tenant through every
+    // manager call so the listing is scoped to the caller.
+    const tenantId = getTenantId(req);
+    const settings = mgr.listMaskedSettings(tenantId);
     // Backward-compat: also expose `config` (first setting) for older callers.
     res.json({ success: true, settings, config: settings[0] ?? null });
   });
@@ -84,7 +166,7 @@ export function registerAiSettingsRoute(app: Express, state: AppState): void {
       res.status(500).json({ success: false, message: 'AI settings manager not initialized.' });
       return;
     }
-    const setting = mgr.getMaskedSetting(req.params.name);
+    const setting = mgr.getMaskedSetting(req.params.name, getTenantId(req));
     if (!setting) {
       res.status(404).json({ success: false, message: 'Setting not found.' });
       return;
@@ -107,20 +189,31 @@ export function registerAiSettingsRoute(app: Express, state: AppState): void {
       return;
     }
 
+    const capError = validateCapabilitiesPayload(body);
+    if (capError) {
+      res.status(400).json({ success: false, message: capError });
+      return;
+    }
+
+    const tenantId = getTenantId(req);
+
     // Legacy single-config behaviour: no `name` → upsert the 'default' setting.
     if (!body.name) {
       let finalApiKey: string = body.apiKey ?? '';
       if (finalApiKey.includes('***')) {
-        const existing = mgr.getSetting('default');
+        const existing = mgr.getSetting('default', tenantId);
         finalApiKey = existing?.apiKey ?? '';
       }
       try {
-        await mgr.setConfig({
-          provider: body.provider as AiProvider,
-          apiKey: finalApiKey,
-          model: body.model,
-          baseUrl: body.baseUrl,
-        });
+        await mgr.setConfig(
+          {
+            provider: body.provider as AiProvider,
+            apiKey: finalApiKey,
+            model: body.model,
+            baseUrl: body.baseUrl,
+          },
+          tenantId,
+        );
         res.json({ success: true });
       } catch (error: unknown) {
         res.status(500).json({
@@ -143,16 +236,35 @@ export function registerAiSettingsRoute(app: Express, state: AppState): void {
       return;
     }
 
+    let embeddingDimensions: number | undefined;
+    if (body.capabilities?.includes('embeddings')) {
+      const probe = await probeEmbeddingDimensions(body);
+      if (!probe.ok) {
+        res.status(400).json({
+          success: false,
+          message: `Validation du modèle d'embeddings échouée : ${probe.message}`,
+        });
+        return;
+      }
+      embeddingDimensions = probe.dimensions;
+    }
+
     try {
-      mgr.createSetting({
-        name: body.name,
-        label: body.label,
-        provider: body.provider as AiProvider,
-        apiKey: body.apiKey ?? '',
-        model: body.model,
-        baseUrl: body.baseUrl,
-      });
-      res.json({ success: true, setting: mgr.getMaskedSetting(body.name) });
+      mgr.createSetting(
+        {
+          name: body.name,
+          label: body.label,
+          provider: body.provider as AiProvider,
+          apiKey: body.apiKey ?? '',
+          model: body.model,
+          baseUrl: body.baseUrl,
+          capabilities: body.capabilities as AiCapability[] | undefined,
+          embeddingModel: body.embeddingModel,
+          embeddingDimensions,
+        },
+        tenantId,
+      );
+      res.json({ success: true, setting: mgr.getMaskedSetting(body.name, tenantId) });
     } catch (error: unknown) {
       res.status(400).json({
         success: false,
@@ -162,13 +274,14 @@ export function registerAiSettingsRoute(app: Express, state: AppState): void {
   });
 
   /** PUT /api/ai-settings/:name — update an existing setting. */
-  app.put('/api/ai-settings/:name', (req, res) => {
+  app.put('/api/ai-settings/:name', async (req, res) => {
     const mgr = state.aiSettingsManager;
     if (!mgr) {
       res.status(500).json({ success: false, message: 'AI settings manager not initialized.' });
       return;
     }
-    const existing = mgr.getSetting(req.params.name);
+    const tenantId = getTenantId(req);
+    const existing = mgr.getSetting(req.params.name, tenantId);
     if (!existing) {
       res.status(404).json({ success: false, message: 'Setting not found.' });
       return;
@@ -181,18 +294,51 @@ export function registerAiSettingsRoute(app: Express, state: AppState): void {
       return;
     }
 
+    const capError = validateCapabilitiesPayload(body);
+    if (capError) {
+      res.status(400).json({ success: false, message: capError });
+      return;
+    }
+
     let finalApiKey: string = body.apiKey ?? '';
     if (finalApiKey.includes('***')) finalApiKey = existing.apiKey;
 
+    // Re-probe dimensions when capabilities or embedding model change.
+    let embeddingDimensions: number | undefined = existing.embeddingDimensions;
+    const willUseEmbeddings = body.capabilities?.includes('embeddings') ?? false;
+    const modelChanged = body.embeddingModel !== existing.embeddingModel;
+    const wasEmbeddings = existing.capabilities?.includes('embeddings') ?? false;
+    if (willUseEmbeddings && (modelChanged || !wasEmbeddings || existing.embeddingDimensions === undefined)) {
+      const probePayload: SettingPayload = { ...body, apiKey: finalApiKey };
+      const probe = await probeEmbeddingDimensions(probePayload);
+      if (!probe.ok) {
+        res.status(400).json({
+          success: false,
+          message: `Validation du modèle d'embeddings échouée : ${probe.message}`,
+        });
+        return;
+      }
+      embeddingDimensions = probe.dimensions;
+    } else if (!willUseEmbeddings) {
+      embeddingDimensions = undefined;
+    }
+
     try {
-      mgr.updateSetting(req.params.name, {
-        label: body.label ?? existing.label,
-        provider: body.provider as AiProvider,
-        apiKey: finalApiKey,
-        model: body.model,
-        baseUrl: body.baseUrl,
-      });
-      res.json({ success: true, setting: mgr.getMaskedSetting(req.params.name) });
+      mgr.updateSetting(
+        req.params.name,
+        {
+          label: body.label ?? existing.label,
+          provider: body.provider as AiProvider,
+          apiKey: finalApiKey,
+          model: body.model,
+          baseUrl: body.baseUrl,
+          capabilities: body.capabilities as AiCapability[] | undefined,
+          embeddingModel: body.embeddingModel,
+          embeddingDimensions,
+        },
+        tenantId,
+      );
+      res.json({ success: true, setting: mgr.getMaskedSetting(req.params.name, tenantId) });
     } catch (error: unknown) {
       res.status(500).json({
         success: false,
@@ -208,22 +354,24 @@ export function registerAiSettingsRoute(app: Express, state: AppState): void {
       res.status(500).json({ success: false, message: 'AI settings manager not initialized.' });
       return;
     }
-    if (!mgr.getSetting(req.params.name)) {
+    const tenantId = getTenantId(req);
+    if (!mgr.getSetting(req.params.name, tenantId)) {
       res.status(404).json({ success: false, message: 'Setting not found.' });
       return;
     }
-    mgr.deleteSetting(req.params.name);
+    mgr.deleteSetting(req.params.name, tenantId);
     res.json({ success: true });
   });
 
   /** POST /api/ai-settings/test — test the legacy default setting (backward-compat). */
-  app.post('/api/ai-settings/test', async (_req, res) => {
+  app.post('/api/ai-settings/test', async (req, res) => {
     const mgr = state.aiSettingsManager;
-    if (!mgr || !mgr.isConfigured()) {
+    const tenantId = getTenantId(req);
+    if (!mgr || !mgr.isConfigured(tenantId)) {
       res.status(400).json({ success: false, message: 'AI is not configured.' });
       return;
     }
-    const setting = mgr.listSettings()[0];
+    const setting = mgr.listSettings(tenantId)[0];
     if (!setting) {
       res.status(400).json({ success: false, message: 'No AI setting found.' });
       return;
@@ -243,7 +391,7 @@ export function registerAiSettingsRoute(app: Express, state: AppState): void {
       res.status(500).json({ success: false, message: 'AI settings manager not initialized.' });
       return;
     }
-    const setting = mgr.getSetting(req.params.name);
+    const setting = mgr.getSetting(req.params.name, getTenantId(req));
     if (!setting) {
       res.status(404).json({ success: false, message: 'Setting not found.' });
       return;

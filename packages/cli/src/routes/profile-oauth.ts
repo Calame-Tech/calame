@@ -2,8 +2,13 @@
  * Per-profile OAuth 2.0 login flow.
  *
  * Routes registered:
- *   GET  /mcp/:profile/oauth/login    — Redirect to OAuth provider authorization URL.
- *   GET  /mcp/:profile/oauth/callback — Exchange code for token, find/create user, return Bearer.
+ *   GET  /mcp/:profile/oauth/login                — legacy / default tenant.
+ *   GET  /mcp/:profile/oauth/callback             — legacy / default tenant.
+ *   GET  /mcp/:tenant/:profile/oauth/login        — tenant-qualified.
+ *   GET  /mcp/:tenant/:profile/oauth/callback     — tenant-qualified.
+ *
+ * The tenant-qualified pair mirrors the new MCP serve URL format added when
+ * we lifted the Phase B limitation that pinned MCP to the default tenant.
  *
  * These routes are public (registered before the admin session middleware).
  */
@@ -13,11 +18,15 @@ import crypto from 'crypto';
 import type { AppState } from '../state.js';
 import { getOAuthProvider } from '../oauth-providers.js';
 import type { UserProfileAccess } from '../user.js';
+import { DEFAULT_TENANT_ID } from '../tenancy.js';
+import { buildMcpPath } from '../utils/mcp-url.js';
+import { loadServeProfileForTenant } from './serve.js';
 
 /** PKCE state entry stored while the OAuth round-trip is in flight. */
 interface PendingOAuthState {
   codeVerifier: string;
   profileName: string;
+  tenantId: string;
   expiresAt: number;
 }
 
@@ -104,15 +113,35 @@ async function fetchUserInfo(
 
 export function registerProfileOAuthRoutes(app: Express, state: AppState): void {
   /**
-   * GET /mcp/:profile/oauth/login
+   * Resolve (tenant, profile) from the route params. The tenant-qualified
+   * route binds `tenant`; the legacy route omits it. Express treats
+   * `:tenant` as an optional named segment when we register two route
+   * patterns — we read it back here uniformly.
+   *
+   * For now the OAuth flow itself still looks up `state.serveProfiles`
+   * (default-tenant only) — non-default tenant OAuth profiles will require
+   * lifting that cache, tracked under the broader Phase D auth work.
+   */
+  function readRouteParams(req: Request): { tenantId: string; profileName: string } {
+    const tenant = (req.params as { tenant?: string }).tenant;
+    const profile = (req.params as { profile?: string }).profile ?? '';
+    return {
+      tenantId: tenant ?? DEFAULT_TENANT_ID,
+      profileName: profile,
+    };
+  }
+
+  /**
+   * GET /mcp/:profile/oauth/login           — default tenant
+   * GET /mcp/:tenant/:profile/oauth/login   — tenant-qualified
    *
    * Validates that the profile exists and has authMode === 'oauth', then builds the
    * authorization URL with PKCE and redirects the user to the OAuth provider.
    */
-  app.get('/mcp/:profile/oauth/login', async (req: Request, res: Response) => {
-    const profileName = req.params.profile as string;
+  const loginHandler = async (req: Request, res: Response) => {
+    const { tenantId, profileName } = readRouteParams(req);
 
-    const profile = state.serveProfiles[profileName];
+    const profile = loadServeProfileForTenant(state, tenantId, profileName);
     if (!profile) {
       res.status(404).json({ error: `Profile "${profileName}" not found.` });
       return;
@@ -145,11 +174,14 @@ export function registerProfileOAuthRoutes(app: Express, state: AppState): void 
       pendingStates.set(stateParam, {
         codeVerifier,
         profileName,
+        tenantId,
         expiresAt: Date.now() + 10 * 60 * 1000, // 10 minutes
       });
 
       const baseUrl = getBaseUrl(req);
-      const redirectUri = `${baseUrl}/mcp/${encodeURIComponent(profileName)}/oauth/callback`;
+      // Mirror the URL's tenant on the redirect_uri so the OAuth provider
+      // calls back into the same shape the client started from.
+      const redirectUri = `${baseUrl}${buildMcpPath(profileName, tenantId)}/oauth/callback`;
 
       const authUrl = new URL(providerConfig.authorizationUrl);
       authUrl.searchParams.set('client_id', oauthConfig.clientId);
@@ -168,17 +200,20 @@ export function registerProfileOAuthRoutes(app: Express, state: AppState): void 
       });
       res.status(500).json({ error: 'Failed to initiate OAuth login.' });
     }
-  });
+  };
+  app.get('/mcp/:profile/oauth/login', loginHandler);
+  app.get('/mcp/:tenant/:profile/oauth/login', loginHandler);
 
   /**
-   * GET /mcp/:profile/oauth/callback
+   * GET /mcp/:profile/oauth/callback           — default tenant
+   * GET /mcp/:tenant/:profile/oauth/callback   — tenant-qualified
    *
    * Handles the redirect from the OAuth provider. Validates state, exchanges the
    * authorization code for an access token, fetches user info, finds or creates a
    * Calame user, and returns a Bearer token the client can use for MCP requests.
    */
-  app.get('/mcp/:profile/oauth/callback', async (req: Request, res: Response) => {
-    const profileName = req.params.profile as string;
+  const callbackHandler = async (req: Request, res: Response) => {
+    const { tenantId, profileName } = readRouteParams(req);
 
     const {
       code,
@@ -214,8 +249,12 @@ export function registerProfileOAuthRoutes(app: Express, state: AppState): void 
       res.status(400).json({ error: 'State parameter does not match the requested profile.' });
       return;
     }
+    if (pendingState.tenantId !== tenantId) {
+      res.status(400).json({ error: 'State parameter does not match the requested tenant.' });
+      return;
+    }
 
-    const profile = state.serveProfiles[profileName];
+    const profile = loadServeProfileForTenant(state, tenantId, profileName);
     if (!profile) {
       res.status(404).json({ error: `Profile "${profileName}" not found.` });
       return;
@@ -241,7 +280,10 @@ export function registerProfileOAuthRoutes(app: Express, state: AppState): void 
       });
 
       const baseUrl = getBaseUrl(req);
-      const redirectUri = `${baseUrl}/mcp/${encodeURIComponent(profileName)}/oauth/callback`;
+      // Mirror the URL's tenant on the redirect_uri so it matches the one
+      // used during the login redirect — required for PKCE validation by
+      // most providers.
+      const redirectUri = `${baseUrl}${buildMcpPath(profileName, tenantId)}/oauth/callback`;
 
       // Exchange authorization code for provider access token
       const providerAccessToken = await exchangeCodeForToken(
@@ -347,7 +389,9 @@ export function registerProfileOAuthRoutes(app: Express, state: AppState): void 
       });
       res.status(500).json({ error: 'OAuth authentication failed. Please try again.' });
     }
-  });
+  };
+  app.get('/mcp/:profile/oauth/callback', callbackHandler);
+  app.get('/mcp/:tenant/:profile/oauth/callback', callbackHandler);
 }
 
 function getBaseUrl(req: Request): string {

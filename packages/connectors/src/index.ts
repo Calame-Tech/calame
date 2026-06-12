@@ -2,6 +2,10 @@ export type { DatabaseConnector, DatabaseType, SslConfig, ConnectionOptions } fr
 export { PostgreSQLConnector } from './postgresql.js';
 export { MySQLConnector } from './mysql.js';
 export { SQLiteConnector } from './sqlite.js';
+export { buildDatabaseSourceAdapter } from './db-adapter.js';
+export type { DatabaseAdapterConfig } from './db-adapter.js';
+export { buildHttpApiSourceAdapter } from './api-adapter.js';
+export type { HttpApiAdapterConfig } from './api-adapter.js';
 
 import type { DatabaseConnector, DatabaseType } from './types.js';
 import { PostgreSQLConnector } from './postgresql.js';
@@ -34,3 +38,14 @@ export function getConnector(type: DatabaseType): DatabaseConnector {
 export function getAvailableConnectors(): DatabaseConnector[] {
   return Object.values(registry);
 }
+
+// Register the source adapters into the singleton at module load.
+// No circular-import issue: @calame/core does not import @calame/connectors.
+import { sourceAdapterRegistry } from '@calame/core';
+import { buildDatabaseSourceAdapter } from './db-adapter.js';
+import { buildHttpApiSourceAdapter } from './api-adapter.js';
+
+sourceAdapterRegistry.register(buildDatabaseSourceAdapter('postgresql', 'PostgreSQL'));
+sourceAdapterRegistry.register(buildDatabaseSourceAdapter('mysql', 'MySQL'));
+sourceAdapterRegistry.register(buildDatabaseSourceAdapter('sqlite', 'SQLite'));
+sourceAdapterRegistry.register(buildHttpApiSourceAdapter());

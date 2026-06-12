@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { apiFetch } from '../lib/api.js';
 import type { UserEntry, AccessMode } from '../types/schema.js';
 
 interface McpUsersProps {
@@ -39,8 +40,8 @@ export default function McpUsers({ profileName, onNavigateToUser }: McpUsersProp
   const fetchUsers = useCallback(async () => {
     try {
       const [profileRes, allRes] = await Promise.all([
-        fetch(`/api/users?profileName=${profileName}`, { credentials: 'include' }),
-        fetch('/api/users', { credentials: 'include' }),
+        apiFetch(`/api/users?profileName=${profileName}`, { credentials: 'include' }),
+        apiFetch('/api/users', { credentials: 'include' }),
       ]);
       const profileData = await profileRes.json();
       const allData = await allRes.json();
@@ -105,7 +106,7 @@ export default function McpUsers({ profileName, onNavigateToUser }: McpUsersProp
     e.preventDefault();
     setError('');
     try {
-      const res = await fetch('/api/users', {
+      const res = await apiFetch('/api/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',

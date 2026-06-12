@@ -208,4 +208,16 @@ export function runMigrations(db: CalameDatabase): void {
 
     db.setSchemaVersion(12);
   }
+
+  if (currentVersion < 13) {
+    // Version 13: Instance branding. One key/value row PER TENANT — `key` is the
+    // tenant id, `value` is the JSON blob (logo / favicon / updatedAt) consumed
+    // whole by the /api/branding routes. Created here rather than in
+    // initSchema so existing installs pick it up on upgrade.
+    db.raw.exec(`CREATE TABLE IF NOT EXISTS branding (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    )`);
+    db.setSchemaVersion(13);
+  }
 }

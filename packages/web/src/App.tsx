@@ -12,6 +12,7 @@ import SetupPage from './components/SetupPage.js';
 import UserDashboard from './components/UserDashboard.js';
 import UserManagement from './components/UserManagement.js';
 import WelcomePage from './components/WelcomePage.js';
+import BrandingSettings from './components/BrandingSettings.js';
 import AiSettings from './components/AiSettings.js';
 import AiSettingsAssignment from './components/AiSettingsAssignment.js';
 import SmtpSettings from './components/SmtpSettings.js';
@@ -3440,7 +3441,7 @@ function ConfigurationDetailView({
 // SettingsPage — tabbed layout wrapping AiSettings / SmtpSettings / OidcSettings
 // ---------------------------------------------------------------------------
 
-type SettingsTab = 'ai' | 'email' | 'sso';
+type SettingsTab = 'ai' | 'email' | 'sso' | 'branding';
 
 interface SettingsTabItem {
   id: SettingsTab;
@@ -3452,6 +3453,7 @@ const SETTINGS_TABS: SettingsTabItem[] = [
   { id: 'ai', label: 'AI Provider', description: 'Configure Claude or OpenAI' },
   { id: 'email', label: 'Email (SMTP)', description: 'Outgoing mail server' },
   { id: 'sso', label: 'Single Sign-On (OIDC)', description: 'SSO identity provider' },
+  { id: 'branding', label: 'Branding', description: 'Logo, colors, and favicon' },
 ];
 
 interface SettingsPageProps {
@@ -3560,6 +3562,7 @@ function SettingsPage({
               <OidcSettings availableProfiles={[...allProfileNames]} />
             </Suspense>
           )}
+          {activeTab === 'branding' && <BrandingSettings />}
         </Card>
       </div>
 
@@ -3572,6 +3575,7 @@ function SettingsPage({
             <OidcSettings availableProfiles={[...allProfileNames]} />
           </Suspense>
         )}
+        {activeTab === 'branding' && <BrandingSettings />}
       </Card>
     </div>
   );

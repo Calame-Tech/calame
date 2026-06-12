@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { apiFetch, getCurrentTenant } from '../lib/api.js';
+import { useBranding, DEFAULT_LOGO_SRC } from '../lib/branding.js';
 import { buildMcpPath } from '../lib/mcp-url.js';
 import type { AuthMode } from '../types/schema.js';
 import DarkSelect from './ui/DarkSelect.js';
@@ -246,6 +247,8 @@ function TokenLoginForm({
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const branding = useBranding();
+
   const handleTokenLogin = async () => {
     if (!token.trim()) return;
     setError('');
@@ -276,7 +279,7 @@ function TokenLoginForm({
     <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
       <div className="card-primary max-w-md w-full p-8">
         <div className="mb-6">
-          <img src="/logo.png" alt="Calame" className="h-8 w-8 object-contain mb-4" />
+          <img src={branding.logo || DEFAULT_LOGO_SRC} alt="Calame" className="h-8 w-8 object-contain mb-4" />
           <h1 className="text-xl font-semibold text-gray-100 mb-1">
             {profile.label || profile.name}
           </h1>
@@ -340,6 +343,8 @@ function CalameLoginForm({
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const branding = useBranding();
+
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.trim() || !password) return;
@@ -371,7 +376,7 @@ function CalameLoginForm({
     <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
       <div className="card-primary max-w-md w-full p-8">
         <div className="mb-6">
-          <img src="/logo.png" alt="Calame" className="h-8 w-8 object-contain mb-4" />
+          <img src={branding.logo || DEFAULT_LOGO_SRC} alt="Calame" className="h-8 w-8 object-contain mb-4" />
           <h1 className="text-xl font-semibold text-gray-100 mb-1">
             {profile.label || profile.name}
           </h1>
@@ -449,6 +454,8 @@ function ExternalLoginForm({
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const branding = useBranding();
+
   const handleLogin = async () => {
     if (!token.trim()) return;
     setError('');
@@ -477,7 +484,7 @@ function ExternalLoginForm({
     <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
       <div className="card-primary max-w-md w-full p-8">
         <div className="mb-6">
-          <img src="/logo.png" alt="Calame" className="h-8 w-8 object-contain mb-4" />
+          <img src={branding.logo || DEFAULT_LOGO_SRC} alt="Calame" className="h-8 w-8 object-contain mb-4" />
           <h1 className="text-xl font-semibold text-gray-100 mb-1">
             {profile.label || profile.name}
           </h1>
@@ -530,13 +537,14 @@ function ExternalLoginForm({
 // Auth form — OAuth mode
 // ---------------------------------------------------------------------------
 function OAuthLoginForm({ profile }: { profile: ChatProfile }) {
+  const branding = useBranding();
   const redirectUrl = `/chat/${encodeURIComponent(profile.name)}`;
   const providerLabel = profile.oauthProvider || 'OAuth';
 
   return (
     <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
       <div className="card-primary max-w-md w-full p-8 text-center">
-        <img src="/logo.png" alt="Calame" className="h-8 w-8 object-contain mb-4 mx-auto" />
+        <img src={branding.logo || DEFAULT_LOGO_SRC} alt="Calame" className="h-8 w-8 object-contain mb-4 mx-auto" />
         <h1 className="text-xl font-semibold text-gray-100 mb-1">
           {profile.label || profile.name}
         </h1>
@@ -557,6 +565,7 @@ function OAuthLoginForm({ profile }: { profile: ChatProfile }) {
 // Chat view — full-screen once authenticated
 // ---------------------------------------------------------------------------
 function ChatView({ profile, onLogout }: { profile: ChatProfile; onLogout: () => void }) {
+  const branding = useBranding();
   const handleLogout = async () => {
     try {
       await apiFetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
@@ -572,7 +581,7 @@ function ChatView({ profile, onLogout }: { profile: ChatProfile; onLogout: () =>
       <header className="flex-shrink-0 border-b border-gray-800/80 px-4 sm:px-6 py-3 bg-gray-900/60 backdrop-blur-sm">
         <div className="flex items-center justify-between max-w-4xl mx-auto w-full">
           <div className="flex items-center gap-3 min-w-0">
-            <img src="/logo.png" alt="Calame" className="h-7 w-7 object-contain" />
+            <img src={branding.logo || DEFAULT_LOGO_SRC} alt="Calame" className="h-7 w-7 object-contain" />
             <h1 className="text-base font-semibold text-gray-100 truncate">
               {profile.label || profile.name}
             </h1>

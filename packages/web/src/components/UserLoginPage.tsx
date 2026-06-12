@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { apiFetch } from '../lib/api.js';
+import { useBranding, DEFAULT_LOGO_SRC } from '../lib/branding.js';
 
 interface UserLoginPageProps {
   onLogin: () => void;
 }
 
 export default function UserLoginPage({ onLogin }: UserLoginPageProps) {
+  const branding = useBranding();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -42,7 +44,7 @@ export default function UserLoginPage({ onLogin }: UserLoginPageProps) {
       <div className="card-primary p-6 w-full max-w-md">
         <div className="text-center mb-8">
           <div className="flex items-center justify-center gap-3 mb-2">
-            <img src="/logo.png" alt="Calame" className="h-10 w-10 object-contain" />
+            <img src={branding.logo || DEFAULT_LOGO_SRC} alt="Calame" className="h-10 w-10 object-contain" />
             <h1 className="heading-lg">Calame</h1>
           </div>
           <p className="text-gray-400 mt-2">Sign in to your account</p>

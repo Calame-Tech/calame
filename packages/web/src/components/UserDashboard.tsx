@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { apiFetch } from '../lib/api.js';
 import type { AccessMode } from '../types/schema.js';
 import UserChatPanel from './UserChatPanel.js';
+import { useBranding, DEFAULT_LOGO_SRC } from '../lib/branding.js';
 
 interface UserProfile {
   profileName: string;
@@ -19,6 +20,7 @@ interface UserInfo {
 type DashboardView = 'chat' | 'profile';
 
 export default function UserDashboard({ onLogout }: { onLogout: () => void }) {
+  const branding = useBranding();
   const [user, setUser] = useState<UserInfo | null>(null);
   const [profiles, setProfiles] = useState<UserProfile[]>([]);
   const [tokenPreview, setTokenPreview] = useState('');
@@ -166,7 +168,7 @@ export default function UserDashboard({ onLogout }: { onLogout: () => void }) {
       <header className="border-b border-gray-800 px-6 py-3 bg-gray-900/80 flex-shrink-0">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <img src="/logo.png" alt="Calame" className="h-7 w-7 object-contain" />
+            <img src={branding.logo || DEFAULT_LOGO_SRC} alt="Calame" className="h-7 w-7 object-contain" />
             <div>
               <h1 className="text-lg font-bold tracking-tight text-gray-100">Calame</h1>
             </div>

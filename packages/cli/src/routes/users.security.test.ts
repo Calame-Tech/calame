@@ -4,24 +4,39 @@ import request from 'supertest';
 import { registerUsersRoute } from './users.js';
 import type { AppState } from '../state.js';
 
+interface MockProfile {
+  name?: string;
+  profileName?: string;
+  accessMode?: string;
+}
+
+interface MockUser {
+  id: string;
+  tenant_id: string;
+  name: string;
+  email: string;
+  role: string;
+  status: string;
+  profiles: MockProfile[];
+  createdAt: Date;
+  lastActiveAt: Date | null;
+  disabledAt: Date | null;
+  disabledReason: string | null;
+  onboardingCode: string | null;
+}
+
+interface UserFilters {
+  profileName?: string;
+  role?: string;
+  status?: string;
+  search?: string;
+}
+
 // Minimal mock for userManager
 const createUserManager = () => {
-  const users = new Map<string, {
-    id: string;
-    tenant_id: string;
-    name: string;
-    email: string;
-    role: string;
-    status: string;
-    profiles: any[];
-    createdAt: Date;
-    lastActiveAt: Date | null;
-    disabledAt: Date | null;
-    disabledReason: string | null;
-    onboardingCode: string | null;
-  }>();
+  const users = new Map<string, MockUser>();
 
-  const add = (id: string, tenantId: string, overrides: Partial<any> = {}) => {
+  const add = (id: string, tenantId: string, overrides: Partial<MockUser> = {}) => {
     const u = {
       id,
       tenant_id: tenantId,
@@ -43,14 +58,14 @@ const createUserManager = () => {
 
   return {
     getUserById: (id: string) => users.get(id) ?? null,
-    listUsers: (filters: any, tenantId: string) =>
+    listUsers: (filters: UserFilters, tenantId: string) =>
       Array.from(users.values())
         .filter((u) => u.tenant_id === tenantId)
-        .filter((u) => !filters.profileName || u.profiles?.some((p: any) => p.name === filters.profileName))
+        .filter((u) => !filters.profileName || u.profiles?.some((p) => p.name === filters.profileName))
         .filter((u) => !filters.role || u.role === filters.role)
         .filter((u) => !filters.status || u.status === filters.status)
         .filter((u) => !filters.search || u.name?.includes(filters.search) || u.email?.includes(filters.search)),
-    updateUser: (id: string, data: any) => {
+    updateUser: (id: string, data: Partial<MockUser>) => {
       const u = users.get(id);
       if (u) Object.assign(u, data);
       return u;
@@ -70,14 +85,14 @@ const createUserManager = () => {
       if (u) users.delete(id);
       return u;
     },
-    addProfile: (userId: string, profile: any) => {
+    addProfile: (userId: string, profile: MockProfile) => {
       const u = users.get(userId);
       if (u) { u.profiles = u.profiles || []; u.profiles.push(profile); }
       return u;
     },
     deleteProfile: (userId: string, profileName: string) => {
       const u = users.get(userId);
-      if (u) u.profiles = u.profiles?.filter((p: any) => p.name !== profileName);
+      if (u) u.profiles = u.profiles?.filter((p) => p.name !== profileName);
       return u;
     },
     resendInvitation: (id: string) => users.get(id),
@@ -87,7 +102,7 @@ const createUserManager = () => {
 };
 
 // Minimal mock DB
-const createMockDb = (users: Map<string, any>) => ({
+const createMockDb = (users: Map<string, MockUser>) => ({
   raw: {
     prepare: () => ({
       get: (id: string, tenantId: string) => {
@@ -101,8 +116,8 @@ const createMockDb = (users: Map<string, any>) => ({
   }),
 });
 
-const buildState = (userManager: any) => {
-  const state: any = {
+const buildState = (userManager: ReturnType<typeof createUserManager>): AppState => {
+  const state = {
     userManager,
     db: createMockDb(userManager._users),
     logger: {
@@ -111,10 +126,10 @@ const buildState = (userManager: any) => {
       error: () => {},
     },
   };
-  return state;
+  return state as unknown as AppState;
 };
 
-const createApp = (state: any) => {
+const createApp = (state: AppState) => {
   const app = express();
   app.use(express.json());
   registerUsersRoute(app, state);
@@ -123,18 +138,18 @@ const createApp = (state: any) => {
 
 describe('Phase 2 — IDOR security tests', () => {
   let app: express.Express;
-  let userManager: any;
-  let state: any;
+  let userManager: ReturnType<typeof createUserManager>;
+  let state: AppState;
 
   beforeEach(() => {
     userManager = createUserManager();
-    const userA = userManager._add('user-a', 'tenant-a', { email: 'a@tenant-a.com' });
-    const userB = userManager._add('user-b', 'tenant-b', { email: 'b@tenant-b.com' });
+    userManager._add('user-a', 'tenant-a', { email: 'a@tenant-a.com' });
+    userManager._add('user-b', 'tenant-b', { email: 'b@tenant-b.com' });
     state = buildState(userManager);
     // Mock email service so resend-invitation doesn't return 503
     state.emailService = {
       sendInvitationEmail: vi.fn().mockResolvedValue(undefined),
-    } as any;
+    } as unknown as AppState['emailService'];
     app = createApp(state);
   });
 

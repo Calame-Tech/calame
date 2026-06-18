@@ -9,6 +9,7 @@ WORKDIR /app
 # to create proper symlinks between workspace packages on Alpine.
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json tsconfig.base.json ./
 COPY packages/ packages/
+COPY ee/ ee/
 
 # Install all deps and create workspace symlinks
 RUN pnpm install --frozen-lockfile
@@ -35,12 +36,19 @@ COPY --from=builder /app/packages/connectors/dist ./packages/connectors/dist
 COPY --from=builder /app/packages/connectors/package.json ./packages/connectors/
 COPY --from=builder /app/packages/web/dist ./packages/web/dist
 COPY --from=builder /app/packages/web/package.json ./packages/web/
+COPY --from=builder /app/ee/sso/dist ./ee/sso/dist
+COPY --from=builder /app/ee/sso/package.json ./ee/sso/
 
 # Install production dependencies only
 RUN pnpm install --frozen-lockfile --prod
 
 # Create data directory
 RUN mkdir -p /data && chown node:node /data
+
+# Copy demo generation script and entrypoint
+COPY scripts/generate-demo-db.js ./scripts/generate-demo-db.js
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 ENV NODE_ENV=production
 ENV CALAME_DATA_DIR=/data
@@ -52,4 +60,5 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 
 USER node
 
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["node", "packages/cli/dist/index.js"]

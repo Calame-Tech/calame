@@ -1,0 +1,21 @@
+{
+  "name": "create-calame",
+  "version": "0.1.0",
+  "description": "Launch a Calame MCP server in one command",
+  "type": "module",
+  "bin": {
+    "create-calame": "./index.js"
+  },
+  "files": [
+    "index.js"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": ["calame", "mcp", "database", "llm", "ai"],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Calame-Tech/calame"
+  }
+}

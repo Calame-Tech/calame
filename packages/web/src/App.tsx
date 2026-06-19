@@ -9,6 +9,7 @@ import ConfigPanel from './components/ConfigPanel.js';
 import ServePanel from './components/ServePanel.js';
 import LoginPage from './components/LoginPage.js';
 import SetupPage from './components/SetupPage.js';
+import OnboardingWizard from './components/OnboardingWizard.js';
 import UserDashboard from './components/UserDashboard.js';
 import UserManagement from './components/UserManagement.js';
 import WelcomePage from './components/WelcomePage.js';
@@ -248,6 +249,8 @@ export default function App() {
   const [ragDisabledReason, setRagDisabledReason] = useState<string | null>(null);
   const [authRequired, setAuthRequired] = useState(false);
   const [needsSetup, setNeedsSetup] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [dataVersion, setDataVersion] = useState(0);
 
   // Check if we're on a special page (no admin auth needed)
   const welcomeMatch = window.location.pathname.match(/^\/welcome\/([a-f0-9]+)$/);
@@ -349,7 +352,7 @@ export default function App() {
 
   const isUserPage = isUserLoginPage || isAccountPage || !!welcomeMatch || !!chatMatch;
 
-  // Auto-load connections then profiles once authenticated
+  // Auto-load connections then profiles once authenticated (re-runs on dataVersion bump)
   useEffect(() => {
     if (!authenticated || isUserPage) return;
     (async () => {
@@ -436,8 +439,24 @@ export default function App() {
       } catch {
         // No profiles file — keep defaults
       }
+
+      // Show onboarding wizard when dashboard is empty and user hasn't dismissed it
+      const dismissed = localStorage.getItem('calame_onboarding_dismissed');
+      if (!dismissed) {
+        try {
+          const connRes = await apiFetch('/api/connections', { credentials: 'include' });
+          const connData = await connRes.json();
+          const hasConnections =
+            connData.success && Object.keys(connData.connections ?? {}).length > 0;
+          if (!hasConnections) {
+            setShowOnboarding(true);
+          }
+        } catch {
+          // ignore
+        }
+      }
     })();
-  }, [authenticated]);
+  }, [authenticated, dataVersion]);
 
   // Fetch serve status — shared between the 5s poller and the ServePanel action callback
   const fetchServeStatus = useCallback(async () => {
@@ -772,7 +791,23 @@ export default function App() {
           setNeedsSetup(false);
           setAuthenticated(true);
           setAuthRequired(true);
+          setShowOnboarding(true);
         }}
+      />
+    );
+  }
+
+  // Onboarding wizard — shown on empty dashboard or after first account creation
+  if (showOnboarding) {
+    const dismissOnboarding = () => {
+      localStorage.setItem('calame_onboarding_dismissed', '1');
+      setShowOnboarding(false);
+      setDataVersion((v) => v + 1);
+    };
+    return (
+      <OnboardingWizard
+        onComplete={dismissOnboarding}
+        onSkip={dismissOnboarding}
       />
     );
   }
@@ -842,9 +877,14 @@ export default function App() {
                   title="Dashboard"
                   description="Overview of your MCP servers, connections, and activity."
                   actions={
-                    <Button variant="primary" onClick={() => setView({ page: 'mcp-list' })}>
-                      New MCP server
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <Button variant="secondary" onClick={() => setShowOnboarding(true)}>
+                        Get started
+                      </Button>
+                      <Button variant="primary" onClick={() => setView({ page: 'mcp-list' })}>
+                        New MCP server
+                      </Button>
+                    </div>
                   }
                 />
 

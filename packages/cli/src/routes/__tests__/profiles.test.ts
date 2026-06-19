@@ -88,7 +88,8 @@ describe('profiles routes', () => {
       expect(res.body.message).toContain('Missing profiles');
     });
 
-    it('should overwrite existing profiles', async () => {
+    it('should merge with existing profiles (partial saves preserve other profiles)', async () => {
+      // Save v1 first
       await request(app)
         .post('/api/profiles/save')
         .set('Cookie', cookie)
@@ -96,6 +97,7 @@ describe('profiles routes', () => {
           profiles: { v1: { label: 'V1', selectedTables: {}, tableOptions: {} } },
         });
 
+      // Save v2 alone — v1 must be preserved (MERGE semantics)
       await request(app)
         .post('/api/profiles/save')
         .set('Cookie', cookie)
@@ -105,8 +107,9 @@ describe('profiles routes', () => {
 
       const row = db.raw.prepare("SELECT data FROM profiles WHERE key = 'main'").get() as { data: string };
       const saved = JSON.parse(row.data);
+      // Both profiles must be present — a partial save must not wipe unrelated profiles
       expect(saved.profiles.v2).toBeDefined();
-      expect(saved.profiles.v1).toBeUndefined();
+      expect(saved.profiles.v1).toBeDefined();
     });
 
     it('normalises legacy shape to sources/scopes on save', async () => {

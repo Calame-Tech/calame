@@ -124,6 +124,10 @@ export function registerProfilesRoute(app: Express, state: AppState): void {
           }
         }
       }
+      // Preserve existing profiles not present in the incoming payload (e.g. when the wizard
+      // only sends the newly created profile, all others must survive).
+      data.profiles = { ...existingProfiles, ...data.profiles };
+
       // Merge incoming profile data with existing data (preserve fields not sent by the frontend).
       // Strip undefined values from the incoming profile before merging so that fields absent
       // from the frontend state (e.g. dataScopeRules, sharedTables) do not overwrite existing

@@ -7,7 +7,7 @@
 const Database = require('../node_modules/.pnpm/better-sqlite3@12.8.0/node_modules/better-sqlite3');
 const path = require('path');
 
-const DB_PATH = path.join(__dirname, '..', 'demo-logistique-v2.db');
+const DB_PATH = process.env.DEMO_DB_PATH || path.join(__dirname, '..', 'demo-logistique-v2.db');
 
 // Supprimer l'ancienne DB si elle existe
 const fs = require('fs');

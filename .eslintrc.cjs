@@ -1,5 +1,9 @@
 module.exports = {
   root: true,
+  env: {
+    node: true,
+    es2022: true,
+  },
   parser: '@typescript-eslint/parser',
   plugins: ['@typescript-eslint'],
   extends: [
@@ -57,6 +61,16 @@ module.exports = {
             ],
           },
         ],
+      },
+    },
+    {
+      // Root tooling scripts and CommonJS config files are plain Node JS
+      // (require / module.exports), not TypeScript. Relax the TS-only import
+      // rules so `scripts/**/*.js` and root *.cjs/*.js configs lint cleanly.
+      files: ['scripts/**/*.js', '*.js', '*.cjs'],
+      rules: {
+        '@typescript-eslint/no-var-requires': 'off',
+        '@typescript-eslint/no-require-imports': 'off',
       },
     },
   ],

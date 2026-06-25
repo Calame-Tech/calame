@@ -1,0 +1,30 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "jsx": "react-jsx"
+  },
+  "include": [
+    "packages/cli/src/**/*.ts",
+    "packages/cli/src/**/*.tsx",
+    "packages/core/src/**/*.ts",
+    "packages/core/src/**/*.tsx",
+    "packages/connectors/src/**/*.ts",
+    "packages/web/src/**/*.ts",
+    "packages/web/src/**/*.tsx",
+    "ee/rag-core/src/**/*.ts",
+    "ee/rag-core/src/**/*.tsx",
+    "ee/rag-connectors/src/**/*.ts",
+    "ee/rag-gsheets/src/**/*.ts",
+    "ee/rag-gsheets/src/**/*.tsx",
+    "ee/rag-notion/src/**/*.ts",
+    "ee/rag-notion/src/**/*.tsx",
+    "ee/rag-gdrive/src/**/*.ts",
+    "ee/rag-gdrive/src/**/*.tsx",
+    "ee/rag-microsoft/src/**/*.ts",
+    "ee/rag-microsoft/src/**/*.tsx",
+    "ee/sso/src/**/*.ts",
+    "ee/sso/src/**/*.tsx",
+    "scripts/**/*.js"
+  ]
+}

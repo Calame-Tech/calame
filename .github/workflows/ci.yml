@@ -33,6 +33,9 @@ jobs:
       - name: Lint
         run: pnpm lint
 
+      - name: Typecheck
+        run: pnpm typecheck
+
       - name: Test with coverage
         run: pnpm test:coverage
 
@@ -66,3 +69,14 @@ jobs:
 
       - name: Check formatting
         run: pnpm format:check
+
+  security-scan:
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Security scan (semgrep)
+        run: semgrep ci --config p/javascript --config p/owasp-top-ten --config p/security-audit --fail-level exit

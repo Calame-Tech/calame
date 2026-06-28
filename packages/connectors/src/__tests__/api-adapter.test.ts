@@ -247,14 +247,19 @@ describe('testConnection', () => {
     ).rejects.toThrow(/404/);
   });
 
-  it('throws on a network error', async () => {
+  it('masks the underlying network reason and never leaks it to the caller', async () => {
     (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
       new Error('ECONNREFUSED'),
     );
     const adapter = buildHttpApiSourceAdapter();
-    await expect(
-      adapter.testConnection({ baseUrl: 'https://api.example.com' }),
-    ).rejects.toThrow(/ECONNREFUSED/);
+    const err = await adapter
+      .testConnection({ baseUrl: 'https://api.example.com' })
+      .then(() => null)
+      .catch((e: unknown) => e as Error);
+    expect(err).toBeInstanceOf(Error);
+    expect(err?.message).toBe('Network error while contacting the remote host.');
+    // Security: the raw network reason (e.g. ECONNREFUSED) must never leak.
+    expect(err?.message).not.toMatch(/ECONNREFUSED/);
   });
 });
 

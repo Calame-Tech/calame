@@ -232,11 +232,13 @@ export function buildHttpApiSourceAdapter(): SourceAdapter<
       const timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
       const controller = new AbortController();
       const t = setTimeout(() => controller.abort(), timeoutMs);
+      let response: Response | undefined;
       try {
-        const target = new URL(normalizeBaseUrl(config.baseUrl));
+        const normalized = normalizeBaseUrl(config.baseUrl);
+        const target = new URL(normalized);
         // Anti-DNS-rebinding: block private/internal targets before fetching.
         await assertResolvedHostSafe(target.hostname);
-        const response = await fetch(target.toString(), {
+        response = await fetch(normalized, {
           method: 'HEAD',
           headers: config.headers,
           signal: controller.signal,
@@ -244,11 +246,6 @@ export function buildHttpApiSourceAdapter(): SourceAdapter<
           // the resolution check above.
           redirect: 'error',
         });
-        // HEAD is sometimes 405-rejected by APIs that only declare GET — treat
-        // 405 as "endpoint reachable" so testConnection is useful in practice.
-        if (!response.ok && response.status !== 405) {
-          throw new Error(`HEAD ${config.baseUrl} → HTTP ${response.status}`);
-        }
       } catch (err: unknown) {
         if (err instanceof Error && err.name === 'AbortError') {
           throw new Error(`HEAD ${config.baseUrl} timed out after ${timeoutMs}ms`);
@@ -260,6 +257,13 @@ export function buildHttpApiSourceAdapter(): SourceAdapter<
         throw new Error('Network error while contacting the remote host.');
       } finally {
         clearTimeout(t);
+      }
+      // A clean HTTP status carries no sensitive network detail and is useful to
+      // the caller — surface it instead of letting the catch above mask it as a
+      // generic network error. HEAD is sometimes 405-rejected by APIs that only
+      // declare GET — treat 405 as "endpoint reachable" so testConnection stays useful.
+      if (response && !response.ok && response.status !== 405) {
+        throw new Error(`HEAD ${config.baseUrl} → HTTP ${response.status}`);
       }
     },
 

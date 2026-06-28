@@ -8,7 +8,15 @@ import { snakeCaseToLabel, friendlyType, buildLabelMap, formatResponseRows } fro
 import type { ScopeGuard } from './scoped-executor.js';
 import { ScopeBlockedError, createScopeGuard } from './scoped-executor.js';
 import type { Dialect, FilterValue } from './filter-builder.js';
-import { buildPlainConditions, FILTER_OPS_DESC, makeFilterMapSchema } from './filter-builder.js';
+import { buildPlainConditions } from './filter-builder.js';
+import {
+  zodEnum,
+  buildAggregateArgsShape,
+  buildJoinAggregateArgsShape,
+  buildQueryArgsShape,
+  buildDescribeArgsShape,
+  buildWriteArgsShape,
+} from './schema-builder.js';
 import { findJoinPath, computeTransitiveClosure } from './join-path.js';
 
 // We use `as any` in server.tool() calls because the dynamic Zod schemas
@@ -460,16 +468,6 @@ function buildCompactCatalogue(accessible: AccessibleTable[]): string {
 }
 
 // ---------------------------------------------------------------------------
-// Shared constants — referenced in Zod .describe() calls to avoid repeating
-// verbose strings multiple times in the tool manifest.
-// ---------------------------------------------------------------------------
-
-const AGG_OPS = ['count', 'sum', 'avg', 'min', 'max', 'ratio', 'count_distinct', 'weighted_ratio', 'median', 'stddev', 'variance', 'percentile'] as const;
-const AGG_OPS_JOIN = ['count', 'sum', 'avg', 'min', 'max', 'ratio', 'count_distinct', 'weighted_ratio', 'median', 'stddev', 'variance', 'percentile'] as const;
-const DATE_BUCKETS = ['day', 'week', 'month', 'quarter', 'year'] as const;
-const ORDER_DIRS = ['asc', 'desc'] as const;
-
-// ---------------------------------------------------------------------------
 // Masking runtime
 // ---------------------------------------------------------------------------
 
@@ -541,14 +539,6 @@ function applyMasking(
   });
 }
 
-// ---------------------------------------------------------------------------
-// Utility: create a Zod enum from a non-empty array, or return undefined
-// ---------------------------------------------------------------------------
-
-function zodEnum<T extends string>(values: T[]): z.ZodTypeAny | undefined {
-  if (values.length === 0) return undefined;
-  return z.enum(values as unknown as readonly [string, ...string[]]);
-}
 
 // ---------------------------------------------------------------------------
 // Tool execution wrapper with audit logging and error handling
@@ -909,88 +899,7 @@ function registerAggregateGeneric(
   const tableEnum = zodEnum(eligible.map(at => at.table.name));
   if (!tableEnum) return;
 
-  const inputShape: Record<string, z.ZodTypeAny> = {
-    table: tableEnum.describe('Target table. See TABLES & COLUMNS.'),
-    aggregation: z
-      .enum(AGG_OPS)
-      .describe(
-        'count|sum|avg|min|max: standard SQL. ' +
-          'ratio: (rows matching ratio_filter)/(rows matching filters). ' +
-          'count_distinct: COUNT(DISTINCT aggregation_column). ' +
-          'weighted_ratio: SUM(numerator_column)/SUM(denominator_column). ' +
-          'median|stddev|variance|percentile: statistical aggregations — require PostgreSQL.',
-      ),
-    aggregation_column: z
-      .string()
-      .optional()
-      .describe('Required for sum/avg/min/max (numeric), count_distinct (any col), median/stddev/variance/percentile (numeric).'),
-    numerator_column: z.string().optional().describe('Numeric numerator col for weighted_ratio.'),
-    denominator_column: z.string().optional().describe('Numeric denominator col for weighted_ratio.'),
-    percentile_p: z
-      .number()
-      .min(0.01)
-      .max(0.99)
-      .optional()
-      .describe('Required when aggregation is "percentile". Value between 0.01 and 0.99 (e.g. 0.95 for p95).'),
-    filters: makeFilterMapSchema().describe(`WHERE filters (denominator for ratio). ${FILTER_OPS_DESC}`),
-    ratio_filter: makeFilterMapSchema().describe('Numerator filter for ratio. Same shape as filters.'),
-    having_min_total: z
-      .number()
-      .optional()
-      .describe('Min row count per group (HAVING). Drops small-sample groups.'),
-    group_by: z.string().optional().describe('Primary GROUP BY column.'),
-    group_by_bucket: z
-      .enum(DATE_BUCKETS)
-      .optional()
-      .describe('Date truncation granularity for group_by on a date/timestamp column (DATE_TRUNC).'),
-    group_by_secondary: z
-      .string()
-      .optional()
-      .describe('Second GROUP BY column for 2D pivots. Combine with top_n_per_group for top-N rankings.'),
-    top_n_per_group: z
-      .object({
-        partition_by: z.string().describe('Partition column — must match group_by or group_by_secondary.'),
-        order_by: z.string().describe('Sort column per partition (use "result" for aggregate value).'),
-        n: z.number().describe('Rows to keep per partition (>= 1).'),
-      })
-      .optional()
-      .describe('ROW_NUMBER() OVER (PARTITION BY ... ORDER BY ... DESC) — keeps top N per group.'),
-    order_by: z.string().optional().describe('Sort column. Use "result" for the aggregated value.'),
-    order_direction: z.enum(ORDER_DIRS).optional(),
-    limit: z.number().optional().default(20).describe('Max rows (≤1000).'),
-    offset: z
-      .number()
-      .optional()
-      .default(0)
-      .describe('Skip first N grouped rows. Use with limit for pagination beyond 1000 groups.'),
-    compare_to: z
-      .object({
-        period: z
-          .enum([
-            'previous_period',
-            'previous_year',
-            'previous_calendar_month',
-            'previous_calendar_quarter',
-            'previous_calendar_year',
-          ])
-          .describe(
-            'previous_period: same duration shifted back (rolling window). ' +
-              'previous_year: shift by 1 year (same day/month). ' +
-              '"previous_calendar_month": full calendar month before the current range start (e.g. if range starts in April → March). ' +
-              '"previous_calendar_quarter": full calendar quarter before current (e.g. Q1 if range starts in Q2). ' +
-              '"previous_calendar_year": full calendar year before current (Jan 1 – Dec 31 of prior year). ' +
-              'Use calendar variants for business analytics (monthly reports, quarterly reviews). ' +
-              'Use previous_period/previous_year for rolling-window comparisons.',
-          ),
-        date_column: z
-          .string()
-          .describe('Date column already in filters with op=between whose window is shifted.'),
-      })
-      .optional()
-      .describe(
-        'Period-over-period: runs aggregate twice (current + shifted window), returns result/previous/delta_abs/delta_pct. Not compatible with group_by_bucket or top_n_per_group.',
-      ),
-  };
+  const inputShape = buildAggregateArgsShape(tableEnum);
 
   // Tool descriptions live in the manifest the LLM reads on tools/list — they
   // stay English regardless of `responseMode` (English is shorter and the
@@ -1618,70 +1527,7 @@ function registerJoinAggregateGeneric(
   const byName = new Map<string, AccessibleTable>();
   for (const at of eligible) byName.set(at.table.name, at);
 
-  const inputShape: Record<string, z.ZodTypeAny> = {
-    primary_table: tableEnum.describe('Left side of the JOIN.'),
-    join_table: tableEnum.describe('Right side of the JOIN. Does NOT need to be directly FK-linked to primary_table — the system auto-resolves the FK path through intermediate tables (up to 3 hops). Example: primary=colis, join=zone works even if the FK chain is colis→livreur→zone.'),
-    aggregation: z
-      .enum(AGG_OPS_JOIN)
-      .describe(
-        'count|sum|avg|min|max: standard SQL. ' +
-          'ratio: conditional ratio across the JOIN — ratio_filter defines the numerator, filters/join_filters define the denominator population; ' +
-          'specify ratio_filter_table to indicate which JOIN side ratio_filter applies to (default: primary). ' +
-          'count_distinct: COUNT(DISTINCT aggregation_column) on the side given by aggregation_column_table. ' +
-          'weighted_ratio: SUM(numerator_column)/SUM(denominator_column) on that same side. ' +
-          'median|stddev|variance|percentile: statistical aggregations — require PostgreSQL.',
-      ),
-    aggregation_column: z
-      .string()
-      .optional()
-      .describe('Required for sum/avg/min/max/count_distinct/median/stddev/variance/percentile. Col from aggregation_column_table side.'),
-    numerator_column: z.string().optional().describe('Numeric numerator col for weighted_ratio.'),
-    denominator_column: z.string().optional().describe('Numeric denominator col for weighted_ratio.'),
-    ratio_filter: makeFilterMapSchema().describe('Numerator filter for ratio aggregation. Columns belong to ratio_filter_table side. Same shape as filters.'),
-    ratio_filter_table: z
-      .enum(['primary', 'join'])
-      .optional()
-      .describe('Which JOIN side ratio_filter columns belong to (default: primary).'),
-    percentile_p: z
-      .number()
-      .min(0.01)
-      .max(0.99)
-      .optional()
-      .describe('Required when aggregation is "percentile". Value between 0.01 and 0.99 (e.g. 0.95 for p95).'),
-    aggregation_column_table: z
-      .enum(['primary', 'join'])
-      .optional()
-      .default('primary')
-      .describe('Which JOIN side the aggregation column(s) belong to.'),
-    filters: makeFilterMapSchema().describe('Filters on primary_table.'),
-    join_filters: makeFilterMapSchema().describe('Filters on join_table.'),
-    group_by_column: z.string().optional().describe('GROUP BY column.'),
-    group_by_table: z
-      .enum(['primary', 'join'])
-      .optional()
-      .default('primary')
-      .describe('Which JOIN side group_by_column belongs to.'),
-    group_by_bucket: z
-      .enum(DATE_BUCKETS)
-      .optional()
-      .describe('Date truncation granularity for group_by_column (DATE_TRUNC).'),
-    group_by_secondary_column: z
-      .string()
-      .optional()
-      .describe('Second GROUP BY column for 2D cross-table pivots. Does not support date bucketing.'),
-    group_by_secondary_table: z
-      .enum(['primary', 'join'])
-      .optional()
-      .default('primary')
-      .describe('Which JOIN side group_by_secondary_column belongs to.'),
-    order_direction: z.enum(ORDER_DIRS).optional().describe('Sort by aggregate result.'),
-    limit: z.number().optional().default(20).describe('Max rows (≤1000).'),
-    offset: z
-      .number()
-      .optional()
-      .default(0)
-      .describe('Skip first N grouped rows. Use with limit for pagination beyond 1000 groups.'),
-  };
+  const inputShape = buildJoinAggregateArgsShape(tableEnum);
 
   const desc =
     'Cross-table analytics: aggregate over a JOIN of two tables when you need columns from BOTH sides (e.g. count colis grouped by livreur.nom, or sum revenue grouped by zone.region). ' +
@@ -2296,16 +2142,7 @@ function registerQueryGeneric(
   const tableEnum = zodEnum(eligible.map(at => at.table.name));
   if (!tableEnum) return;
 
-  const inputShape: Record<string, z.ZodTypeAny> = {
-    table: tableEnum.describe('Target table. See TABLES & COLUMNS.'),
-    columns: z.array(z.string()).optional().describe('Columns to return (default: all visible).'),
-    filters: makeFilterMapSchema().describe(`WHERE filters. ${FILTER_OPS_DESC}`),
-    order_by: z.string().optional(),
-    order_direction: z.enum(ORDER_DIRS).optional(),
-    limit: z.number().optional().default(20).describe('Max rows (≤1000).'),
-    offset: z.number().optional().default(0),
-    sample: z.boolean().optional().describe('Return random rows.'),
-  };
+  const inputShape = buildQueryArgsShape(tableEnum);
 
   const desc = `Fetch individual rows from any table with filters, ordering, and pagination. Use this to LIST or SEARCH records (e.g. find all colis for a client, show recent incidents). For counts, sums, averages, or grouped analytics — use aggregate or join_aggregate instead.\n\n${catalogue}`;
 
@@ -2473,9 +2310,7 @@ function registerDescribeGeneric(
   const tableEnum = zodEnum(eligible.map(at => at.table.name));
   if (!tableEnum) return;
 
-  const inputShape: Record<string, z.ZodTypeAny> = {
-    table: tableEnum.describe('Table to describe.'),
-  };
+  const inputShape = buildDescribeArgsShape(tableEnum);
 
   const desc = 'Explore a table schema at runtime: row count, column types, null rates, distinct counts, low-cardinality enum values, text samples, numeric min/max/avg, and FK relations to other tables. Call this when unsure about column names, valid values, or how tables relate.';
 
@@ -2724,13 +2559,7 @@ function registerWriteGeneric(
   const tableEnum = zodEnum(eligible.map(at => at.table.name));
   if (!tableEnum) return;
 
-  const inputShape: Record<string, z.ZodTypeAny> = {
-    table: tableEnum.describe('Target table.'),
-    operation: z.enum(['insert', 'update', 'delete']).describe('Write operation.'),
-    description: z.string().describe('What this write does and why.'),
-    values: z.record(z.string(), z.any()).optional().describe('Column-value pairs for INSERT or UPDATE.'),
-    filters: makeFilterMapSchema().describe('Filters for UPDATE/DELETE (required for those).'),
-  };
+  const inputShape = buildWriteArgsShape(tableEnum);
 
   const desc = 'Propose a write (INSERT/UPDATE/DELETE). Queued for admin approval — nothing executes immediately.';
 

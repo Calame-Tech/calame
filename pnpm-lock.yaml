@@ -492,6 +492,8 @@ importers:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@25.4.0)(jsdom@25.0.1(canvas@2.11.2))
 
+  packages/create: {}
+
   packages/web:
     dependencies:
       '@calame-ee/rag-core':

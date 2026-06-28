@@ -1,0 +1,8 @@
+# Generated / vendored files — never reformat
+pnpm-lock.yaml
+node_modules
+dist
+coverage
+
+# Handlebars templates (also ignored by eslint)
+*.hbs

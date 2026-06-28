@@ -1,3 +1,7 @@
+import { existsSync } from 'fs';
+import { join } from 'path';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import type { Express } from 'express';
 import type { AppState } from '../state.js';
 import type { NamedConnection } from '@calame/core';
@@ -11,6 +15,8 @@ import type { SshTunnelConfig } from '../ssh-tunnel.js';
 import { resolveSecret } from '../secrets.js';
 import { redactSecrets } from '../sanitize.js';
 import { parseCookies } from '../utils/cookies.js';
+
+const execFileAsync = promisify(execFile);
 
 /** SSH config shape as stored in the DB / sent over the API. */
 export interface SshConfig {
@@ -289,6 +295,58 @@ export function registerConnectionsRoute(app: Express, state: AppState): void {
   });
 
   // POST /api/connections — Add/update a named connection
+  // POST /api/connections/demo — connect the built-in demo SQLite database
+  app.post('/api/connections/demo', async (req, res) => {
+    try {
+      const dataDir = state.config?.dataDir ?? process.cwd();
+      const demoDbPath = join(dataDir, 'demo-logistique-v2.db');
+
+      // Generate the demo DB if it doesn't exist
+      if (!existsSync(demoDbPath)) {
+        // Look for the generation script relative to the project root
+        const scriptPath = join(process.cwd(), 'scripts', 'generate-demo-db.js');
+        if (!existsSync(scriptPath)) {
+          res.status(404).json({
+            success: false,
+            message: `Demo database not found at ${demoDbPath}. Run: node scripts/generate-demo-db.js`,
+          });
+          return;
+        }
+        await execFileAsync(process.execPath, [scriptPath], {
+          env: { ...process.env, DEMO_DB_PATH: demoDbPath },
+        });
+      }
+
+      const connector = getConnector('sqlite');
+      const schema = await connector.introspect(demoDbPath);
+
+      const connName = 'demo-logistique';
+      const connLabel = 'Demo — Logistique';
+
+      const namedConnection: NamedConnection = {
+        name: connName,
+        label: connLabel,
+        databaseType: 'sqlite',
+        connectionString: demoDbPath,
+      };
+
+      state.addConnection(connName, { connection: namedConnection, schema, piiDetections: null });
+
+      const db = await getDb();
+      db.raw
+        .prepare(
+          `INSERT OR REPLACE INTO connections (name, label, database_type, connection_string)
+           VALUES (?, ?, ?, ?)`,
+        )
+        .run(connName, connLabel, 'sqlite', demoDbPath);
+
+      res.json({ success: true, name: connName, tableCount: schema.tables.length });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ success: false, message: msg });
+    }
+  });
+
   app.post('/api/connections', async (req, res) => {
     try {
       const { name, label, databaseType, connectionString, sslConfig, sshConfig } = req.body as {

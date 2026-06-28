@@ -130,7 +130,7 @@ const QUESTIONS = [
 
 // ── SSE stream reader ────────────────────────────────────────────────────────
 
-async function streamChat(message, model) {
+async function streamChat(message, _model) {
   const headers = { 'Content-Type': 'application/json' };
   if (SESSION_COOKIE) headers['Cookie'] = `calame_session=${SESSION_COOKIE}`;
   if (BEARER_TOKEN)   headers['Authorization'] = `Bearer ${BEARER_TOKEN}`;
@@ -156,7 +156,7 @@ async function streamChat(message, model) {
   const decoder = new TextDecoder();
   let buffer = '';
 
-  while (true) {
+  for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
@@ -241,7 +241,6 @@ async function runModel(model) {
   console.log(`  ${pad('ID', 28)} ${pad('Cat.', 9)} ${pad('Résultat', 28)} ${pad('ms', 6)}`);
   console.log(`  ${'─'.repeat(66)}`);
   for (const r of results) {
-    const status = r.ok === null ? '—' : r.ok ? 'OK' : 'KO';
     console.log(`  ${pad(r.id, 28)} ${pad(r.category, 9)} ${pad(r.detail.slice(0,27), 28)} ${pad(r.latency, 6)}`);
   }
   console.log(`  ${'─'.repeat(66)}`);

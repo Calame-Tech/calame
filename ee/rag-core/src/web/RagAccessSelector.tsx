@@ -843,7 +843,6 @@ export default function RagAccessSelector({
     // intentionally silenced because re-fetching on every save round-trip
     // (`initialSources` changes reference every time the parent rebuilds the
     // memoised array) would flash the loading spinner and wipe UI state.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {

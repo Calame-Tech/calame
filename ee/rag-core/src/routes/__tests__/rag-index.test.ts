@@ -269,6 +269,7 @@ function makeDeps(
 	};
 	// `runJob` closes over `deps` — but `deps` isn't built yet, so build it in
 	// two passes with a trampoline.
+	// eslint-disable-next-line prefer-const -- two-pass trampoline: `resolved` is read inside the closure above before it can be assigned below
 	let resolved: RagRouteDeps;
 	const queue = new SyncQueue({
 		runJob: async (sourceId, jobId) => runSyncJob(resolved, sourceId, jobId),

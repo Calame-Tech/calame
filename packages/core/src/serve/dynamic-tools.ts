@@ -5,8 +5,10 @@ import { TableInfo, Relation, TableToolOptions } from '../introspect/types.js';
 import { ColumnMasking } from '../pii/types.js';
 import type { AuditLogEntry, PendingWriteQuery } from './types.js';
 import { snakeCaseToLabel, friendlyType, buildLabelMap, formatResponseRows } from './response-formatter.js';
-import type { ScopeGuard, Dialect } from './scoped-executor.js';
-import { ScopeBlockedError, createScopeGuard, buildPlainConditions } from './scoped-executor.js';
+import type { ScopeGuard } from './scoped-executor.js';
+import { ScopeBlockedError, createScopeGuard } from './scoped-executor.js';
+import type { Dialect, FilterValue } from './filter-builder.js';
+import { buildPlainConditions, FILTER_OPS_DESC, makeFilterMapSchema } from './filter-builder.js';
 import { findJoinPath, computeTransitiveClosure } from './join-path.js';
 
 // We use `as any` in server.tool() calls because the dynamic Zod schemas
@@ -467,33 +469,6 @@ const AGG_OPS_JOIN = ['count', 'sum', 'avg', 'min', 'max', 'ratio', 'count_disti
 const DATE_BUCKETS = ['day', 'week', 'month', 'quarter', 'year'] as const;
 const ORDER_DIRS = ['asc', 'desc'] as const;
 
-const FILTER_OPS_DESC =
-  'Filters: eq|neq|gt|gte|lt|lte|between(value=[min,max])|in(value=[])|is_null|is_not_null|contains|starts_with|ends_with';
-
-// ---------------------------------------------------------------------------
-// WHERE clause builder runtime types (the build itself lives in scoped-executor)
-// ---------------------------------------------------------------------------
-
-type FilterOperator =
-  | 'eq'
-  | 'neq'
-  | 'gt'
-  | 'gte'
-  | 'lt'
-  | 'lte'
-  | 'between'
-  | 'in'
-  | 'is_null'
-  | 'is_not_null'
-  | 'contains'
-  | 'starts_with'
-  | 'ends_with';
-
-interface FilterValue {
-  op: FilterOperator;
-  value: unknown;
-}
-
 // ---------------------------------------------------------------------------
 // Masking runtime
 // ---------------------------------------------------------------------------
@@ -916,30 +891,6 @@ function registerListTablesGeneric(ctx: ToolContext, accessible: AccessibleTable
         },
       ),
   );
-}
-
-// ---------------------------------------------------------------------------
-// Filter-map Zod schema shared by aggregate/query/write. Intentionally untyped
-// at the value level — runtime validates against per-column metadata so the
-// schema stays free of `anyOf`/`oneOf` constructs that Gemini's
-// function-calling rejects.
-// ---------------------------------------------------------------------------
-
-function makeFilterMapSchema(): z.ZodTypeAny {
-  return z
-    .record(
-      z.string(),
-      z.object({
-        op: z.enum([
-          'eq', 'neq', 'gt', 'gte', 'lt', 'lte',
-          'between', 'in',
-          'is_null', 'is_not_null',
-          'contains', 'starts_with', 'ends_with',
-        ]),
-        value: z.any().optional(),
-      }),
-    )
-    .optional();
 }
 
 // ---------------------------------------------------------------------------

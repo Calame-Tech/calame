@@ -1,6 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { createHash } from 'crypto';
 import { TableInfo, Relation, TableToolOptions } from '../introspect/types.js';
 import { ColumnMasking } from '../pii/types.js';
 import type { AuditLogEntry, PendingWriteQuery } from './types.js';
@@ -18,6 +17,8 @@ import {
   buildWriteArgsShape,
 } from './schema-builder.js';
 import { findJoinPath, computeTransitiveClosure } from './join-path.js';
+import { executeWithAudit } from './middleware/audit.js';
+import { buildMaskingRules, applyMasking, type MaskingRule } from './middleware/masking.js';
 
 // We use `as any` in server.tool() calls because the dynamic Zod schemas
 // (Record<string, z.ZodTypeAny>) cause TS2589 "excessively deep" errors with
@@ -467,136 +468,8 @@ function buildCompactCatalogue(accessible: AccessibleTable[]): string {
   return lines.join('\n');
 }
 
-// ---------------------------------------------------------------------------
-// Masking runtime
-// ---------------------------------------------------------------------------
-
-interface MaskingRule {
-  mode: 'none' | 'exclude' | 'hash' | 'truncate' | 'replace' | 'aggregate_only';
-  replaceValue?: string;
-  showFirst?: number;
-  showLast?: number;
-}
-
-function buildMaskingRules(columnMasking: Record<string, ColumnMasking>): Record<string, MaskingRule> {
-  const rules: Record<string, MaskingRule> = {};
-  for (const [colName, masking] of Object.entries(columnMasking)) {
-    if (masking.maskingMode === 'none') continue;
-    const rule: MaskingRule = { mode: masking.maskingMode };
-    if (masking.maskingMode === 'replace' && masking.replaceValue !== undefined) {
-      rule.replaceValue = masking.replaceValue;
-    }
-    if (masking.maskingMode === 'truncate') {
-      rule.showFirst = masking.truncateOptions?.showFirst ?? 1;
-      rule.showLast = masking.truncateOptions?.showLast ?? 0;
-    }
-    rules[colName] = rule;
-  }
-  return rules;
-}
-
-function applyMasking(
-  rows: Record<string, unknown>[],
-  rules: Record<string, MaskingRule>,
-): Record<string, unknown>[] {
-  if (!rules || Object.keys(rules).length === 0) return rows;
-
-  return rows.map((row) => {
-    const masked = { ...row };
-    for (const [col, rule] of Object.entries(rules)) {
-      if (!(col in masked)) continue;
-
-      switch (rule.mode) {
-        case 'exclude':
-        case 'aggregate_only':
-          delete masked[col];
-          break;
-        case 'replace':
-          masked[col] = rule.replaceValue ?? '[MASKED]';
-          break;
-        case 'truncate': {
-          const val = String(masked[col] ?? '');
-          const first = rule.showFirst ?? 0;
-          const last = rule.showLast ?? 0;
-          if (val.length > first + last) {
-            const prefix = val.slice(0, first);
-            const suffix = last > 0 ? val.slice(-last) : '';
-            masked[col] = prefix + '...' + suffix;
-          }
-          break;
-        }
-        case 'hash':
-          masked[col] = createHash('sha256')
-            .update(String(masked[col] ?? ''))
-            .digest('hex');
-          break;
-        case 'none':
-        default:
-          break;
-      }
-    }
-    return masked;
-  });
-}
 
 
-// ---------------------------------------------------------------------------
-// Tool execution wrapper with audit logging and error handling
-// ---------------------------------------------------------------------------
-
-async function executeWithAudit(
-  opts: {
-    executeQuery: DynamicToolsOptions['executeQuery'];
-    dialect: Dialect;
-    onAuditLog?: DynamicToolsOptions['onAuditLog'];
-    profileName: string;
-    toolName: string;
-    toolArgs: Record<string, unknown>;
-  },
-  fn: (exec: (sql: string, params: unknown[]) => Promise<{ rows: Record<string, unknown>[]; fields: { name: string }[] }>) => Promise<{
-    content: { type: 'text'; text: string }[];
-    isError?: boolean;
-    resultSummary?: string;
-    resultData?: string;
-  }>,
-): Promise<{ content: { type: 'text'; text: string }[]; isError?: boolean }> {
-  const start = Date.now();
-  const { executeQuery, onAuditLog, profileName, toolName, toolArgs } = opts;
-
-  try {
-    const result = await fn(executeQuery);
-
-    if (onAuditLog) {
-      onAuditLog({
-        profileName,
-        toolName,
-        toolArgs,
-        result: result.isError ? 'error' : 'success',
-        resultSummary: result.resultSummary,
-        resultData: result.resultData,
-        durationMs: Date.now() - start,
-      });
-    }
-
-    return { content: result.content, isError: result.isError };
-  } catch (err) {
-    if (onAuditLog) {
-      onAuditLog({
-        profileName,
-        toolName,
-        toolArgs,
-        result: 'error',
-        resultSummary: (err as Error).message,
-        durationMs: Date.now() - start,
-      });
-    }
-
-    return {
-      content: [{ type: 'text' as const, text: `Database error: ${(err as Error).message}` }],
-      isError: true,
-    };
-  }
-}
 
 // ===========================================================================
 // Phase-2 entry point — registers a small generic tool surface

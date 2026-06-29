@@ -42,10 +42,7 @@ describe('configurations routes', () => {
 
   describe('GET /api/configurations', () => {
     it('returns an empty object when no configurations exist', async () => {
-      const res = await request(app)
-        .get('/api/configurations')
-        .set('Cookie', cookie)
-        .expect(200);
+      const res = await request(app).get('/api/configurations').set('Cookie', cookie).expect(200);
 
       expect(res.body.success).toBe(true);
       expect(res.body.configurations).toEqual({});
@@ -67,10 +64,7 @@ describe('configurations routes', () => {
           null,
         );
 
-      const res = await request(app)
-        .get('/api/configurations')
-        .set('Cookie', cookie)
-        .expect(200);
+      const res = await request(app).get('/api/configurations').set('Cookie', cookie).expect(200);
 
       expect(res.body.success).toBe(true);
       const cfg = res.body.configurations['finance'];
@@ -116,8 +110,14 @@ describe('configurations routes', () => {
         .expect(200);
 
       const row = db.raw
-        .prepare('SELECT connections, selected_tables, sources_scopes FROM configurations WHERE name = ?')
-        .get('legacy') as { connections: string; selected_tables: string; sources_scopes: string | null };
+        .prepare(
+          'SELECT connections, selected_tables, sources_scopes FROM configurations WHERE name = ?',
+        )
+        .get('legacy') as {
+        connections: string;
+        selected_tables: string;
+        sources_scopes: string | null;
+      };
 
       // Phase 5: upgradeConfigurationShape strips legacy root fields and folds
       // them into sources/scopes. The SQLite NOT-NULL columns receive empty
@@ -127,10 +127,7 @@ describe('configurations routes', () => {
       expect(row.sources_scopes).not.toBeNull();
 
       // Verify via GET that the unified shape is returned correctly.
-      const res = await request(app)
-        .get('/api/configurations')
-        .set('Cookie', cookie)
-        .expect(200);
+      const res = await request(app).get('/api/configurations').set('Cookie', cookie).expect(200);
 
       const cfg = res.body.configurations['legacy'];
       expect(Array.isArray(cfg.sources)).toBe(true);
@@ -228,10 +225,7 @@ describe('configurations routes', () => {
         })
         .expect(200);
 
-      const res = await request(app)
-        .get('/api/configurations')
-        .set('Cookie', cookie)
-        .expect(200);
+      const res = await request(app).get('/api/configurations').set('Cookie', cookie).expect(200);
 
       const cfg = res.body.configurations['unified'];
       expect(cfg.sources).toEqual(['warehouse']);
@@ -335,9 +329,7 @@ describe('configurations routes', () => {
 
       expect(res.body.success).toBe(true);
 
-      const row = db.raw
-        .prepare('SELECT name FROM configurations WHERE name = ?')
-        .get('to-delete');
+      const row = db.raw.prepare('SELECT name FROM configurations WHERE name = ?').get('to-delete');
       expect(row).toBeUndefined();
     });
 

@@ -3,7 +3,11 @@
 // See ee/LICENSE.BUSL at the root of the ee/ directory for terms.
 
 import { useState, useMemo } from 'react';
-import type { Profile, Configuration, DataScopeRule } from '../../../../packages/web/src/types/schema.js';
+import type {
+  Profile,
+  Configuration,
+  DataScopeRule,
+} from '../../../../packages/web/src/types/schema.js';
 import { getConfigurationSelectedTables } from '../../../../packages/web/src/lib/configuration-accessors.js';
 import { getProfileSelectedTables } from '../../../../packages/web/src/lib/profile-accessors.js';
 
@@ -58,10 +62,7 @@ export default function DataScopingSection({
   }, [profile, configurations]);
 
   const unassignedTables = useMemo(() => {
-    const assigned = new Set([
-      ...rules.map((r) => r.tableName),
-      ...shared,
-    ]);
+    const assigned = new Set([...rules.map((r) => r.tableName), ...shared]);
     return availableTables.filter((t) => !assigned.has(t));
   }, [availableTables, rules, shared]);
 
@@ -89,7 +90,10 @@ export default function DataScopingSection({
   };
 
   const removeRule = (index: number) => {
-    onScopeRulesChange(rules.filter((_, i) => i !== index), shared);
+    onScopeRulesChange(
+      rules.filter((_, i) => i !== index),
+      shared,
+    );
   };
 
   const addSharedTable = (table: string) => {
@@ -98,7 +102,10 @@ export default function DataScopingSection({
   };
 
   const removeSharedTable = (table: string) => {
-    onScopeRulesChange(rules, shared.filter((t) => t !== table));
+    onScopeRulesChange(
+      rules,
+      shared.filter((t) => t !== table),
+    );
   };
 
   const hasRules = rules.length > 0;
@@ -107,7 +114,9 @@ export default function DataScopingSection({
     <div className="space-y-4">
       {/* Explanation */}
       <div className="card-primary p-4">
-        <h3 className="text-sm font-semibold text-gray-300 mb-2">Data Scoping (Row-Level Isolation)</h3>
+        <h3 className="text-sm font-semibold text-gray-300 mb-2">
+          Data Scoping (Row-Level Isolation)
+        </h3>
         <p className="text-sm text-gray-400 mb-3">
           Restrict each user to only see their own data. Configure rules that automatically filter
           database rows based on the authenticated user&apos;s identity.
@@ -120,11 +129,16 @@ export default function DataScopingSection({
         {hasRules && (
           <div className="flex items-center gap-2 text-xs text-amber-400 bg-amber-950/30 border border-amber-800/50 rounded-lg p-2">
             <svg className="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.168 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 6a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 6zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+              <path
+                fillRule="evenodd"
+                d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.168 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 6a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 6zm0 9a1 1 0 100-2 1 1 0 000 2z"
+                clipRule="evenodd"
+              />
             </svg>
             <span>
-              Strict mode active: tables without a scope rule or shared designation will be <strong>blocked</strong> (0 results).
-              This profile requires individual authentication (not &quot;open&quot; mode).
+              Strict mode active: tables without a scope rule or shared designation will be{' '}
+              <strong>blocked</strong> (0 results). This profile requires individual authentication
+              (not &quot;open&quot; mode).
             </span>
           </div>
         )}
@@ -134,7 +148,9 @@ export default function DataScopingSection({
       <div className="card-primary p-4">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-semibold text-gray-300">Scope Rules</h3>
-          <span className="text-xs text-gray-500">{rules.length} rule{rules.length !== 1 ? 's' : ''}</span>
+          <span className="text-xs text-gray-500">
+            {rules.length} rule{rules.length !== 1 ? 's' : ''}
+          </span>
         </div>
 
         {rules.length > 0 && (
@@ -142,7 +158,10 @@ export default function DataScopingSection({
             {rules.map((rule, i) => {
               const cols = columnsPerTable[rule.tableName] ?? [];
               return (
-                <div key={i} className="flex items-start gap-2 p-3 rounded-lg border border-white/5 bg-gray-900/30">
+                <div
+                  key={i}
+                  className="flex items-start gap-2 p-3 rounded-lg border border-white/5 bg-gray-900/30"
+                >
                   <div className="flex-shrink-0 min-w-[120px]">
                     <label className="text-xs text-gray-500 block mb-1">Table</label>
                     <span className="text-sm text-blue-300 font-mono">{rule.tableName}</span>
@@ -157,7 +176,9 @@ export default function DataScopingSection({
                     >
                       <option value="">Select column...</option>
                       {cols.map((c) => (
-                        <option key={c} value={c}>{c}</option>
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
                       ))}
                     </select>
                   </div>
@@ -166,7 +187,11 @@ export default function DataScopingSection({
                     <label className="text-xs text-gray-500 block mb-1">Match with</label>
                     <select
                       value={rule.identityField}
-                      onChange={(e) => updateRule(i, { identityField: e.target.value as DataScopeRule['identityField'] })}
+                      onChange={(e) =>
+                        updateRule(i, {
+                          identityField: e.target.value as DataScopeRule['identityField'],
+                        })
+                      }
                       className="w-full bg-gray-900 border border-white/10 rounded px-2 py-1 text-sm text-gray-200"
                     >
                       <option value="email">User email</option>
@@ -194,7 +219,12 @@ export default function DataScopingSection({
                     title="Remove rule"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M6 18L18 6M6 6l12 12"
+                      />
                     </svg>
                   </button>
                 </div>
@@ -211,9 +241,13 @@ export default function DataScopingSection({
               className="bg-gray-900 border border-white/10 rounded px-2 py-1.5 text-sm text-gray-200"
             >
               <option value="">Select table...</option>
-              {unassignedTables.filter((t) => !shared.includes(t)).map((t) => (
-                <option key={t} value={t}>{t}</option>
-              ))}
+              {unassignedTables
+                .filter((t) => !shared.includes(t))
+                .map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
             </select>
             <button
               onClick={addRule}
@@ -231,7 +265,8 @@ export default function DataScopingSection({
         <div className="card-primary p-4">
           <h3 className="text-sm font-semibold text-gray-300 mb-2">Shared Tables</h3>
           <p className="text-xs text-gray-500 mb-3">
-            Tables listed here are visible to all authenticated users without filtering (e.g., product catalogs, reference data).
+            Tables listed here are visible to all authenticated users without filtering (e.g.,
+            product catalogs, reference data).
           </p>
 
           {shared.length > 0 && (
@@ -246,8 +281,18 @@ export default function DataScopingSection({
                     onClick={() => removeSharedTable(table)}
                     className="text-green-500/60 hover:text-red-400 transition-colors"
                   >
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    <svg
+                      className="w-3.5 h-3.5"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M6 18L18 6M6 6l12 12"
+                      />
                     </svg>
                   </button>
                 </span>
@@ -270,7 +315,9 @@ export default function DataScopingSection({
               >
                 <option value="">Select table...</option>
                 {unassignedTables.map((t) => (
-                  <option key={t} value={t}>{t}</option>
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
                 ))}
               </select>
               <span className="text-xs text-gray-500">Mark as shared (no scoping)</span>

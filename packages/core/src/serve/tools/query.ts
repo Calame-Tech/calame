@@ -21,11 +21,24 @@ export function registerQueryGeneric(
   accessible: AccessibleTable[],
   catalogue: string,
 ): void {
-  const { server, executeQuery, dialect, onAuditLog, profileName, responseMode, wrapResponse, maxOffset, scopeGuard, toolName } = ctx;
+  const {
+    server,
+    executeQuery,
+    dialect,
+    onAuditLog,
+    profileName,
+    responseMode,
+    wrapResponse,
+    maxOffset,
+    scopeGuard,
+    toolName,
+  } = ctx;
 
-  const eligible = accessible.filter(at => at.enabledTools.includes('query') && at.allColumnNames.length > 0);
+  const eligible = accessible.filter(
+    (at) => at.enabledTools.includes('query') && at.allColumnNames.length > 0,
+  );
   if (eligible.length === 0) return;
-  const tableEnum = zodEnum(eligible.map(at => at.table.name));
+  const tableEnum = zodEnum(eligible.map((at) => at.table.name));
   if (!tableEnum) return;
 
   const inputShape = buildQueryArgsShape(tableEnum);
@@ -53,10 +66,10 @@ export function registerQueryGeneric(
           if (m.maskingMode === 'aggregate_only') queryExcludedCols.add(colName);
         }
       }
-      const queryableColumnNames = at.allColumnNames.filter(c => !queryExcludedCols.has(c));
+      const queryableColumnNames = at.allColumnNames.filter((c) => !queryExcludedCols.has(c));
       const allowedFilterColumns = at.filterableCols
-        .filter(c => !queryExcludedCols.has(c.name))
-        .map(c => c.name);
+        .filter((c) => !queryExcludedCols.has(c.name))
+        .map((c) => c.name);
 
       const queryMaskingRules: Record<string, MaskingRule> = {};
       for (const [col, rule] of Object.entries(at.maskingRules)) {
@@ -77,17 +90,23 @@ export function registerQueryGeneric(
       };
 
       return executeWithAudit(
-        { executeQuery, dialect, onAuditLog, profileName, toolName: toolName('query'), toolArgs: args },
+        {
+          executeQuery,
+          dialect,
+          onAuditLog,
+          profileName,
+          toolName: toolName('query'),
+          toolArgs: args,
+        },
         async (exec) => {
           const cappedLimit = Math.min(limit ?? 20, maxLimit);
           const cappedOffset = Math.min(offset ?? 0, maxOffset);
 
-          const { clause: whereClause, values, nextParamIndex } = scopeGuard.buildWhereClause(
-            tableName,
-            filters,
-            allowedFilterColumns,
-            dialect,
-          );
+          const {
+            clause: whereClause,
+            values,
+            nextParamIndex,
+          } = scopeGuard.buildWhereClause(tableName, filters, allowedFilterColumns, dialect);
           let paramIdx = nextParamIndex;
 
           let selectExpr: string;
@@ -101,9 +120,9 @@ export function registerQueryGeneric(
                 });
               }
             }
-            selectExpr = columns.map(c => dialect.quoteIdent(c)).join(', ');
+            selectExpr = columns.map((c) => dialect.quoteIdent(c)).join(', ');
           } else {
-            selectExpr = queryableColumnNames.map(c => dialect.quoteIdent(c)).join(', ');
+            selectExpr = queryableColumnNames.map((c) => dialect.quoteIdent(c)).join(', ');
           }
 
           let orderByClause = '';
@@ -128,7 +147,9 @@ export function registerQueryGeneric(
           const sql = `SELECT ${selectExpr} FROM ${qualifiedTable} ${whereClause} ${orderByClause} LIMIT ${limitParam} OFFSET ${offsetParam}`;
           const result = await exec(sql, values);
 
-          const maskedRows = needsMasking ? applyMasking(result.rows, queryMaskingRules) : result.rows;
+          const maskedRows = needsMasking
+            ? applyMasking(result.rows, queryMaskingRules)
+            : result.rows;
           const formattedRows = formatResponseRows(maskedRows, at.labelMap, responseMode);
 
           // Zero-result hint: if filters returned 0 rows, fetch distinct values
@@ -136,9 +157,9 @@ export function registerQueryGeneric(
           let zeroResultHint = '';
           if (formattedRows.length === 0 && filters && Object.keys(filters).length > 0) {
             try {
-              const filteredCols = Object.keys(filters).filter(k => filters[k] !== undefined);
-              const textCols = filteredCols.filter(col => {
-                const colInfo = at.visibleColumns.find(c => c.name === col);
+              const filteredCols = Object.keys(filters).filter((k) => filters[k] !== undefined);
+              const textCols = filteredCols.filter((col) => {
+                const colInfo = at.visibleColumns.find((c) => c.name === col);
                 return colInfo && isTextType(colInfo.type);
               });
               const hints: string[] = [];
@@ -152,11 +173,12 @@ export function registerQueryGeneric(
                 const where = hintScope ? `${hintScope} AND ${notNull}` : `WHERE ${notNull}`;
                 const hintSql = `SELECT DISTINCT ${qi} AS val FROM ${qualifiedTable} ${where} ORDER BY val LIMIT 30`;
                 const r = await exec(hintSql, [...hintVals]);
-                const vals = r.rows.map(row => String((row as Record<string, unknown>).val));
+                const vals = r.rows.map((row) => String((row as Record<string, unknown>).val));
                 if (vals.length > 0) hints.push(`Possible values for '${col}': ${vals.join(', ')}`);
               }
               if (hints.length > 0) {
-                zeroResultHint = '\n\nNo results. ' + hints.join('. ') + '. Retry with one of these exact values.';
+                zeroResultHint =
+                  '\n\nNo results. ' + hints.join('. ') + '. Retry with one of these exact values.';
               }
             } catch {
               // Non-critical
@@ -165,9 +187,7 @@ export function registerQueryGeneric(
 
           const text = wrapResponse(JSON.stringify(formattedRows, null, 2)) + zeroResultHint;
           return {
-            content: [
-              { type: 'text' as const, text },
-            ],
+            content: [{ type: 'text' as const, text }],
             resultSummary: `${formattedRows.length} rows`,
             resultData: text,
           };

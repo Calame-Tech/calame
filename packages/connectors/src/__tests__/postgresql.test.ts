@@ -33,7 +33,9 @@ describe('PostgreSQLConnector', () => {
       mockConnect.mockResolvedValueOnce(undefined);
       mockQuery.mockResolvedValueOnce({ rows: [{ '?column?': 1 }] });
 
-      await expect(connector.testConnection('postgresql://localhost/test')).resolves.toBeUndefined();
+      await expect(
+        connector.testConnection('postgresql://localhost/test'),
+      ).resolves.toBeUndefined();
       expect(mockEnd).toHaveBeenCalledOnce();
     });
 

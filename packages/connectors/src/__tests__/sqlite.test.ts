@@ -81,9 +81,7 @@ describe('SQLiteConnector', () => {
     it('resolves with a bare file path (no scheme)', async () => {
       mockStatement(1);
 
-      await expect(
-        connector.testConnection('/absolute/path/db.sqlite'),
-      ).resolves.toBeUndefined();
+      await expect(connector.testConnection('/absolute/path/db.sqlite')).resolves.toBeUndefined();
       expect(MockDatabase).toHaveBeenCalledWith('/absolute/path/db.sqlite', {
         readonly: true,
         fileMustExist: true,
@@ -95,9 +93,7 @@ describe('SQLiteConnector', () => {
         throw new Error('ENOENT: no such file or directory');
       });
 
-      await expect(connector.testConnection('sqlite:///missing.db')).rejects.toThrow(
-        'ENOENT',
-      );
+      await expect(connector.testConnection('sqlite:///missing.db')).rejects.toThrow('ENOENT');
       // close should NOT be called because the db handle was never created
       expect(mockClose).not.toHaveBeenCalled();
     });
@@ -289,7 +285,10 @@ describe('SQLiteConnector', () => {
     it('closes database handles left open on the instance', async () => {
       // Inject a fake open handle via the private handles Map
       const fakeDb = { close: mockClose };
-      const handles = (connector as unknown as Record<string, unknown>)['handles'] as Map<string, unknown>;
+      const handles = (connector as unknown as Record<string, unknown>)['handles'] as Map<
+        string,
+        unknown
+      >;
       handles.set('test-dsn', fakeDb);
 
       await connector.disconnect();

@@ -65,7 +65,8 @@ export default function AiSettings() {
   const [formName, setFormName] = useState('');
   const [formLabel, setFormLabel] = useState('');
   const [provider, setProvider] = useState<Provider>('anthropic');
-  const [perProvider, setPerProvider] = useState<Record<Provider, PerProviderFields>>(emptyPerProvider());
+  const [perProvider, setPerProvider] =
+    useState<Record<Provider, PerProviderFields>>(emptyPerProvider());
   const [showApiKey, setShowApiKey] = useState(false);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -117,7 +118,8 @@ export default function AiSettings() {
           if (cfg.classifierModel !== undefined) setClassifierModel(cfg.classifierModel);
           if (cfg.classifierApiKey !== undefined) setClassifierApiKey(cfg.classifierApiKey);
           if (cfg.classifierEndpoint !== undefined) setClassifierEndpoint(cfg.classifierEndpoint);
-          if (cfg.injectionThreshold !== undefined) setInjectionThreshold(Math.round(cfg.injectionThreshold * 100));
+          if (cfg.injectionThreshold !== undefined)
+            setInjectionThreshold(Math.round(cfg.injectionThreshold * 100));
         }
       }
     } catch {
@@ -323,7 +325,10 @@ export default function AiSettings() {
             baseUrl: baseUrl || undefined,
           }),
         });
-        const res = await apiFetch('/api/ai-settings/test', { method: 'POST', credentials: 'include' });
+        const res = await apiFetch('/api/ai-settings/test', {
+          method: 'POST',
+          credentials: 'include',
+        });
         const data = await res.json();
         setTestResult(
           data.success
@@ -476,7 +481,9 @@ export default function AiSettings() {
                   : 'border-white/5 bg-gray-900/40 hover:border-white/10'
               }`}
             >
-              <div className={`text-sm font-medium ${provider === p.value ? 'text-os-400' : 'text-gray-300'}`}>
+              <div
+                className={`text-sm font-medium ${provider === p.value ? 'text-os-400' : 'text-gray-300'}`}
+              >
                 {p.label}
               </div>
               <div className="text-xs text-gray-500 mt-0.5">{p.desc}</div>
@@ -600,8 +607,9 @@ export default function AiSettings() {
                 </label>
               </div>
               <p className="text-xs text-gray-500 mt-0.5">
-                Used by RAG hybrid search to re-order results for better relevance (Cohere API). When a
-                valid rerank setting is configured, it activates automatically — no extra toggle needed.
+                Used by RAG hybrid search to re-order results for better relevance (Cohere API).
+                When a valid rerank setting is configured, it activates automatically — no extra
+                toggle needed.
               </p>
               {capRerank && (
                 <div className="mt-2">
@@ -617,8 +625,9 @@ export default function AiSettings() {
                   />
                   <p className="text-xs text-gray-600 mt-1">
                     Cohere model name.{' '}
-                    <code className="text-gray-500">rerank-multilingual-v3.0</code> works for FR/EN mixed
-                    corpora. <code className="text-gray-500">rerank-english-v3.0</code> is English-only.
+                    <code className="text-gray-500">rerank-multilingual-v3.0</code> works for FR/EN
+                    mixed corpora. <code className="text-gray-500">rerank-english-v3.0</code> is
+                    English-only.
                   </p>
                 </div>
               )}
@@ -732,7 +741,8 @@ export default function AiSettings() {
             />
           </div>
           <p className="text-sm text-gray-500 mt-1">
-            Define the AI providers your MCP servers can use. Associate them per-MCP in the profile editor.
+            Define the AI providers your MCP servers can use. Associate them per-MCP in the profile
+            editor.
           </p>
         </div>
         <button
@@ -751,7 +761,8 @@ export default function AiSettings() {
       <div className="space-y-2">
         {settings.length === 0 && !isCreating && (
           <div className="text-sm text-gray-500 italic px-3 py-6 text-center border border-dashed border-white/5 rounded-lg">
-            No AI setting yet. Click <span className="text-os-400">+ New AI Setting</span> to create one.
+            No AI setting yet. Click <span className="text-os-400">+ New AI Setting</span> to create
+            one.
           </div>
         )}
 
@@ -878,8 +889,8 @@ export default function AiSettings() {
               />
             </div>
             <p className="text-xs text-gray-500 mt-0.5">
-              Two-stage pipeline: lightweight classifier detects intent and blocks injection attempts before
-              the main LLM processes the query.
+              Two-stage pipeline: lightweight classifier detects intent and blocks injection
+              attempts before the main LLM processes the query.
             </p>
           </div>
           <label className="flex items-center gap-2 cursor-pointer">
@@ -915,7 +926,9 @@ export default function AiSettings() {
                 type="text"
                 value={classifierModel}
                 onChange={(e) => setClassifierModel(e.target.value)}
-                placeholder={classifierProvider === 'anthropic' ? 'claude-haiku-4-5-20251001' : 'gpt-4o-mini'}
+                placeholder={
+                  classifierProvider === 'anthropic' ? 'claude-haiku-4-5-20251001' : 'gpt-4o-mini'
+                }
                 className="input-editorial w-full text-sm mt-1"
               />
             </div>
@@ -928,7 +941,9 @@ export default function AiSettings() {
                 placeholder="sk-..."
                 className="input-editorial w-full text-sm mt-1"
               />
-              <p className="text-xs text-gray-600 mt-1">Leave empty to use the same key as the main provider.</p>
+              <p className="text-xs text-gray-600 mt-1">
+                Leave empty to use the same key as the main provider.
+              </p>
             </div>
             {classifierProvider === 'custom' && (
               <div>

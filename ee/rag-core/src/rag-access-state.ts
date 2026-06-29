@@ -55,10 +55,7 @@ export type FolderMap = Record<string, FolderNode>;
  * the scope is reloaded from disk (the serializer drops descendant entries
  * under an auto-include ancestor by design — see {@link buildDocumentScope}).
  */
-export function isCoveredByAncestorAutoInclude(
-  folderId: string,
-  folderMap: FolderMap,
-): boolean {
+export function isCoveredByAncestorAutoInclude(folderId: string, folderMap: FolderMap): boolean {
   let parentId = folderMap[folderId]?.folder.parentId ?? null;
   while (parentId !== null) {
     const parent = folderMap[parentId];
@@ -181,9 +178,7 @@ export function buildDocumentScope(
   }
 
   const mode: 'allowAll' | 'allowList' =
-    allowedFolders.length === 0 && allowedDocuments.length === 0
-      ? 'allowAll'
-      : 'allowList';
+    allowedFolders.length === 0 && allowedDocuments.length === 0 ? 'allowAll' : 'allowList';
   return {
     kind: 'document',
     mode,
@@ -217,29 +212,29 @@ export function buildDocumentScope(
  * lets the component skip a setState round-trip).
  */
 export function applyToggleFolder(
-	folderId: string,
-	nextCheck: CheckState,
-	folderMap: FolderMap,
+  folderId: string,
+  nextCheck: CheckState,
+  folderMap: FolderMap,
 ): FolderMap {
-	const node = folderMap[folderId];
-	if (!node) return folderMap;
-	const nextMode: FolderMode = nextCheck === 'checked' ? 'auto-include' : 'strict';
-	return {
-		...folderMap,
-		[folderId]: { ...node, mode: nextMode, checkedDocIds: new Set() },
-	};
+  const node = folderMap[folderId];
+  if (!node) return folderMap;
+  const nextMode: FolderMode = nextCheck === 'checked' ? 'auto-include' : 'strict';
+  return {
+    ...folderMap,
+    [folderId]: { ...node, mode: nextMode, checkedDocIds: new Set() },
+  };
 }
 
 /** Result of {@link applyToggleDocument}. */
 export interface ApplyToggleDocumentResult {
-	folderMap: FolderMap;
-	/**
-	 * Set to a non-null string when the helper triggered the auto-include →
-	 * strict bascule. The component is expected to surface the message as a
-	 * toast so the user is aware that future docs in this folder will NOT be
-	 * auto-included anymore.
-	 */
-	toastMessage: string | null;
+  folderMap: FolderMap;
+  /**
+   * Set to a non-null string when the helper triggered the auto-include →
+   * strict bascule. The component is expected to surface the message as a
+   * toast so the user is aware that future docs in this folder will NOT be
+   * auto-included anymore.
+   */
+  toastMessage: string | null;
 }
 
 /**
@@ -259,40 +254,40 @@ export interface ApplyToggleDocumentResult {
  * `folderId` is unknown — no-op, lets the component skip a setState round-trip.
  */
 export function applyToggleDocument(
-	folderId: string,
-	docId: string,
-	folderMap: FolderMap,
+  folderId: string,
+  docId: string,
+  folderMap: FolderMap,
 ): ApplyToggleDocumentResult {
-	const node = folderMap[folderId];
-	if (!node) return { folderMap, toastMessage: null };
+  const node = folderMap[folderId];
+  if (!node) return { folderMap, toastMessage: null };
 
-	if (node.mode === 'auto-include') {
-		// Pre-check every doc except the one being unchecked, then flip mode.
-		const allDocIds = new Set(node.documents.map((d) => d.id));
-		allDocIds.delete(docId);
-		return {
-			folderMap: {
-				...folderMap,
-				[folderId]: { ...node, mode: 'strict', checkedDocIds: allDocIds },
-			},
-			toastMessage: `Le dossier "${node.folder.name}" est maintenant en mode strict. Les nouveaux fichiers ne seront pas accessibles automatiquement.`,
-		};
-	}
+  if (node.mode === 'auto-include') {
+    // Pre-check every doc except the one being unchecked, then flip mode.
+    const allDocIds = new Set(node.documents.map((d) => d.id));
+    allDocIds.delete(docId);
+    return {
+      folderMap: {
+        ...folderMap,
+        [folderId]: { ...node, mode: 'strict', checkedDocIds: allDocIds },
+      },
+      toastMessage: `Le dossier "${node.folder.name}" est maintenant en mode strict. Les nouveaux fichiers ne seront pas accessibles automatiquement.`,
+    };
+  }
 
-	// strict mode: toggle individual doc
-	const nextChecked = new Set(node.checkedDocIds);
-	if (nextChecked.has(docId)) {
-		nextChecked.delete(docId);
-	} else {
-		nextChecked.add(docId);
-	}
-	return {
-		folderMap: {
-			...folderMap,
-			[folderId]: { ...node, checkedDocIds: nextChecked },
-		},
-		toastMessage: null,
-	};
+  // strict mode: toggle individual doc
+  const nextChecked = new Set(node.checkedDocIds);
+  if (nextChecked.has(docId)) {
+    nextChecked.delete(docId);
+  } else {
+    nextChecked.add(docId);
+  }
+  return {
+    folderMap: {
+      ...folderMap,
+      [folderId]: { ...node, checkedDocIds: nextChecked },
+    },
+    toastMessage: null,
+  };
 }
 
 // ---------------------------------------------------------------------------

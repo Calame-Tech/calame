@@ -39,16 +39,16 @@ export function registerServeStatusRoute(app: Express, state: AppState): void {
 
       const serveProfiles: Record<string, ServeProfile> = {};
       for (const [name, profile] of Object.entries(parsed.profiles as Record<string, unknown>)) {
-        serveProfiles[name] = upgradeProfileShape({ ...(profile as Record<string, unknown>), name });
+        serveProfiles[name] = upgradeProfileShape({
+          ...(profile as Record<string, unknown>),
+          name,
+        });
       }
       // Backward compat: synthesise a default relational source on profiles
       // that have no configurations and no sources. Mirrors the historic
       // behaviour where empty profiles defaulted to `connections: ['default']`.
       for (const profile of Object.values(serveProfiles)) {
-        if (
-          !profile.configurations?.length &&
-          getProfileRelationalSources(profile).length === 0
-        ) {
+        if (!profile.configurations?.length && getProfileRelationalSources(profile).length === 0) {
           profile.sources = ['default'];
           profile.scopes = {
             ...(profile.scopes ?? {}),
@@ -94,7 +94,10 @@ export function registerServeStatusRoute(app: Express, state: AppState): void {
     try {
       // Validate prerequisites
       if (state.connections.size === 0) {
-        res.status(400).json({ success: false, message: 'No database connections available. Add a connection first.' });
+        res.status(400).json({
+          success: false,
+          message: 'No database connections available. Add a connection first.',
+        });
         return;
       }
 
@@ -112,7 +115,9 @@ export function registerServeStatusRoute(app: Express, state: AppState): void {
           .prepare("SELECT data FROM profiles WHERE key = 'main' AND tenant_id = ?")
           .get(tenantId) as { data: string } | undefined;
         if (!row) {
-          res.status(400).json({ success: false, message: 'No profiles found. Create profiles first.' });
+          res
+            .status(400)
+            .json({ success: false, message: 'No profiles found. Create profiles first.' });
           return;
         }
         const parsed = JSON.parse(row.data) as Record<string, unknown>;
@@ -213,8 +218,13 @@ export function registerServeStatusRoute(app: Express, state: AppState): void {
       }
 
       const profileNames = Object.keys(serveProfiles);
-      state.logger?.info(`Started serving ${profileNames.length} profile(s): ${profileNames.join(', ')}`, { component: 'serve' });
-      state.logger?.info('MCP endpoints available at POST /mcp/<profileName>', { component: 'serve' });
+      state.logger?.info(
+        `Started serving ${profileNames.length} profile(s): ${profileNames.join(', ')}`,
+        { component: 'serve' },
+      );
+      state.logger?.info('MCP endpoints available at POST /mcp/<profileName>', {
+        component: 'serve',
+      });
 
       // Pre-warm local model KV cache in the background (custom provider only)
       // so the first real user message doesn't pay the full cold-start penalty
@@ -222,7 +232,8 @@ export function registerServeStatusRoute(app: Express, state: AppState): void {
         try {
           const aiSetting = state.aiConfigManager?.getConfig?.();
           if (aiSetting?.provider === 'custom' && aiSetting.baseUrl && aiSetting.model) {
-            const { warmupLlmCache, createMcpChatTools, getDefaultSystemPrompt } = await import('../chat-engine.js');
+            const { warmupLlmCache, createMcpChatTools, getDefaultSystemPrompt } =
+              await import('../chat-engine.js');
             const firstProfile = profileNames[0];
             const host = `localhost:${process.env.PORT ?? 4567}`;
             const mcpUrl = `http://${host}/mcp/${firstProfile}`;
@@ -259,7 +270,7 @@ export function registerServeStatusRoute(app: Express, state: AppState): void {
         success: true,
         message: `Now serving ${profileNames.length} profile(s).`,
         profiles: profileNames,
-        endpoints: profileNames.map(p => `/mcp/${p}`),
+        endpoints: profileNames.map((p) => `/mcp/${p}`),
       });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown error';
@@ -279,7 +290,9 @@ export function registerServeStatusRoute(app: Express, state: AppState): void {
         for (const name of profilesToStop) {
           state.activeProfileNames.delete(name);
         }
-        state.logger?.info(`Deactivated profile(s): ${profilesToStop.join(', ')}`, { component: 'serve' });
+        state.logger?.info(`Deactivated profile(s): ${profilesToStop.join(', ')}`, {
+          component: 'serve',
+        });
         res.json({
           success: true,
           message: `Deactivated ${profilesToStop.length} profile(s).`,
@@ -379,7 +392,10 @@ export function registerServeStatusRoute(app: Express, state: AppState): void {
         refreshedNames.push(name);
       }
 
-      state.logger?.info(`Refreshed ${refreshedNames.length} profile(s): ${refreshedNames.join(', ')}`, { component: 'serve/refresh' });
+      state.logger?.info(
+        `Refreshed ${refreshedNames.length} profile(s): ${refreshedNames.join(', ')}`,
+        { component: 'serve/refresh' },
+      );
       res.json({ success: true, refreshed: refreshedNames });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown error';
@@ -410,7 +426,9 @@ export function registerServeStatusRoute(app: Express, state: AppState): void {
       }
 
       const nowActive = !wasActive;
-      state.logger?.info(`Profile "${name}" toggled to ${nowActive ? 'active' : 'inactive'}.`, { component: 'serve' });
+      state.logger?.info(`Profile "${name}" toggled to ${nowActive ? 'active' : 'inactive'}.`, {
+        component: 'serve',
+      });
 
       res.json({
         success: true,

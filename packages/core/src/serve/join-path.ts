@@ -26,12 +26,18 @@ export function findJoinPath(
   for (const r of relations) {
     if (!adj.has(r.fromTable)) adj.set(r.fromTable, []);
     if (!adj.has(r.toTable)) adj.set(r.toTable, []);
-    adj
-      .get(r.fromTable)!
-      .push({ fromTable: r.fromTable, fromColumn: r.fromColumn, toTable: r.toTable, toColumn: r.toColumn });
-    adj
-      .get(r.toTable)!
-      .push({ fromTable: r.toTable, fromColumn: r.toColumn, toTable: r.fromTable, toColumn: r.fromColumn });
+    adj.get(r.fromTable)!.push({
+      fromTable: r.fromTable,
+      fromColumn: r.fromColumn,
+      toTable: r.toTable,
+      toColumn: r.toColumn,
+    });
+    adj.get(r.toTable)!.push({
+      fromTable: r.toTable,
+      fromColumn: r.toColumn,
+      toTable: r.fromTable,
+      toColumn: r.fromColumn,
+    });
   }
 
   // BFS

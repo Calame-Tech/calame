@@ -1,5 +1,13 @@
 import { useState } from 'react';
-import type { Config, DatabaseSchema, TableInfo, TableToolOptions, PiiDetection, ColumnMasking, GlobalMaskingRule } from '../types/schema.js';
+import type {
+  Config,
+  DatabaseSchema,
+  TableInfo,
+  TableToolOptions,
+  PiiDetection,
+  ColumnMasking,
+  GlobalMaskingRule,
+} from '../types/schema.js';
 import TableOptionsCard from './TableOptionsCard.js';
 import GlobalMaskingRulesComponent from './GlobalMaskingRules.js';
 import HelpTip from './HelpTip.js';
@@ -27,7 +35,18 @@ function getTableOptions(config: Config, tableName: string, table: TableInfo): T
   };
 }
 
-export default function ConfigPanel({ config, onConfigChange, schema, selectedTables, piiDetections, columnMasking, onColumnMaskingChange, globalMaskingRules, onGlobalMaskingRulesChange, onPiiOverride }: ConfigPanelProps) {
+export default function ConfigPanel({
+  config,
+  onConfigChange,
+  schema,
+  selectedTables,
+  piiDetections,
+  columnMasking,
+  onColumnMaskingChange,
+  globalMaskingRules,
+  onGlobalMaskingRulesChange,
+  onPiiOverride,
+}: ConfigPanelProps) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [tableFilter, setTableFilter] = useState('');
 
@@ -82,10 +101,17 @@ export default function ConfigPanel({ config, onConfigChange, schema, selectedTa
                 stroke="currentColor"
                 viewBox="0 0 24 24"
               >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M9 5l7 7-7 7"
+                />
               </svg>
               Advanced Table Options
-              <span className="text-xs text-gray-500 font-normal">({activeTables.length} tables)</span>
+              <span className="text-xs text-gray-500 font-normal">
+                ({activeTables.length} tables)
+              </span>
             </button>
             <HelpTip
               content="Configure each table individually: exposed tools, row limit, filterable/groupable columns, and sensitive data masking."
@@ -105,29 +131,36 @@ export default function ConfigPanel({ config, onConfigChange, schema, selectedTa
                   placeholder="Filter tables..."
                   className="input-editorial flex-1 text-sm"
                 />
-                <HelpTip content="Filter the displayed tables by name." position="right" size="xs" />
-              </div>
-              {activeTables.filter(({ name }) => name.toLowerCase().includes(tableFilter.toLowerCase())).map(({ name, info }) => (
-                <TableOptionsCard
-                  key={name}
-                  tableName={name}
-                  table={info}
-                  options={getTableOptions(config, name, info)}
-                  onChange={(opts) => handleTableOptionsChange(name, opts)}
-                  piiDetections={piiDetections?.[name]}
-                  columnMasking={columnMasking?.[name]}
-                  onColumnMaskingChange={
-                    onColumnMaskingChange
-                      ? (tableMasking) => onColumnMaskingChange({ ...columnMasking, [name]: tableMasking })
-                      : undefined
-                  }
-                  onPiiOverride={
-                    onPiiOverride
-                      ? (colName, detection) => onPiiOverride(name, colName, detection)
-                      : undefined
-                  }
+                <HelpTip
+                  content="Filter the displayed tables by name."
+                  position="right"
+                  size="xs"
                 />
-              ))}
+              </div>
+              {activeTables
+                .filter(({ name }) => name.toLowerCase().includes(tableFilter.toLowerCase()))
+                .map(({ name, info }) => (
+                  <TableOptionsCard
+                    key={name}
+                    tableName={name}
+                    table={info}
+                    options={getTableOptions(config, name, info)}
+                    onChange={(opts) => handleTableOptionsChange(name, opts)}
+                    piiDetections={piiDetections?.[name]}
+                    columnMasking={columnMasking?.[name]}
+                    onColumnMaskingChange={
+                      onColumnMaskingChange
+                        ? (tableMasking) =>
+                            onColumnMaskingChange({ ...columnMasking, [name]: tableMasking })
+                        : undefined
+                    }
+                    onPiiOverride={
+                      onPiiOverride
+                        ? (colName, detection) => onPiiOverride(name, colName, detection)
+                        : undefined
+                    }
+                  />
+                ))}
             </div>
           )}
         </div>

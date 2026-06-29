@@ -100,10 +100,7 @@ export function buildDatabaseSourceAdapter(
       await connectors[type].testConnection(config.connectionString, options);
     },
 
-    async introspect(
-      config: DatabaseAdapterConfig,
-      _sourceId: string,
-    ): Promise<RelationalSchema> {
+    async introspect(config: DatabaseAdapterConfig, _sourceId: string): Promise<RelationalSchema> {
       const options = buildConnectionOptions(config);
       const schema = await connectors[type].introspect(config.connectionString, options);
       return { kind: 'relational', tables: schema.tables, relations: schema.relations };
@@ -163,9 +160,7 @@ export function buildDatabaseSourceAdapter(
       );
     },
 
-    registerMcpTools(
-      ctx: McpRegistrationContext<DatabaseAdapterConfig, RelationalSchema>,
-    ): void {
+    registerMcpTools(ctx: McpRegistrationContext<DatabaseAdapterConfig, RelationalSchema>): void {
       if (ctx.selection.kind !== 'relational') {
         throw new Error(
           `DatabaseSourceAdapter(${type}): expected relational selection, got '${ctx.selection.kind}'`,

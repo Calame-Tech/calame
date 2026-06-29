@@ -3,12 +3,7 @@
 // See ee/LICENSE.BUSL at the root of the ee/ directory for terms.
 
 import { decodeTokens, encodeTokens } from './tokenizer.js';
-import {
-	DEFAULT_MAX_TOKENS,
-	DEFAULT_OVERLAP,
-	type Chunk,
-	type ChunkOptions,
-} from './types.js';
+import { DEFAULT_MAX_TOKENS, DEFAULT_OVERLAP, type Chunk, type ChunkOptions } from './types.js';
 
 /**
  * Token-based sliding-window chunker using the o200k_base encoding (the
@@ -33,45 +28,45 @@ import {
  * @throws if `overlap >= maxTokens` (would loop forever).
  */
 export function chunkPlainText(text: string, opts: ChunkOptions = {}): Chunk[] {
-	const maxTokens = opts.maxTokens ?? DEFAULT_MAX_TOKENS;
-	const overlap = opts.overlap ?? DEFAULT_OVERLAP;
+  const maxTokens = opts.maxTokens ?? DEFAULT_MAX_TOKENS;
+  const overlap = opts.overlap ?? DEFAULT_OVERLAP;
 
-	if (!Number.isInteger(maxTokens) || maxTokens <= 0) {
-		throw new Error(`chunkPlainText: maxTokens must be a positive integer, got ${maxTokens}`);
-	}
-	if (!Number.isInteger(overlap) || overlap < 0) {
-		throw new Error(`chunkPlainText: overlap must be a non-negative integer, got ${overlap}`);
-	}
-	if (overlap >= maxTokens) {
-		throw new Error(
-			`chunkPlainText: overlap (${overlap}) must be strictly less than maxTokens (${maxTokens})`,
-		);
-	}
+  if (!Number.isInteger(maxTokens) || maxTokens <= 0) {
+    throw new Error(`chunkPlainText: maxTokens must be a positive integer, got ${maxTokens}`);
+  }
+  if (!Number.isInteger(overlap) || overlap < 0) {
+    throw new Error(`chunkPlainText: overlap must be a non-negative integer, got ${overlap}`);
+  }
+  if (overlap >= maxTokens) {
+    throw new Error(
+      `chunkPlainText: overlap (${overlap}) must be strictly less than maxTokens (${maxTokens})`,
+    );
+  }
 
-	if (!text || text.trim().length === 0) {
-		return [];
-	}
+  if (!text || text.trim().length === 0) {
+    return [];
+  }
 
-	const tokens = encodeTokens(text);
-	if (tokens.length === 0) {
-		return [];
-	}
+  const tokens = encodeTokens(text);
+  if (tokens.length === 0) {
+    return [];
+  }
 
-	const step = maxTokens - overlap;
-	const chunks: Chunk[] = [];
-	let position = 0;
+  const step = maxTokens - overlap;
+  const chunks: Chunk[] = [];
+  let position = 0;
 
-	for (let start = 0; start < tokens.length; start += step) {
-		const end = Math.min(start + maxTokens, tokens.length);
-		const slice = tokens.slice(start, end);
-		chunks.push({
-			position,
-			text: decodeTokens(slice),
-			tokenCount: slice.length,
-		});
-		position += 1;
-		if (end === tokens.length) break;
-	}
+  for (let start = 0; start < tokens.length; start += step) {
+    const end = Math.min(start + maxTokens, tokens.length);
+    const slice = tokens.slice(start, end);
+    chunks.push({
+      position,
+      text: decodeTokens(slice),
+      tokenCount: slice.length,
+    });
+    position += 1;
+    if (end === tokens.length) break;
+  }
 
-	return chunks;
+  return chunks;
 }

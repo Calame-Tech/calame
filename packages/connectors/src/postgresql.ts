@@ -62,7 +62,11 @@ export class PostgreSQLConnector implements DatabaseConnector {
       await client.connect();
       await client.query('SELECT 1');
     } finally {
-      try { await client.end(); } catch { /* swallow cleanup failures */ }
+      try {
+        await client.end();
+      } catch {
+        /* swallow cleanup failures */
+      }
     }
   }
 
@@ -219,9 +223,10 @@ export class PostgreSQLConnector implements DatabaseConnector {
       if (options?.timeoutMs && options.timeoutMs > 0) {
         await client.query(`SET statement_timeout = ${Math.floor(options.timeoutMs)}`);
       }
-      const result = options?.params && options.params.length > 0
-        ? await client.query(sql, options.params)
-        : await client.query(sql);
+      const result =
+        options?.params && options.params.length > 0
+          ? await client.query(sql, options.params)
+          : await client.query(sql);
       await client.query('COMMIT');
       return { rows: result.rows };
     } catch (error: unknown) {
@@ -230,7 +235,7 @@ export class PostgreSQLConnector implements DatabaseConnector {
       if (error instanceof Error && error.message.includes('statement timeout')) {
         throw new Error(
           `Query timed out after ${options?.timeoutMs ?? 0}ms. ` +
-          'Try narrowing your query with filters or reducing the result set.',
+            'Try narrowing your query with filters or reducing the result set.',
         );
       }
       throw error;

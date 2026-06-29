@@ -19,7 +19,10 @@ const USER_ID_RE = /^[a-zA-Z0-9_-]{1,64}$/;
  * guards below and translated to a JSON response by {@link handleGuardError}.
  */
 class HttpError extends Error {
-  constructor(public readonly status: number, message: string) {
+  constructor(
+    public readonly status: number,
+    message: string,
+  ) {
     super(message);
   }
 }
@@ -54,9 +57,10 @@ function validateUserId(id: string): string {
  */
 function assertUserInTenant(state: AppState, id: string, tenantId: string): void {
   const userRow = state.db?.raw
-    .prepare<[string, string], { tenant_id: string }>(
-      'SELECT tenant_id FROM users WHERE id = ? AND tenant_id = ?',
-    )
+    .prepare<
+      [string, string],
+      { tenant_id: string }
+    >('SELECT tenant_id FROM users WHERE id = ? AND tenant_id = ?')
     .get(id, tenantId);
   if (!userRow) throw new HttpError(404, 'User not found.');
 }
@@ -250,17 +254,23 @@ export function registerUsersRoute(app: Express, state: AppState): void {
         const profileName = req.body.profileName as string;
         const accessMode = (req.body.accessMode as string) ?? 'both';
         if (!['mcp', 'chat', 'both'].includes(accessMode)) {
-          res.status(400).json({ success: false, message: 'accessMode must be "mcp", "chat", or "both".' });
+          res
+            .status(400)
+            .json({ success: false, message: 'accessMode must be "mcp", "chat", or "both".' });
           return;
         }
-        profiles = [{
-          profileName,
-          allowedTables: (req.body.allowedTables as string[] | null) ?? null,
-          allowedTools: (req.body.allowedTools as string[] | null) ?? null,
-          accessMode: accessMode as AccessMode,
-        }];
+        profiles = [
+          {
+            profileName,
+            allowedTables: (req.body.allowedTables as string[] | null) ?? null,
+            allowedTools: (req.body.allowedTools as string[] | null) ?? null,
+            accessMode: accessMode as AccessMode,
+          },
+        ];
       } else {
-        res.status(400).json({ success: false, message: 'profiles array or profileName is required.' });
+        res
+          .status(400)
+          .json({ success: false, message: 'profiles array or profileName is required.' });
         return;
       }
 
@@ -277,10 +287,12 @@ export function registerUsersRoute(app: Express, state: AppState): void {
       await userManager.save();
 
       // Resolve email service — use state.emailService, or create one on the fly from SmtpConfigManager
-      const resolvedEmailService = state.emailService ?? (() => {
-        const smtpConfig = state.smtpConfigManager?.getConfig();
-        return smtpConfig?.host ? EmailService.fromSmtpConfig(smtpConfig) : null;
-      })();
+      const resolvedEmailService =
+        state.emailService ??
+        (() => {
+          const smtpConfig = state.smtpConfigManager?.getConfig();
+          return smtpConfig?.host ? EmailService.fromSmtpConfig(smtpConfig) : null;
+        })();
 
       // Send invitation email if requested and email service is available
       if (sendInvitation === true && resolvedEmailService && entry.onboardingCode) {
@@ -547,15 +559,18 @@ export function registerUsersRoute(app: Express, state: AppState): void {
       }
 
       // Resolve email service — use state.emailService, or create one on the fly from SmtpConfigManager
-      const resolvedEmailService = state.emailService ?? (() => {
-        const smtpConfig = state.smtpConfigManager?.getConfig();
-        return smtpConfig?.host ? EmailService.fromSmtpConfig(smtpConfig) : null;
-      })();
+      const resolvedEmailService =
+        state.emailService ??
+        (() => {
+          const smtpConfig = state.smtpConfigManager?.getConfig();
+          return smtpConfig?.host ? EmailService.fromSmtpConfig(smtpConfig) : null;
+        })();
 
       if (!resolvedEmailService) {
         res.status(503).json({
           success: false,
-          message: 'Email service is not configured. Configure SMTP settings to enable email invitations.',
+          message:
+            'Email service is not configured. Configure SMTP settings to enable email invitations.',
         });
         return;
       }
@@ -687,9 +702,12 @@ export function registerUsersRoute(app: Express, state: AppState): void {
         }
 
         const name = typeof row.name === 'string' ? row.name.trim() : email.split('@')[0];
-        const customAttributes = (typeof row.customAttributes === 'object' && row.customAttributes !== null && !Array.isArray(row.customAttributes))
-          ? row.customAttributes as Record<string, string>
-          : null;
+        const customAttributes =
+          typeof row.customAttributes === 'object' &&
+          row.customAttributes !== null &&
+          !Array.isArray(row.customAttributes)
+            ? (row.customAttributes as Record<string, string>)
+            : null;
 
         try {
           // Tenant guard: email is globally unique, so an address owned by
@@ -710,7 +728,14 @@ export function registerUsersRoute(app: Express, state: AppState): void {
             const profiles: UserProfileAccess[] = profileName
               ? [{ profileName, allowedTables: null, allowedTools: null, accessMode }]
               : [];
-            userManager.createUser({ name, email, role: 'user', profiles, customAttributes, tenantId });
+            userManager.createUser({
+              name,
+              email,
+              role: 'user',
+              profiles,
+              customAttributes,
+              tenantId,
+            });
             created++;
           }
         } catch (err) {

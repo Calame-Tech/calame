@@ -80,9 +80,15 @@ describe('loadYamlConfig', () => {
   let errorMessages: string[];
 
   const logger = {
-    info: (msg: string) => { infoMessages.push(msg); },
-    warn: (msg: string) => { warnMessages.push(msg); },
-    error: (msg: string) => { errorMessages.push(msg); },
+    info: (msg: string) => {
+      infoMessages.push(msg);
+    },
+    warn: (msg: string) => {
+      warnMessages.push(msg);
+    },
+    error: (msg: string) => {
+      errorMessages.push(msg);
+    },
     debug: () => {},
     child: () => logger,
   };
@@ -107,9 +113,7 @@ describe('loadYamlConfig', () => {
       addConnection: vi.fn(),
     } as unknown as AppState;
 
-    await expect(
-      loadYamlConfig(nonExistent, state, makeConfig(), logger),
-    ).resolves.toBeUndefined();
+    await expect(loadYamlConfig(nonExistent, state, makeConfig(), logger)).resolves.toBeUndefined();
 
     expect(warnMessages.some((m) => m.includes('not found'))).toBe(true);
   });
@@ -124,9 +128,7 @@ describe('loadYamlConfig', () => {
       addConnection: vi.fn(),
     } as unknown as AppState;
 
-    await expect(
-      loadYamlConfig(filePath, state, makeConfig(), logger),
-    ).resolves.toBeUndefined();
+    await expect(loadYamlConfig(filePath, state, makeConfig(), logger)).resolves.toBeUndefined();
 
     expect(warnMessages.some((m) => m.includes('empty'))).toBe(true);
   });
@@ -166,7 +168,9 @@ describe('loadYamlConfig', () => {
       await loadYamlConfig(filePath, state, makeConfig(), logger);
 
       expect(addConnection).toHaveBeenCalledOnce();
-      const callArg = addConnection.mock.calls[0][1] as { connection: { connectionString: string } };
+      const callArg = addConnection.mock.calls[0][1] as {
+        connection: { connectionString: string };
+      };
       expect(callArg.connection.connectionString).toContain('mydbhost.example.com');
     } finally {
       delete process.env.YAML_TEST_DB_HOST;
@@ -277,9 +281,7 @@ describe('loadYamlConfig', () => {
       serveProfiles,
     } as unknown as AppState;
 
-    await expect(
-      loadYamlConfig(filePath, state, makeConfig(), logger),
-    ).resolves.toBeUndefined();
+    await expect(loadYamlConfig(filePath, state, makeConfig(), logger)).resolves.toBeUndefined();
 
     expect(Object.keys(serveProfiles)).toHaveLength(0);
     expect(warnMessages.some((m) => m.includes('missing name'))).toBe(true);
@@ -307,9 +309,7 @@ describe('loadYamlConfig', () => {
       addConnection: vi.fn(),
     } as unknown as AppState;
 
-    await expect(
-      loadYamlConfig(filePath, state, makeConfig(), logger),
-    ).resolves.toBeUndefined();
+    await expect(loadYamlConfig(filePath, state, makeConfig(), logger)).resolves.toBeUndefined();
 
     expect(errorMessages.some((m) => m.includes('Failed to connect'))).toBe(true);
   });

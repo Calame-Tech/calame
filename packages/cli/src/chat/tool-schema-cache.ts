@@ -15,7 +15,10 @@ interface ToolSchemaEntry {
 const toolSchemaCache = new Map<string, ToolSchemaEntry>();
 export const TOOL_SCHEMA_TTL_MS = 30_000;
 
-export function getCachedToolSchemas(cacheKey: string, now: number = Date.now()): ToolSchema[] | undefined {
+export function getCachedToolSchemas(
+  cacheKey: string,
+  now: number = Date.now(),
+): ToolSchema[] | undefined {
   const cached = toolSchemaCache.get(cacheKey);
   if (cached && now - cached.ts < TOOL_SCHEMA_TTL_MS) {
     return cached.schemas;
@@ -23,7 +26,11 @@ export function getCachedToolSchemas(cacheKey: string, now: number = Date.now())
   return undefined;
 }
 
-export function setCachedToolSchemas(cacheKey: string, schemas: ToolSchema[], now: number = Date.now()): void {
+export function setCachedToolSchemas(
+  cacheKey: string,
+  schemas: ToolSchema[],
+  now: number = Date.now(),
+): void {
   toolSchemaCache.set(cacheKey, { schemas, ts: now });
 }
 

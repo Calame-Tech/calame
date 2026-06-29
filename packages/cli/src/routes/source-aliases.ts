@@ -34,8 +34,7 @@ const seenPaths = new Set<string>();
  */
 export function legacyPathDeprecationMiddleware(): RequestHandler {
   return (req, res, next) => {
-    const isLegacy =
-      req.path.startsWith('/api/connections') || req.path.startsWith('/api/rag/');
+    const isLegacy = req.path.startsWith('/api/connections') || req.path.startsWith('/api/rag/');
 
     if (isLegacy) {
       res.setHeader('Sunset', SUNSET_DATE);

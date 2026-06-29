@@ -54,11 +54,7 @@ vi.mock('googleapis', () => {
 });
 
 // Import AFTER the mock is registered.
-import {
-  GSheetsConnector,
-  GSheetsDocumentNotFoundError,
-  __testing,
-} from '../gsheets.js';
+import { GSheetsConnector, GSheetsDocumentNotFoundError, __testing } from '../gsheets.js';
 import type { RagFolder } from '@calame-ee/rag-core';
 
 // ---------------------------------------------------------------------------
@@ -130,17 +126,13 @@ describe('GSheetsConnector.testConnection', () => {
     });
     const connector = new GSheetsConnector();
     await expect(connector.testConnection(baseFolderConfig)).resolves.toBeUndefined();
-    expect(mockedFiles.get).toHaveBeenCalledWith(
-      expect.objectContaining({ fileId: 'FOLDER_1' }),
-    );
+    expect(mockedFiles.get).toHaveBeenCalledWith(expect.objectContaining({ fileId: 'FOLDER_1' }));
   });
 
   it('throws an admin-friendly 401 auth message', async () => {
     mockedSheets.get.mockRejectedValueOnce(sdkError(401));
     const connector = new GSheetsConnector();
-    await expect(connector.testConnection(baseIdsConfig)).rejects.toThrow(
-      /authentication failed/i,
-    );
+    await expect(connector.testConnection(baseIdsConfig)).rejects.toThrow(/authentication failed/i);
   });
 
   it('throws an admin-friendly 403 message including the service account email', async () => {
@@ -229,9 +221,7 @@ describe('GSheetsConnector.listFolders', () => {
     mockedFiles.list
       .mockResolvedValueOnce({
         data: {
-          files: [
-            { id: 'SS_A', name: 'Sheet A', modifiedTime: '2026-05-01T00:00:00Z' },
-          ],
+          files: [{ id: 'SS_A', name: 'Sheet A', modifiedTime: '2026-05-01T00:00:00Z' }],
           nextPageToken: 'NEXT',
         },
       })
@@ -247,7 +237,7 @@ describe('GSheetsConnector.listFolders', () => {
     // The list filter must restrict to spreadsheet mime types under the folder.
     const firstCall = mockedFiles.list.mock.calls[0]?.[0] as { q?: string };
     expect(firstCall?.q).toContain("'FOLDER_1' in parents");
-    expect(firstCall?.q).toContain("application/vnd.google-apps.spreadsheet");
+    expect(firstCall?.q).toContain('application/vnd.google-apps.spreadsheet');
   });
 
   it('returns [] when called with a parent folder (no sub-folder concept)', async () => {
@@ -417,9 +407,9 @@ describe('GSheetsConnector.listDocuments', () => {
       name: 'X',
       createdAt: '',
     };
-    await expect(
-      connector.listDocuments(baseIdsConfig, 'src-1', folder),
-    ).rejects.toBeInstanceOf(GSheetsDocumentNotFoundError);
+    await expect(connector.listDocuments(baseIdsConfig, 'src-1', folder)).rejects.toBeInstanceOf(
+      GSheetsDocumentNotFoundError,
+    );
   });
 });
 
@@ -452,9 +442,7 @@ describe('GSheetsConnector.fetchDocument', () => {
     expect(out.mimeType).toBe('text/csv');
     const csv = await drainToString(out.stream);
     expect(csv).toBe(
-      '"name","sales","note"\n' +
-        '"Alice","100","top of ""Q1"""\n' +
-        '"Bob, sr.","95","second"',
+      '"name","sales","note"\n' + '"Alice","100","top of ""Q1"""\n' + '"Bob, sr.","95","second"',
     );
   });
 
@@ -564,9 +552,7 @@ describe('id encode/decode', () => {
 
   it('rejects ids without the gsheets:tab: prefix', () => {
     expect(() => __testing.decodeDocId('gdrive:abc')).toThrow(GSheetsDocumentNotFoundError);
-    expect(() => __testing.decodeDocId('gsheets:ss:abc')).toThrow(
-      GSheetsDocumentNotFoundError,
-    );
+    expect(() => __testing.decodeDocId('gsheets:ss:abc')).toThrow(GSheetsDocumentNotFoundError);
     expect(() => __testing.decodeDocId('garbage')).toThrow(GSheetsDocumentNotFoundError);
     expect(() => __testing.decodeDocId('gsheets:tab:')).toThrow(GSheetsDocumentNotFoundError);
     expect(() => __testing.decodeDocId('gsheets:tab:SS:not-a-number')).toThrow(
@@ -615,9 +601,9 @@ describe('narrowConfig', () => {
   it('throws when serviceAccountKey is missing client_email', () => {
     const { client_email: _client_email, ...rest } = FAKE_KEY;
     void _client_email;
-    expect(() =>
-      __testing.narrowConfig({ ...baseIdsConfig, serviceAccountKey: rest }),
-    ).toThrow(/client_email/);
+    expect(() => __testing.narrowConfig({ ...baseIdsConfig, serviceAccountKey: rest })).toThrow(
+      /client_email/,
+    );
   });
 
   it('throws when neither spreadsheetIds nor driveFolderId is set', () => {
@@ -673,9 +659,7 @@ describe('helpers', () => {
       ['plain', 'with, comma', 'with "quote"'],
       ['multi\nline', '', null],
     ]);
-    expect(csv).toBe(
-      '"plain","with, comma","with ""quote"""\n' + '"multi\nline","",""',
-    );
+    expect(csv).toBe('"plain","with, comma","with ""quote"""\n' + '"multi\nline","",""');
   });
 
   it('isArchivedSheetTitle catches archive_ and _old prefixes case-insensitively', () => {
@@ -692,7 +676,7 @@ describe('helpers', () => {
     expect(__testing.quoteSheetTitle("Q1 'Forecast'")).toBe("'Q1 ''Forecast'''");
   });
 
-  it("clientCacheKey is stable across spreadsheetIds / folder / range and tied to credentials", () => {
+  it('clientCacheKey is stable across spreadsheetIds / folder / range and tied to credentials', () => {
     const k1 = __testing.clientCacheKey({
       serviceAccountKey: FAKE_KEY,
       spreadsheetIds: ['A'],
@@ -712,15 +696,15 @@ describe('helpers', () => {
   });
 
   it('mapTestConnectionError produces distinct messages per status', () => {
-    expect(
-      __testing.mapTestConnectionError(sdkError(401), 'sa@x', 'F', 'folder').message,
-    ).toMatch(/authentication failed/i);
+    expect(__testing.mapTestConnectionError(sdkError(401), 'sa@x', 'F', 'folder').message).toMatch(
+      /authentication failed/i,
+    );
     expect(
       __testing.mapTestConnectionError(sdkError(403), 'sa@x', 'F', 'spreadsheet').message,
     ).toMatch(/sa@x/);
-    expect(
-      __testing.mapTestConnectionError(sdkError(404), 'sa@x', 'F', 'folder').message,
-    ).toMatch(/not found/i);
+    expect(__testing.mapTestConnectionError(sdkError(404), 'sa@x', 'F', 'folder').message).toMatch(
+      /not found/i,
+    );
     expect(
       __testing.mapTestConnectionError(new Error('boom'), 'sa@x', 'F', 'folder').message,
     ).toMatch(/API error/i);

@@ -33,12 +33,7 @@
 import { z } from 'zod';
 import { nanoid } from 'nanoid';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type {
-  ScopeSelection,
-  AuditLogEntry,
-  PiiCategory,
-  Source,
-} from '@calame/core';
+import type { ScopeSelection, AuditLogEntry, PiiCategory, Source } from '@calame/core';
 import type { RagFolder, RagDocument, RagSearchResult } from './types.js';
 import type { DocumentAdapterDeps } from './source-adapter.js';
 import { maskSearchResult } from './pii-masking.js';
@@ -232,7 +227,13 @@ export function registerMergedDocumentRagTools(opts: RegisterMergedDocumentRagTo
         const resolved = resolveSourceByName(args.source, sources);
         if (!resolved) {
           const validNames = sources.map((e) => `"${e.source.name}"`).join(', ');
-          audit('rag_search', { query: args.query, source: args.source, topK }, `unknown source: ${args.source}`, 'error', t0);
+          audit(
+            'rag_search',
+            { query: args.query, source: args.source, topK },
+            `unknown source: ${args.source}`,
+            'error',
+            t0,
+          );
           return {
             content: [
               {
@@ -274,7 +275,13 @@ export function registerMergedDocumentRagTools(opts: RegisterMergedDocumentRagTo
         }
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
-        audit('rag_search', { query: args.query, source: args.source, topK }, `error: ${message}`, 'error', t0);
+        audit(
+          'rag_search',
+          { query: args.query, source: args.source, topK },
+          `error: ${message}`,
+          'error',
+          t0,
+        );
         return { content: [{ type: 'text', text: JSON.stringify({ error: message }) }] };
       }
 
@@ -292,8 +299,7 @@ export function registerMergedDocumentRagTools(opts: RegisterMergedDocumentRagTo
 
         const scope = entry.selection;
         const chain = await deps.storage.getDocumentFolderChain(chunk.documentId);
-        const effectiveChain =
-          chain.length > 0 ? chain : [{ id: '', path: chunk.folder }];
+        const effectiveChain = chain.length > 0 ? chain : [{ id: '', path: chunk.folder }];
 
         if (!isDocumentAllowedByChain(chunk.documentId, chunk.fileName, effectiveChain, scope)) {
           continue;
@@ -411,7 +417,13 @@ export function registerMergedDocumentRagTools(opts: RegisterMergedDocumentRagTo
         const resolved = resolveSourceByName(args.source, sources);
         if (!resolved) {
           const validNames = sources.map((e) => `"${e.source.name}"`).join(', ');
-          audit('rag_list_folders', { source: args.source, parent: args.parent }, `unknown source: ${args.source}`, 'error', t0);
+          audit(
+            'rag_list_folders',
+            { source: args.source, parent: args.parent },
+            `unknown source: ${args.source}`,
+            'error',
+            t0,
+          );
           return {
             content: [
               {
@@ -428,9 +440,14 @@ export function registerMergedDocumentRagTools(opts: RegisterMergedDocumentRagTo
         targetEntries = sources;
       }
 
-      const allFolders: Array<
-        { id: string; sourceId: string; sourceName: string; path: string; parent: string | null; name: string }
-      > = [];
+      const allFolders: Array<{
+        id: string;
+        sourceId: string;
+        sourceName: string;
+        path: string;
+        parent: string | null;
+        name: string;
+      }> = [];
 
       for (const entry of targetEntries) {
         let folders: RagFolder[];
@@ -438,7 +455,13 @@ export function registerMergedDocumentRagTools(opts: RegisterMergedDocumentRagTo
           folders = await deps.storage.listFolders(entry.source.id, args.parent);
         } catch (err: unknown) {
           const message = err instanceof Error ? err.message : String(err);
-          audit('rag_list_folders', { source: args.source, parent: args.parent }, `error: ${message}`, 'error', t0);
+          audit(
+            'rag_list_folders',
+            { source: args.source, parent: args.parent },
+            `error: ${message}`,
+            'error',
+            t0,
+          );
           return { content: [{ type: 'text', text: JSON.stringify({ error: message }) }] };
         }
 
@@ -506,7 +529,13 @@ export function registerMergedDocumentRagTools(opts: RegisterMergedDocumentRagTo
         const resolved = resolveSourceByName(args.source, sources);
         if (!resolved) {
           const validNames = sources.map((e) => `"${e.source.name}"`).join(', ');
-          audit('rag_list_documents', { folder: args.folder, source: args.source, limit }, `unknown source: ${args.source}`, 'error', t0);
+          audit(
+            'rag_list_documents',
+            { folder: args.folder, source: args.source, limit },
+            `unknown source: ${args.source}`,
+            'error',
+            t0,
+          );
           return {
             content: [
               {
@@ -570,7 +599,13 @@ export function registerMergedDocumentRagTools(opts: RegisterMergedDocumentRagTo
           docs = await deps.storage.listDocuments(entry.source.id, args.folder);
         } catch (err: unknown) {
           const message = err instanceof Error ? err.message : String(err);
-          audit('rag_list_documents', { folder: args.folder, source: args.source, limit }, `error: ${message}`, 'error', t0);
+          audit(
+            'rag_list_documents',
+            { folder: args.folder, source: args.source, limit },
+            `error: ${message}`,
+            'error',
+            t0,
+          );
           return { content: [{ type: 'text', text: JSON.stringify({ error: message }) }] };
         }
 
@@ -650,12 +685,24 @@ export function registerMergedDocumentRagTools(opts: RegisterMergedDocumentRagTo
           fetchResult = await deps.storage.getDocument(args.documentId);
         } catch (err: unknown) {
           const message = err instanceof Error ? err.message : String(err);
-          audit('rag_get_document', { documentId: args.documentId }, `error: ${message}`, 'error', t0);
+          audit(
+            'rag_get_document',
+            { documentId: args.documentId },
+            `error: ${message}`,
+            'error',
+            t0,
+          );
           return { content: [{ type: 'text', text: JSON.stringify({ error: message }) }] };
         }
 
         if (!fetchResult) {
-          audit('rag_get_document', { documentId: args.documentId }, 'document not found', 'error', t0);
+          audit(
+            'rag_get_document',
+            { documentId: args.documentId },
+            'document not found',
+            'error',
+            t0,
+          );
           return {
             content: [
               {
@@ -674,7 +721,13 @@ export function registerMergedDocumentRagTools(opts: RegisterMergedDocumentRagTo
         // it as a generic "not found" so the existence of cross-tenant documents is
         // never leaked.
         if (doc.tenantId !== tenantId) {
-          audit('rag_get_document', { documentId: args.documentId }, 'cross-tenant document blocked', 'error', t0);
+          audit(
+            'rag_get_document',
+            { documentId: args.documentId },
+            'cross-tenant document blocked',
+            'error',
+            t0,
+          );
           return {
             content: [
               {
@@ -691,7 +744,13 @@ export function registerMergedDocumentRagTools(opts: RegisterMergedDocumentRagTo
         // If the document's source is not in this profile, treat it as not found
         // (don't leak the existence of documents in other profiles).
         if (!ownerEntry) {
-          audit('rag_get_document', { documentId: args.documentId }, 'document not in profile', 'error', t0);
+          audit(
+            'rag_get_document',
+            { documentId: args.documentId },
+            'document not in profile',
+            'error',
+            t0,
+          );
           return {
             content: [
               {

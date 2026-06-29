@@ -21,19 +21,19 @@
  * the UI without round-tripping to the provider's dashboard.
  */
 export const EMBEDDING_PRICES_PER_1M_TOKENS: Record<string, number> = {
-	// OpenAI
-	'text-embedding-3-small': 0.02,
-	'text-embedding-3-large': 0.13,
-	'text-embedding-ada-002': 0.1,
-	// Cohere — v3 family
-	'embed-multilingual-v3.0': 0.1,
-	'embed-english-v3.0': 0.1,
-	'embed-multilingual-light-v3.0': 0.02,
-	'embed-english-light-v3.0': 0.02,
-	// Voyage AI
-	'voyage-3': 0.06,
-	'voyage-3-lite': 0.02,
-	'voyage-3-large': 0.18,
+  // OpenAI
+  'text-embedding-3-small': 0.02,
+  'text-embedding-3-large': 0.13,
+  'text-embedding-ada-002': 0.1,
+  // Cohere — v3 family
+  'embed-multilingual-v3.0': 0.1,
+  'embed-english-v3.0': 0.1,
+  'embed-multilingual-light-v3.0': 0.02,
+  'embed-english-light-v3.0': 0.02,
+  // Voyage AI
+  'voyage-3': 0.06,
+  'voyage-3-lite': 0.02,
+  'voyage-3-large': 0.18,
 };
 
 /**
@@ -42,10 +42,10 @@ export const EMBEDDING_PRICES_PER_1M_TOKENS: Record<string, number> = {
  * surfaces the token count, just without a dollar figure).
  */
 export function estimateCostUsd(model: string, tokens: number): number {
-	const pricePer1M = EMBEDDING_PRICES_PER_1M_TOKENS[model];
-	if (pricePer1M === undefined) return 0;
-	if (!Number.isFinite(tokens) || tokens <= 0) return 0;
-	return (tokens / 1_000_000) * pricePer1M;
+  const pricePer1M = EMBEDDING_PRICES_PER_1M_TOKENS[model];
+  if (pricePer1M === undefined) return 0;
+  if (!Number.isFinite(tokens) || tokens <= 0) return 0;
+  return (tokens / 1_000_000) * pricePer1M;
 }
 
 /**
@@ -54,5 +54,5 @@ export function estimateCostUsd(model: string, tokens: number): number {
  * tooltip next to the cost figure.
  */
 export function isKnownEmbeddingModel(model: string): boolean {
-	return Object.prototype.hasOwnProperty.call(EMBEDDING_PRICES_PER_1M_TOKENS, model);
+  return Object.prototype.hasOwnProperty.call(EMBEDDING_PRICES_PER_1M_TOKENS, model);
 }

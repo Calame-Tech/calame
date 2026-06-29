@@ -82,7 +82,11 @@ describe('registerDynamicTools — toolNamespace', () => {
 
   describe('when toolNamespace is unset', () => {
     it('registers tools with unprefixed names', () => {
-      registerCalcTool(server as unknown as Parameters<typeof registerCalcTool>[0], 'test', (s) => s);
+      registerCalcTool(
+        server as unknown as Parameters<typeof registerCalcTool>[0],
+        'test',
+        (s) => s,
+      );
       registerDynamicTools(makeBaseOptions(server));
 
       const names = server.getToolNames();
@@ -100,7 +104,9 @@ describe('registerDynamicTools — toolNamespace', () => {
 
       const names = server.getToolNames();
       // None of the names should start with an underscore-separated prefix
-      const prefixed = names.filter((n) => /^[a-z]+_[a-z]/.test(n) && n !== 'list_tables' && n !== 'join_aggregate');
+      const prefixed = names.filter(
+        (n) => /^[a-z]+_[a-z]/.test(n) && n !== 'list_tables' && n !== 'join_aggregate',
+      );
       expect(prefixed).toHaveLength(0);
     });
 
@@ -242,7 +248,10 @@ describe('registerDynamicTools — toolNamespace', () => {
       registerDynamicTools(makeBaseOptions(server2, { toolNamespace: 'x_' }));
 
       const names1 = server1.getToolNames().sort();
-      const names2 = server2.getToolNames().map((n) => n.replace(/^x_/, '')).sort();
+      const names2 = server2
+        .getToolNames()
+        .map((n) => n.replace(/^x_/, ''))
+        .sort();
 
       expect(names2).toEqual(names1);
     });

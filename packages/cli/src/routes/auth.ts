@@ -23,9 +23,7 @@ const userChatSchema = z.object({
   message: z.string().min(1, 'Message is required'),
   profileName: z.string().min(1, 'Profile name is required'),
   aiSettingName: z.string().min(1).optional(),
-  history: z
-    .array(z.object({ role: z.string(), content: z.string() }))
-    .optional(),
+  history: z.array(z.object({ role: z.string(), content: z.string() })).optional(),
 });
 
 const changePasswordSchema = z.object({
@@ -65,7 +63,9 @@ export function registerAuthRoute(app: Express, state: AppState): void {
     }
 
     if (userManager.hasAdminUser()) {
-      res.status(403).json({ success: false, message: 'Admin account already exists. Setup is not allowed.' });
+      res
+        .status(403)
+        .json({ success: false, message: 'Admin account already exists. Setup is not allowed.' });
       return;
     }
 
@@ -223,7 +223,10 @@ export function registerAuthRoute(app: Express, state: AppState): void {
     }
 
     if (user.status === 'disabled') {
-      res.status(403).json({ success: false, message: 'Your account has been disabled. Contact your administrator.' });
+      res.status(403).json({
+        success: false,
+        message: 'Your account has been disabled. Contact your administrator.',
+      });
       return;
     }
 
@@ -477,7 +480,9 @@ export function registerAuthRoute(app: Express, state: AppState): void {
     // Retrieve the decrypted token
     const decryptedToken = userManager.getUserToken(user.id);
     if (!decryptedToken) {
-      res.status(404).json({ success: false, message: 'Token not available. Try regenerating it.' });
+      res
+        .status(404)
+        .json({ success: false, message: 'Token not available. Try regenerating it.' });
       return;
     }
 
@@ -560,7 +565,9 @@ export function registerAuthRoute(app: Express, state: AppState): void {
     if (serveProfile?.authMode === 'open') {
       // Profile must be active
       if (!state.activeProfileNames.has(profileName)) {
-        res.status(503).json({ success: false, message: 'This MCP server is not currently active.' });
+        res
+          .status(503)
+          .json({ success: false, message: 'This MCP server is not currently active.' });
         return;
       }
 
@@ -635,7 +642,9 @@ export function registerAuthRoute(app: Express, state: AppState): void {
     }
 
     if (userProfile.accessMode === 'mcp') {
-      res.status(403).json({ success: false, message: 'Chat access is not enabled for this profile.' });
+      res
+        .status(403)
+        .json({ success: false, message: 'Chat access is not enabled for this profile.' });
       return;
     }
 
@@ -645,7 +654,8 @@ export function registerAuthRoute(app: Express, state: AppState): void {
       if (!user.oidcSubject) {
         res.status(403).json({
           success: false,
-          message: 'This profile requires SSO authentication. Please sign in via your SSO provider.',
+          message:
+            'This profile requires SSO authentication. Please sign in via your SSO provider.',
         });
         return;
       }
@@ -663,7 +673,8 @@ export function registerAuthRoute(app: Express, state: AppState): void {
     if (!userToken) {
       res.status(503).json({
         success: false,
-        message: 'Cannot use chat without CALAME_SECRET_KEY. Set this environment variable to enable chat.',
+        message:
+          'Cannot use chat without CALAME_SECRET_KEY. Set this environment variable to enable chat.',
       });
       return;
     }
@@ -800,4 +811,3 @@ export function registerAuthRoute(app: Express, state: AppState): void {
     res.json({ success: true, hasAccess, userName: user.name });
   });
 }
-

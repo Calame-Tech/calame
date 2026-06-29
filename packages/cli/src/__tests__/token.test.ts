@@ -76,7 +76,7 @@ describe('TokenManager', () => {
 
     const profile1Tokens = manager.getTokensForProfile('profile1');
     expect(profile1Tokens).toHaveLength(2);
-    expect(profile1Tokens.every(t => t.profileName === 'profile1')).toBe(true);
+    expect(profile1Tokens.every((t) => t.profileName === 'profile1')).toBe(true);
 
     const profile2Tokens = manager.getTokensForProfile('profile2');
     expect(profile2Tokens).toHaveLength(1);
@@ -95,7 +95,10 @@ describe('TokenManager', () => {
     const entry = manager.generateToken('profile1', 'Persisted');
 
     // Query the raw database to verify no plaintext token
-    const row = db.raw.prepare('SELECT * FROM tokens WHERE id = ?').get(entry.id) as Record<string, unknown>;
+    const row = db.raw.prepare('SELECT * FROM tokens WHERE id = ?').get(entry.id) as Record<
+      string,
+      unknown
+    >;
     expect(row.token_hash).toBeDefined();
     expect(String(row.token_hash)).not.toContain(entry._plaintextToken);
   });

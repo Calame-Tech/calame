@@ -147,12 +147,10 @@ export class AuditLog {
     return full;
   }
 
-  getEntries(options?: {
-    profileName?: string;
-    limit?: number;
-    offset?: number;
-    since?: string;
-  }): { entries: AuditLogEntry[]; total: number } {
+  getEntries(options?: { profileName?: string; limit?: number; offset?: number; since?: string }): {
+    entries: AuditLogEntry[];
+    total: number;
+  } {
     // Build dynamic WHERE clause
     const conditions: string[] = [];
     const params: unknown[] = [];
@@ -179,7 +177,9 @@ export class AuditLog {
     const offsetClause = options?.offset != null ? `OFFSET ${options.offset}` : '';
 
     const rows = this.db
-      .prepare(`SELECT * FROM audit_log ${where} ORDER BY timestamp DESC ${limitClause} ${offsetClause}`)
+      .prepare(
+        `SELECT * FROM audit_log ${where} ORDER BY timestamp DESC ${limitClause} ${offsetClause}`,
+      )
       .all(...params) as AuditRow[];
 
     return { entries: rows.map(rowToEntry), total };
@@ -192,12 +192,28 @@ export class AuditLog {
 
   exportCSV(): string {
     const rows = this.stmtSelectAll.all() as AuditRow[];
-    const headers = ['id', 'timestamp', 'profileName', 'toolName', 'result', 'durationMs', 'resultSummary'];
+    const headers = [
+      'id',
+      'timestamp',
+      'profileName',
+      'toolName',
+      'result',
+      'durationMs',
+      'resultSummary',
+    ];
     const lines = [headers.join(',')];
     for (const row of rows) {
       const e = rowToEntry(row);
       lines.push(
-        [e.id, e.timestamp, e.profileName, e.toolName, e.result, e.durationMs, e.resultSummary ?? '']
+        [
+          e.id,
+          e.timestamp,
+          e.profileName,
+          e.toolName,
+          e.result,
+          e.durationMs,
+          e.resultSummary ?? '',
+        ]
           .map((v) => `"${String(v).replace(/"/g, '""')}"`)
           .join(','),
       );
@@ -207,9 +223,7 @@ export class AuditLog {
 
   purgeOlderThan(days: number): number {
     const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-    const result = this.db
-      .prepare(`DELETE FROM audit_log WHERE timestamp < ?`)
-      .run(cutoff);
+    const result = this.db.prepare(`DELETE FROM audit_log WHERE timestamp < ?`).run(cutoff);
     return result.changes;
   }
 }

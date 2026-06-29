@@ -71,9 +71,7 @@ export function getOAuthProvider(
 ): OAuthProviderConfig {
   if (provider === 'custom') {
     if (!custom?.authorizationUrl || !custom?.tokenUrl || !custom?.userinfoUrl) {
-      throw new Error(
-        'Custom OAuth provider requires authorizationUrl, tokenUrl, and userinfoUrl',
-      );
+      throw new Error('Custom OAuth provider requires authorizationUrl, tokenUrl, and userinfoUrl');
     }
     return {
       name: 'Custom',

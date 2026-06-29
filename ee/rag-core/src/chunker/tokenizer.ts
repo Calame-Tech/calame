@@ -12,14 +12,14 @@ import { encode, decode } from 'gpt-tokenizer/encoding/o200k_base';
 
 /** Encode text to token IDs. Empty input → empty array. */
 export function encodeTokens(text: string): number[] {
-	if (!text) return [];
-	return encode(text);
+  if (!text) return [];
+  return encode(text);
 }
 
 /** Decode a token slice back to text. */
 export function decodeTokens(tokens: number[]): string {
-	if (tokens.length === 0) return '';
-	return decode(tokens);
+  if (tokens.length === 0) return '';
+  return decode(tokens);
 }
 
 /**
@@ -28,6 +28,6 @@ export function decodeTokens(tokens: number[]): string {
  * cap to keep us under the embedding model's context window.
  */
 export function countTokens(text: string): number {
-	if (!text) return 0;
-	return encode(text).length;
+  if (!text) return 0;
+  return encode(text).length;
 }

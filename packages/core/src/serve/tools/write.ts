@@ -22,14 +22,15 @@ export function registerWriteGeneric(
 ): void {
   const { server, dialect, onAuditLog, profileName, scopeGuard, toolName } = ctx;
 
-  const eligible = accessible.filter(at => at.enabledTools.includes('write'));
+  const eligible = accessible.filter((at) => at.enabledTools.includes('write'));
   if (eligible.length === 0) return;
-  const tableEnum = zodEnum(eligible.map(at => at.table.name));
+  const tableEnum = zodEnum(eligible.map((at) => at.table.name));
   if (!tableEnum) return;
 
   const inputShape = buildWriteArgsShape(tableEnum);
 
-  const desc = 'Propose a write (INSERT/UPDATE/DELETE). Queued for admin approval — nothing executes immediately.';
+  const desc =
+    'Propose a write (INSERT/UPDATE/DELETE). Queued for admin approval — nothing executes immediately.';
 
   server.tool(
     toolName('write'),
@@ -43,8 +44,8 @@ export function registerWriteGeneric(
       const tableName = at.table.name;
       const schemaName = at.table.schema || 'public';
       const qualifiedTable = dialect.quoteTable(schemaName, tableName);
-      const validColumnNames = new Set(at.visibleColumns.map(c => c.name));
-      const allowedFilterColumns = at.filterableCols.map(c => c.name);
+      const validColumnNames = new Set(at.visibleColumns.map((c) => c.name));
+      const allowedFilterColumns = at.filterableCols.map((c) => c.name);
 
       const start = Date.now();
       const { operation, description, values, filters } = args as {
@@ -55,11 +56,21 @@ export function registerWriteGeneric(
       };
 
       try {
-        if ((operation === 'insert' || operation === 'update') && (!values || Object.keys(values).length === 0)) {
-          return structuredError({ error: `'${operation}' requires 'values' (column-value pairs)` });
+        if (
+          (operation === 'insert' || operation === 'update') &&
+          (!values || Object.keys(values).length === 0)
+        ) {
+          return structuredError({
+            error: `'${operation}' requires 'values' (column-value pairs)`,
+          });
         }
-        if ((operation === 'update' || operation === 'delete') && (!filters || Object.keys(filters).length === 0)) {
-          return structuredError({ error: `'${operation}' requires 'filters' to identify target rows` });
+        if (
+          (operation === 'update' || operation === 'delete') &&
+          (!filters || Object.keys(filters).length === 0)
+        ) {
+          return structuredError({
+            error: `'${operation}' requires 'filters' to identify target rows`,
+          });
         }
         if (values) {
           for (const colName of Object.keys(values)) {
@@ -81,7 +92,7 @@ export function registerWriteGeneric(
           case 'insert': {
             if (scopeGuard.active) {
               const scopeInfo = scopeGuard.getScopeInfo();
-              const scopeFilter = scopeInfo.filters.find(f => f.tableName === tableName);
+              const scopeFilter = scopeInfo.filters.find((f) => f.tableName === tableName);
               if (scopeFilter) {
                 const currentVal = values![scopeFilter.column];
                 if (currentVal !== undefined && currentVal !== scopeFilter.value) {
@@ -93,16 +104,16 @@ export function registerWriteGeneric(
               }
             }
             const cols = Object.keys(values!);
-            const colList = cols.map(c => dialect.quoteIdent(c)).join(', ');
+            const colList = cols.map((c) => dialect.quoteIdent(c)).join(', ');
             const paramList = cols.map(() => dialect.param(paramIndex++)).join(', ');
-            params.push(...cols.map(c => values![c]));
+            params.push(...cols.map((c) => values![c]));
             sql = `INSERT INTO ${qualifiedTable} (${colList}) VALUES (${paramList})`;
             break;
           }
           case 'update': {
             const setCols = Object.keys(values!);
             const setClause = setCols
-              .map(c => {
+              .map((c) => {
                 params.push(values![c]);
                 return `${dialect.quoteIdent(c)} = ${dialect.param(paramIndex++)}`;
               })
@@ -116,7 +127,9 @@ export function registerWriteGeneric(
             );
             params.push(...whereValues);
             if (!whereClause) {
-              return structuredError({ error: 'UPDATE requires at least one valid filter condition' });
+              return structuredError({
+                error: 'UPDATE requires at least one valid filter condition',
+              });
             }
             sql = `UPDATE ${qualifiedTable} SET ${setClause} ${whereClause}`;
             break;
@@ -131,7 +144,9 @@ export function registerWriteGeneric(
             );
             params.push(...whereValues);
             if (!whereClause) {
-              return structuredError({ error: 'DELETE requires at least one valid filter condition' });
+              return structuredError({
+                error: 'DELETE requires at least one valid filter condition',
+              });
             }
             sql = `DELETE FROM ${qualifiedTable} ${whereClause}`;
             break;

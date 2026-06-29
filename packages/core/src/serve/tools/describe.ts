@@ -22,17 +22,28 @@ export function registerDescribeGeneric(
   accessible: AccessibleTable[],
   distinctValuesByTable: Record<string, Record<string, unknown[]>>,
 ): void {
-  const { server, executeQuery, dialect, onAuditLog, profileName, responseMode, wrapResponse, scopeGuard, toolName } = ctx;
+  const {
+    server,
+    executeQuery,
+    dialect,
+    onAuditLog,
+    profileName,
+    responseMode,
+    wrapResponse,
+    scopeGuard,
+    toolName,
+  } = ctx;
   const friendly = responseMode === 'friendly';
 
-  const eligible = accessible.filter(at => at.enabledTools.includes('describe'));
+  const eligible = accessible.filter((at) => at.enabledTools.includes('describe'));
   if (eligible.length === 0) return;
-  const tableEnum = zodEnum(eligible.map(at => at.table.name));
+  const tableEnum = zodEnum(eligible.map((at) => at.table.name));
   if (!tableEnum) return;
 
   const inputShape = buildDescribeArgsShape(tableEnum);
 
-  const desc = 'Explore a table schema at runtime: row count, column types, null rates, distinct counts, low-cardinality enum values, text samples, numeric min/max/avg, and FK relations to other tables. Call this when unsure about column names, valid values, or how tables relate.';
+  const desc =
+    'Explore a table schema at runtime: row count, column types, null rates, distinct counts, low-cardinality enum values, text samples, numeric min/max/avg, and FK relations to other tables. Call this when unsure about column names, valid values, or how tables relate.';
 
   server.tool(
     toolName('describe'),
@@ -46,12 +57,22 @@ export function registerDescribeGeneric(
       const tableName = at.table.name;
       const schemaName = at.table.schema || 'public';
       const qualifiedTable = dialect.quoteTable(schemaName, tableName);
-      const includeStats = at.enabledTools.includes('aggregate') || at.enabledTools.includes('query');
+      const includeStats =
+        at.enabledTools.includes('aggregate') || at.enabledTools.includes('query');
       const numericCols = includeStats ? at.numericCols : [];
-      const textCols = includeStats ? at.visibleColumns.filter(c => isTextType(c.type)).map(c => c.name) : [];
+      const textCols = includeStats
+        ? at.visibleColumns.filter((c) => isTextType(c.type)).map((c) => c.name)
+        : [];
 
       return executeWithAudit(
-        { executeQuery, dialect, onAuditLog, profileName, toolName: toolName('describe'), toolArgs: args },
+        {
+          executeQuery,
+          dialect,
+          onAuditLog,
+          profileName,
+          toolName: toolName('describe'),
+          toolArgs: args,
+        },
         async (exec) => {
           const { clause: scopeWhere, values: scopeValues } = scopeGuard.buildScopeOnlyWhereClause(
             tableName,
@@ -96,7 +117,7 @@ export function registerDescribeGeneric(
               };
             }
             for (const col of numericCols) {
-              const key = friendly ? at.labelMap[col] ?? snakeCaseToLabel(col) : col;
+              const key = friendly ? (at.labelMap[col] ?? snakeCaseToLabel(col)) : col;
               numericStats[key] = {
                 min: row[`${col}__min`],
                 max: row[`${col}__max`],
@@ -124,12 +145,15 @@ export function registerDescribeGeneric(
             if (!stats) continue;
             const distinct = stats.distinctCount;
             const isLowCardinality = distinct > 0 && distinct <= MAX_ENUM;
-            const isSampleable = isTextType(c.type) && distinct > MAX_ENUM && distinct <= MAX_SAMPLE;
+            const isSampleable =
+              isTextType(c.type) && distinct > MAX_ENUM && distinct <= MAX_SAMPLE;
             if (!isLowCardinality && !isSampleable) continue;
             try {
               const qi = dialect.quoteIdent(c.name);
               const notNullCondition = `${qi} IS NOT NULL`;
-              const valWhere = scopeWhere ? `${scopeWhere} AND ${notNullCondition}` : `WHERE ${notNullCondition}`;
+              const valWhere = scopeWhere
+                ? `${scopeWhere} AND ${notNullCondition}`
+                : `WHERE ${notNullCondition}`;
               const cap = isLowCardinality ? MAX_ENUM : MAX_SAMPLE;
               const valSql = `SELECT DISTINCT ${qi} AS val FROM ${qualifiedTable} ${valWhere} ORDER BY val LIMIT ${cap + 1}`;
               const valResult = await exec(valSql, [...scopeValues]);
@@ -139,11 +163,14 @@ export function registerDescribeGeneric(
                 const colMaskRule = at.maskingRules[c.name];
                 if (
                   colMaskRule &&
-                  (colMaskRule.mode === 'hash' || colMaskRule.mode === 'truncate' || colMaskRule.mode === 'replace')
+                  (colMaskRule.mode === 'hash' ||
+                    colMaskRule.mode === 'truncate' ||
+                    colMaskRule.mode === 'replace')
                 ) {
-                  vals = applyMasking(rawVals.map((v) => ({ [c.name]: v })), { [c.name]: colMaskRule }).map(
-                    (r) => r[c.name],
-                  );
+                  vals = applyMasking(
+                    rawVals.map((v) => ({ [c.name]: v })),
+                    { [c.name]: colMaskRule },
+                  ).map((r) => r[c.name]);
                 }
                 distinctByCol[c.name] = vals;
               } else {
@@ -151,11 +178,14 @@ export function registerDescribeGeneric(
                 const colMaskRule = at.maskingRules[c.name];
                 if (
                   colMaskRule &&
-                  (colMaskRule.mode === 'hash' || colMaskRule.mode === 'truncate' || colMaskRule.mode === 'replace')
+                  (colMaskRule.mode === 'hash' ||
+                    colMaskRule.mode === 'truncate' ||
+                    colMaskRule.mode === 'replace')
                 ) {
-                  vals = applyMasking(vals.map((v) => ({ [c.name]: v })), { [c.name]: colMaskRule }).map((r) =>
-                    String(r[c.name]),
-                  );
+                  vals = applyMasking(
+                    vals.map((v) => ({ [c.name]: v })),
+                    { [c.name]: colMaskRule },
+                  ).map((r) => String(r[c.name]));
                 }
                 if (vals.length <= MAX_SAMPLE) sampleByCol[c.name] = vals;
               }
@@ -169,7 +199,7 @@ export function registerDescribeGeneric(
           for (const col of textCols) {
             const stats = colStats[col];
             if (!stats) continue;
-            const key = friendly ? at.labelMap[col] ?? snakeCaseToLabel(col) : col;
+            const key = friendly ? (at.labelMap[col] ?? snakeCaseToLabel(col)) : col;
             const sample = sampleByCol[col];
             const lowCardVals = distinctByCol[col];
             const sampleValues = sample
@@ -183,7 +213,7 @@ export function registerDescribeGeneric(
           }
 
           const columnsMetadata = friendly
-            ? at.visibleColumns.map(c => {
+            ? at.visibleColumns.map((c) => {
                 const colMeta: Record<string, unknown> = {
                   name: at.labelMap[c.name] ?? snakeCaseToLabel(c.name),
                   column_name: c.name,
@@ -205,11 +235,14 @@ export function registerDescribeGeneric(
                 }
                 return colMeta;
               })
-            : at.visibleColumns.map(c => {
+            : at.visibleColumns.map((c) => {
                 const stats = colStats[c.name];
                 const nullCount = stats?.nullCount;
                 const distinctCount = stats?.distinctCount;
-                const nullRatio = stats && rowCount > 0 ? Math.round((nullCount! / rowCount) * 10000) / 10000 : undefined;
+                const nullRatio =
+                  stats && rowCount > 0
+                    ? Math.round((nullCount! / rowCount) * 10000) / 10000
+                    : undefined;
                 const colMeta: Record<string, unknown> = {
                   name: c.name,
                   type: c.type,
@@ -219,7 +252,8 @@ export function registerDescribeGeneric(
                 if (nullCount !== undefined) colMeta.null_count = nullCount;
                 if (nullRatio !== undefined) colMeta.null_ratio = nullRatio;
                 if (distinctCount !== undefined) colMeta.distinct_count = distinctCount;
-                if (distinctCount !== undefined && rowCount > 0) colMeta.is_unique = distinctCount === rowCount;
+                if (distinctCount !== undefined && rowCount > 0)
+                  colMeta.is_unique = distinctCount === rowCount;
                 if (distinctByCol[c.name]) colMeta.distinct_values = distinctByCol[c.name];
                 else if (sampleByCol[c.name]) colMeta.sample_values = sampleByCol[c.name];
                 // Detect ISO date format for string-typed columns
@@ -234,7 +268,7 @@ export function registerDescribeGeneric(
                 return colMeta;
               });
 
-          const relationsMetadata = at.relations.map(r => ({
+          const relationsMetadata = at.relations.map((r) => ({
             from_table: friendly ? snakeCaseToLabel(r.fromTable) : r.fromTable,
             from_table_name: r.fromTable,
             from_column: friendly ? snakeCaseToLabel(r.fromColumn) : r.fromColumn,
@@ -247,8 +281,22 @@ export function registerDescribeGeneric(
 
           const displayName = friendly ? snakeCaseToLabel(tableName) : tableName;
           const payload = friendly
-            ? { table: displayName, table_name: tableName, columns: columnsMetadata, rowCount, relations: relationsMetadata }
-            : { table: tableName, schema: schemaName, columns: columnsMetadata, rowCount, numericStats, textStats, relations: relationsMetadata };
+            ? {
+                table: displayName,
+                table_name: tableName,
+                columns: columnsMetadata,
+                rowCount,
+                relations: relationsMetadata,
+              }
+            : {
+                table: tableName,
+                schema: schemaName,
+                columns: columnsMetadata,
+                rowCount,
+                numericStats,
+                textStats,
+                relations: relationsMetadata,
+              };
 
           const text = wrapResponse(JSON.stringify(payload, null, 2));
           return {

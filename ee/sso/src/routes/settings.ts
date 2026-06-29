@@ -67,9 +67,10 @@ export function registerOidcSettingsRoute(
         Array.isArray(groupToProfile) ||
         !Object.values(groupToProfile as object).every((v) => typeof v === 'string')
       ) {
-        res
-          .status(400)
-          .json({ success: false, message: 'groupToProfile must be an object mapping strings to strings.' });
+        res.status(400).json({
+          success: false,
+          message: 'groupToProfile must be an object mapping strings to strings.',
+        });
         return;
       }
       resolvedGroupToProfile = groupToProfile as Record<string, string>;

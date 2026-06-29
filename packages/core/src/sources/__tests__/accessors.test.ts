@@ -339,24 +339,44 @@ describe('configuration accessors — unified shape preferred', () => {
           kind: 'relational',
           selectedTables: { users: ['id'] },
           tableOptions: {
-            users: { enabledTools: ['describe'], maxLimit: 50, filterableColumns: [], groupableColumns: [] },
+            users: {
+              enabledTools: ['describe'],
+              maxLimit: 50,
+              filterableColumns: [],
+              groupableColumns: [],
+            },
           },
         },
       },
     });
     expect(getConfigurationTableOptions(cfg)).toEqual({
-      users: { enabledTools: ['describe'], maxLimit: 50, filterableColumns: [], groupableColumns: [] },
+      users: {
+        enabledTools: ['describe'],
+        maxLimit: 50,
+        filterableColumns: [],
+        groupableColumns: [],
+      },
     });
   });
 
   it('getConfigurationTableOptions falls back to legacy field when scopes has none', () => {
     const cfg = makeCfg({
       tableOptions: {
-        orders: { enabledTools: ['query'], maxLimit: 200, filterableColumns: [], groupableColumns: [] },
+        orders: {
+          enabledTools: ['query'],
+          maxLimit: 200,
+          filterableColumns: [],
+          groupableColumns: [],
+        },
       },
     });
     expect(getConfigurationTableOptions(cfg)).toEqual({
-      orders: { enabledTools: ['query'], maxLimit: 200, filterableColumns: [], groupableColumns: [] },
+      orders: {
+        enabledTools: ['query'],
+        maxLimit: 200,
+        filterableColumns: [],
+        groupableColumns: [],
+      },
     });
   });
 

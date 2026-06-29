@@ -87,10 +87,7 @@ describe('tokens routes', () => {
         .set('Cookie', cookie)
         .send({ profileName: 'prod', label: 'Test' });
 
-      const res = await request(app)
-        .get('/api/tokens')
-        .set('Cookie', cookie)
-        .expect(200);
+      const res = await request(app).get('/api/tokens').set('Cookie', cookie).expect(200);
 
       expect(res.body.success).toBe(true);
       expect(res.body.tokens).toHaveLength(1);

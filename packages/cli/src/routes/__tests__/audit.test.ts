@@ -50,10 +50,7 @@ describe('audit routes', () => {
         durationMs: 10,
       });
 
-      const res = await request(app)
-        .get('/api/audit')
-        .set('Cookie', cookie)
-        .expect(200);
+      const res = await request(app).get('/api/audit').set('Cookie', cookie).expect(200);
 
       expect(res.body.success).toBe(true);
       expect(res.body.entries).toHaveLength(1);

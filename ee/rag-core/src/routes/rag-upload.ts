@@ -14,51 +14,51 @@ import type { RagRouteDeps } from './types.js';
  * `'default'` when the host hasn't wired a resolver (e.g. test deps).
  */
 function resolveTenantId(deps: RagRouteDeps, req?: Request): string {
-	return deps.getTenantId ? deps.getTenantId(req) : 'default';
+  return deps.getTenantId ? deps.getTenantId(req) : 'default';
 }
 
 interface SourceRow {
-	id: string;
-	name: string;
-	type: string;
-	config_encrypted: string;
-	embedding_setting_name: string;
-	embedding_model_version: string;
-	tenant_id: string;
-	created_at: string;
-	updated_at: string;
-	last_sync_at: string | null;
-	/** Phase 12 (Q7) soft-delete marker. Non-null hides the source from uploads. */
-	deleted_at: string | null;
+  id: string;
+  name: string;
+  type: string;
+  config_encrypted: string;
+  embedding_setting_name: string;
+  embedding_model_version: string;
+  tenant_id: string;
+  created_at: string;
+  updated_at: string;
+  last_sync_at: string | null;
+  /** Phase 12 (Q7) soft-delete marker. Non-null hides the source from uploads. */
+  deleted_at: string | null;
 }
 
 function rowToSource(row: SourceRow): RagSource {
-	return {
-		id: row.id,
-		name: row.name,
-		type: row.type as RagSourceType,
-		configEncrypted: row.config_encrypted,
-		embeddingSettingName: row.embedding_setting_name,
-		embeddingModelVersion: row.embedding_model_version,
-		// Defensive `?? 'default'` for fixtures that bypass the migration.
-		tenantId: row.tenant_id ?? 'default',
-		// Normalize undefined → null for fixtures that bypass the v8 migration.
-		deletedAt: row.deleted_at ?? null,
-		createdAt: row.created_at,
-		updatedAt: row.updated_at,
-		...(row.last_sync_at !== null ? { lastSyncAt: row.last_sync_at } : {}),
-	};
+  return {
+    id: row.id,
+    name: row.name,
+    type: row.type as RagSourceType,
+    configEncrypted: row.config_encrypted,
+    embeddingSettingName: row.embedding_setting_name,
+    embeddingModelVersion: row.embedding_model_version,
+    // Defensive `?? 'default'` for fixtures that bypass the migration.
+    tenantId: row.tenant_id ?? 'default',
+    // Normalize undefined → null for fixtures that bypass the v8 migration.
+    deletedAt: row.deleted_at ?? null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    ...(row.last_sync_at !== null ? { lastSyncAt: row.last_sync_at } : {}),
+  };
 }
 
 const MIME_BY_EXT: Record<string, string> = {
-	'.pdf': 'application/pdf',
-	'.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-	'.md': 'text/markdown',
-	'.markdown': 'text/markdown',
-	'.csv': 'text/csv',
-	'.html': 'text/html',
-	'.htm': 'text/html',
-	'.txt': 'text/plain',
+  '.pdf': 'application/pdf',
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.md': 'text/markdown',
+  '.markdown': 'text/markdown',
+  '.csv': 'text/csv',
+  '.html': 'text/html',
+  '.htm': 'text/html',
+  '.txt': 'text/plain',
 };
 
 /**
@@ -66,15 +66,15 @@ const MIME_BY_EXT: Record<string, string> = {
  * header, falling back to the filename extension.
  */
 function detectMime(filename: string, headerMime: string | undefined): string {
-	if (headerMime && headerMime !== 'application/octet-stream') {
-		return headerMime.split(';')[0]?.trim().toLowerCase() ?? headerMime;
-	}
-	const ext = path.extname(filename).toLowerCase();
-	return MIME_BY_EXT[ext] ?? 'application/octet-stream';
+  if (headerMime && headerMime !== 'application/octet-stream') {
+    return headerMime.split(';')[0]?.trim().toLowerCase() ?? headerMime;
+  }
+  const ext = path.extname(filename).toLowerCase();
+  return MIME_BY_EXT[ext] ?? 'application/octet-stream';
 }
 
 function sendError(res: Response, status: number, message: string): void {
-	res.status(status).json({ error: message });
+  res.status(status).json({ error: message });
 }
 
 /**
@@ -83,34 +83,32 @@ function sendError(res: Response, status: number, message: string): void {
  * 501 instead of a startup crash.
  */
 type FormidableFile = {
-	filepath: string;
-	originalFilename: string | null;
-	mimetype: string | null;
+  filepath: string;
+  originalFilename: string | null;
+  mimetype: string | null;
 };
 
 type FormidableForm = {
-	parse: (
-		req: Request,
-	) => Promise<[Record<string, unknown>, Record<string, FormidableFile[]>]>;
+  parse: (req: Request) => Promise<[Record<string, unknown>, Record<string, FormidableFile[]>]>;
 };
 
 type FormidableFactory = (options: object) => FormidableForm;
 
 async function loadFormidable(): Promise<FormidableFactory | null> {
-	try {
-		// Dynamic specifier prevents TypeScript from trying to resolve the module
-		// at build time — `formidable` is loaded lazily at runtime.
-		const specifier = 'formidable';
-		const mod = (await import(/* @vite-ignore */ specifier)) as {
-			default?: unknown;
-			[key: string]: unknown;
-		};
-		const factory = (mod.default ?? mod) as unknown;
-		if (typeof factory !== 'function') return null;
-		return factory as FormidableFactory;
-	} catch {
-		return null;
-	}
+  try {
+    // Dynamic specifier prevents TypeScript from trying to resolve the module
+    // at build time — `formidable` is loaded lazily at runtime.
+    const specifier = 'formidable';
+    const mod = (await import(/* @vite-ignore */ specifier)) as {
+      default?: unknown;
+      [key: string]: unknown;
+    };
+    const factory = (mod.default ?? mod) as unknown;
+    if (typeof factory !== 'function') return null;
+    return factory as FormidableFactory;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -118,144 +116,148 @@ async function loadFormidable(): Promise<FormidableFactory | null> {
  * sources. Each file is parsed and ingested. Returns the resulting documents.
  */
 export function registerRagUploadRoutes(app: Express, deps: RagRouteDeps): void {
-	app.post('/api/rag/sources/:id/upload', async (req: Request, res: Response) => {
-		const id = String(req.params['id'] ?? '');
-		try {
-			const tenantId = resolveTenantId(deps, req);
-			// Tenant-scoped lookup — cross-tenant sources resolve as 404 so an
-			// upload can never land on a row owned by another tenant.
-			const row = deps.db
-				.prepare<[string, string], SourceRow>(
-					`SELECT * FROM rag_sources WHERE id = ? AND tenant_id = ?`,
-				)
-				.get(id, tenantId);
-			if (!row) {
-				sendError(res, 404, `Source "${id}" not found.`);
-				return;
-			}
-			// Refuse uploads to a soft-deleted source — restore it first.
-			if (row.deleted_at !== null) {
-				sendError(res, 404, `Source "${id}" not found.`);
-				return;
-			}
-			const source = rowToSource(row);
-			if (source.type !== 'local') {
-				sendError(res, 400, `Upload is only supported for sources of type "local".`);
-				return;
-			}
+  app.post('/api/rag/sources/:id/upload', async (req: Request, res: Response) => {
+    const id = String(req.params['id'] ?? '');
+    try {
+      const tenantId = resolveTenantId(deps, req);
+      // Tenant-scoped lookup — cross-tenant sources resolve as 404 so an
+      // upload can never land on a row owned by another tenant.
+      const row = deps.db
+        .prepare<
+          [string, string],
+          SourceRow
+        >(`SELECT * FROM rag_sources WHERE id = ? AND tenant_id = ?`)
+        .get(id, tenantId);
+      if (!row) {
+        sendError(res, 404, `Source "${id}" not found.`);
+        return;
+      }
+      // Refuse uploads to a soft-deleted source — restore it first.
+      if (row.deleted_at !== null) {
+        sendError(res, 404, `Source "${id}" not found.`);
+        return;
+      }
+      const source = rowToSource(row);
+      if (source.type !== 'local') {
+        sendError(res, 400, `Upload is only supported for sources of type "local".`);
+        return;
+      }
 
-			// Decrypt once, fail fast before touching the multipart stream.
-			const config = JSON.parse(deps.decryptConfig(row.config_encrypted)) as Record<string, unknown>;
-			if (typeof config['rootPath'] !== 'string' || config['rootPath'] === '') {
-				sendError(res, 400, 'Source has no rootPath configured.');
-				return;
-			}
-			const rootPath = path.resolve(config['rootPath'] as string);
+      // Decrypt once, fail fast before touching the multipart stream.
+      const config = JSON.parse(deps.decryptConfig(row.config_encrypted)) as Record<
+        string,
+        unknown
+      >;
+      if (typeof config['rootPath'] !== 'string' || config['rootPath'] === '') {
+        sendError(res, 400, 'Source has no rootPath configured.');
+        return;
+      }
+      const rootPath = path.resolve(config['rootPath'] as string);
 
-			const formidable = await loadFormidable();
-			if (!formidable) {
-				sendError(
-					res,
-					501,
-					`Multipart parsing requires "formidable". Install it in the host package.`,
-				);
-				return;
-			}
+      const formidable = await loadFormidable();
+      if (!formidable) {
+        sendError(
+          res,
+          501,
+          `Multipart parsing requires "formidable". Install it in the host package.`,
+        );
+        return;
+      }
 
-			const form = formidable({ multiples: true, keepExtensions: true });
-			const [, filesRaw] = await form.parse(req);
+      const form = formidable({ multiples: true, keepExtensions: true });
+      const [, filesRaw] = await form.parse(req);
 
-			// formidable normalizes single uploads to arrays with `multiples: true`.
-			const allFiles: FormidableFile[] = [];
-			for (const value of Object.values(filesRaw)) {
-				if (Array.isArray(value)) allFiles.push(...value);
-			}
+      // formidable normalizes single uploads to arrays with `multiples: true`.
+      const allFiles: FormidableFile[] = [];
+      for (const value of Object.values(filesRaw)) {
+        if (Array.isArray(value)) allFiles.push(...value);
+      }
 
-			if (allFiles.length === 0) {
-				sendError(res, 400, 'No files were provided in the multipart payload.');
-				return;
-			}
+      if (allFiles.length === 0) {
+        sendError(res, 400, 'No files were provided in the multipart payload.');
+        return;
+      }
 
-			// Synthetic job row to track embedding-token usage from manual
-			// uploads. We INSERT with status='completed' at the end of the
-			// request rather than at the start so a thrown ingest doesn't
-			// leave a phantom 'pending' row the UI would chase. The usage
-			// endpoint aggregates over status='completed' so this row is
-			// indistinguishable from a sync job for cost accounting purposes.
-			let tokensEmbeddedThisUpload = 0;
-			const ingested = [];
-			for (const file of allFiles) {
-				const buffer = await fs.readFile(file.filepath);
-				const filename = file.originalFilename ?? path.basename(file.filepath);
-				const mime = detectMime(filename, file.mimetype ?? undefined);
+      // Synthetic job row to track embedding-token usage from manual
+      // uploads. We INSERT with status='completed' at the end of the
+      // request rather than at the start so a thrown ingest doesn't
+      // leave a phantom 'pending' row the UI would chase. The usage
+      // endpoint aggregates over status='completed' so this row is
+      // indistinguishable from a sync job for cost accounting purposes.
+      let tokensEmbeddedThisUpload = 0;
+      const ingested = [];
+      for (const file of allFiles) {
+        const buffer = await fs.readFile(file.filepath);
+        const filename = file.originalFilename ?? path.basename(file.filepath);
+        const mime = detectMime(filename, file.mimetype ?? undefined);
 
-				// Strip any path separators or ".." from the client-supplied name so the
-				// file lands safely inside rootPath and the connector's readdir will find it.
-				const safeName = path.basename(filename);
-				const targetAbs = path.resolve(rootPath, safeName);
-				if (!targetAbs.startsWith(rootPath + path.sep) && targetAbs !== rootPath) {
-					sendError(res, 400, `Unsafe filename: "${filename}".`);
-					return;
-				}
-				await fs.mkdir(rootPath, { recursive: true });
-				await fs.writeFile(targetAbs, buffer);
+        // Strip any path separators or ".." from the client-supplied name so the
+        // file lands safely inside rootPath and the connector's readdir will find it.
+        const safeName = path.basename(filename);
+        const targetAbs = path.resolve(rootPath, safeName);
+        if (!targetAbs.startsWith(rootPath + path.sep) && targetAbs !== rootPath) {
+          sendError(res, 400, `Unsafe filename: "${filename}".`);
+          return;
+        }
+        await fs.mkdir(rootPath, { recursive: true });
+        await fs.writeFile(targetAbs, buffer);
 
-				const doc = await deps.pipeline.ingestDocument({
-					source,
-					folder: null,
-					path: safeName,
-					mimeType: mime,
-					buffer,
-					onTokensEmbedded: (count: number) => {
-						tokensEmbeddedThisUpload += count;
-					},
-				});
-				ingested.push(doc);
-				// Cleanup the temp file — best effort.
-				await fs.unlink(file.filepath).catch(() => undefined);
-			}
+        const doc = await deps.pipeline.ingestDocument({
+          source,
+          folder: null,
+          path: safeName,
+          mimeType: mime,
+          buffer,
+          onTokensEmbedded: (count: number) => {
+            tokensEmbeddedThisUpload += count;
+          },
+        });
+        ingested.push(doc);
+        // Cleanup the temp file — best effort.
+        await fs.unlink(file.filepath).catch(() => undefined);
+      }
 
-			// Record the upload as a completed synthetic job. tenant_id is
-			// inherited from the parent source (same model as sync jobs).
-			const uploadJobId = nanoid();
-			const finishedAt = new Date().toISOString();
-			deps.db
-				.prepare(
-					`INSERT INTO rag_jobs
+      // Record the upload as a completed synthetic job. tenant_id is
+      // inherited from the parent source (same model as sync jobs).
+      const uploadJobId = nanoid();
+      const finishedAt = new Date().toISOString();
+      deps.db
+        .prepare(
+          `INSERT INTO rag_jobs
 					 (id, source_id, status, progress, total_documents, processed_documents,
 					  skipped_by_etag, gc_deleted, tokens_embedded, tenant_id,
 					  started_at, finished_at)
 					 VALUES (?, ?, 'completed', 1, ?, ?, 0, 0, ?, ?, ?, ?)`,
-				)
-				.run(
-					uploadJobId,
-					id,
-					ingested.length,
-					ingested.length,
-					tokensEmbeddedThisUpload,
-					source.tenantId,
-					finishedAt,
-					finishedAt,
-				);
+        )
+        .run(
+          uploadJobId,
+          id,
+          ingested.length,
+          ingested.length,
+          tokensEmbeddedThisUpload,
+          source.tenantId,
+          finishedAt,
+          finishedAt,
+        );
 
-			deps.onAudit?.({
-				type: 'rag.upload.ok',
-				payload: {
-					sourceId: id,
-					count: ingested.length,
-					tokensEmbedded: tokensEmbeddedThisUpload,
-				},
-				timestamp: finishedAt,
-			});
-			res.status(201).json({ documents: ingested });
-		} catch (error: unknown) {
-			const message = error instanceof Error ? error.message : 'Unknown error';
-			deps.onAudit?.({
-				type: 'rag.upload.failed',
-				payload: { sourceId: id, error: message },
-				timestamp: new Date().toISOString(),
-			});
-			sendError(res, 500, message);
-		}
-	});
+      deps.onAudit?.({
+        type: 'rag.upload.ok',
+        payload: {
+          sourceId: id,
+          count: ingested.length,
+          tokensEmbedded: tokensEmbeddedThisUpload,
+        },
+        timestamp: finishedAt,
+      });
+      res.status(201).json({ documents: ingested });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      deps.onAudit?.({
+        type: 'rag.upload.failed',
+        payload: { sourceId: id, error: message },
+        timestamp: new Date().toISOString(),
+      });
+      sendError(res, 500, message);
+    }
+  });
 }

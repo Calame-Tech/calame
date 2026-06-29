@@ -1,7 +1,15 @@
 import { useState, useCallback, useMemo, useEffect, lazy, Suspense } from 'react';
 import { apiFetch, getCurrentTenant } from './lib/api.js';
 import { buildMcpPath } from './lib/mcp-url.js';
-import { Button, Card, PageHeader, Eyebrow, KpiCard, EmptyState, Breadcrumb } from './components/ui/index.js';
+import {
+  Button,
+  Card,
+  PageHeader,
+  Eyebrow,
+  KpiCard,
+  EmptyState,
+  Breadcrumb,
+} from './components/ui/index.js';
 import Sidebar from './components/Sidebar.js';
 import HelpTip from './components/HelpTip.js';
 import SchemaExplorer from './components/SchemaExplorer.js';
@@ -613,8 +621,7 @@ export default function App() {
 
         // Reflect the masking into the relational scope (creating the scope
         // skeleton if the profile didn't have one yet).
-        const existingRelational =
-          existingScope?.kind === 'relational' ? existingScope : null;
+        const existingRelational = existingScope?.kind === 'relational' ? existingScope : null;
         scopes[targetSourceId] = {
           kind: 'relational',
           selectedTables: existingRelational?.selectedTables ?? getProfileSelectedTables(profile),
@@ -804,12 +811,7 @@ export default function App() {
       setShowOnboarding(false);
       setDataVersion((v) => v + 1);
     };
-    return (
-      <OnboardingWizard
-        onComplete={dismissOnboarding}
-        onSkip={dismissOnboarding}
-      />
-    );
+    return <OnboardingWizard onComplete={dismissOnboarding} onSkip={dismissOnboarding} />;
   }
 
   // /login or unauthenticated admin — unified login page
@@ -866,7 +868,10 @@ export default function App() {
             {view.page === 'dashboard' && (
               <div className="relative space-y-4">
                 {/* Fixed background blobs */}
-                <div className="fixed inset-0 -z-10 pointer-events-none overflow-hidden" aria-hidden="true">
+                <div
+                  className="fixed inset-0 -z-10 pointer-events-none overflow-hidden"
+                  aria-hidden="true"
+                >
                   <div className="absolute -top-40 -left-40 w-[500px] h-[500px] bg-os-900/20 rounded-full blur-3xl" />
                   <div className="absolute top-1/3 -right-40 w-[400px] h-[400px] bg-indigo-900/15 rounded-full blur-3xl" />
                   <div className="absolute -bottom-40 left-1/3 w-[450px] h-[450px] bg-os-800/10 rounded-full blur-3xl" />
@@ -893,24 +898,36 @@ export default function App() {
                   className="card-primary rounded-full px-4 py-2 flex flex-wrap items-center gap-3 animate-fade-in-up"
                   style={{ animationDelay: '0ms' }}
                 >
-                  <Eyebrow live>{activeMcpCount} server{activeMcpCount !== 1 ? 's' : ''} running</Eyebrow>
+                  <Eyebrow live>
+                    {activeMcpCount} server{activeMcpCount !== 1 ? 's' : ''} running
+                  </Eyebrow>
                   <span className="eyebrow text-gray-700">·</span>
-                  <Eyebrow>{connectedCount} database{connectedCount !== 1 ? 's' : ''} connected</Eyebrow>
+                  <Eyebrow>
+                    {connectedCount} database{connectedCount !== 1 ? 's' : ''} connected
+                  </Eyebrow>
                   <span className="eyebrow text-gray-700">·</span>
-                  <Eyebrow>{profiles.length} profile{profiles.length !== 1 ? 's' : ''}</Eyebrow>
-                  {recentActivity.length > 0 && (() => {
-                    const last = recentActivity[0];
-                    const diffMs = Date.now() - new Date(last.timestamp).getTime();
-                    const diffMin = Math.floor(diffMs / 60000);
-                    const diffHour = Math.floor(diffMs / 3600000);
-                    const ago = diffMin < 1 ? 'just now' : diffMin < 60 ? `${diffMin}m ago` : `${diffHour}h ago`;
-                    return (
-                      <>
-                        <span className="eyebrow text-gray-700">·</span>
-                        <Eyebrow>last activity {ago}</Eyebrow>
-                      </>
-                    );
-                  })()}
+                  <Eyebrow>
+                    {profiles.length} profile{profiles.length !== 1 ? 's' : ''}
+                  </Eyebrow>
+                  {recentActivity.length > 0 &&
+                    (() => {
+                      const last = recentActivity[0];
+                      const diffMs = Date.now() - new Date(last.timestamp).getTime();
+                      const diffMin = Math.floor(diffMs / 60000);
+                      const diffHour = Math.floor(diffMs / 3600000);
+                      const ago =
+                        diffMin < 1
+                          ? 'just now'
+                          : diffMin < 60
+                            ? `${diffMin}m ago`
+                            : `${diffHour}h ago`;
+                      return (
+                        <>
+                          <span className="eyebrow text-gray-700">·</span>
+                          <Eyebrow>last activity {ago}</Eyebrow>
+                        </>
+                      );
+                    })()}
                 </div>
 
                 {/* Resources grid: MCP Servers / Data Profiles / Databases */}
@@ -949,23 +966,33 @@ export default function App() {
                               className="w-full flex items-center justify-between px-2 py-1 rounded-md hover:bg-white/[0.02] transition-all duration-200 text-left"
                             >
                               <div className="flex items-center gap-2 min-w-0">
-                                <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${pActive ? 'bg-emerald-400' : 'bg-gray-600'}`} />
-                                <span className="font-mono-plex text-xs text-gray-300 truncate">{p.label || p.name}</span>
+                                <div
+                                  className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${pActive ? 'bg-emerald-400' : 'bg-gray-600'}`}
+                                />
+                                <span className="font-mono-plex text-xs text-gray-300 truncate">
+                                  {p.label || p.name}
+                                </span>
                               </div>
-                              <span className={`font-mono-plex text-[10px] px-2 py-0.5 rounded-full flex-shrink-0 ${pActive ? 'bg-emerald-400/10 text-emerald-400 ring-1 ring-emerald-400/20' : 'bg-white/5 text-gray-600'}`}>
+                              <span
+                                className={`font-mono-plex text-[10px] px-2 py-0.5 rounded-full flex-shrink-0 ${pActive ? 'bg-emerald-400/10 text-emerald-400 ring-1 ring-emerald-400/20' : 'bg-white/5 text-gray-600'}`}
+                              >
                                 {pActive ? 'ON' : 'OFF'}
                               </span>
                             </button>
                           );
                         })}
                         {profiles.length === 0 && (
-                          <p className="text-[10px] text-gray-600 text-center py-2 eyebrow">No servers</p>
+                          <p className="text-[10px] text-gray-600 text-center py-2 eyebrow">
+                            No servers
+                          </p>
                         )}
                         <button
                           onClick={() => setView({ page: 'mcp-list' })}
                           className="mt-1 w-full text-left"
                         >
-                          <span className="eyebrow-accent hover:text-os-300 transition-colors">View all &rarr;</span>
+                          <span className="eyebrow-accent hover:text-os-300 transition-colors">
+                            View all &rarr;
+                          </span>
                         </button>
                       </div>
                     }
@@ -992,22 +1019,32 @@ export default function App() {
                           return (
                             <button
                               key={cfg.name}
-                              onClick={() => setView({ page: 'config-detail', configName: cfg.name })}
+                              onClick={() =>
+                                setView({ page: 'config-detail', configName: cfg.name })
+                              }
                               className="w-full flex items-center justify-between px-2 py-1 rounded-md hover:bg-white/[0.02] transition-all duration-200 text-left"
                             >
-                              <span className="font-mono-plex text-xs text-gray-300 truncate">{cfg.label}</span>
-                              <span className="font-mono-plex text-[10px] text-gray-500 flex-shrink-0">{tCount} table{tCount !== 1 ? 's' : ''}</span>
+                              <span className="font-mono-plex text-xs text-gray-300 truncate">
+                                {cfg.label}
+                              </span>
+                              <span className="font-mono-plex text-[10px] text-gray-500 flex-shrink-0">
+                                {tCount} table{tCount !== 1 ? 's' : ''}
+                              </span>
                             </button>
                           );
                         })}
                         {configurations.length === 0 && (
-                          <p className="text-[10px] text-gray-600 text-center py-2 eyebrow">No profiles</p>
+                          <p className="text-[10px] text-gray-600 text-center py-2 eyebrow">
+                            No profiles
+                          </p>
                         )}
                         <button
                           onClick={() => setView({ page: 'configurations' })}
                           className="mt-1 w-full text-left"
                         >
-                          <span className="eyebrow-accent hover:text-os-300 transition-colors">View all &rarr;</span>
+                          <span className="eyebrow-accent hover:text-os-300 transition-colors">
+                            View all &rarr;
+                          </span>
                         </button>
                       </div>
                     }
@@ -1044,30 +1081,44 @@ export default function App() {
                               <div className="flex items-center gap-2 min-w-0">
                                 <div
                                   className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${hasSchema ? 'bg-emerald-400' : 'bg-gray-600'}`}
-                                  title={hasSchema ? 'Connected and schema loaded' : 'Not connected'}
+                                  title={
+                                    hasSchema ? 'Connected and schema loaded' : 'Not connected'
+                                  }
                                 />
-                                <span className="font-mono-plex text-xs text-gray-300 truncate">{conn.label || conn.name}</span>
+                                <span className="font-mono-plex text-xs text-gray-300 truncate">
+                                  {conn.label || conn.name}
+                                </span>
                               </div>
-                              <span className={`font-mono-plex text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 ${
-                                conn.databaseType === 'postgresql'
-                                  ? 'text-blue-300 bg-blue-500/10'
+                              <span
+                                className={`font-mono-plex text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 ${
+                                  conn.databaseType === 'postgresql'
+                                    ? 'text-blue-300 bg-blue-500/10'
+                                    : conn.databaseType === 'mysql'
+                                      ? 'text-orange-300 bg-orange-500/10'
+                                      : 'text-emerald-300 bg-emerald-500/10'
+                                }`}
+                              >
+                                {conn.databaseType === 'postgresql'
+                                  ? 'PG'
                                   : conn.databaseType === 'mysql'
-                                    ? 'text-orange-300 bg-orange-500/10'
-                                    : 'text-emerald-300 bg-emerald-500/10'
-                              }`}>
-                                {conn.databaseType === 'postgresql' ? 'PG' : conn.databaseType === 'mysql' ? 'MySQL' : 'SQLite'}
+                                    ? 'MySQL'
+                                    : 'SQLite'}
                               </span>
                             </div>
                           );
                         })}
                         {connections.length === 0 && (
-                          <p className="text-[10px] text-gray-600 text-center py-2 eyebrow">No databases</p>
+                          <p className="text-[10px] text-gray-600 text-center py-2 eyebrow">
+                            No databases
+                          </p>
                         )}
                         <button
                           onClick={() => setView({ page: 'connections' })}
                           className="mt-1 w-full text-left"
                         >
-                          <span className="eyebrow-accent hover:text-os-300 transition-colors">View all &rarr;</span>
+                          <span className="eyebrow-accent hover:text-os-300 transition-colors">
+                            View all &rarr;
+                          </span>
                         </button>
                       </div>
                     }
@@ -1104,7 +1155,10 @@ export default function App() {
                       onClick={() => setView({ page: tile.page })}
                       className="card-interactive group p-3 flex items-center gap-3 text-left"
                     >
-                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${tile.dot}`} aria-hidden="true" />
+                      <span
+                        className={`w-2 h-2 rounded-full flex-shrink-0 ${tile.dot}`}
+                        aria-hidden="true"
+                      />
                       <div className="flex-1 min-w-0">
                         <div className="eyebrow mb-0.5">{tile.label}</div>
                         <p className="text-xs text-gray-400 truncate">{tile.description}</p>
@@ -1123,7 +1177,9 @@ export default function App() {
                     style={{ animationDelay: '240ms' }}
                   >
                     <div className="flex items-center justify-between px-4 py-2 hairline-b">
-                      <Eyebrow accent live>RECENT ACTIVITY</Eyebrow>
+                      <Eyebrow accent live>
+                        RECENT ACTIVITY
+                      </Eyebrow>
                       <Eyebrow>{recentActivity.length} events</Eyebrow>
                     </div>
                     <div>
@@ -1142,7 +1198,10 @@ export default function App() {
                                 : time.toLocaleDateString();
 
                         return (
-                          <div key={entry.id} className="px-4 py-1.5 border-b border-white/5 last:border-0 flex items-center gap-3">
+                          <div
+                            key={entry.id}
+                            className="px-4 py-1.5 border-b border-white/5 last:border-0 flex items-center gap-3"
+                          >
                             <span
                               className={`flex-shrink-0 w-1.5 h-1.5 rounded-full ${
                                 entry.result === 'success' ? 'bg-emerald-400' : 'bg-rose-400'
@@ -1180,9 +1239,7 @@ export default function App() {
             {view.page === 'sources' && (
               <SourcesPage
                 currentTab={view.tab ?? 'databases'}
-                onTabChange={(tab) =>
-                  setView({ page: 'sources', tab, backTo: view.backTo })
-                }
+                onTabChange={(tab) => setView({ page: 'sources', tab, backTo: view.backTo })}
                 connections={connections}
                 onConnectionsChange={setConnections}
                 onSchemaLoaded={handleSchemaLoaded}
@@ -1197,9 +1254,7 @@ export default function App() {
             {view.page === 'connections' && (
               <SourcesPage
                 currentTab="databases"
-                onTabChange={(tab) =>
-                  setView({ page: 'sources', tab, backTo: view.backTo })
-                }
+                onTabChange={(tab) => setView({ page: 'sources', tab, backTo: view.backTo })}
                 connections={connections}
                 onConnectionsChange={setConnections}
                 onSchemaLoaded={handleSchemaLoaded}
@@ -1249,7 +1304,10 @@ export default function App() {
                           { label: 'Server', onClick: () => setView(view.backTo!) },
                         ]
                       : [
-                          { label: 'Data Profiles', onClick: () => setView({ page: 'configurations' }) },
+                          {
+                            label: 'Data Profiles',
+                            onClick: () => setView({ page: 'configurations' }),
+                          },
                         ]),
                     {
                       label:
@@ -1321,7 +1379,8 @@ export default function App() {
                     { label: 'MCP Servers', onClick: () => setView({ page: 'mcp-list' }) },
                     {
                       label:
-                        profiles.find((p) => p.name === view.profileName)?.label ?? view.profileName,
+                        profiles.find((p) => p.name === view.profileName)?.label ??
+                        view.profileName,
                     },
                   ]}
                 />
@@ -1390,7 +1449,8 @@ export default function App() {
                   const bt = view.backTo;
                   if (bt?.page === 'mcp-detail') {
                     return {
-                      label: profiles.find((p) => p.name === bt.profileName)?.label ?? bt.profileName,
+                      label:
+                        profiles.find((p) => p.name === bt.profileName)?.label ?? bt.profileName,
                       view: bt,
                     };
                   }
@@ -1511,13 +1571,8 @@ function McpDetailView({
   const [activeSection, setActiveSection] = useState<
     'tables' | 'config' | 'tokens' | 'audit' | 'users' | 'scoping'
   >(
-    (initialActiveSection as
-      | 'tables'
-      | 'config'
-      | 'tokens'
-      | 'audit'
-      | 'users'
-      | 'scoping') ?? 'tables',
+    (initialActiveSection as 'tables' | 'config' | 'tokens' | 'audit' | 'users' | 'scoping') ??
+      'tables',
   );
 
   const [editingLabel, setEditingLabel] = useState(false);
@@ -1618,9 +1673,10 @@ function McpDetailView({
   // backend's `profileStatus.endpoint` is a default-tenant string so we
   // override it here for other workspaces (matches ServePanel.tsx).
   const _tenant = getCurrentTenant();
-  const basePath = _tenant === 'default'
-    ? (profileStatus?.endpoint ?? `/mcp/${profile.name}`)
-    : buildMcpPath(profile.name, _tenant);
+  const basePath =
+    _tenant === 'default'
+      ? (profileStatus?.endpoint ?? `/mcp/${profile.name}`)
+      : buildMcpPath(profile.name, _tenant);
   const endpoint = `${window.location.origin}${basePath}`;
 
   // Count effective tables from configurations
@@ -2115,8 +2171,7 @@ function McpDetailView({
                   value: 'calame',
                   label: 'Calame',
                   desc: 'User account',
-                  tooltip:
-                    'Les utilisateurs se connectent avec leur email et mot de passe Calame.',
+                  tooltip: 'Les utilisateurs se connectent avec leur email et mot de passe Calame.',
                 },
                 {
                   value: 'sso',
@@ -2515,8 +2570,8 @@ function McpDetailView({
                         />
                         {cfg.label}
                         <span className="text-xs text-gray-500">
-                          ({tableCount} table{tableCount !== 1 ? 's' : ''}, {sourceCount}{' '}
-                          base{sourceCount !== 1 ? 's' : ''})
+                          ({tableCount} table{tableCount !== 1 ? 's' : ''}, {sourceCount} base
+                          {sourceCount !== 1 ? 's' : ''})
                         </span>
                       </button>
                       <button
@@ -2604,11 +2659,7 @@ function McpDetailView({
       )}
 
       {activeSection === 'scoping' && (
-        <Suspense
-          fallback={
-            <div className="p-6 text-sm text-gray-500 italic">Chargement…</div>
-          }
-        >
+        <Suspense fallback={<div className="p-6 text-sm text-gray-500 italic">Chargement…</div>}>
           <DataScopingSection
             profile={profile}
             configurations={configurations}
@@ -2847,9 +2898,7 @@ function ConfigurationDetailView({
 
   // Local editing state
   const [label, setLabel] = useState(config?.label ?? configName);
-  const [selectedConns, setSelectedConns] = useState<Set<string>>(
-    new Set(config?.sources ?? []),
-  );
+  const [selectedConns, setSelectedConns] = useState<Set<string>>(new Set(config?.sources ?? []));
   const [localSelectedTables, setLocalSelectedTables] = useState<Record<string, Set<string>>>(
     config ? arraysToSets(getConfigurationSelectedTables(config)) : {},
   );
@@ -3102,12 +3151,7 @@ function ConfigurationDetailView({
   };
 
   if (!config && configName) {
-    return (
-      <EmptyState
-        title={`Configuration "${configName}" not found.`}
-        className="py-10"
-      />
-    );
+    return <EmptyState title={`Configuration "${configName}" not found.`} className="py-10" />;
   }
 
   const tableCount = Object.keys(localSelectedTables).length;
@@ -3159,11 +3203,7 @@ function ConfigurationDetailView({
                     {configName}
                   </span>
                 )}
-                <HelpTip
-                  content="Click to rename this data profile"
-                  position="right"
-                  size="xs"
-                />
+                <HelpTip content="Click to rename this data profile" position="right" size="xs" />
               </h2>
             )}
             <p className="text-sm text-gray-500 mt-1">
@@ -3189,19 +3229,10 @@ function ConfigurationDetailView({
             {confirmDelete ? (
               <div className="flex items-center gap-1">
                 <span className="text-xs text-gray-400 mr-1">Are you sure?</span>
-                <Button
-                  variant="danger"
-                  size="sm"
-                  onClick={handleDelete}
-                  disabled={deleting}
-                >
+                <Button variant="danger" size="sm" onClick={handleDelete} disabled={deleting}>
                   {deleting ? 'Deleting...' : 'Yes, delete'}
                 </Button>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => setConfirmDelete(false)}
-                >
+                <Button variant="secondary" size="sm" onClick={() => setConfirmDelete(false)}>
                   Cancel
                 </Button>
               </div>
@@ -3277,132 +3308,136 @@ function ConfigurationDetailView({
       {/* --- DATABASES TAB --- */}
       {activeConfigTab === 'databases' && (
         <>
-      {/* Connections selection */}
-      <div className="card-primary p-4">
-        <div className="mb-3"><Eyebrow>Databases</Eyebrow></div>
-        {availableConnectionNames.length === 0 ? (
-          <div className="text-center py-4">
-            <p className="text-sm text-gray-500 mb-3">No databases connected yet.</p>
-            {onNavigateToConnections && (
-              <Button variant="primary" onClick={onNavigateToConnections}>
-                + Add a Database
-              </Button>
-            )}
-          </div>
-        ) : (
-          <div className="space-y-2">
-            <div className="flex flex-wrap gap-2">
-              {availableConnectionNames.map((connName) => {
-                const isSelected = selectedConns.has(connName);
-                const conn = connections.find((c) => c.name === connName);
-                const hasSchema = !!connectionSchemas[connName];
-                return (
-                  <div key={connName} className="flex items-center gap-1">
-                    <button
-                      onClick={() => handleToggleConnection(connName)}
-                      disabled={loadingSchemas}
-                      className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border transition-all duration-200 disabled:opacity-50 ${
-                        isSelected
-                          ? 'border-os-600/60 bg-os-700/20 text-os-400'
-                          : 'border-gray-700 bg-gray-900/40 text-gray-500 hover:border-gray-600 hover:text-gray-300'
-                      }`}
-                    >
-                      <div
-                        className={`w-2 h-2 rounded-full ${isSelected ? 'bg-os-400' : 'bg-gray-600'}`}
-                      />
-                      {conn?.label ?? connName}
-                      {hasSchema && (
-                        <span className="text-xs text-gray-500">
-                          ({connectionSchemas[connName].tables.length} tables)
-                        </span>
-                      )}
-                    </button>
-                    {onNavigateToEditConnection && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onNavigateToEditConnection(connName);
-                        }}
-                        title="Modifier les paramètres de cette connexion"
-                        className="p-0.5 text-gray-500 hover:text-os-400 transition-colors"
-                      >
-                        <svg
-                          className="w-3.5 h-3.5"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                          strokeWidth={2}
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z"
-                          />
-                        </svg>
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
+          {/* Connections selection */}
+          <div className="card-primary p-4">
+            <div className="mb-3">
+              <Eyebrow>Databases</Eyebrow>
             </div>
-            {onNavigateToConnections && (
-              <button
-                onClick={() => onNavigateToConnections()}
-                className="text-xs text-os-400 hover:text-os-300 transition-colors mt-2 inline-flex items-center gap-1"
-              >
-                Manage databases &rarr;
-              </button>
+            {availableConnectionNames.length === 0 ? (
+              <div className="text-center py-4">
+                <p className="text-sm text-gray-500 mb-3">No databases connected yet.</p>
+                {onNavigateToConnections && (
+                  <Button variant="primary" onClick={onNavigateToConnections}>
+                    + Add a Database
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div className="flex flex-wrap gap-2">
+                  {availableConnectionNames.map((connName) => {
+                    const isSelected = selectedConns.has(connName);
+                    const conn = connections.find((c) => c.name === connName);
+                    const hasSchema = !!connectionSchemas[connName];
+                    return (
+                      <div key={connName} className="flex items-center gap-1">
+                        <button
+                          onClick={() => handleToggleConnection(connName)}
+                          disabled={loadingSchemas}
+                          className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border transition-all duration-200 disabled:opacity-50 ${
+                            isSelected
+                              ? 'border-os-600/60 bg-os-700/20 text-os-400'
+                              : 'border-gray-700 bg-gray-900/40 text-gray-500 hover:border-gray-600 hover:text-gray-300'
+                          }`}
+                        >
+                          <div
+                            className={`w-2 h-2 rounded-full ${isSelected ? 'bg-os-400' : 'bg-gray-600'}`}
+                          />
+                          {conn?.label ?? connName}
+                          {hasSchema && (
+                            <span className="text-xs text-gray-500">
+                              ({connectionSchemas[connName].tables.length} tables)
+                            </span>
+                          )}
+                        </button>
+                        {onNavigateToEditConnection && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onNavigateToEditConnection(connName);
+                            }}
+                            title="Modifier les paramètres de cette connexion"
+                            className="p-0.5 text-gray-500 hover:text-os-400 transition-colors"
+                          >
+                            <svg
+                              className="w-3.5 h-3.5"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              stroke="currentColor"
+                              strokeWidth={2}
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z"
+                              />
+                            </svg>
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                {onNavigateToConnections && (
+                  <button
+                    onClick={() => onNavigateToConnections()}
+                    className="text-xs text-os-400 hover:text-os-300 transition-colors mt-2 inline-flex items-center gap-1"
+                  >
+                    Manage databases &rarr;
+                  </button>
+                )}
+              </div>
             )}
           </div>
-        )}
-      </div>
 
-      {/* Tables & Columns selection — single unified view */}
-      {configSchema.tables.length > 0 && (
-        <div className="card-primary p-4">
-          <SchemaExplorer
-            schema={configSchema}
-            selectedTables={localSelectedTables}
-            onSelectionChange={setLocalSelectedTables}
-            piiDetections={piiDetections}
-            onScanPii={onScanPii}
-            scanning={scanning}
-            connectionSchemas={Object.fromEntries(
-              [...selectedConns]
-                .filter((cn) => connectionSchemas[cn])
-                .map((cn) => [cn, connectionSchemas[cn]]),
-            )}
-            connectionLabels={Object.fromEntries(
-              connections.map((c) => [c.name, c.label || c.name]),
-            )}
-          />
-        </div>
-      )}
+          {/* Tables & Columns selection — single unified view */}
+          {configSchema.tables.length > 0 && (
+            <div className="card-primary p-4">
+              <SchemaExplorer
+                schema={configSchema}
+                selectedTables={localSelectedTables}
+                onSelectionChange={setLocalSelectedTables}
+                piiDetections={piiDetections}
+                onScanPii={onScanPii}
+                scanning={scanning}
+                connectionSchemas={Object.fromEntries(
+                  [...selectedConns]
+                    .filter((cn) => connectionSchemas[cn])
+                    .map((cn) => [cn, connectionSchemas[cn]]),
+                )}
+                connectionLabels={Object.fromEntries(
+                  connections.map((c) => [c.name, c.label || c.name]),
+                )}
+              />
+            </div>
+          )}
 
-      {/* Advanced: Table Options & Masking */}
-      {Object.keys(localSelectedTables).length > 0 && (
-        <div className="card-primary p-4">
-          <div className="mb-3"><Eyebrow>Advanced: Table Options &amp; Masking</Eyebrow></div>
-          <ConfigPanel
-            config={{
-              serverName: '',
-              transport: 'streamable-http',
-              clientTarget: 'claude-desktop',
-              outputDir: '',
-              tableOptions: localTableOptions,
-            }}
-            onConfigChange={handleLocalConfigChange}
-            schema={configSchema}
-            selectedTables={localSelectedTables}
-            piiDetections={piiDetections}
-            columnMasking={localColumnMasking}
-            onColumnMaskingChange={setLocalColumnMasking}
-            globalMaskingRules={globalMaskingRules}
-            onGlobalMaskingRulesChange={handleLocalGlobalMaskingRulesChange}
-            onPiiOverride={onPiiOverride}
-          />
-        </div>
-      )}
+          {/* Advanced: Table Options & Masking */}
+          {Object.keys(localSelectedTables).length > 0 && (
+            <div className="card-primary p-4">
+              <div className="mb-3">
+                <Eyebrow>Advanced: Table Options &amp; Masking</Eyebrow>
+              </div>
+              <ConfigPanel
+                config={{
+                  serverName: '',
+                  transport: 'streamable-http',
+                  clientTarget: 'claude-desktop',
+                  outputDir: '',
+                  tableOptions: localTableOptions,
+                }}
+                onConfigChange={handleLocalConfigChange}
+                schema={configSchema}
+                selectedTables={localSelectedTables}
+                piiDetections={piiDetections}
+                columnMasking={localColumnMasking}
+                onColumnMaskingChange={setLocalColumnMasking}
+                globalMaskingRules={globalMaskingRules}
+                onGlobalMaskingRulesChange={handleLocalGlobalMaskingRulesChange}
+                onPiiOverride={onPiiOverride}
+              />
+            </div>
+          )}
         </>
       )}
 
@@ -3596,7 +3631,9 @@ function SettingsPage({
           {activeTab === 'ai' && <AiSettings />}
           {activeTab === 'email' && <SmtpSettings />}
           {activeTab === 'sso' && (
-            <Suspense fallback={<div className="p-6 text-sm text-gray-500 italic">Chargement…</div>}>
+            <Suspense
+              fallback={<div className="p-6 text-sm text-gray-500 italic">Chargement…</div>}
+            >
               <OidcSettings availableProfiles={[...allProfileNames]} />
             </Suspense>
           )}

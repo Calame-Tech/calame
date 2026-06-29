@@ -125,7 +125,11 @@ export class MySQLConnector implements DatabaseConnector {
       await connection.query('SELECT 1');
     } finally {
       if (connection) {
-        try { await connection.end(); } catch { /* swallow cleanup failures */ }
+        try {
+          await connection.end();
+        } catch {
+          /* swallow cleanup failures */
+        }
       }
     }
   }
@@ -269,20 +273,27 @@ export class MySQLConnector implements DatabaseConnector {
       await connection.query('SET TRANSACTION READ ONLY');
       await connection.beginTransaction();
       if (options?.timeoutMs && options.timeoutMs > 0) {
-        await connection.query(`SET SESSION max_execution_time = ${Math.max(1000, options.timeoutMs)}`);
+        await connection.query(
+          `SET SESSION max_execution_time = ${Math.max(1000, options.timeoutMs)}`,
+        );
       }
-      const [rows] = options?.params && options.params.length > 0
-        ? await connection.execute(sql, options.params as (string | number | null | Buffer)[])
-        : await connection.execute(sql);
+      const [rows] =
+        options?.params && options.params.length > 0
+          ? await connection.execute(sql, options.params as (string | number | null | Buffer)[])
+          : await connection.execute(sql);
       await connection.commit();
       return { rows: rows as Record<string, unknown>[] };
     } catch (error: unknown) {
       await connection.rollback().catch(() => {});
       // Translate MySQL timeout errors
-      if (error instanceof Error && (error.message.includes('Query execution was interrupted') || error.message.includes('max_execution_time exceeded'))) {
+      if (
+        error instanceof Error &&
+        (error.message.includes('Query execution was interrupted') ||
+          error.message.includes('max_execution_time exceeded'))
+      ) {
         throw new Error(
           `Query timed out after ${options?.timeoutMs ?? 0}ms. ` +
-          'Try narrowing your query with filters or reducing the result set.',
+            'Try narrowing your query with filters or reducing the result set.',
         );
       }
       throw error;

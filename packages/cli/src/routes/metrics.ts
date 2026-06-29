@@ -160,7 +160,12 @@ export function registerMetricsRoute(app: Express, state: AppState): void {
         const connector = connState.connection as unknown as Record<string, unknown>;
         if (typeof connector['getPoolStats'] === 'function') {
           const stats = (
-            connector['getPoolStats'] as () => { active: number; idle: number; waiting: number; total: number }
+            connector['getPoolStats'] as () => {
+              active: number;
+              idle: number;
+              waiting: number;
+              total: number;
+            }
           )();
           poolStats.push({ connectionName: name, stats });
         }

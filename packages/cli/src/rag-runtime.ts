@@ -406,9 +406,7 @@ export async function initRagRuntime(
   // so a typo never crashes boot — it just disables the kill-switch. We
   // build the config object even when unlimited so downstream code can
   // always read `capConfig.monthlyTokenCap` without optional chaining.
-  const monthlyTokenCap = ragCore.parseMonthlyCapEnv(
-    process.env['CALAME_RAG_MONTHLY_TOKEN_CAP'],
-  );
+  const monthlyTokenCap = ragCore.parseMonthlyCapEnv(process.env['CALAME_RAG_MONTHLY_TOKEN_CAP']);
   const capConfig: EmbeddingCapConfig = { monthlyTokenCap };
   if (monthlyTokenCap > 0) {
     log.info(
@@ -480,9 +478,7 @@ export async function initRagRuntime(
     }
     if (type === 'sharepoint') {
       if (!ragMicrosoft) return null;
-      return withRateLimiter(
-        new ragMicrosoft.SharePointConnector(),
-      ) as unknown as ConnectorLike;
+      return withRateLimiter(new ragMicrosoft.SharePointConnector()) as unknown as ConnectorLike;
     }
     if (!ragConnectors) return null;
     if (type === 'local') {
@@ -578,9 +574,10 @@ export async function initRagRuntime(
     // matches the "queue rejected" contract — pollers / watchers will log
     // a `*.skipped` audit event and the next tick will find the timer gone.
     const sourceRow = db.raw
-      .prepare<[string], { tenant_id: string | null; deleted_at: string | null }>(
-        `SELECT tenant_id, deleted_at FROM rag_sources WHERE id = ?`,
-      )
+      .prepare<
+        [string],
+        { tenant_id: string | null; deleted_at: string | null }
+      >(`SELECT tenant_id, deleted_at FROM rag_sources WHERE id = ?`)
       .get(sourceId);
     if (!sourceRow || sourceRow.deleted_at !== null) {
       return null;
@@ -806,9 +803,10 @@ export async function initRagRuntime(
           // undefined or blank (covers "", "/", whitespace-only) → list ALL folders
           // for the source (root-level listing from the MCP tool's perspective).
           return ragDb.raw
-            .prepare<[string], RagFolderRow>(
-              'SELECT * FROM rag_folders WHERE source_id = ? ORDER BY path ASC',
-            )
+            .prepare<
+              [string],
+              RagFolderRow
+            >('SELECT * FROM rag_folders WHERE source_id = ? ORDER BY path ASC')
             .all(sourceId)
             .map(mapFolder);
         }
@@ -818,9 +816,10 @@ export async function initRagRuntime(
         if (!folderId) return [];
 
         return ragDb.raw
-          .prepare<[string, string], RagFolderRow>(
-            'SELECT * FROM rag_folders WHERE source_id = ? AND parent_id = ? ORDER BY path ASC',
-          )
+          .prepare<
+            [string, string],
+            RagFolderRow
+          >('SELECT * FROM rag_folders WHERE source_id = ? AND parent_id = ? ORDER BY path ASC')
           .all(sourceId, folderId)
           .map(mapFolder);
       },
@@ -878,9 +877,10 @@ export async function initRagRuntime(
           .get(documentId);
         if (!row) return null;
         const chunks = ragDb.raw
-          .prepare<[string], RagChunkRow>(
-            'SELECT * FROM rag_chunks WHERE document_id = ? ORDER BY position ASC',
-          )
+          .prepare<
+            [string],
+            RagChunkRow
+          >('SELECT * FROM rag_chunks WHERE document_id = ? ORDER BY position ASC')
           .all(documentId);
         const text = chunks.map((c) => c.text).join('\n');
         return {
@@ -897,7 +897,8 @@ export async function initRagRuntime(
             tenantId: row.tenant_id ?? DEFAULT_TENANT_ID,
             lastIndexedAt: row.last_indexed_at,
             deletedAt: row.deleted_at,
-            ingestError: (row as RagDocumentRow & { ingest_error?: string | null }).ingest_error ?? null,
+            ingestError:
+              (row as RagDocumentRow & { ingest_error?: string | null }).ingest_error ?? null,
           },
           text,
         };
@@ -1000,9 +1001,10 @@ export async function initRagRuntime(
       baseIndex = {
         async search(sourceId, query, opts) {
           const settingRow = ragDb.raw
-            .prepare<[string], { embedding_setting_name: string }>(
-              'SELECT embedding_setting_name FROM rag_sources WHERE id = ? LIMIT 1',
-            )
+            .prepare<
+              [string],
+              { embedding_setting_name: string }
+            >('SELECT embedding_setting_name FROM rag_sources WHERE id = ? LIMIT 1')
             .get(sourceId);
           if (!settingRow) return { chunks: [] };
 
@@ -1063,8 +1065,7 @@ export async function initRagRuntime(
           return {
             chunks: filtered
               .sort(
-                (a, b) =>
-                  (distanceMap.get(a.chunk_id) ?? 1) - (distanceMap.get(b.chunk_id) ?? 1),
+                (a, b) => (distanceMap.get(a.chunk_id) ?? 1) - (distanceMap.get(b.chunk_id) ?? 1),
               )
               .slice(0, topK)
               .map((row) => ({

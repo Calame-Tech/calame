@@ -194,9 +194,7 @@ describe('POST /api/profiles/:name/preview', () => {
   });
 
   it('should require authentication', async () => {
-    const res = await request(app)
-      .post('/api/profiles/test/preview')
-      .expect(401);
+    const res = await request(app).post('/api/profiles/test/preview').expect(401);
 
     expect(res.body).toBeDefined();
   });

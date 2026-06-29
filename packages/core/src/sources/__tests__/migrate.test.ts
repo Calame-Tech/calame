@@ -17,7 +17,12 @@ const legacyProfile: Record<string, unknown> = {
     orders: ['id', 'user_id', 'total'],
   },
   tableOptions: {
-    users: { enabledTools: ['query', 'describe'], maxLimit: 100, filterableColumns: ['email'], groupableColumns: [] },
+    users: {
+      enabledTools: ['query', 'describe'],
+      maxLimit: 100,
+      filterableColumns: ['email'],
+      groupableColumns: [],
+    },
   },
   columnMasking: {
     users: { email: { maskingMode: 'hash' } },
@@ -225,7 +230,12 @@ describe('upgradeProfileShape', () => {
         connections: ['conn-a', 'conn-b'],
         selectedTables: { users: ['id', 'email'] },
         tableOptions: {
-          users: { enabledTools: ['query'], maxLimit: 50, filterableColumns: [], groupableColumns: [] },
+          users: {
+            enabledTools: ['query'],
+            maxLimit: 50,
+            filterableColumns: [],
+            groupableColumns: [],
+          },
         },
       };
       const result = upgradeProfileShape(profile);
@@ -250,7 +260,9 @@ describe('upgradeProfileShape', () => {
       const scopeA = result.scopes!['conn-a'];
       const scopeB = result.scopes!['conn-b'];
       // Mutating scopeA should not affect scopeB
-      (scopeA as Extract<ScopeSelection, { kind: 'relational' }>).selectedTables['injected'] = ['x'];
+      (scopeA as Extract<ScopeSelection, { kind: 'relational' }>).selectedTables['injected'] = [
+        'x',
+      ];
       expect(
         (scopeB as Extract<ScopeSelection, { kind: 'relational' }>).selectedTables['injected'],
       ).toBeUndefined();
@@ -270,7 +282,12 @@ const legacyConfig: Record<string, unknown> = {
     invoices: ['id', 'amount', 'status'],
   },
   tableOptions: {
-    invoices: { enabledTools: ['describe', 'aggregate'], maxLimit: 500, filterableColumns: ['status'], groupableColumns: ['status'] },
+    invoices: {
+      enabledTools: ['describe', 'aggregate'],
+      maxLimit: 500,
+      filterableColumns: ['status'],
+      groupableColumns: ['status'],
+    },
   },
   columnMasking: {
     invoices: { amount: { maskingMode: 'none' } },

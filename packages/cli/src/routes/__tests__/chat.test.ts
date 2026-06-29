@@ -29,7 +29,9 @@ import type { ServeProfile } from '@calame/core';
 vi.mock('../../chat-engine.js', () => ({
   INTERNAL_CHAT_SECRET: 'test-secret',
   createMcpChatTools: vi.fn(),
-  createCalcTool: vi.fn().mockReturnValue({ name: 'calc', description: '', parameters: {}, handler: vi.fn() }),
+  createCalcTool: vi
+    .fn()
+    .mockReturnValue({ name: 'calc', description: '', parameters: {}, handler: vi.fn() }),
   executeChatTurn: vi.fn(),
   streamChatTurn: vi.fn(),
   getDefaultSystemPrompt: vi.fn().mockReturnValue('system prompt'),
@@ -64,11 +66,7 @@ function makeProfile(name: string, overrides?: Partial<ServeProfile>): ServeProf
  * Seed state with profiles. By default all provided profiles are also activated
  * (making serveMode = true). Pass an explicit activeNames list to override.
  */
-function seedProfiles(
-  state: AppState,
-  profiles: ServeProfile[],
-  activeNames?: string[],
-): void {
+function seedProfiles(state: AppState, profiles: ServeProfile[], activeNames?: string[]): void {
   for (const p of profiles) {
     state.serveProfiles = { ...state.serveProfiles, [p.name]: p };
   }

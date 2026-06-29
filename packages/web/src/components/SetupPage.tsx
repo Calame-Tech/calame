@@ -65,9 +65,7 @@ export default function SetupPage({ onSetupComplete }: SetupPageProps) {
             <img src="/logo.png" alt="Calame" className="h-10 w-10 object-contain" />
             <h1 className="heading-lg">Calame</h1>
           </div>
-          <p className="text-gray-400 mt-2">
-            Bienvenue — Cr&eacute;ez votre compte administrateur
-          </p>
+          <p className="text-gray-400 mt-2">Bienvenue — Cr&eacute;ez votre compte administrateur</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -115,7 +113,10 @@ export default function SetupPage({ onSetupComplete }: SetupPageProps) {
           </div>
 
           <div>
-            <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-300 mb-1">
+            <label
+              htmlFor="confirmPassword"
+              className="block text-sm font-medium text-gray-300 mb-1"
+            >
               Confirm Password <span className="text-red-400">*</span>
             </label>
             <input

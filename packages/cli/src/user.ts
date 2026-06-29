@@ -1,7 +1,15 @@
 import crypto from 'crypto';
 import type { Database, Statement } from 'better-sqlite3';
 import type { CalameDatabase } from './database.js';
-import { hashToken, verifyTokenHash, hashPassword, verifyPassword, encrypt, decrypt, getSecretKey } from './crypto.js';
+import {
+  hashToken,
+  verifyTokenHash,
+  hashPassword,
+  verifyPassword,
+  encrypt,
+  decrypt,
+  getSecretKey,
+} from './crypto.js';
 import { DEFAULT_TENANT_ID } from './tenancy.js';
 
 export type UserRole = 'admin' | 'user';
@@ -98,8 +106,8 @@ function decryptToken(encrypted: string): string | null {
 function profileAccessFromRow(row: ProfileAccessRow): UserProfileAccess {
   return {
     profileName: row.profile_name,
-    allowedTables: row.allowed_tables ? JSON.parse(row.allowed_tables) as string[] : null,
-    allowedTools: row.allowed_tools ? JSON.parse(row.allowed_tools) as string[] : null,
+    allowedTables: row.allowed_tables ? (JSON.parse(row.allowed_tables) as string[]) : null,
+    allowedTools: row.allowed_tools ? (JSON.parse(row.allowed_tools) as string[]) : null,
     accessMode: row.access_mode,
   };
 }
@@ -159,7 +167,9 @@ export class UserManager {
     this.stmtDeleteProfile = this.db.prepare(
       `DELETE FROM user_profile_access WHERE user_id = ? AND profile_name = ?`,
     );
-    this.stmtSelectProfiles = this.db.prepare(`SELECT * FROM user_profile_access WHERE user_id = ?`);
+    this.stmtSelectProfiles = this.db.prepare(
+      `SELECT * FROM user_profile_access WHERE user_id = ?`,
+    );
     this.stmtUpdateLastActive = this.db.prepare(`UPDATE users SET last_active_at = ? WHERE id = ?`);
     this.stmtHasAdmin = this.db.prepare(
       `SELECT COUNT(*) AS cnt FROM users WHERE role = 'admin' AND status = 'active' AND password_hash IS NOT NULL`,
@@ -190,8 +200,11 @@ export class UserManager {
       // custom_attributes may be absent if migration v5 has not yet run, or may contain invalid JSON
       customAttributes: (() => {
         if (!row.custom_attributes) return null;
-        try { return JSON.parse(row.custom_attributes) as Record<string, string>; }
-        catch { return null; }
+        try {
+          return JSON.parse(row.custom_attributes) as Record<string, string>;
+        } catch {
+          return null;
+        }
       })(),
     };
   }
@@ -340,7 +353,9 @@ export class UserManager {
     if (password.length < 8) {
       throw new Error('Password must be at least 8 characters.');
     }
-    this.db.prepare(`UPDATE users SET password_hash = ? WHERE id = ?`).run(hashPassword(password), id);
+    this.db
+      .prepare(`UPDATE users SET password_hash = ? WHERE id = ?`)
+      .run(hashPassword(password), id);
     return true;
   }
 
@@ -375,7 +390,10 @@ export class UserManager {
    */
   getTenantIdByEmail(email: string): string | null {
     const row = this.db
-      .prepare<[string], { tenant_id: string }>('SELECT tenant_id FROM users WHERE email = ? COLLATE NOCASE')
+      .prepare<
+        [string],
+        { tenant_id: string }
+      >('SELECT tenant_id FROM users WHERE email = ? COLLATE NOCASE')
       .get(email);
     return row?.tenant_id ?? null;
   }
@@ -432,9 +450,9 @@ export class UserManager {
     const row = this.stmtSelectById.get(id) as UserRow | undefined;
     if (!row) return null;
     const now = new Date().toISOString();
-    this.db.prepare(
-      `UPDATE users SET status='disabled', disabled_at=?, disabled_reason=? WHERE id=?`,
-    ).run(now, reason ?? null, id);
+    this.db
+      .prepare(`UPDATE users SET status='disabled', disabled_at=?, disabled_reason=? WHERE id=?`)
+      .run(now, reason ?? null, id);
     return this.getUserById(id);
   }
 
@@ -442,9 +460,11 @@ export class UserManager {
     const row = this.stmtSelectById.get(id) as UserRow | undefined;
     if (!row) return null;
     const plaintextToken = 'fmcp_' + crypto.randomBytes(24).toString('hex');
-    this.db.prepare(
-      `UPDATE users SET status='active', token_hash=?, token_encrypted=?, disabled_at=NULL, disabled_reason=NULL WHERE id=?`,
-    ).run(hashToken(plaintextToken), encryptToken(plaintextToken), id);
+    this.db
+      .prepare(
+        `UPDATE users SET status='active', token_hash=?, token_encrypted=?, disabled_at=NULL, disabled_reason=NULL WHERE id=?`,
+      )
+      .run(hashToken(plaintextToken), encryptToken(plaintextToken), id);
     const entry = this.getUserById(id)!;
     return { ...entry, _plaintextToken: plaintextToken };
   }
@@ -453,9 +473,9 @@ export class UserManager {
     const row = this.stmtSelectById.get(id) as UserRow | undefined;
     if (!row) return null;
     const plaintextToken = 'fmcp_' + crypto.randomBytes(24).toString('hex');
-    this.db.prepare(
-      `UPDATE users SET token_hash=?, token_encrypted=? WHERE id=?`,
-    ).run(hashToken(plaintextToken), encryptToken(plaintextToken), id);
+    this.db
+      .prepare(`UPDATE users SET token_hash=?, token_encrypted=? WHERE id=?`)
+      .run(hashToken(plaintextToken), encryptToken(plaintextToken), id);
     const entry = this.getUserById(id)!;
     return { ...entry, _plaintextToken: plaintextToken };
   }
@@ -478,9 +498,18 @@ export class UserManager {
     const doUpdate = this.db.transaction(() => {
       const sets: string[] = [];
       const params: unknown[] = [];
-      if (updates.name !== undefined) { sets.push('name = ?'); params.push(updates.name); }
-      if (updates.email !== undefined) { sets.push('email = ?'); params.push(updates.email); }
-      if (updates.role !== undefined) { sets.push('role = ?'); params.push(updates.role); }
+      if (updates.name !== undefined) {
+        sets.push('name = ?');
+        params.push(updates.name);
+      }
+      if (updates.email !== undefined) {
+        sets.push('email = ?');
+        params.push(updates.email);
+      }
+      if (updates.role !== undefined) {
+        sets.push('role = ?');
+        params.push(updates.role);
+      }
 
       if (sets.length > 0) {
         params.push(id);
@@ -588,9 +617,9 @@ export class UserManager {
    */
   getUserByOidcSubject(subject: string): UserEntry | null {
     try {
-      const row = this.db
-        .prepare('SELECT * FROM users WHERE oidc_subject = ?')
-        .get(subject) as UserRow | undefined;
+      const row = this.db.prepare('SELECT * FROM users WHERE oidc_subject = ?').get(subject) as
+        | UserRow
+        | undefined;
       return row ? this.buildEntry(row) : null;
     } catch {
       // Column may not exist if migration v3 has not run yet
@@ -604,9 +633,7 @@ export class UserManager {
    */
   setOidcSubject(userId: string, subject: string): void {
     try {
-      this.db
-        .prepare('UPDATE users SET oidc_subject = ? WHERE id = ?')
-        .run(subject, userId);
+      this.db.prepare('UPDATE users SET oidc_subject = ? WHERE id = ?').run(subject, userId);
     } catch {
       // Column may not exist if migration v3 has not run yet — silently ignore
     }
@@ -620,9 +647,11 @@ export class UserManager {
   consumeOnboardingCode(code: string): UserEntry | null {
     const user = this.getUserByOnboardingCode(code);
     if (!user) return null;
-    this.db.prepare(
-      `UPDATE users SET status='active', onboarding_code=NULL, onboarding_expires_at=NULL WHERE id=?`,
-    ).run(user.id);
+    this.db
+      .prepare(
+        `UPDATE users SET status='active', onboarding_code=NULL, onboarding_expires_at=NULL WHERE id=?`,
+      )
+      .run(user.id);
     return this.getUserById(user.id);
   }
 

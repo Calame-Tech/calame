@@ -189,16 +189,8 @@ export interface SourceAdapter<
   introspect?(config: TConfig, sourceId: string): Promise<TSchema>;
 
   query?(config: TConfig, sql: string, params?: ReadonlyArray<unknown>): Promise<unknown>;
-  listScopes?(
-    config: TConfig,
-    sourceId: string,
-    parent?: string,
-  ): Promise<ReadonlyArray<unknown>>;
-  listItems?(
-    config: TConfig,
-    sourceId: string,
-    scope?: string,
-  ): Promise<ReadonlyArray<unknown>>;
+  listScopes?(config: TConfig, sourceId: string, parent?: string): Promise<ReadonlyArray<unknown>>;
+  listItems?(config: TConfig, sourceId: string, scope?: string): Promise<ReadonlyArray<unknown>>;
   fetchItem?(config: TConfig, sourceId: string, itemId: string): Promise<unknown>;
   search?(config: TConfig, query: string, options?: unknown): Promise<unknown>;
   sampleValues?(

@@ -8,9 +8,7 @@ import SourcesPage from '../components/SourcesPage.js';
 
 describe('App smoke tests', () => {
   it('LoginPage renders without error', () => {
-    const { container } = render(
-      <LoginPage onAdminLogin={() => {}} onUserLogin={() => {}} />
-    );
+    const { container } = render(<LoginPage onAdminLogin={() => {}} onUserLogin={() => {}} />);
     expect(container).toBeTruthy();
   });
 
@@ -26,11 +24,7 @@ describe('App smoke tests', () => {
 
   it('SchemaExplorer renders without error', () => {
     const { container } = render(
-      <SchemaExplorer
-        schema={null}
-        selectedTables={{}}
-        onSelectionChange={() => {}}
-      />
+      <SchemaExplorer schema={null} selectedTables={{}} onSelectionChange={() => {}} />,
     );
     expect(container).toBeTruthy();
   });
@@ -47,7 +41,7 @@ describe('App smoke tests', () => {
         ragEnabled={false}
         ragDisabledReason={null}
         KnowledgeBaseManagerComponent={MockKB}
-      />
+      />,
     );
     expect(container).toBeTruthy();
     expect(screen.getByText('Sources')).toBeTruthy();
@@ -66,7 +60,7 @@ describe('App smoke tests', () => {
         ragEnabled={false}
         ragDisabledReason={null}
         KnowledgeBaseManagerComponent={MockKB}
-      />
+      />,
     );
     expect(container).toBeTruthy();
     expect(screen.getByText('Knowledge bases')).toBeTruthy();

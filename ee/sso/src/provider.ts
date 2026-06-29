@@ -114,9 +114,7 @@ export class OidcProvider {
       },
       {},
     );
-    return groups
-      .map((g) => lowercaseMap[g.toLowerCase()])
-      .filter((p): p is string => !!p);
+    return groups.map((g) => lowercaseMap[g.toLowerCase()]).filter((p): p is string => !!p);
   }
 
   extractCustomAttributes(payload: jose.JWTPayload): Record<string, string> | null {

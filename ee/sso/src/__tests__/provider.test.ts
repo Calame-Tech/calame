@@ -14,8 +14,8 @@ const baseConfig: OidcProviderConfig = {
   scopes: 'openid profile email',
   groupClaim: 'groups',
   groupToProfile: {
-    'engineering': 'dev',
-    'finance': 'finance-profile',
+    engineering: 'dev',
+    finance: 'finance-profile',
   },
   autoCreateUsers: true,
 };
@@ -119,13 +119,16 @@ describe('OidcProvider', () => {
     });
 
     it('should map groups case-insensitively (different case in JWT vs config)', () => {
-      const provider = new OidcProvider({ ...baseConfig, groupToProfile: { 'engineering': 'dev' } });
+      const provider = new OidcProvider({ ...baseConfig, groupToProfile: { engineering: 'dev' } });
       const profiles = provider.mapGroupsToProfiles(['Engineering']);
       expect(profiles).toEqual(['dev']);
     });
 
     it('should map groups case-insensitively (mixed case both sides)', () => {
-      const provider = new OidcProvider({ ...baseConfig, groupToProfile: { 'Comptabilite': 'finance' } });
+      const provider = new OidcProvider({
+        ...baseConfig,
+        groupToProfile: { Comptabilite: 'finance' },
+      });
       const profiles = provider.mapGroupsToProfiles(['comptabilite']);
       expect(profiles).toEqual(['finance']);
     });

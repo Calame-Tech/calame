@@ -19,5 +19,5 @@ export type TokenChunkOptions = ChunkOptions;
 
 /** @deprecated Use `chunkPlainText` (or `pickChunker(format)`) instead. */
 export function chunkText(text: string, opts: TokenChunkOptions = {}): TokenChunk[] {
-	return chunkPlainText(text, opts);
+  return chunkPlainText(text, opts);
 }

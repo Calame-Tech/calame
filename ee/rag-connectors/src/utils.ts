@@ -45,11 +45,7 @@ export function streamSha256(absolutePath: string): Promise<string> {
  * by patterns like `**`. Path separators are normalized to forward slashes
  * so the same pattern works on Windows and POSIX.
  */
-export function matchGlobs(
-  relPath: string,
-  includes?: string[],
-  excludes?: string[],
-): boolean {
+export function matchGlobs(relPath: string, includes?: string[], excludes?: string[]): boolean {
   const normalized = relPath.split(sep).join('/');
   const opts = { dot: true } as const;
 
@@ -97,8 +93,5 @@ export function safeResolveUnderRoot(rootPath: string, relPath: string): string 
  */
 export function deterministicId(sourceId: string, relPath: string): string {
   const normalized = relPath.split(sep).join('/');
-  return createHash('sha256')
-    .update(`${sourceId}|${normalized}`)
-    .digest('hex')
-    .slice(0, 16);
+  return createHash('sha256').update(`${sourceId}|${normalized}`).digest('hex').slice(0, 16);
 }

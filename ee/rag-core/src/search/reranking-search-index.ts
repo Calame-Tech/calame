@@ -26,9 +26,7 @@
  *   — different rerankers produce different score scales.
  */
 
-import type {
-  DocumentSearchIndex,
-} from '../source-adapter.js';
+import type { DocumentSearchIndex } from '../source-adapter.js';
 import type { RagSearchResult } from '../types.js';
 import type { Reranker } from './reranker.js';
 

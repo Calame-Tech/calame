@@ -91,32 +91,58 @@ export function pgTypeToZod(pgType: string): string | null {
 
   // String types
   if (
-    t === 'text' || t === 'varchar' || t === 'character varying' ||
-    t === 'char' || t === 'character' || t === 'name' || t === 'citext' ||
-    t === 'uuid' || t === 'xml' || t === 'inet' || t === 'cidr' ||
+    t === 'text' ||
+    t === 'varchar' ||
+    t === 'character varying' ||
+    t === 'char' ||
+    t === 'character' ||
+    t === 'name' ||
+    t === 'citext' ||
+    t === 'uuid' ||
+    t === 'xml' ||
+    t === 'inet' ||
+    t === 'cidr' ||
     t === 'macaddr'
-  ) return 'string';
+  )
+    return 'string';
 
   // Date/time types — exposed as ISO 8601 strings
   if (
-    t === 'timestamp' || t === 'timestamp with time zone' ||
-    t === 'timestamp without time zone' || t === 'timestamptz' ||
-    t === 'date' || t === 'time' || t === 'time with time zone' ||
-    t === 'time without time zone' || t === 'timetz' || t === 'interval'
-  ) return 'string';
+    t === 'timestamp' ||
+    t === 'timestamp with time zone' ||
+    t === 'timestamp without time zone' ||
+    t === 'timestamptz' ||
+    t === 'date' ||
+    t === 'time' ||
+    t === 'time with time zone' ||
+    t === 'time without time zone' ||
+    t === 'timetz' ||
+    t === 'interval'
+  )
+    return 'string';
 
   // Big integer types — exposed as string to preserve precision
   if (t === 'bigint' || t === 'int8' || t === 'bigserial') return 'string';
 
   // Numeric types
   if (
-    t === 'integer' || t === 'int' || t === 'int4' ||
-    t === 'smallint' || t === 'int2' ||
-    t === 'serial' || t === 'smallserial' ||
-    t === 'real' || t === 'float4' ||
-    t === 'double precision' || t === 'float8' ||
-    t === 'numeric' || t === 'decimal' || t === 'money' || t === 'oid'
-  ) return 'number';
+    t === 'integer' ||
+    t === 'int' ||
+    t === 'int4' ||
+    t === 'smallint' ||
+    t === 'int2' ||
+    t === 'serial' ||
+    t === 'smallserial' ||
+    t === 'real' ||
+    t === 'float4' ||
+    t === 'double precision' ||
+    t === 'float8' ||
+    t === 'numeric' ||
+    t === 'decimal' ||
+    t === 'money' ||
+    t === 'oid'
+  )
+    return 'number';
 
   // Boolean
   if (t === 'boolean' || t === 'bool') return 'boolean';
@@ -128,13 +154,23 @@ export function pgTypeToZod(pgType: string): string | null {
 export function isNumericType(pgType: string): boolean {
   const t = pgType.toLowerCase();
   return (
-    t === 'integer' || t === 'int' || t === 'int4' ||
-    t === 'smallint' || t === 'int2' ||
-    t === 'serial' || t === 'smallserial' ||
-    t === 'bigint' || t === 'int8' || t === 'bigserial' ||
-    t === 'real' || t === 'float4' ||
-    t === 'double precision' || t === 'float8' ||
-    t === 'numeric' || t === 'decimal' || t === 'money'
+    t === 'integer' ||
+    t === 'int' ||
+    t === 'int4' ||
+    t === 'smallint' ||
+    t === 'int2' ||
+    t === 'serial' ||
+    t === 'smallserial' ||
+    t === 'bigint' ||
+    t === 'int8' ||
+    t === 'bigserial' ||
+    t === 'real' ||
+    t === 'float4' ||
+    t === 'double precision' ||
+    t === 'float8' ||
+    t === 'numeric' ||
+    t === 'decimal' ||
+    t === 'money'
   );
 }
 
@@ -148,7 +184,11 @@ export function isTextType(pgType: string): boolean {
 // trendlines without inventing dialect-specific SQL.
 export type DateBucket = 'day' | 'week' | 'month' | 'quarter' | 'year';
 
-export function dateBucketExpr(dialect: Dialect, granularity: DateBucket, columnExpr: string): string {
+export function dateBucketExpr(
+  dialect: Dialect,
+  granularity: DateBucket,
+  columnExpr: string,
+): string {
   // Postgres has a native DATE_TRUNC for every granularity we expose.
   if (dialect.databaseType === 'postgresql') {
     return `DATE_TRUNC('${granularity}', ${columnExpr})`;
@@ -161,11 +201,16 @@ export function dateBucketExpr(dialect: Dialect, granularity: DateBucket, column
   // matching how Calame handles malformed SQL today.
   const fmt = (() => {
     switch (granularity) {
-      case 'day': return '%Y-%m-%d';
-      case 'week': return '%Y-W%W';
-      case 'month': return '%Y-%m-01';
-      case 'quarter': return null; // synthesised below
-      case 'year': return '%Y-01-01';
+      case 'day':
+        return '%Y-%m-%d';
+      case 'week':
+        return '%Y-W%W';
+      case 'month':
+        return '%Y-%m-01';
+      case 'quarter':
+        return null; // synthesised below
+      case 'year':
+        return '%Y-01-01';
     }
   })();
 
@@ -194,13 +239,13 @@ export function dateBucketExpr(dialect: Dialect, granularity: DateBucket, column
 /** Detects the ISO date format hidden in string-typed columns (TEXT, VARCHAR). */
 export function detectDateFormat(sqlType: string, sampleValues: unknown[]): string | null {
   if (!isTextType(sqlType)) return null;
-  const nonNull = sampleValues.filter(v => v !== null && v !== undefined && v !== '');
+  const nonNull = sampleValues.filter((v) => v !== null && v !== undefined && v !== '');
   if (nonNull.length === 0) return null;
 
   const threshold = 0.8;
-  const strs = nonNull.map(v => String(v));
+  const strs = nonNull.map((v) => String(v));
 
-  const countMatch = (re: RegExp) => strs.filter(s => re.test(s)).length;
+  const countMatch = (re: RegExp) => strs.filter((s) => re.test(s)).length;
 
   // Datetime first (more specific than date)
   if (countMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/) / strs.length >= threshold) {
@@ -223,11 +268,17 @@ export function friendlyTypeLabel(sqlType: string): string {
   if (isNumericType(sqlType)) return 'number';
   if (t === 'boolean' || t === 'bool') return 'bool';
   if (
-    t === 'timestamp' || t === 'timestamp with time zone' ||
-    t === 'timestamp without time zone' || t === 'timestamptz' ||
-    t === 'date' || t === 'time' || t === 'time with time zone' ||
-    t === 'time without time zone' || t === 'timetz'
-  ) return 'date';
+    t === 'timestamp' ||
+    t === 'timestamp with time zone' ||
+    t === 'timestamp without time zone' ||
+    t === 'timestamptz' ||
+    t === 'date' ||
+    t === 'time' ||
+    t === 'time with time zone' ||
+    t === 'time without time zone' ||
+    t === 'timetz'
+  )
+    return 'date';
   return 'string';
 }
 
@@ -310,19 +361,23 @@ export function resolveTable(
   name: unknown,
   accessible: AccessibleTable[],
   capability: 'aggregate' | 'query' | 'describe' | 'write',
-):
-  | { ok: true; at: AccessibleTable }
-  | { ok: false; payload: Record<string, unknown> } {
+): { ok: true; at: AccessibleTable } | { ok: false; payload: Record<string, unknown> } {
   const validTables = accessible
-    .filter(a => a.enabledTools.includes(capability))
-    .map(a => a.table.name);
+    .filter((a) => a.enabledTools.includes(capability))
+    .map((a) => a.table.name);
 
   if (typeof name !== 'string' || name.length === 0) {
-    return { ok: false, payload: { error: '`table` argument is required', valid_tables: validTables } };
+    return {
+      ok: false,
+      payload: { error: '`table` argument is required', valid_tables: validTables },
+    };
   }
-  const at = accessible.find(a => a.table.name === name);
+  const at = accessible.find((a) => a.table.name === name);
   if (!at) {
-    const dym = didYouMean(name, accessible.map(a => a.table.name));
+    const dym = didYouMean(
+      name,
+      accessible.map((a) => a.table.name),
+    );
     return {
       ok: false,
       payload: { error: `Unknown table '${name}'`, valid_tables: validTables, did_you_mean: dym },
@@ -331,7 +386,10 @@ export function resolveTable(
   if (!at.enabledTools.includes(capability)) {
     return {
       ok: false,
-      payload: { error: `Table '${name}' does not support '${capability}'`, valid_tables: validTables },
+      payload: {
+        error: `Table '${name}' does not support '${capability}'`,
+        valid_tables: validTables,
+      },
     };
   }
   return { ok: true, at };

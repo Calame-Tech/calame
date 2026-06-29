@@ -47,7 +47,9 @@ export function validateProfiles(
     // expects the structural `TableToolOptions`. They are interchangeable here
     // because the accessor only reads `selectedTables` from the relational
     // scope.
-    const selected = getProfileSelectedTables(profile as Parameters<typeof getProfileSelectedTables>[0]);
+    const selected = getProfileSelectedTables(
+      profile as Parameters<typeof getProfileSelectedTables>[0],
+    );
 
     for (const [tableName, columns] of Object.entries(selected)) {
       const schemaColumns = tableMap.get(tableName);
@@ -59,7 +61,12 @@ export function validateProfiles(
 
       for (const col of columns) {
         if (!schemaColumns.has(col)) {
-          warnings.push({ profile: profileName, type: 'missing_column', table: tableName, column: col });
+          warnings.push({
+            profile: profileName,
+            type: 'missing_column',
+            table: tableName,
+            column: col,
+          });
         }
       }
     }
@@ -87,7 +94,10 @@ export function registerProfilesRoute(app: Express, state: AppState): void {
       }
 
       if (typeof data.profiles === 'object' && Object.keys(data.profiles).length === 0) {
-        res.status(400).json({ success: false, message: 'Cannot save empty profiles. At least one profile is required.' });
+        res.status(400).json({
+          success: false,
+          message: 'Cannot save empty profiles. At least one profile is required.',
+        });
         return;
       }
 
@@ -106,20 +116,35 @@ export function registerProfilesRoute(app: Express, state: AppState): void {
           .prepare("SELECT data FROM profiles WHERE key = 'main' AND tenant_id = ?")
           .get(tenantId) as { data: string } | undefined;
         if (existingRow) {
-          const existing = JSON.parse(existingRow.data) as { profiles?: Record<string, Record<string, unknown>> };
+          const existing = JSON.parse(existingRow.data) as {
+            profiles?: Record<string, Record<string, unknown>>;
+          };
           existingProfiles = existing.profiles ?? {};
         }
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
 
-      for (const [profileName, profile] of Object.entries(data.profiles as Record<string, Record<string, unknown>>)) {
-        if (!profile.connections || !Array.isArray(profile.connections) || profile.connections.length === 0) {
+      for (const [profileName, profile] of Object.entries(
+        data.profiles as Record<string, Record<string, unknown>>,
+      )) {
+        if (
+          !profile.connections ||
+          !Array.isArray(profile.connections) ||
+          profile.connections.length === 0
+        ) {
           profile.connections = ['default'];
         }
         // Preserve OAuth clientSecret if masked value sent back from frontend
         if (profile.oauthConfig && typeof profile.oauthConfig === 'object') {
           const oauthCfg = profile.oauthConfig as Record<string, unknown>;
-          if (typeof oauthCfg.clientSecret === 'string' && (oauthCfg.clientSecret as string).includes('***')) {
-            const existingOauth = existingProfiles[profileName]?.oauthConfig as Record<string, unknown> | undefined;
+          if (
+            typeof oauthCfg.clientSecret === 'string' &&
+            (oauthCfg.clientSecret as string).includes('***')
+          ) {
+            const existingOauth = existingProfiles[profileName]?.oauthConfig as
+              | Record<string, unknown>
+              | undefined;
             oauthCfg.clientSecret = existingOauth?.clientSecret ?? '';
           }
         }
@@ -132,7 +157,9 @@ export function registerProfilesRoute(app: Express, state: AppState): void {
       // Strip undefined values from the incoming profile before merging so that fields absent
       // from the frontend state (e.g. dataScopeRules, sharedTables) do not overwrite existing
       // stored values with undefined.
-      for (const [profileName, incomingProfile] of Object.entries(data.profiles as Record<string, Record<string, unknown>>)) {
+      for (const [profileName, incomingProfile] of Object.entries(
+        data.profiles as Record<string, Record<string, unknown>>,
+      )) {
         const existing = existingProfiles[profileName];
         if (existing) {
           const definedFields = Object.fromEntries(
@@ -146,14 +173,22 @@ export function registerProfilesRoute(app: Express, state: AppState): void {
       // upgradeProfileShape is idempotent: profiles already in the new shape pass through unchanged.
       // Legacy fields (connections / selectedTables / tableOptions / columnMasking) are preserved on
       // the returned object so that Phase-3-unaware code paths keep working until Phase 3 removes them.
-      for (const [profileName, rawProfile] of Object.entries(data.profiles as Record<string, Record<string, unknown>>)) {
+      for (const [profileName, rawProfile] of Object.entries(
+        data.profiles as Record<string, Record<string, unknown>>,
+      )) {
         try {
-          data.profiles[profileName] = upgradeProfileShape(rawProfile) as unknown as Record<string, unknown>;
+          data.profiles[profileName] = upgradeProfileShape(rawProfile) as unknown as Record<
+            string,
+            unknown
+          >;
         } catch {
           // If migration fails (e.g. unexpected shape), log and keep the raw object as-is.
-          state.logger?.warn(`upgradeProfileShape failed for profile "${profileName}" — persisting as-is`, {
-            component: 'profiles',
-          });
+          state.logger?.warn(
+            `upgradeProfileShape failed for profile "${profileName}" — persisting as-is`,
+            {
+              component: 'profiles',
+            },
+          );
         }
       }
 
@@ -202,8 +237,14 @@ export function registerProfilesRoute(app: Express, state: AppState): void {
 
       // Backward compat: set default connections on profiles that lack the field
       if (data.profiles && typeof data.profiles === 'object') {
-        for (const profile of Object.values(data.profiles as Record<string, Record<string, unknown>>)) {
-          if (!profile.connections || !Array.isArray(profile.connections) || profile.connections.length === 0) {
+        for (const profile of Object.values(
+          data.profiles as Record<string, Record<string, unknown>>,
+        )) {
+          if (
+            !profile.connections ||
+            !Array.isArray(profile.connections) ||
+            profile.connections.length === 0
+          ) {
             profile.connections = ['default'];
           }
         }
@@ -227,14 +268,14 @@ export function registerProfilesRoute(app: Express, state: AppState): void {
 
       // Strip OAuth clientSecret from profiles before sending to the browser
       if (data.profiles && typeof data.profiles === 'object') {
-        for (const profile of Object.values(data.profiles as Record<string, Record<string, unknown>>)) {
+        for (const profile of Object.values(
+          data.profiles as Record<string, Record<string, unknown>>,
+        )) {
           if (profile.oauthConfig && typeof profile.oauthConfig === 'object') {
             const oauthCfg = profile.oauthConfig as Record<string, unknown>;
             if (oauthCfg.clientSecret && typeof oauthCfg.clientSecret === 'string') {
               const s = oauthCfg.clientSecret as string;
-              oauthCfg.clientSecret = s.length > 4
-                ? s.slice(0, 2) + '***' + s.slice(-2)
-                : '***';
+              oauthCfg.clientSecret = s.length > 4 ? s.slice(0, 2) + '***' + s.slice(-2) : '***';
             }
           }
         }
@@ -244,7 +285,10 @@ export function registerProfilesRoute(app: Express, state: AppState): void {
       let warnings: ProfileWarning[] = [];
       if (data.profiles && state.cachedSchema) {
         warnings = validateProfiles(
-          data.profiles as Record<string, { selectedTables?: Record<string, string[]>; tableOptions?: Record<string, unknown> }>,
+          data.profiles as Record<
+            string,
+            { selectedTables?: Record<string, string[]>; tableOptions?: Record<string, unknown> }
+          >,
           state.cachedSchema.tables,
         );
       }
@@ -302,8 +346,12 @@ export function registerProfilesRoute(app: Express, state: AppState): void {
 
       // Upgrade on read so that the persisted object is in the new shape.
       try {
-        data.profiles[profileName] = upgradeProfileShape(data.profiles[profileName]) as unknown as Record<string, unknown>;
-      } catch { /* ignore — unexpected shape, keep as-is */ }
+        data.profiles[profileName] = upgradeProfileShape(
+          data.profiles[profileName],
+        ) as unknown as Record<string, unknown>;
+      } catch {
+        /* ignore — unexpected shape, keep as-is */
+      }
 
       data.profiles[profileName].responseMode = mode;
 

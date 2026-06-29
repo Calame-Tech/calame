@@ -9,14 +9,25 @@ import type { ToolContext, AccessibleTable } from '../tool-context.js';
 // ---------------------------------------------------------------------------
 
 export function registerListTablesGeneric(ctx: ToolContext, accessible: AccessibleTable[]): void {
-  const { server, executeQuery, dialect, onAuditLog, profileName, responseMode, wrapResponse, toolName } = ctx;
+  const {
+    server,
+    executeQuery,
+    dialect,
+    onAuditLog,
+    profileName,
+    responseMode,
+    wrapResponse,
+    toolName,
+  } = ctx;
   const friendly = responseMode === 'friendly';
 
-  const tableList = accessible.map(at => {
-    const tools = ['describe', 'aggregate', 'query', 'write'].filter(t => at.enabledTools.includes(t));
+  const tableList = accessible.map((at) => {
+    const tools = ['describe', 'aggregate', 'query', 'write'].filter((t) =>
+      at.enabledTools.includes(t),
+    );
     return {
       name: friendly ? snakeCaseToLabel(at.table.name) : at.table.name,
-      columns: at.visibleColumns.map(c => (friendly ? snakeCaseToLabel(c.name) : c.name)),
+      columns: at.visibleColumns.map((c) => (friendly ? snakeCaseToLabel(c.name) : c.name)),
       enabled: tools,
     };
   });
@@ -26,23 +37,27 @@ export function registerListTablesGeneric(ctx: ToolContext, accessible: Accessib
   // French here) and the default training language for tool calling. The
   // `friendly` response mode still drives user-facing output (column labels,
   // payload shape).
-  const desc = 'List all tables you have access to. Call this first if you are unsure which tables exist. Detailed schema (column types, enums, FK relations) is available via describe or in the aggregate/query tool descriptions.';
+  const desc =
+    'List all tables you have access to. Call this first if you are unsure which tables exist. Detailed schema (column types, enums, FK relations) is available via describe or in the aggregate/query tool descriptions.';
 
-  server.tool(
-    toolName('list_tables'),
-    desc,
-    {},
-    async () =>
-      executeWithAudit(
-        { executeQuery, dialect, onAuditLog, profileName, toolName: toolName('list_tables'), toolArgs: {} },
-        async () => {
-          const text = wrapResponse(JSON.stringify(tableList, null, 2));
-          return {
-            content: [{ type: 'text' as const, text }],
-            resultSummary: `${tableList.length} tables`,
-            resultData: text,
-          };
-        },
-      ),
+  server.tool(toolName('list_tables'), desc, {}, async () =>
+    executeWithAudit(
+      {
+        executeQuery,
+        dialect,
+        onAuditLog,
+        profileName,
+        toolName: toolName('list_tables'),
+        toolArgs: {},
+      },
+      async () => {
+        const text = wrapResponse(JSON.stringify(tableList, null, 2));
+        return {
+          content: [{ type: 'text' as const, text }],
+          resultSummary: `${tableList.length} tables`,
+          resultData: text,
+        };
+      },
+    ),
   );
 }

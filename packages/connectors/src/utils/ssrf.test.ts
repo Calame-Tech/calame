@@ -1,10 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  isPrivateIPv4,
-  isPrivateIPv6,
-  isPrivateOrLocalHost,
-  SsrfBlockedError,
-} from './ssrf.js';
+import { isPrivateIPv4, isPrivateIPv6, isPrivateOrLocalHost, SsrfBlockedError } from './ssrf.js';
 
 // ---------------------------------------------------------------------------
 // isPrivateIPv4 — table-driven
@@ -39,8 +34,8 @@ describe('isPrivateIPv4', () => {
     '54.239.28.85',
     '76.76.21.21',
     '99.86.0.1',
-    '203.0.113.1',   // TEST-NET-3 (not blocked by spec but not private)
-    '198.51.100.1',  // TEST-NET-2 (not blocked)
+    '203.0.113.1', // TEST-NET-3 (not blocked by spec but not private)
+    '198.51.100.1', // TEST-NET-2 (not blocked)
     '255.255.255.255',
   ];
 

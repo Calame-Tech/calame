@@ -17,12 +17,7 @@ import type {
   Unsubscribe,
   WatchEvent,
 } from './types.js';
-import {
-  deterministicId,
-  matchGlobs,
-  safeResolveUnderRoot,
-  streamSha256,
-} from './utils.js';
+import { deterministicId, matchGlobs, safeResolveUnderRoot, streamSha256 } from './utils.js';
 
 /**
  * Configuration for `LocalFolderConnector`. Stored encrypted by the host.
@@ -346,10 +341,7 @@ export class LocalFolderConnector implements DocumentSourceConnector {
       awaitWriteFinish: { stabilityThreshold: 500, pollInterval: 100 },
     });
 
-    const map = (
-      kind: 'add' | 'change' | 'unlink',
-      absPath: string,
-    ): WatchEvent | null => {
+    const map = (kind: 'add' | 'change' | 'unlink', absPath: string): WatchEvent | null => {
       const relPath = relative(root, absPath).split(sep).join('/');
       // chokidar can emit events for paths that resolve outside the root when
       // following symlinks; matchGlobs would still test, but a parent-escape
@@ -358,8 +350,7 @@ export class LocalFolderConnector implements DocumentSourceConnector {
       if (!matchGlobs(relPath, config.includeGlobs, config.excludeGlobs)) {
         return null;
       }
-      const type =
-        kind === 'add' ? 'created' : kind === 'change' ? 'updated' : 'deleted';
+      const type = kind === 'add' ? 'created' : kind === 'change' ? 'updated' : 'deleted';
       return { type, documentId: encodeDocId(relPath) };
     };
 

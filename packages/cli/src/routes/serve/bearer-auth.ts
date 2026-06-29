@@ -39,7 +39,12 @@ export async function verifyBearerToken(
 ): Promise<BearerAuthResult> {
   const tokenManager = state.tokenManager;
   if (!tokenManager) {
-    return { error: 'Token manager not initialized.', status: 500, allowedTables: null, allowedTools: null };
+    return {
+      error: 'Token manager not initialized.',
+      status: 500,
+      allowedTables: null,
+      allowedTools: null,
+    };
   }
 
   let authenticatedProfileName: string | undefined;

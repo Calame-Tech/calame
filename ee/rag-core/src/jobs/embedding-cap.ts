@@ -17,26 +17,26 @@ import type { Database as BetterSqlite3Database } from 'better-sqlite3';
  * because `rag_jobs.tenant_id` is already keyed.
  */
 export interface EmbeddingCapConfig {
-	/**
-	 * Maximum tokens (sum of `chunk.tokenCount`) that may be embedded by a
-	 * given (tenant, calendar-month-UTC) pair before {@link assertWithinCap}
-	 * starts throwing. `0` (or any non-positive value) disables the check
-	 * entirely — same effect as not configuring a cap.
-	 */
-	monthlyTokenCap: number;
-	/**
-	 * Soft warning threshold expressed as a fraction of `monthlyTokenCap`
-	 * (range 0..1). When `currentMonthTokens / monthlyTokenCap` crosses this
-	 * value the UI surfaces a non-fatal banner; sync continues normally
-	 * until the hard cap is reached. Defaults to `0.8` when unspecified.
-	 */
-	warningThreshold?: number;
+  /**
+   * Maximum tokens (sum of `chunk.tokenCount`) that may be embedded by a
+   * given (tenant, calendar-month-UTC) pair before {@link assertWithinCap}
+   * starts throwing. `0` (or any non-positive value) disables the check
+   * entirely — same effect as not configuring a cap.
+   */
+  monthlyTokenCap: number;
+  /**
+   * Soft warning threshold expressed as a fraction of `monthlyTokenCap`
+   * (range 0..1). When `currentMonthTokens / monthlyTokenCap` crosses this
+   * value the UI surfaces a non-fatal banner; sync continues normally
+   * until the hard cap is reached. Defaults to `0.8` when unspecified.
+   */
+  warningThreshold?: number;
 }
 
 /** Dependencies for cap helpers — the SQLite handle plus the parsed config. */
 export interface EmbeddingCapDeps {
-	db: BetterSqlite3Database;
-	config: EmbeddingCapConfig;
+  db: BetterSqlite3Database;
+  config: EmbeddingCapConfig;
 }
 
 /**
@@ -52,20 +52,20 @@ export interface EmbeddingCapDeps {
  *  - tells the operator exactly which env var to raise.
  */
 export class EmbeddingCapExceededError extends Error {
-	constructor(
-		public readonly tenantId: string,
-		public readonly currentTokens: number,
-		public readonly cap: number,
-		public readonly attemptedTokens: number,
-	) {
-		super(
-			`Monthly embedding cap exceeded for tenant '${tenantId}': ` +
-				`${currentTokens.toLocaleString('en-US')} + ${attemptedTokens.toLocaleString('en-US')} ` +
-				`would exceed cap ${cap.toLocaleString('en-US')}. ` +
-				`Wait until next month or raise CALAME_RAG_MONTHLY_TOKEN_CAP.`,
-		);
-		this.name = 'EmbeddingCapExceededError';
-	}
+  constructor(
+    public readonly tenantId: string,
+    public readonly currentTokens: number,
+    public readonly cap: number,
+    public readonly attemptedTokens: number,
+  ) {
+    super(
+      `Monthly embedding cap exceeded for tenant '${tenantId}': ` +
+        `${currentTokens.toLocaleString('en-US')} + ${attemptedTokens.toLocaleString('en-US')} ` +
+        `would exceed cap ${cap.toLocaleString('en-US')}. ` +
+        `Wait until next month or raise CALAME_RAG_MONTHLY_TOKEN_CAP.`,
+    );
+    this.name = 'EmbeddingCapExceededError';
+  }
 }
 
 /**
@@ -76,13 +76,13 @@ export class EmbeddingCapExceededError extends Error {
  * timezones must still agree on a single roll-over moment.
  */
 export function currentMonthStartIso(now: Date = new Date()): string {
-	const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-	return start.toISOString();
+  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  return start.toISOString();
 }
 
 /** Internal — narrow row shape for the aggregate query. */
 interface SumRow {
-	tokens: number | null;
+  tokens: number | null;
 }
 
 /**
@@ -100,39 +100,39 @@ interface SumRow {
  * DB never causes a hard failure here.
  */
 export function getCurrentMonthTokens(
-	db: BetterSqlite3Database,
-	tenantId: string,
-	now: Date = new Date(),
+  db: BetterSqlite3Database,
+  tenantId: string,
+  now: Date = new Date(),
 ): number {
-	// Probe for the column we depend on. `pragma table_info()` is cheap and
-	// avoids surprising "no such column" errors on partial fixtures.
-	let hasTokensColumn = false;
-	try {
-		const cols = db.pragma('table_info(rag_jobs)') as Array<{ name: string }>;
-		hasTokensColumn = cols.some((c) => c.name === 'tokens_embedded');
-	} catch {
-		return 0;
-	}
-	if (!hasTokensColumn) return 0;
+  // Probe for the column we depend on. `pragma table_info()` is cheap and
+  // avoids surprising "no such column" errors on partial fixtures.
+  let hasTokensColumn = false;
+  try {
+    const cols = db.pragma('table_info(rag_jobs)') as Array<{ name: string }>;
+    hasTokensColumn = cols.some((c) => c.name === 'tokens_embedded');
+  } catch {
+    return 0;
+  }
+  if (!hasTokensColumn) return 0;
 
-	const sinceIso = currentMonthStartIso(now);
-	try {
-		const row = db
-			.prepare<[string, string], SumRow>(
-				`SELECT COALESCE(SUM(j.tokens_embedded), 0) AS tokens
+  const sinceIso = currentMonthStartIso(now);
+  try {
+    const row = db
+      .prepare<[string, string], SumRow>(
+        `SELECT COALESCE(SUM(j.tokens_embedded), 0) AS tokens
 				 FROM rag_jobs j
 				 LEFT JOIN rag_sources s ON s.id = j.source_id
 				 WHERE j.status = 'completed'
 				   AND j.tenant_id = ?
 				   AND j.started_at >= ?
 				   AND (s.id IS NULL OR s.deleted_at IS NULL)`,
-			)
-			.get(tenantId, sinceIso);
-		return row?.tokens ?? 0;
-	} catch {
-		// `rag_jobs` missing entirely → no usage history, no cap to enforce.
-		return 0;
-	}
+      )
+      .get(tenantId, sinceIso);
+    return row?.tokens ?? 0;
+  } catch {
+    // `rag_jobs` missing entirely → no usage history, no cap to enforce.
+    return 0;
+  }
 }
 
 /**
@@ -150,19 +150,19 @@ export function getCurrentMonthTokens(
  * cleanly without paying for the doomed embed call.
  */
 export function assertWithinCap(
-	deps: EmbeddingCapDeps,
-	tenantId: string,
-	attemptedTokens: number,
-	now: Date = new Date(),
+  deps: EmbeddingCapDeps,
+  tenantId: string,
+  attemptedTokens: number,
+  now: Date = new Date(),
 ): void {
-	const cap = deps.config.monthlyTokenCap;
-	if (!Number.isFinite(cap) || cap <= 0) return;
-	if (!Number.isFinite(attemptedTokens) || attemptedTokens <= 0) return;
+  const cap = deps.config.monthlyTokenCap;
+  if (!Number.isFinite(cap) || cap <= 0) return;
+  if (!Number.isFinite(attemptedTokens) || attemptedTokens <= 0) return;
 
-	const current = getCurrentMonthTokens(deps.db, tenantId, now);
-	if (current + attemptedTokens > cap) {
-		throw new EmbeddingCapExceededError(tenantId, current, cap, attemptedTokens);
-	}
+  const current = getCurrentMonthTokens(deps.db, tenantId, now);
+  if (current + attemptedTokens > cap) {
+    throw new EmbeddingCapExceededError(tenantId, current, cap, attemptedTokens);
+  }
 }
 
 /**
@@ -180,12 +180,12 @@ export function assertWithinCap(
  * which is the intended use case.
  */
 export function parseMonthlyCapEnv(envValue: string | undefined): number {
-	if (typeof envValue !== 'string') return 0;
-	const trimmed = envValue.trim();
-	if (trimmed.length === 0) return 0;
-	const n = Number.parseInt(trimmed, 10);
-	if (!Number.isFinite(n) || n < 0) return 0;
-	return n;
+  if (typeof envValue !== 'string') return 0;
+  const trimmed = envValue.trim();
+  if (trimmed.length === 0) return 0;
+  const n = Number.parseInt(trimmed, 10);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return n;
 }
 
 /** Default warning threshold used when {@link EmbeddingCapConfig.warningThreshold} is unset. */
@@ -197,10 +197,10 @@ export const DEFAULT_CAP_WARNING_THRESHOLD = 0.8;
  * value when the config omits it.
  */
 export function resolveWarningThreshold(config: EmbeddingCapConfig): number {
-	const raw = config.warningThreshold;
-	if (!Number.isFinite(raw)) return DEFAULT_CAP_WARNING_THRESHOLD;
-	const v = raw as number;
-	if (v < 0) return 0;
-	if (v > 1) return 1;
-	return v;
+  const raw = config.warningThreshold;
+  if (!Number.isFinite(raw)) return DEFAULT_CAP_WARNING_THRESHOLD;
+  const v = raw as number;
+  if (v < 0) return 0;
+  if (v > 1) return 1;
+  return v;
 }

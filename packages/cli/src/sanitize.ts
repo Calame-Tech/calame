@@ -10,7 +10,7 @@
  *   2. libpq key=value DSN: `password=secret` → `password=***`
  */
 export function redactSecrets(input: string): string {
-	return input
-		.replace(/([a-z][a-z0-9+.-]*:\/\/)[^\s/@]+@/gi, '$1***@')
-		.replace(/\b(password|pwd|passwd)\s*=\s*('[^']*'|"[^"]*"|\S+)/gi, '$1=***');
+  return input
+    .replace(/([a-z][a-z0-9+.-]*:\/\/)[^\s/@]+@/gi, '$1***@')
+    .replace(/\b(password|pwd|passwd)\s*=\s*('[^']*'|"[^"]*"|\S+)/gi, '$1=***');
 }

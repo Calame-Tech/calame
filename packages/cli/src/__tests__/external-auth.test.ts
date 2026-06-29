@@ -119,7 +119,9 @@ describe('validateExternalToken', () => {
   });
 
   it('returns { valid: false } when fetch times out (AbortError)', async () => {
-    vi.mocked(fetch).mockRejectedValue(new DOMException('The operation was aborted.', 'AbortError'));
+    vi.mocked(fetch).mockRejectedValue(
+      new DOMException('The operation was aborted.', 'AbortError'),
+    );
 
     const config: ExternalAuthConfig = { validationUrl: 'https://auth.example.com/validate' };
     const result = await validateExternalToken('tok', config);

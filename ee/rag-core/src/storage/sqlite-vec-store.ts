@@ -11,14 +11,14 @@ import type { VectorStore } from '../types.js';
  * This typically happens on Windows when the native binary needs a rebuild.
  */
 export class SqliteVecLoadError extends Error {
-	constructor(cause: unknown) {
-		const reason = cause instanceof Error ? cause.message : String(cause);
-		super(
-			`Failed to load sqlite-vec extension. On Windows, run "pnpm rebuild" to ` +
-				`rebuild the native better-sqlite3 binding, then retry. Underlying error: ${reason}`,
-		);
-		this.name = 'SqliteVecLoadError';
-	}
+  constructor(cause: unknown) {
+    const reason = cause instanceof Error ? cause.message : String(cause);
+    super(
+      `Failed to load sqlite-vec extension. On Windows, run "pnpm rebuild" to ` +
+        `rebuild the native better-sqlite3 binding, then retry. Underlying error: ${reason}`,
+    );
+    this.name = 'SqliteVecLoadError';
+  }
 }
 
 /**
@@ -26,14 +26,14 @@ export class SqliteVecLoadError extends Error {
  * the one requested by this store instance.
  */
 export class SqliteVecDimensionMismatchError extends Error {
-	constructor(existing: number, requested: number) {
-		super(
-			`rag_chunks_vec already exists with dimension=${existing}, but this store ` +
-				`was constructed with dimension=${requested}. The vector table dimension is ` +
-				`fixed at create time — drop or migrate the table before changing dimension.`,
-		);
-		this.name = 'SqliteVecDimensionMismatchError';
-	}
+  constructor(existing: number, requested: number) {
+    super(
+      `rag_chunks_vec already exists with dimension=${existing}, but this store ` +
+        `was constructed with dimension=${requested}. The vector table dimension is ` +
+        `fixed at create time — drop or migrate the table before changing dimension.`,
+    );
+    this.name = 'SqliteVecDimensionMismatchError';
+  }
 }
 
 /**
@@ -49,36 +49,36 @@ export class SqliteVecDimensionMismatchError extends Error {
  * surface a clear error.
  */
 export function resetVecTableIfDimensionMismatch(
-	db: BetterSqlite3Database,
-	requestedDimension: number,
+  db: BetterSqlite3Database,
+  requestedDimension: number,
 ): { reset: boolean; reason?: string; previousDimension?: number; chunkCount?: number } {
-	const existing = db
-		.prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='rag_chunks_vec'`)
-		.get() as { sql: string } | undefined;
-	if (!existing) return { reset: false, reason: 'no-table' };
+  const existing = db
+    .prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='rag_chunks_vec'`)
+    .get() as { sql: string } | undefined;
+  if (!existing) return { reset: false, reason: 'no-table' };
 
-	const match = /FLOAT\[(\d+)\]/i.exec(existing.sql);
-	const declared = match ? Number.parseInt(match[1] ?? '0', 10) : 0;
-	if (declared === requestedDimension) return { reset: false, reason: 'dimension-matches' };
+  const match = /FLOAT\[(\d+)\]/i.exec(existing.sql);
+  const declared = match ? Number.parseInt(match[1] ?? '0', 10) : 0;
+  if (declared === requestedDimension) return { reset: false, reason: 'dimension-matches' };
 
-	const chunkRow = db.prepare(`SELECT COUNT(*) AS n FROM rag_chunks`).get() as { n: number };
-	if (chunkRow.n > 0) {
-		return {
-			reset: false,
-			reason: 'chunks-present',
-			previousDimension: declared,
-			chunkCount: chunkRow.n,
-		};
-	}
+  const chunkRow = db.prepare(`SELECT COUNT(*) AS n FROM rag_chunks`).get() as { n: number };
+  if (chunkRow.n > 0) {
+    return {
+      reset: false,
+      reason: 'chunks-present',
+      previousDimension: declared,
+      chunkCount: chunkRow.n,
+    };
+  }
 
-	// Safe to recreate. sqlite-vec must be loaded to DROP a vec0 virtual table.
-	try {
-		sqliteVec.load(db);
-	} catch (error) {
-		throw new SqliteVecLoadError(error);
-	}
-	db.exec('DROP TABLE rag_chunks_vec');
-	return { reset: true, previousDimension: declared };
+  // Safe to recreate. sqlite-vec must be loaded to DROP a vec0 virtual table.
+  try {
+    sqliteVec.load(db);
+  } catch (error) {
+    throw new SqliteVecLoadError(error);
+  }
+  db.exec('DROP TABLE rag_chunks_vec');
+  return { reset: true, previousDimension: declared };
 }
 
 /**
@@ -87,99 +87,102 @@ export function resetVecTableIfDimensionMismatch(
  * and validated on construction.
  */
 export class SqliteVecStore implements VectorStore {
-	private readonly db: BetterSqlite3Database;
-	private readonly dimensions: number;
-	private readonly stmtUpsert: Statement;
-	private readonly stmtSearch: Statement;
-	private readonly stmtDelete: Statement;
-	private readonly stmtDeleteByDocument: Statement;
+  private readonly db: BetterSqlite3Database;
+  private readonly dimensions: number;
+  private readonly stmtUpsert: Statement;
+  private readonly stmtSearch: Statement;
+  private readonly stmtDelete: Statement;
+  private readonly stmtDeleteByDocument: Statement;
 
-	constructor(db: BetterSqlite3Database, dimensions: number) {
-		if (!Number.isInteger(dimensions) || dimensions <= 0) {
-			throw new Error(`SqliteVecStore: dimensions must be a positive integer, got ${dimensions}`);
-		}
-		this.db = db;
-		this.dimensions = dimensions;
+  constructor(db: BetterSqlite3Database, dimensions: number) {
+    if (!Number.isInteger(dimensions) || dimensions <= 0) {
+      throw new Error(`SqliteVecStore: dimensions must be a positive integer, got ${dimensions}`);
+    }
+    this.db = db;
+    this.dimensions = dimensions;
 
-		try {
-			sqliteVec.load(db);
-		} catch (error) {
-			throw new SqliteVecLoadError(error);
-		}
+    try {
+      sqliteVec.load(db);
+    } catch (error) {
+      throw new SqliteVecLoadError(error);
+    }
 
-		this.ensureVecTable();
+    this.ensureVecTable();
 
-		this.stmtUpsert = db.prepare(
-			`INSERT OR REPLACE INTO rag_chunks_vec (chunk_id, embedding) VALUES (?, ?)`,
-		);
-		this.stmtSearch = db.prepare(
-			`SELECT chunk_id AS chunkId, distance FROM rag_chunks_vec
+    this.stmtUpsert = db.prepare(
+      `INSERT OR REPLACE INTO rag_chunks_vec (chunk_id, embedding) VALUES (?, ?)`,
+    );
+    this.stmtSearch = db.prepare(
+      `SELECT chunk_id AS chunkId, distance FROM rag_chunks_vec
 			 WHERE embedding MATCH ? ORDER BY distance LIMIT ?`,
-		);
-		this.stmtDelete = db.prepare(`DELETE FROM rag_chunks_vec WHERE chunk_id = ?`);
-		this.stmtDeleteByDocument = db.prepare(
-			`DELETE FROM rag_chunks_vec WHERE chunk_id IN (
+    );
+    this.stmtDelete = db.prepare(`DELETE FROM rag_chunks_vec WHERE chunk_id = ?`);
+    this.stmtDeleteByDocument = db.prepare(
+      `DELETE FROM rag_chunks_vec WHERE chunk_id IN (
 			   SELECT id FROM rag_chunks WHERE document_id = ?
 			 )`,
-		);
-	}
+    );
+  }
 
-	/**
-	 * Create the vec0 virtual table if missing, otherwise validate that its
-	 * declared dimension matches. The dimension is fixed at create time.
-	 */
-	private ensureVecTable(): void {
-		const existing = this.db
-			.prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='rag_chunks_vec'`)
-			.get() as { sql: string } | undefined;
+  /**
+   * Create the vec0 virtual table if missing, otherwise validate that its
+   * declared dimension matches. The dimension is fixed at create time.
+   */
+  private ensureVecTable(): void {
+    const existing = this.db
+      .prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='rag_chunks_vec'`)
+      .get() as { sql: string } | undefined;
 
-		if (existing) {
-			const match = /FLOAT\[(\d+)\]/i.exec(existing.sql);
-			const declared = match ? Number.parseInt(match[1] ?? '0', 10) : 0;
-			if (declared !== this.dimensions) {
-				throw new SqliteVecDimensionMismatchError(declared, this.dimensions);
-			}
-			return;
-		}
+    if (existing) {
+      const match = /FLOAT\[(\d+)\]/i.exec(existing.sql);
+      const declared = match ? Number.parseInt(match[1] ?? '0', 10) : 0;
+      if (declared !== this.dimensions) {
+        throw new SqliteVecDimensionMismatchError(declared, this.dimensions);
+      }
+      return;
+    }
 
-		this.db.exec(
-			`CREATE VIRTUAL TABLE IF NOT EXISTS rag_chunks_vec USING vec0(
+    this.db.exec(
+      `CREATE VIRTUAL TABLE IF NOT EXISTS rag_chunks_vec USING vec0(
 			   chunk_id TEXT PRIMARY KEY,
 			   embedding FLOAT[${this.dimensions}]
 			 )`,
-		);
-	}
+    );
+  }
 
-	upsert(chunkId: string, embedding: Float32Array): void {
-		if (embedding.length !== this.dimensions) {
-			throw new Error(
-				`SqliteVecStore.upsert: embedding length=${embedding.length} does not match ` +
-					`store dimension=${this.dimensions}`,
-			);
-		}
-		// sqlite-vec accepts a Buffer view of a Float32Array as a vector blob.
-		this.stmtUpsert.run(chunkId, Buffer.from(embedding.buffer, embedding.byteOffset, embedding.byteLength));
-	}
+  upsert(chunkId: string, embedding: Float32Array): void {
+    if (embedding.length !== this.dimensions) {
+      throw new Error(
+        `SqliteVecStore.upsert: embedding length=${embedding.length} does not match ` +
+          `store dimension=${this.dimensions}`,
+      );
+    }
+    // sqlite-vec accepts a Buffer view of a Float32Array as a vector blob.
+    this.stmtUpsert.run(
+      chunkId,
+      Buffer.from(embedding.buffer, embedding.byteOffset, embedding.byteLength),
+    );
+  }
 
-	search(query: Float32Array, topK: number): Array<{ chunkId: string; distance: number }> {
-		if (query.length !== this.dimensions) {
-			throw new Error(
-				`SqliteVecStore.search: query length=${query.length} does not match ` +
-					`store dimension=${this.dimensions}`,
-			);
-		}
-		if (!Number.isInteger(topK) || topK <= 0) {
-			throw new Error(`SqliteVecStore.search: topK must be a positive integer, got ${topK}`);
-		}
-		const blob = Buffer.from(query.buffer, query.byteOffset, query.byteLength);
-		return this.stmtSearch.all(blob, topK) as Array<{ chunkId: string; distance: number }>;
-	}
+  search(query: Float32Array, topK: number): Array<{ chunkId: string; distance: number }> {
+    if (query.length !== this.dimensions) {
+      throw new Error(
+        `SqliteVecStore.search: query length=${query.length} does not match ` +
+          `store dimension=${this.dimensions}`,
+      );
+    }
+    if (!Number.isInteger(topK) || topK <= 0) {
+      throw new Error(`SqliteVecStore.search: topK must be a positive integer, got ${topK}`);
+    }
+    const blob = Buffer.from(query.buffer, query.byteOffset, query.byteLength);
+    return this.stmtSearch.all(blob, topK) as Array<{ chunkId: string; distance: number }>;
+  }
 
-	delete(chunkId: string): void {
-		this.stmtDelete.run(chunkId);
-	}
+  delete(chunkId: string): void {
+    this.stmtDelete.run(chunkId);
+  }
 
-	deleteByDocument(documentId: string): void {
-		this.stmtDeleteByDocument.run(documentId);
-	}
+  deleteByDocument(documentId: string): void {
+    this.stmtDeleteByDocument.run(documentId);
+  }
 }

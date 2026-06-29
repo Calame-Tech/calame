@@ -78,8 +78,7 @@ export function useActiveSyncJobs(
   const cancelledRef = useRef(false);
 
   const buildMap = useCallback(
-    (jobs: RagJob[]): Map<string, SourceJobInfo> =>
-      buildJobMap(sourceIdsRef.current, jobs),
+    (jobs: RagJob[]): Map<string, SourceJobInfo> => buildJobMap(sourceIdsRef.current, jobs),
     [],
   );
 

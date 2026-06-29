@@ -1,8 +1,4 @@
-import type {
-  TableToolOptions,
-  ColumnMasking,
-  ScopeSelection,
-} from '@calame/core';
+import type { TableToolOptions, ColumnMasking, ScopeSelection } from '@calame/core';
 import {
   getConfigurationColumnMasking,
   getConfigurationRelationalSources,
@@ -45,9 +41,7 @@ const MASKING_ORDER: readonly string[] = [
 /** Narrowed document scope type. */
 type DocumentScope = Extract<ScopeSelection, { kind: 'document' }>;
 
-export function mergeConfigurations(
-  configs: ServeConfiguration[],
-): {
+export function mergeConfigurations(configs: ServeConfiguration[]): {
   connections: string[];
   selectedTables: Record<string, string[]>;
   tableOptions: Record<string, TableToolOptions>;
@@ -99,10 +93,16 @@ export function mergeConfigurations(
         // Max of maxLimit
         existing.maxLimit = Math.max(existing.maxLimit, opts.maxLimit ?? 200);
         // Union of filterableColumns
-        const filterSet = new Set([...(existing.filterableColumns ?? []), ...(opts.filterableColumns ?? [])]);
+        const filterSet = new Set([
+          ...(existing.filterableColumns ?? []),
+          ...(opts.filterableColumns ?? []),
+        ]);
         existing.filterableColumns = [...filterSet];
         // Union of groupableColumns
-        const groupSet = new Set([...(existing.groupableColumns ?? []), ...(opts.groupableColumns ?? [])]);
+        const groupSet = new Set([
+          ...(existing.groupableColumns ?? []),
+          ...(opts.groupableColumns ?? []),
+        ]);
         existing.groupableColumns = [...groupSet];
       }
     }

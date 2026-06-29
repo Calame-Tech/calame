@@ -10,7 +10,13 @@ interface ConnectionFormProps {
   onConnected: (schema: DatabaseSchema) => void;
 }
 
-const DB_OPTIONS: { type: DatabaseType; label: string; description: string; placeholder: string; helpText: string }[] = [
+const DB_OPTIONS: {
+  type: DatabaseType;
+  label: string;
+  description: string;
+  placeholder: string;
+  helpText: string;
+}[] = [
   {
     type: 'postgresql',
     label: 'PostgreSQL',
@@ -34,8 +40,7 @@ const DB_OPTIONS: { type: DatabaseType; label: string; description: string; plac
   },
 ];
 
-const TEXTAREA_CLASS =
-  'input-editorial w-full text-xs resize-none';
+const TEXTAREA_CLASS = 'input-editorial w-full text-xs resize-none';
 
 export default function ConnectionForm({
   connectionString,
@@ -110,8 +115,18 @@ export default function ConnectionForm({
     <div className="max-w-xl mx-auto">
       <div className="flex items-center gap-3 mb-4">
         <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-os-700/20 ring-1 ring-os-600/30">
-          <svg className="w-5 h-5 text-os-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125v-3.75" />
+          <svg
+            className="w-5 h-5 text-os-400"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={1.5}
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125v-3.75"
+            />
           </svg>
         </div>
         <div>
@@ -168,9 +183,7 @@ export default function ConnectionForm({
           {showPassword ? 'Hide' : 'Show'}
         </button>
       </div>
-      <p className="mt-2 text-xs text-gray-500">
-        {activeOption.helpText}
-      </p>
+      <p className="mt-2 text-xs text-gray-500">{activeOption.helpText}</p>
 
       {/* SSL/TLS section — only for PostgreSQL and MySQL */}
       {databaseType !== 'sqlite' && (
@@ -217,7 +230,10 @@ export default function ConnectionForm({
                 <>
                   {/* CA Certificate */}
                   <div>
-                    <label className="block text-xs font-medium text-gray-400 mb-1" htmlFor="ssl-ca">
+                    <label
+                      className="block text-xs font-medium text-gray-400 mb-1"
+                      htmlFor="ssl-ca"
+                    >
                       CA Certificate (PEM)
                     </label>
                     <textarea
@@ -235,7 +251,10 @@ export default function ConnectionForm({
 
                   {/* Client Certificate */}
                   <div>
-                    <label className="block text-xs font-medium text-gray-400 mb-1" htmlFor="ssl-cert">
+                    <label
+                      className="block text-xs font-medium text-gray-400 mb-1"
+                      htmlFor="ssl-cert"
+                    >
                       Client Certificate (PEM, optional)
                     </label>
                     <textarea
@@ -250,7 +269,10 @@ export default function ConnectionForm({
 
                   {/* Client Key */}
                   <div>
-                    <label className="block text-xs font-medium text-gray-400 mb-1" htmlFor="ssl-key">
+                    <label
+                      className="block text-xs font-medium text-gray-400 mb-1"
+                      htmlFor="ssl-key"
+                    >
                       Client Key (PEM, optional)
                     </label>
                     <textarea
@@ -275,7 +297,8 @@ export default function ConnectionForm({
                   </label>
                   {!sslRejectUnauthorized && (
                     <p className="text-xs text-yellow-500/80 bg-yellow-900/10 border border-yellow-700/30 rounded px-2 py-1">
-                      Warning: disabling certificate verification exposes you to man-in-the-middle attacks.
+                      Warning: disabling certificate verification exposes you to man-in-the-middle
+                      attacks.
                     </p>
                   )}
                 </>
@@ -293,15 +316,29 @@ export default function ConnectionForm({
       >
         {status === 'loading' && (
           <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            <circle
+              className="opacity-25"
+              cx="12"
+              cy="12"
+              r="10"
+              stroke="currentColor"
+              strokeWidth="4"
+            />
+            <path
+              className="opacity-75"
+              fill="currentColor"
+              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+            />
           </svg>
         )}
         {status === 'loading' ? 'Test en cours...' : 'Tester la connexion'}
       </button>
 
       {status === 'success' && (
-        <div className="mt-4 p-3 rounded-lg bg-green-500/10 border border-green-500/20" role="status">
+        <div
+          className="mt-4 p-3 rounded-lg bg-green-500/10 border border-green-500/20"
+          role="status"
+        >
           <p className="text-green-400 text-sm font-medium">{message}</p>
           {tableCount !== null && (
             <p className="text-green-300/70 text-xs mt-1">

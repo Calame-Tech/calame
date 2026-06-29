@@ -6,7 +6,13 @@ import type { AuditLogEntry } from '../../types.js';
 const executeQuery: ExecuteQuery = async () => ({ rows: [], fields: [] });
 
 function baseOpts(onAuditLog?: (e: Omit<AuditLogEntry, 'id' | 'timestamp'>) => void) {
-  return { executeQuery, profileName: 'p', toolName: 'query', toolArgs: { table: 't' }, onAuditLog };
+  return {
+    executeQuery,
+    profileName: 'p',
+    toolName: 'query',
+    toolArgs: { table: 't' },
+    onAuditLog,
+  };
 }
 
 describe('executeWithAudit', () => {

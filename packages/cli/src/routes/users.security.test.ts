@@ -61,10 +61,17 @@ const createUserManager = () => {
     listUsers: (filters: UserFilters, tenantId: string) =>
       Array.from(users.values())
         .filter((u) => u.tenant_id === tenantId)
-        .filter((u) => !filters.profileName || u.profiles?.some((p) => p.name === filters.profileName))
+        .filter(
+          (u) => !filters.profileName || u.profiles?.some((p) => p.name === filters.profileName),
+        )
         .filter((u) => !filters.role || u.role === filters.role)
         .filter((u) => !filters.status || u.status === filters.status)
-        .filter((u) => !filters.search || u.name?.includes(filters.search) || u.email?.includes(filters.search)),
+        .filter(
+          (u) =>
+            !filters.search ||
+            u.name?.includes(filters.search) ||
+            u.email?.includes(filters.search),
+        ),
     updateUser: (id: string, data: Partial<MockUser>) => {
       const u = users.get(id);
       if (u) Object.assign(u, data);
@@ -72,12 +79,18 @@ const createUserManager = () => {
     },
     disableUser: (id: string) => {
       const u = users.get(id);
-      if (u) { u.status = 'disabled'; u.disabledAt = new Date(); }
+      if (u) {
+        u.status = 'disabled';
+        u.disabledAt = new Date();
+      }
       return u;
     },
     enableUser: (id: string) => {
       const u = users.get(id);
-      if (u) { u.status = 'active'; u.disabledAt = null; }
+      if (u) {
+        u.status = 'active';
+        u.disabledAt = null;
+      }
       return u;
     },
     deleteUser: (id: string) => {
@@ -87,7 +100,10 @@ const createUserManager = () => {
     },
     addProfile: (userId: string, profile: MockProfile) => {
       const u = users.get(userId);
-      if (u) { u.profiles = u.profiles || []; u.profiles.push(profile); }
+      if (u) {
+        u.profiles = u.profiles || [];
+        u.profiles.push(profile);
+      }
       return u;
     },
     deleteProfile: (userId: string, profileName: string) => {
@@ -159,16 +175,12 @@ describe('Phase 2 — IDOR security tests', () => {
 
   describe('GET /:id', () => {
     it('returns 404 when cross-tenant access is attempted', async () => {
-      const res = await request(app)
-        .get(`/api/users/${'user-b'}`)
-        .set('X-Tenant-Id', 'tenant-a');
+      const res = await request(app).get(`/api/users/${'user-b'}`).set('X-Tenant-Id', 'tenant-a');
       expect(res.status).toBe(404);
     });
 
     it('returns 200 for same-tenant access', async () => {
-      const res = await request(app)
-        .get(`/api/users/${'user-a'}`)
-        .set('X-Tenant-Id', 'tenant-a');
+      const res = await request(app).get(`/api/users/${'user-a'}`).set('X-Tenant-Id', 'tenant-a');
       expect(res.status).toBe(200);
     });
 
@@ -176,32 +188,26 @@ describe('Phase 2 — IDOR security tests', () => {
       // B1: omitting X-Tenant-Id no longer 403s — it resolves to 'default'.
       // user-a belongs to 'tenant-a', so the default-tenant lookup still
       // can't reach it: cross-tenant access stays blocked with a 404.
-      const res = await request(app)
-        .get(`/api/users/${'user-a'}`);
+      const res = await request(app).get(`/api/users/${'user-a'}`);
       expect(res.status).toBe(404);
     });
 
     it('serves a default-tenant user when no tenant header is provided', async () => {
       userManager._add('user-default', 'default', { email: 'd@default.com' });
-      const res = await request(app)
-        .get(`/api/users/${'user-default'}`);
+      const res = await request(app).get(`/api/users/${'user-default'}`);
       expect(res.status).toBe(200);
     });
 
     it('returns 400 for malformed :id', async () => {
       // Express normalizes ../../etc/passwd → /etc/passwd, donc params.id = 'etc'
       // qui matche la regex. On teste un ID avec des caractères interdits.
-      const res = await request(app)
-        .get('/api/users/user%00b')
-        .set('X-Tenant-Id', 'tenant-a');
+      const res = await request(app).get('/api/users/user%00b').set('X-Tenant-Id', 'tenant-a');
       expect(res.status).toBe(400);
     });
 
     it('returns 400 for oversized :id', async () => {
       const oversized = 'a'.repeat(100);
-      const res = await request(app)
-        .get(`/api/users/${oversized}`)
-        .set('X-Tenant-Id', 'tenant-a');
+      const res = await request(app).get(`/api/users/${oversized}`).set('X-Tenant-Id', 'tenant-a');
       expect(res.status).toBe(400);
     });
   });

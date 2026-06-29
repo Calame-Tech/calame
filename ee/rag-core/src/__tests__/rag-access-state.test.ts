@@ -128,14 +128,14 @@ describe('deriveFolderCheckState', () => {
 
   it('returns partial when child folder is partial', () => {
     const folderMap: FolderMap = {
-      'parent': makeFolderNode({
+      parent: makeFolderNode({
         folder: makeFolder({ id: 'parent', path: 'docs' }),
         mode: 'strict',
         childFolderIds: ['child'],
         documents: [],
         checkedDocIds: new Set(),
       }),
-      'child': makeFolderNode({
+      child: makeFolderNode({
         folder: makeFolder({ id: 'child', path: 'docs/faq', parentId: 'parent' }),
         mode: 'strict',
         documents: [makeDocument({ id: 'doc-1' }), makeDocument({ id: 'doc-2' })],
@@ -220,12 +220,12 @@ describe('buildDocumentScope', () => {
 
   it('does not recurse into children of auto-include folders', () => {
     const folderMap: FolderMap = {
-      'parent': makeFolderNode({
+      parent: makeFolderNode({
         folder: makeFolder({ id: 'parent', path: 'docs' }),
         mode: 'auto-include',
         childFolderIds: ['child'],
       }),
-      'child': makeFolderNode({
+      child: makeFolderNode({
         folder: makeFolder({ id: 'child', path: 'docs/faq', parentId: 'parent' }),
         mode: 'strict',
         documents: [makeDocument({ id: 'doc-1' })],
@@ -250,8 +250,8 @@ describe('countSelected', () => {
 
   it('counts auto-include folders', () => {
     const folderMap: FolderMap = {
-      'f1': makeFolderNode({ mode: 'auto-include' }),
-      'f2': makeFolderNode({
+      f1: makeFolderNode({ mode: 'auto-include' }),
+      f2: makeFolderNode({
         folder: makeFolder({ id: 'f2', path: 'docs/guides' }),
         mode: 'auto-include',
       }),
@@ -263,7 +263,7 @@ describe('countSelected', () => {
 
   it('counts checked documents in strict mode', () => {
     const folderMap: FolderMap = {
-      'f1': makeFolderNode({
+      f1: makeFolderNode({
         mode: 'strict',
         documents: [makeDocument({ id: 'd1' }), makeDocument({ id: 'd2' })],
         checkedDocIds: new Set(['d1', 'd2']),
@@ -288,7 +288,7 @@ describe('countSelected', () => {
 describe('applyToggleFolder', () => {
   it('switches to auto-include and clears checkedDocIds when nextCheck=checked', () => {
     const folderMap: FolderMap = {
-      'f1': makeFolderNode({
+      f1: makeFolderNode({
         mode: 'strict',
         documents: [makeDocument({ id: 'd1' }), makeDocument({ id: 'd2' })],
         checkedDocIds: new Set(['d1']),
@@ -303,7 +303,7 @@ describe('applyToggleFolder', () => {
 
   it('switches to strict and clears checkedDocIds when nextCheck=unchecked', () => {
     const folderMap: FolderMap = {
-      'f1': makeFolderNode({
+      f1: makeFolderNode({
         mode: 'auto-include',
         documents: [makeDocument({ id: 'd1' })],
         checkedDocIds: new Set(),
@@ -318,21 +318,21 @@ describe('applyToggleFolder', () => {
     // The component never emits `partial` as a direct user intent — but the
     // helper must be deterministic on every possible CheckState value.
     const folderMap: FolderMap = {
-      'f1': makeFolderNode({ mode: 'auto-include' }),
+      f1: makeFolderNode({ mode: 'auto-include' }),
     };
     const next = applyToggleFolder('f1', 'partial', folderMap);
     expect(next['f1']!.mode).toBe('strict');
   });
 
   it('returns the same folderMap reference for an unknown folderId', () => {
-    const folderMap: FolderMap = { 'f1': makeFolderNode() };
+    const folderMap: FolderMap = { f1: makeFolderNode() };
     const next = applyToggleFolder('missing', 'checked', folderMap);
     expect(next).toBe(folderMap);
   });
 
   it('does not mutate the input map', () => {
     const node = makeFolderNode({ mode: 'strict', checkedDocIds: new Set(['d1']) });
-    const folderMap: FolderMap = { 'f1': node };
+    const folderMap: FolderMap = { f1: node };
     applyToggleFolder('f1', 'checked', folderMap);
     // Original node must still carry the pre-toggle state.
     expect(folderMap['f1']!.mode).toBe('strict');
@@ -352,7 +352,7 @@ describe('applyToggleDocument', () => {
       makeDocument({ id: 'd3', path: 'docs/faq/c.md' }),
     ];
     const folderMap: FolderMap = {
-      'f1': makeFolderNode({
+      f1: makeFolderNode({
         folder: makeFolder({ id: 'f1', name: 'faq' }),
         mode: 'auto-include',
         documents: docs,
@@ -373,7 +373,7 @@ describe('applyToggleDocument', () => {
 
   it('bascule on a single-doc auto-include folder produces an empty strict allowlist', () => {
     const folderMap: FolderMap = {
-      'f1': makeFolderNode({
+      f1: makeFolderNode({
         mode: 'auto-include',
         documents: [makeDocument({ id: 'only-doc' })],
         checkedDocIds: new Set(),
@@ -387,7 +387,7 @@ describe('applyToggleDocument', () => {
 
   it('in strict mode, adds a doc to the allowlist (no mode change, no toast)', () => {
     const folderMap: FolderMap = {
-      'f1': makeFolderNode({
+      f1: makeFolderNode({
         mode: 'strict',
         documents: [makeDocument({ id: 'd1' }), makeDocument({ id: 'd2' })],
         checkedDocIds: new Set(['d1']),
@@ -402,7 +402,7 @@ describe('applyToggleDocument', () => {
 
   it('in strict mode, removes a doc from the allowlist (no mode change, no toast)', () => {
     const folderMap: FolderMap = {
-      'f1': makeFolderNode({
+      f1: makeFolderNode({
         mode: 'strict',
         documents: [makeDocument({ id: 'd1' }), makeDocument({ id: 'd2' })],
         checkedDocIds: new Set(['d1', 'd2']),
@@ -415,7 +415,7 @@ describe('applyToggleDocument', () => {
   });
 
   it('returns the same folderMap and null toast for an unknown folderId', () => {
-    const folderMap: FolderMap = { 'f1': makeFolderNode() };
+    const folderMap: FolderMap = { f1: makeFolderNode() };
     const result = applyToggleDocument('missing', 'd1', folderMap);
     expect(result.folderMap).toBe(folderMap);
     expect(result.toastMessage).toBeNull();
@@ -423,7 +423,7 @@ describe('applyToggleDocument', () => {
 
   it('does not mutate the input map', () => {
     const folderMap: FolderMap = {
-      'f1': makeFolderNode({
+      f1: makeFolderNode({
         mode: 'auto-include',
         documents: [makeDocument({ id: 'd1' }), makeDocument({ id: 'd2' })],
       }),

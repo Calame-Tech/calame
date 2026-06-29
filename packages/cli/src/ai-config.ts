@@ -67,7 +67,8 @@ function parseCapabilities(raw: string | null): AiCapability[] | undefined {
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return undefined;
     const valid = parsed.filter(
-      (item): item is AiCapability => typeof item === 'string' && VALID_CAPABILITIES.has(item as AiCapability),
+      (item): item is AiCapability =>
+        typeof item === 'string' && VALID_CAPABILITIES.has(item as AiCapability),
     );
     return valid.length > 0 ? valid : undefined;
   } catch {
@@ -147,9 +148,7 @@ export class AiSettingsManager {
     this.stmtList = this.db.prepare(
       `SELECT * FROM ai_settings WHERE tenant_id = ? ORDER BY created_at ASC, name ASC`,
     );
-    this.stmtGet = this.db.prepare(
-      `SELECT * FROM ai_settings WHERE name = ? AND tenant_id = ?`,
-    );
+    this.stmtGet = this.db.prepare(`SELECT * FROM ai_settings WHERE name = ? AND tenant_id = ?`);
     this.stmtInsert = this.db.prepare(
       // The INSERT carries `tenant_id` explicitly. Callers pass the
       // request-resolved tenant in; legacy call sites that don't yet
@@ -163,9 +162,7 @@ export class AiSettingsManager {
        capabilities = ?, embedding_model = ?, embedding_dimensions = ?, rerank_model = ?
        WHERE name = ? AND tenant_id = ?`,
     );
-    this.stmtDelete = this.db.prepare(
-      `DELETE FROM ai_settings WHERE name = ? AND tenant_id = ?`,
-    );
+    this.stmtDelete = this.db.prepare(`DELETE FROM ai_settings WHERE name = ? AND tenant_id = ?`);
   }
 
   /** No-op — kept for backward compatibility. */
@@ -277,7 +274,9 @@ export class AiSettingsManager {
   }
 
   /** Returns the legacy single-config view (first setting, masked). */
-  getMaskedConfig(tenantId: string = DEFAULT_TENANT_ID): (AiConfig & { configured: boolean }) | null {
+  getMaskedConfig(
+    tenantId: string = DEFAULT_TENANT_ID,
+  ): (AiConfig & { configured: boolean }) | null {
     const first = this.listMaskedSettings(tenantId)[0];
     if (!first) return null;
     const { provider, apiKey, model, baseUrl, configured } = first;

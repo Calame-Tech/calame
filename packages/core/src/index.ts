@@ -9,7 +9,16 @@ export type {
 } from './introspect/types.js';
 
 // Serve (dynamic runtime engine)
-export { registerDynamicTools, registerCalcTool, computeDistinctValues, snakeCaseToLabel, friendlyType, buildLabelMap, buildReverseLabelMap, formatResponseRows } from './serve/index.js';
+export {
+  registerDynamicTools,
+  registerCalcTool,
+  computeDistinctValues,
+  snakeCaseToLabel,
+  friendlyType,
+  buildLabelMap,
+  buildReverseLabelMap,
+  formatResponseRows,
+} from './serve/index.js';
 export type { ComputeDistinctValuesOptions } from './serve/index.js';
 export type {
   ServeConfig,

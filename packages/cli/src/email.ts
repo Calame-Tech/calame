@@ -12,9 +12,7 @@ export class EmailService {
       host: config.smtpHost!,
       port: config.smtpPort,
       secure: config.smtpPort === 465,
-      auth: config.smtpUser
-        ? { user: config.smtpUser, pass: config.smtpPass ?? '' }
-        : undefined,
+      auth: config.smtpUser ? { user: config.smtpUser, pass: config.smtpPass ?? '' } : undefined,
     });
   }
 

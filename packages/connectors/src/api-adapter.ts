@@ -401,9 +401,7 @@ export function buildHttpApiSourceAdapter(): SourceAdapter<
           }
           if (!isHostAllowed(url, effectiveAllowedHosts)) {
             audit(args, `host ${url.host} not allowlisted`, 'error', t0);
-            return errorResponse(
-              `Host "${url.host}" is not in the source's allowedHosts.`,
-            );
+            return errorResponse(`Host "${url.host}" is not in the source's allowedHosts.`);
           }
 
           // Enforce path-prefix allowlist when defined

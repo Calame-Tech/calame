@@ -126,11 +126,7 @@ class ScopedScopeGuard implements ScopeGuard {
     };
   }
 
-  buildScopeOnlyWhereClause(
-    tableName: string,
-    dialect: Dialect,
-    startParamIndex = 1,
-  ): WhereResult {
+  buildScopeOnlyWhereClause(tableName: string, dialect: Dialect, startParamIndex = 1): WhereResult {
     return this.buildWhereClause(tableName, undefined, [], dialect, startParamIndex);
   }
 

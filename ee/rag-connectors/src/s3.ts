@@ -16,11 +16,7 @@ import {
 
 import type { RagDocument, RagFolder, RagSourceType } from '@calame-ee/rag-core';
 
-import type {
-  DocumentSourceConfig,
-  DocumentSourceConnector,
-  RateLimiterLike,
-} from './types.js';
+import type { DocumentSourceConfig, DocumentSourceConnector, RateLimiterLike } from './types.js';
 import { deterministicId, matchGlobs } from './utils.js';
 
 /**
@@ -170,9 +166,7 @@ function assertKeyUnderPrefix(key: string, prefix: string): void {
     }
   }
   if (prefix !== '' && !key.startsWith(prefix)) {
-    throw new Error(
-      `Invalid S3 key "${key}": does not start with configured prefix "${prefix}"`,
-    );
+    throw new Error(`Invalid S3 key "${key}": does not start with configured prefix "${prefix}"`);
   }
 }
 
@@ -442,9 +436,7 @@ export class S3Connector implements DocumentSourceConnector {
     let response;
     try {
       await this.#rateLimiter?.acquire('s3', clientCacheKey(config));
-      response = await client.send(
-        new GetObjectCommand({ Bucket: config.bucket, Key: key }),
-      );
+      response = await client.send(new GetObjectCommand({ Bucket: config.bucket, Key: key }));
     } catch (err: unknown) {
       const sdkErr = asSdkError(err);
       if (
@@ -467,9 +459,8 @@ export class S3Connector implements DocumentSourceConnector {
 
     const lookup = mime.lookup(key);
     const fallbackMime = typeof lookup === 'string' ? lookup : 'application/octet-stream';
-    const mimeType = response.ContentType && response.ContentType.length > 0
-      ? response.ContentType
-      : fallbackMime;
+    const mimeType =
+      response.ContentType && response.ContentType.length > 0 ? response.ContentType : fallbackMime;
 
     return { stream: body, mimeType };
   }

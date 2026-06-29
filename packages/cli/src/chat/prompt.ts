@@ -129,7 +129,10 @@ When the user asks about data in a related table (history, logs, audit, incident
 - NEVER ask the user for IDs — always fetch them yourself in step 1.
 - Do this automatically, without confirmation, even if it requires multiple tool calls.`;
 
-export function getDefaultSystemPrompt(responseMode?: 'friendly' | 'raw', options?: { scoped?: boolean }): string {
+export function getDefaultSystemPrompt(
+  responseMode?: 'friendly' | 'raw',
+  options?: { scoped?: boolean },
+): string {
   const prompt = buildSystemPrompt();
   let result = prompt;
   if (responseMode !== 'raw') result += FRIENDLY_ADDENDUM;

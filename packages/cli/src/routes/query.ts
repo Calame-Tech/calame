@@ -38,21 +38,24 @@ export function registerQueryRoute(app: Express, state: AppState): void {
 
       const table = state.cachedSchema.tables.find((t) => t.name === tableName);
       if (!table) {
-        res.status(404).json({ success: false, message: `Table "${tableName}" not found in schema.` });
+        res
+          .status(404)
+          .json({ success: false, message: `Table "${tableName}" not found in schema.` });
         return;
       }
 
       const connector = getConnector(state.cachedDatabaseType);
       const connectionString = state.cachedConnectionString;
       const connState = state.getConnection('default');
-      const connOptions = connState?.connection.sslConfig ? { ssl: connState.connection.sslConfig } : undefined;
+      const connOptions = connState?.connection.sslConfig
+        ? { ssl: connState.connection.sslConfig }
+        : undefined;
 
       const dbType = state.cachedDatabaseType;
       const usePositionalParams = dbType === 'postgresql';
 
       // Quote a column name according to the database dialect
-      const quoteCol = (col: string): string =>
-        dbType === 'mysql' ? `\`${col}\`` : `"${col}"`;
+      const quoteCol = (col: string): string => (dbType === 'mysql' ? `\`${col}\`` : `"${col}"`);
 
       // Build the FROM target according to the database dialect
       const fromTarget =

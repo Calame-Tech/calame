@@ -47,10 +47,34 @@ function mockFullIntrospect() {
   // 2. columns
   mockQuery.mockResolvedValueOnce([
     [
-      { column_name: 'id',      data_type: 'int',     is_nullable: 'NO',  column_default: null, table_name: 'users' },
-      { column_name: 'name',    data_type: 'varchar',  is_nullable: 'YES', column_default: null, table_name: 'users' },
-      { column_name: 'id',      data_type: 'int',     is_nullable: 'NO',  column_default: null, table_name: 'posts' },
-      { column_name: 'user_id', data_type: 'int',     is_nullable: 'NO',  column_default: null, table_name: 'posts' },
+      {
+        column_name: 'id',
+        data_type: 'int',
+        is_nullable: 'NO',
+        column_default: null,
+        table_name: 'users',
+      },
+      {
+        column_name: 'name',
+        data_type: 'varchar',
+        is_nullable: 'YES',
+        column_default: null,
+        table_name: 'users',
+      },
+      {
+        column_name: 'id',
+        data_type: 'int',
+        is_nullable: 'NO',
+        column_default: null,
+        table_name: 'posts',
+      },
+      {
+        column_name: 'user_id',
+        data_type: 'int',
+        is_nullable: 'NO',
+        column_default: null,
+        table_name: 'posts',
+      },
     ],
   ]);
 
@@ -64,9 +88,7 @@ function mockFullIntrospect() {
 
   // 4. foreign keys
   mockQuery.mockResolvedValueOnce([
-    [
-      { column_name: 'user_id', from_table: 'posts', to_table: 'users', to_column: 'id' },
-    ],
+    [{ column_name: 'user_id', from_table: 'posts', to_table: 'users', to_column: 'id' }],
   ]);
 }
 
@@ -121,9 +143,7 @@ describe('MySQLConnector', () => {
     it('throws when SELECT 1 query rejects', async () => {
       mockQuery.mockRejectedValueOnce(new Error('ER_ACCESS_DENIED_ERROR'));
 
-      await expect(connector.testConnection(VALID_DSN)).rejects.toThrow(
-        'ER_ACCESS_DENIED_ERROR',
-      );
+      await expect(connector.testConnection(VALID_DSN)).rejects.toThrow('ER_ACCESS_DENIED_ERROR');
       expect(mockEnd).toHaveBeenCalledOnce();
     });
 
@@ -142,21 +162,19 @@ describe('MySQLConnector', () => {
 
       await connector.testConnection('mysql://root@localhost/mydb');
 
-      expect(mysql.createConnection).toHaveBeenCalledWith(
-        expect.objectContaining({ port: 3306 }),
-      );
+      expect(mysql.createConnection).toHaveBeenCalledWith(expect.objectContaining({ port: 3306 }));
     });
 
     it('throws when DSN has wrong protocol', async () => {
-      await expect(
-        connector.testConnection('postgres://user:pass@host/db'),
-      ).rejects.toThrow('Unsupported protocol');
+      await expect(connector.testConnection('postgres://user:pass@host/db')).rejects.toThrow(
+        'Unsupported protocol',
+      );
     });
 
     it('throws when DSN has no database name', async () => {
-      await expect(
-        connector.testConnection('mysql://user:pass@host:3306'),
-      ).rejects.toThrow('database name');
+      await expect(connector.testConnection('mysql://user:pass@host:3306')).rejects.toThrow(
+        'database name',
+      );
     });
   });
 
@@ -175,8 +193,18 @@ describe('MySQLConnector', () => {
       expect(usersTable!.schema).toBe('testdb');
       expect(usersTable!.primaryKeys).toEqual(['id']);
       expect(usersTable!.columns).toHaveLength(2);
-      expect(usersTable!.columns[0]).toEqual({ name: 'id',   type: 'int',     nullable: false, defaultValue: null });
-      expect(usersTable!.columns[1]).toEqual({ name: 'name', type: 'varchar', nullable: true,  defaultValue: null });
+      expect(usersTable!.columns[0]).toEqual({
+        name: 'id',
+        type: 'int',
+        nullable: false,
+        defaultValue: null,
+      });
+      expect(usersTable!.columns[1]).toEqual({
+        name: 'name',
+        type: 'varchar',
+        nullable: true,
+        defaultValue: null,
+      });
 
       const postsTable = schema.tables.find((t) => t.name === 'posts');
       expect(postsTable).toBeDefined();
@@ -205,7 +233,15 @@ describe('MySQLConnector', () => {
     it('handles tables with no foreign keys', async () => {
       mockQuery.mockResolvedValueOnce([[{ table_name: 'users', table_schema: 'testdb' }]]);
       mockQuery.mockResolvedValueOnce([
-        [{ column_name: 'id', data_type: 'int', is_nullable: 'NO', column_default: null, table_name: 'users' }],
+        [
+          {
+            column_name: 'id',
+            data_type: 'int',
+            is_nullable: 'NO',
+            column_default: null,
+            table_name: 'users',
+          },
+        ],
       ]);
       mockQuery.mockResolvedValueOnce([[{ column_name: 'id', table_name: 'users' }]]);
       mockQuery.mockResolvedValueOnce([[]]); // no foreign keys
@@ -220,13 +256,25 @@ describe('MySQLConnector', () => {
       mockQuery.mockResolvedValueOnce([[{ table_name: 'order_items', table_schema: 'shop' }]]);
       mockQuery.mockResolvedValueOnce([
         [
-          { column_name: 'order_id',   data_type: 'int', is_nullable: 'NO', column_default: null, table_name: 'order_items' },
-          { column_name: 'product_id', data_type: 'int', is_nullable: 'NO', column_default: null, table_name: 'order_items' },
+          {
+            column_name: 'order_id',
+            data_type: 'int',
+            is_nullable: 'NO',
+            column_default: null,
+            table_name: 'order_items',
+          },
+          {
+            column_name: 'product_id',
+            data_type: 'int',
+            is_nullable: 'NO',
+            column_default: null,
+            table_name: 'order_items',
+          },
         ],
       ]);
       mockQuery.mockResolvedValueOnce([
         [
-          { column_name: 'order_id',   table_name: 'order_items' },
+          { column_name: 'order_id', table_name: 'order_items' },
           { column_name: 'product_id', table_name: 'order_items' },
         ],
       ]);

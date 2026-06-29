@@ -15,8 +15,8 @@ import type { CodeLanguage, ParsedDocumentFormat } from '../parsers/types.js';
  *   - `language` / `filename` → code chunker.
  */
 export interface PickChunkerHints {
-	language?: CodeLanguage;
-	filename?: string;
+  language?: CodeLanguage;
+  filename?: string;
 }
 
 /**
@@ -29,26 +29,26 @@ export interface PickChunkerHints {
  * {@link Chunker} signature `(text, opts) => Chunk[]`.
  */
 export function pickChunker(
-	format: ParsedDocumentFormat | string | undefined,
-	hints: PickChunkerHints = {},
+  format: ParsedDocumentFormat | string | undefined,
+  hints: PickChunkerHints = {},
 ): Chunker {
-	switch (format) {
-		case 'markdown':
-			return chunkMarkdown;
-		case 'csv':
-			return chunkCsv;
-		case 'code':
-			return (text, opts) =>
-				chunkCode(text, {
-					...opts,
-					language: hints.language,
-					filename: hints.filename,
-				});
-		case 'plain':
-			return chunkPlainText;
-		default:
-			return chunkPlainText;
-	}
+  switch (format) {
+    case 'markdown':
+      return chunkMarkdown;
+    case 'csv':
+      return chunkCsv;
+    case 'code':
+      return (text, opts) =>
+        chunkCode(text, {
+          ...opts,
+          language: hints.language,
+          filename: hints.filename,
+        });
+    case 'plain':
+      return chunkPlainText;
+    default:
+      return chunkPlainText;
+  }
 }
 
 export { chunkPlainText } from './plain-chunker.js';

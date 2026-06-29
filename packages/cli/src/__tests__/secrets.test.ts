@@ -18,9 +18,9 @@ describe('createSecretsProvider', () => {
   });
 
   it('throws for vault provider without vaultAddr', () => {
-    expect(() =>
-      createSecretsProvider({ provider: 'vault', vaultToken: 'token' }),
-    ).toThrow('CALAME_SECRETS_VAULT_ADDR');
+    expect(() => createSecretsProvider({ provider: 'vault', vaultToken: 'token' })).toThrow(
+      'CALAME_SECRETS_VAULT_ADDR',
+    );
   });
 
   it('throws for vault provider without vaultToken', () => {
@@ -30,15 +30,11 @@ describe('createSecretsProvider', () => {
   });
 
   it('throws for vault provider with neither addr nor token', () => {
-    expect(() => createSecretsProvider({ provider: 'vault' })).toThrow(
-      'CALAME_SECRETS_VAULT_ADDR',
-    );
+    expect(() => createSecretsProvider({ provider: 'vault' })).toThrow('CALAME_SECRETS_VAULT_ADDR');
   });
 
   it('throws for aws provider without awsRegion', () => {
-    expect(() => createSecretsProvider({ provider: 'aws' })).toThrow(
-      'CALAME_SECRETS_AWS_REGION',
-    );
+    expect(() => createSecretsProvider({ provider: 'aws' })).toThrow('CALAME_SECRETS_AWS_REGION');
   });
 
   it('returns a VaultProvider when vault config is complete', () => {

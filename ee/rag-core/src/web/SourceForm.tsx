@@ -161,7 +161,7 @@ function validateServiceAccountKey(raw: string): ServiceAccountKeyValidation {
     return { key: null, clientEmail: null, error: 'JSON invalide.' };
   }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    return { key: null, clientEmail: null, error: "Doit être un objet JSON." };
+    return { key: null, clientEmail: null, error: 'Doit être un objet JSON.' };
   }
   const obj = parsed as Record<string, unknown>;
   const email = typeof obj.client_email === 'string' ? obj.client_email : null;
@@ -517,7 +517,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
       if (notionApiKey.trim()) {
         const k = notionApiKey.trim();
         if (!k.startsWith('secret_') && !k.startsWith('ntn_')) {
-          return "La clé Notion doit commencer par `secret_` ou `ntn_`.";
+          return 'La clé Notion doit commencer par `secret_` ou `ntn_`.';
         }
       }
     }
@@ -527,7 +527,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
       if (!spClientId.trim()) return "L'ID de l'application (client ID) est requis.";
       // In edit mode the secret may be left blank (means "unchanged").
       if (!isEditing && !spClientSecret) {
-        return 'Le client secret de l\'application est requis.';
+        return "Le client secret de l'application est requis.";
       }
       if (!spSiteUrl.trim()) return "L'URL du site SharePoint est requise.";
     }
@@ -536,7 +536,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
       return 'Sélectionnez une configuration IA pour les embeddings.';
     }
     if (!selectedSettingSupportsEmbeddings) {
-      return "La configuration IA sélectionnée ne supporte pas les embeddings.";
+      return 'La configuration IA sélectionnée ne supporte pas les embeddings.';
     }
     return null;
   };
@@ -771,7 +771,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
       if (err instanceof ApiError && err.status === 409) {
         setError(
           "Toutes les sources RAG doivent utiliser le même modèle d'embeddings (dimension fixe). " +
-            "Réessaie avec une config IA dont le modèle a la même dimension que les sources existantes.",
+            'Réessaie avec une config IA dont le modèle a la même dimension que les sources existantes.',
         );
         setServerError(err.message);
       } else {
@@ -998,9 +998,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                 className="input-editorial w-full text-sm mt-1"
                 autoComplete="new-password"
               />
-              {isEditing && (
-                <HelperText>Laissez vide pour conserver la clé existante.</HelperText>
-              )}
+              {isEditing && <HelperText>Laissez vide pour conserver la clé existante.</HelperText>}
             </div>
           </div>
 
@@ -1030,7 +1028,9 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                     placeholder="docs/"
                     className="input-editorial w-full text-sm mt-1"
                   />
-                  <HelperText>Racine logique dans le bucket. Laisser vide pour tout le bucket.</HelperText>
+                  <HelperText>
+                    Racine logique dans le bucket. Laisser vide pour tout le bucket.
+                  </HelperText>
                 </div>
 
                 <div>
@@ -1054,9 +1054,14 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                     onChange={(e) => setS3ForcePathStyle(e.target.checked)}
                     className="mt-0.5 accent-os-500 focus:ring-2 focus:ring-os-500"
                   />
-                  <label htmlFor="s3-force-path-style" className="text-sm text-gray-400 select-none">
+                  <label
+                    htmlFor="s3-force-path-style"
+                    className="text-sm text-gray-400 select-none"
+                  >
                     Force path-style
-                    <HelperText>Requis pour MinIO. Désactiver pour AWS S3 et Cloudflare R2.</HelperText>
+                    <HelperText>
+                      Requis pour MinIO. Désactiver pour AWS S3 et Cloudflare R2.
+                    </HelperText>
                   </label>
                 </div>
 
@@ -1310,9 +1315,9 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               <li>Activer l'API Google Drive sur le projet.</li>
               <li>Générer et télécharger la clé JSON du Service Account.</li>
               <li>
-                Partager le dossier Drive avec l'email du Service Account
-                (champ <span className="font-mono-plex">client_email</span> de la clé JSON,
-                accès Viewer suffisant).
+                Partager le dossier Drive avec l'email du Service Account (champ{' '}
+                <span className="font-mono-plex">client_email</span> de la clé JSON, accès Viewer
+                suffisant).
               </li>
             </ol>
           </div>
@@ -1339,9 +1344,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               }`}
             />
             {gdriveKeyValidation.error && (
-              <p className="text-xs text-red-400 mt-1">
-                {gdriveKeyValidation.error}
-              </p>
+              <p className="text-xs text-red-400 mt-1">{gdriveKeyValidation.error}</p>
             )}
             {gdriveKeyValidation.clientEmail && !gdriveKeyValidation.error && (
               <p className="text-xs text-green-400 mt-1">
@@ -1349,9 +1352,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                 <span className="font-mono-plex">{gdriveKeyValidation.clientEmail}</span>
               </p>
             )}
-            {isEditing && (
-              <HelperText>Laissez vide pour conserver la clé enregistrée.</HelperText>
-            )}
+            {isEditing && <HelperText>Laissez vide pour conserver la clé enregistrée.</HelperText>}
           </div>
 
           {/* Root folder ID */}
@@ -1369,10 +1370,9 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               autoComplete="off"
             />
             <HelperText>
-              Dans l'URL{' '}
-              <span className="font-mono-plex">drive.google.com/drive/folders/</span>
-              <span className="font-mono-plex font-semibold text-gray-400">&lt;cet ID&gt;</span>.
-              Le dossier doit être partagé avec le Service Account.
+              Dans l'URL <span className="font-mono-plex">drive.google.com/drive/folders/</span>
+              <span className="font-mono-plex font-semibold text-gray-400">&lt;cet ID&gt;</span>. Le
+              dossier doit être partagé avec le Service Account.
             </HelperText>
           </div>
 
@@ -1419,8 +1419,8 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                     autoComplete="off"
                   />
                   <HelperText>
-                    Délégation à l'échelle du domaine (Domain-wide delegation) uniquement.
-                    Laissez vide dans la plupart des cas.
+                    Délégation à l'échelle du domaine (Domain-wide delegation) uniquement. Laissez
+                    vide dans la plupart des cas.
                   </HelperText>
                 </div>
 
@@ -1484,8 +1484,8 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                 Activer l'API Google Sheets <em>et</em> l'API Google Drive sur le projet GCP.
               </li>
               <li>
-                Partager chaque Google Sheet (ou le dossier Drive d'énumération) avec l'email
-                du Service Account (accès Viewer suffisant).
+                Partager chaque Google Sheet (ou le dossier Drive d'énumération) avec l'email du
+                Service Account (accès Viewer suffisant).
               </li>
             </ol>
           </div>
@@ -1520,9 +1520,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                 <span className="font-mono-plex">{gsheetsKeyValidation.clientEmail}</span>
               </p>
             )}
-            {isEditing && (
-              <HelperText>Laissez vide pour conserver la clé enregistrée.</HelperText>
-            )}
+            {isEditing && <HelperText>Laissez vide pour conserver la clé enregistrée.</HelperText>}
           </div>
 
           {/* Mode toggle: explicit IDs vs Drive folder enumeration */}
@@ -1572,11 +1570,8 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                 spellCheck={false}
               />
               <HelperText>
-                Dans l'URL{' '}
-                <span className="font-mono-plex">docs.google.com/spreadsheets/d/</span>
-                <span className="font-mono-plex font-semibold text-gray-400">
-                  &lt;cet ID&gt;
-                </span>
+                Dans l'URL <span className="font-mono-plex">docs.google.com/spreadsheets/d/</span>
+                <span className="font-mono-plex font-semibold text-gray-400">&lt;cet ID&gt;</span>
                 /edit. Chaque onglet du classeur devient un document distinct.
               </HelperText>
             </div>
@@ -1597,8 +1592,8 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                 autoComplete="off"
               />
               <HelperText>
-                Tous les Google Sheets <em>directement</em> dans ce dossier seront indexés.
-                Aucune récursion (les sous-dossiers sont ignorés).
+                Tous les Google Sheets <em>directement</em> dans ce dossier seront indexés. Aucune
+                récursion (les sous-dossiers sont ignorés).
               </HelperText>
             </div>
           )}
@@ -1612,14 +1607,12 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               onChange={(e) => setGsheetsIncludeArchived(e.target.checked)}
               className="mt-0.5 accent-os-500 focus:ring-2 focus:ring-os-500"
             />
-            <label
-              htmlFor="gsheets-include-archived"
-              className="text-sm text-gray-400 select-none"
-            >
+            <label htmlFor="gsheets-include-archived" className="text-sm text-gray-400 select-none">
               Inclure les onglets archivés
               <HelperText>
-                Les onglets dont le nom commence par <span className="font-mono-plex">archive_</span>{' '}
-                ou <span className="font-mono-plex">_old</span> sont ignorés par défaut.
+                Les onglets dont le nom commence par{' '}
+                <span className="font-mono-plex">archive_</span> ou{' '}
+                <span className="font-mono-plex">_old</span> sont ignorés par défaut.
               </HelperText>
             </label>
           </div>
@@ -1652,8 +1645,8 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                     autoComplete="off"
                   />
                   <HelperText>
-                    Délégation à l'échelle du domaine (Domain-wide delegation) uniquement.
-                    Laissez vide dans la plupart des cas.
+                    Délégation à l'échelle du domaine (Domain-wide delegation) uniquement. Laissez
+                    vide dans la plupart des cas.
                   </HelperText>
                 </div>
 
@@ -1670,8 +1663,8 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                   />
                   <HelperText>
                     Notation A1 (par exemple <span className="font-mono-plex">A:Z</span> ou{' '}
-                    <span className="font-mono-plex">A1:D100</span>). Vide = toute la plage
-                    utilisée de chaque onglet.
+                    <span className="font-mono-plex">A1:D100</span>). Vide = toute la plage utilisée
+                    de chaque onglet.
                   </HelperText>
                 </div>
               </div>
@@ -1702,9 +1695,8 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
             <p className="font-medium text-gray-300">Préparation de l'intégration Notion</p>
             <ol className="list-decimal list-inside space-y-0.5 ml-1">
               <li>
-                Ouvrir{' '}
-                <span className="font-mono-plex">notion.so/profile/integrations</span> →
-                {' '}«&nbsp;New integration&nbsp;» → copier le secret.
+                Ouvrir <span className="font-mono-plex">notion.so/profile/integrations</span> →{' '}
+                «&nbsp;New integration&nbsp;» → copier le secret.
               </li>
               <li>
                 Dans chaque page/database à indexer, cliquer «&nbsp;Share&nbsp;» et inviter
@@ -1730,9 +1722,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               autoComplete="new-password"
               spellCheck={false}
             />
-            {isEditing && (
-              <HelperText>Laissez vide pour conserver la clé enregistrée.</HelperText>
-            )}
+            {isEditing && <HelperText>Laissez vide pour conserver la clé enregistrée.</HelperText>}
           </div>
 
           {/* Root IDs */}
@@ -1763,10 +1753,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               onChange={(e) => setNotionIncludeArchived(e.target.checked)}
               className="mt-0.5 accent-os-500 focus:ring-2 focus:ring-os-500"
             />
-            <label
-              htmlFor="notion-include-archived"
-              className="text-sm text-gray-400 select-none"
-            >
+            <label htmlFor="notion-include-archived" className="text-sm text-gray-400 select-none">
               Inclure les pages archivées
               <HelperText>
                 Désactivé par défaut. Activez pour indexer les pages déplacées vers la corbeille.
@@ -1869,9 +1856,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               autoComplete="new-password"
               spellCheck={false}
             />
-            {isEditing && (
-              <HelperText>Laissez vide pour conserver le secret existant.</HelperText>
-            )}
+            {isEditing && <HelperText>Laissez vide pour conserver le secret existant.</HelperText>}
           </div>
 
           {/* Site URL */}
@@ -1954,8 +1939,9 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                     className="input-editorial w-full text-sm mt-1 font-mono-plex"
                   />
                   <HelperText>
-                    Chemin à l'intérieur du drive (ex. <span className="font-mono-plex">/Shared
-                    Documents/Projects</span>). Laissez vide pour indexer toute la bibliothèque.
+                    Chemin à l'intérieur du drive (ex.{' '}
+                    <span className="font-mono-plex">/Shared Documents/Projects</span>). Laissez
+                    vide pour indexer toute la bibliothèque.
                   </HelperText>
                 </div>
 
@@ -1966,7 +1952,9 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                       id="sp-include-mimes"
                       value={spIncludeMimes}
                       onChange={(e) => setSpIncludeMimes(e.target.value)}
-                      placeholder={'application/pdf\napplication/vnd.openxmlformats-officedocument.wordprocessingml.document'}
+                      placeholder={
+                        'application/pdf\napplication/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                      }
                       rows={3}
                       className="input-editorial w-full text-sm mt-1 font-mono-plex resize-y"
                     />

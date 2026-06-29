@@ -91,15 +91,20 @@ export default function ProfilePreview({ profileName, onClose }: ProfilePreviewP
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-lg font-semibold text-gray-100">
-            Profile Preview:{' '}
-            <span className="text-os-400 font-mono">{profileName}</span>
+            Profile Preview: <span className="text-os-400 font-mono">{profileName}</span>
           </h2>
           <button
             onClick={onClose}
             aria-label="Close preview"
             className="p-1.5 rounded-lg text-gray-500 hover:text-gray-200 hover:bg-gray-700/60 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-os-500"
           >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
@@ -109,7 +114,14 @@ export default function ProfilePreview({ profileName, onClose }: ProfilePreviewP
         {loading && (
           <div className="flex items-center justify-center py-16 text-gray-400">
             <svg className="animate-spin h-6 w-6 mr-3 text-os-500" viewBox="0 0 24 24" fill="none">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <circle
+                className="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="4"
+              />
               <path
                 className="opacity-75"
                 fill="currentColor"
@@ -156,10 +168,7 @@ export default function ProfilePreview({ profileName, onClose }: ProfilePreviewP
 
             {/* Table cards */}
             {data.tables.map((table) => (
-              <div
-                key={table.name}
-                className="mb-4 card-nested px-4 py-3"
-              >
+              <div key={table.name} className="mb-4 card-nested px-4 py-3">
                 {/* Table header */}
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="font-semibold text-gray-100">{table.name}</h3>
@@ -217,9 +226,7 @@ export default function ProfilePreview({ profileName, onClose }: ProfilePreviewP
                 {/* Sample row */}
                 {table.sampleRow && (
                   <div className="mt-3">
-                    <p className="text-xs text-gray-500 mb-1">
-                      Sample row (with masking applied):
-                    </p>
+                    <p className="text-xs text-gray-500 mb-1">Sample row (with masking applied):</p>
                     <pre className="text-xs bg-gray-900/60 rounded p-2 overflow-x-auto text-gray-300 leading-relaxed">
                       {JSON.stringify(table.sampleRow, null, 2)}
                     </pre>

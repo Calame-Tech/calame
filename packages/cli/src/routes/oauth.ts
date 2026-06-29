@@ -38,7 +38,10 @@ const registeredClients = new Map<string, { clientId: string; redirectUris: stri
  * Security: prevents redirect_uri injection attacks where an attacker
  * supplies a malicious URI to receive the auth code.
  */
-function validateRedirectUri(clientId: string | undefined, redirectUri: string | undefined): boolean {
+function validateRedirectUri(
+  clientId: string | undefined,
+  redirectUri: string | undefined,
+): boolean {
   if (!clientId) return false;
   const client = registeredClients.get(clientId);
   if (!client) return false;
@@ -47,7 +50,13 @@ function validateRedirectUri(clientId: string | undefined, redirectUri: string |
 }
 const authCodes = new Map<
   string,
-  { forgeToken: string; clientId: string; redirectUri: string; codeChallenge?: string; expiresAt: number }
+  {
+    forgeToken: string;
+    clientId: string;
+    redirectUri: string;
+    codeChallenge?: string;
+    expiresAt: number;
+  }
 >();
 
 /**
@@ -178,13 +187,19 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
     // a missing / empty code_challenge can no longer mint a code that the
     // /token endpoint would later accept without a verifier.
     if (!code_challenge) {
-      res.status(400).json({ error: 'invalid_request', error_description: 'code_challenge is required (PKCE).' });
+      res.status(400).json({
+        error: 'invalid_request',
+        error_description: 'code_challenge is required (PKCE).',
+      });
       return;
     }
     // Only S256 is supported. Reject 'plain' (and any other) explicitly; an
     // omitted method is treated as S256, matching the /token verification.
     if (code_challenge_method && code_challenge_method !== 'S256') {
-      res.status(400).json({ error: 'invalid_request', error_description: 'code_challenge_method must be S256.' });
+      res.status(400).json({
+        error: 'invalid_request',
+        error_description: 'code_challenge_method must be S256.',
+      });
       return;
     }
 
@@ -208,7 +223,10 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
         // Auto-authorize immediately — no user interaction required.
         // Security: validate redirect_uri against registered client.
         if (!validateRedirectUri(client_id, redirect_uri)) {
-          res.status(400).json({ error: 'invalid_request', error_description: 'redirect_uri does not match registered client.' });
+          res.status(400).json({
+            error: 'invalid_request',
+            error_description: 'redirect_uri does not match registered client.',
+          });
           return;
         }
 
@@ -227,7 +245,9 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
           if (oauthState) url.searchParams.set('state', oauthState);
           res.redirect(302, url.toString());
         } catch {
-          res.status(400).json({ error: 'invalid_request', error_description: 'Invalid redirect_uri.' });
+          res
+            .status(400)
+            .json({ error: 'invalid_request', error_description: 'Invalid redirect_uri.' });
         }
         return;
       }
@@ -251,7 +271,10 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
         cleanupPendingAuthorizations();
 
         if (!validateRedirectUri(client_id, redirect_uri)) {
-          res.status(400).json({ error: 'invalid_request', error_description: 'redirect_uri does not match registered client.' });
+          res.status(400).json({
+            error: 'invalid_request',
+            error_description: 'redirect_uri does not match registered client.',
+          });
           return;
         }
 
@@ -280,14 +303,23 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
         // Redirect to the profile-specific OAuth provider; complete OAuth flow on callback.
         const oauthConfig = profile?.oauthConfig;
         if (!oauthConfig) {
-          res.status(500).send(buildErrorPage(`Profile "${profileName}" has authMode 'oauth' but no OAuth provider is configured.`));
+          res
+            .status(500)
+            .send(
+              buildErrorPage(
+                `Profile "${profileName}" has authMode 'oauth' but no OAuth provider is configured.`,
+              ),
+            );
           return;
         }
 
         cleanupPendingAuthorizations();
 
         if (!validateRedirectUri(client_id, redirect_uri)) {
-          res.status(400).json({ error: 'invalid_request', error_description: 'redirect_uri does not match registered client.' });
+          res.status(400).json({
+            error: 'invalid_request',
+            error_description: 'redirect_uri does not match registered client.',
+          });
           return;
         }
 
@@ -371,7 +403,10 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
     // PKCE is mandatory (fail-closed) — the code minted below must always be
     // bound to a challenge so /token cannot be redeemed without a verifier.
     if (!code_challenge) {
-      res.status(400).json({ error: 'invalid_request', error_description: 'code_challenge is required (PKCE).' });
+      res.status(400).json({
+        error: 'invalid_request',
+        error_description: 'code_challenge is required (PKCE).',
+      });
       return;
     }
 
@@ -396,7 +431,11 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
             codeChallengeMethod: '',
             profileName: profileName ?? '',
           };
-          res.type('html').send(buildCalameAuthPage({ ...pageParams, error: 'Email and password are required.' }));
+          res
+            .type('html')
+            .send(
+              buildCalameAuthPage({ ...pageParams, error: 'Email and password are required.' }),
+            );
           return;
         }
 
@@ -410,7 +449,9 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
             codeChallengeMethod: '',
             profileName: profileName ?? '',
           };
-          res.type('html').send(buildCalameAuthPage({ ...pageParams, error: 'Invalid email or password.' }));
+          res
+            .type('html')
+            .send(buildCalameAuthPage({ ...pageParams, error: 'Invalid email or password.' }));
           return;
         }
 
@@ -423,13 +464,17 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
             codeChallengeMethod: '',
             profileName: profileName ?? '',
           };
-          res.type('html').send(buildCalameAuthPage({ ...pageParams, error: 'Your account has been disabled.' }));
+          res
+            .type('html')
+            .send(buildCalameAuthPage({ ...pageParams, error: 'Your account has been disabled.' }));
           return;
         }
 
         forgeToken = userManager.getUserToken(user.id);
         if (!forgeToken) {
-          res.status(500).json({ error: 'User token is not available. Contact your administrator.' });
+          res
+            .status(500)
+            .json({ error: 'User token is not available. Contact your administrator.' });
           return;
         }
         break;
@@ -489,8 +534,7 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
           return;
         }
 
-        const email =
-          externalResult.email || `external_${Date.now()}@calame.local`;
+        const email = externalResult.email || `external_${Date.now()}@calame.local`;
         const displayName = externalResult.name || 'External User';
 
         let existingUser = email ? userManager.getUserByEmail(email) : null;
@@ -522,7 +566,9 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
 
         const mintedToken = userManager.getUserToken(existingUser.id);
         if (!mintedToken) {
-          res.status(500).json({ error: 'User token is not available. Contact your administrator.' });
+          res
+            .status(500)
+            .json({ error: 'User token is not available. Contact your administrator.' });
           return;
         }
 
@@ -551,7 +597,10 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
     // Generate auth code that maps to the forge token
     // Security: validate redirect_uri against registered client.
     if (!validateRedirectUri(client_id, redirect_uri)) {
-      res.status(400).json({ error: 'invalid_request', error_description: 'redirect_uri does not match registered client.' });
+      res.status(400).json({
+        error: 'invalid_request',
+        error_description: 'redirect_uri does not match registered client.',
+      });
       return;
     }
 
@@ -570,13 +619,19 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
       if (oauthState) url.searchParams.set('state', oauthState);
       res.redirect(302, url.toString());
     } catch {
-      res.status(400).json({ error: 'invalid_request', error_description: 'Invalid redirect_uri.' });
+      res
+        .status(400)
+        .json({ error: 'invalid_request', error_description: 'Invalid redirect_uri.' });
     }
   });
 
   // --- SSO (OIDC) callback — completes a pending OAuth authorization ---
   app.get('/authorize/sso-callback', async (req: Request, res: Response) => {
-    const { code, state: ssoState, error: oidcError } = req.query as Record<string, string | undefined>;
+    const {
+      code,
+      state: ssoState,
+      error: oidcError,
+    } = req.query as Record<string, string | undefined>;
 
     if (oidcError) {
       res.status(400).send(buildErrorPage(`SSO provider returned error: ${escapeHtml(oidcError)}`));
@@ -627,7 +682,9 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
 
       const forgeToken = userManager.getUserToken(user.id);
       if (!forgeToken) {
-        res.status(500).send(buildErrorPage('User token is not available. Contact your administrator.'));
+        res
+          .status(500)
+          .send(buildErrorPage('User token is not available. Contact your administrator.'));
         return;
       }
 
@@ -655,10 +712,16 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
 
   // --- OAuth provider callback — completes a pending OAuth authorization ---
   app.get('/authorize/oauth-callback', async (req: Request, res: Response) => {
-    const { code, state: providerState, error: providerError } = req.query as Record<string, string | undefined>;
+    const {
+      code,
+      state: providerState,
+      error: providerError,
+    } = req.query as Record<string, string | undefined>;
 
     if (providerError) {
-      res.status(400).send(buildErrorPage(`OAuth provider returned error: ${escapeHtml(providerError)}`));
+      res
+        .status(400)
+        .send(buildErrorPage(`OAuth provider returned error: ${escapeHtml(providerError)}`));
       return;
     }
 
@@ -679,7 +742,9 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
     const profile = pending.profileName ? state.serveProfiles[pending.profileName] : undefined;
     const oauthConfig = profile?.oauthConfig;
     if (!oauthConfig) {
-      res.status(500).send(buildErrorPage('OAuth provider configuration not found for this profile.'));
+      res
+        .status(500)
+        .send(buildErrorPage('OAuth provider configuration not found for this profile.'));
       return;
     }
 
@@ -711,7 +776,10 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
 
       const tokenResponse = await fetch(providerConfig.tokenUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Accept: 'application/json',
+        },
         body: body.toString(),
       });
 
@@ -750,7 +818,9 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
 
       if (existingUser) {
         if (existingUser.status !== 'active') {
-          res.status(403).send(buildErrorPage('Your account has been disabled. Contact your administrator.'));
+          res
+            .status(403)
+            .send(buildErrorPage('Your account has been disabled. Contact your administrator.'));
           return;
         }
         forgeToken = userManager.getUserToken(existingUser.id);
@@ -758,14 +828,20 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
         // No existing user — cannot auto-create in an OAuth2 MCP authorize context
         // because we have no email from the spec path, and auto-creation is a security risk.
         // Admins should pre-create users or use the profile-oauth route instead.
-        res.status(403).send(
-          buildErrorPage('No account found for your OAuth identity. Ask your administrator to create an account for you.'),
-        );
+        res
+          .status(403)
+          .send(
+            buildErrorPage(
+              'No account found for your OAuth identity. Ask your administrator to create an account for you.',
+            ),
+          );
         return;
       }
 
       if (!forgeToken) {
-        res.status(500).send(buildErrorPage('User token is not available. Contact your administrator.'));
+        res
+          .status(500)
+          .send(buildErrorPage('User token is not available. Contact your administrator.'));
         return;
       }
 
@@ -793,7 +869,10 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
 
   // --- Token Endpoint ---
   app.post('/token', (req: Request, res: Response) => {
-    const { grant_type, code, code_verifier, redirect_uri } = req.body as Record<string, string | undefined>;
+    const { grant_type, code, code_verifier, redirect_uri } = req.body as Record<
+      string,
+      string | undefined
+    >;
 
     if (grant_type !== 'authorization_code') {
       res.status(400).json({ error: 'unsupported_grant_type' });
@@ -802,14 +881,19 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
 
     const entry = code ? authCodes.get(code) : undefined;
     if (!entry) {
-      res.status(400).json({ error: 'invalid_grant', error_description: 'Invalid or expired authorization code.' });
+      res.status(400).json({
+        error: 'invalid_grant',
+        error_description: 'Invalid or expired authorization code.',
+      });
       return;
     }
 
     // Check expiry
     if (Date.now() > entry.expiresAt) {
       if (code) authCodes.delete(code);
-      res.status(400).json({ error: 'invalid_grant', error_description: 'Authorization code expired.' });
+      res
+        .status(400)
+        .json({ error: 'invalid_grant', error_description: 'Authorization code expired.' });
       return;
     }
 
@@ -817,12 +901,16 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
     // code_verifier is MANDATORY (fail-closed — cannot be bypassed by omitting it).
     if (entry.codeChallenge) {
       if (!code_verifier) {
-        res.status(400).json({ error: 'invalid_grant', error_description: 'code_verifier is required.' });
+        res
+          .status(400)
+          .json({ error: 'invalid_grant', error_description: 'code_verifier is required.' });
         return;
       }
       const hash = crypto.createHash('sha256').update(code_verifier).digest('base64url');
       if (hash !== entry.codeChallenge) {
-        res.status(400).json({ error: 'invalid_grant', error_description: 'Invalid code_verifier.' });
+        res
+          .status(400)
+          .json({ error: 'invalid_grant', error_description: 'Invalid code_verifier.' });
         return;
       }
     }
@@ -1037,7 +1125,9 @@ function buildTokenAuthPage(params: AuthPageParams): string {
 
 /** Calame email + password auth page. */
 function buildCalameAuthPage(params: AuthPageParams & { error: string }): string {
-  const profileLabel = params.profileName ? ` to access <strong>${escapeHtml(params.profileName)}</strong>` : '';
+  const profileLabel = params.profileName
+    ? ` to access <strong>${escapeHtml(params.profileName)}</strong>`
+    : '';
   return `<!DOCTYPE html>
 <html lang="en">
 <head>

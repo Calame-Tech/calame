@@ -3,12 +3,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { getConnector } from '@calame/connectors';
 import type { AppState, ConnectionState } from '../state.js';
-import type {
-  TableToolOptions,
-  ColumnMasking,
-  UserIdentity,
-  ScopeSelection,
-} from '@calame/core';
+import type { TableToolOptions, ColumnMasking, UserIdentity, ScopeSelection } from '@calame/core';
 import {
   registerDynamicTools,
   registerCalcTool,
@@ -47,7 +42,6 @@ export {
 export { mergeConfigurations } from './serve/tool-merger.js';
 
 export function registerServeRoute(app: Express, state: AppState): void {
-
   // MCP Streamable HTTP endpoint per profile.
   //
   // Two URL formats are accepted:
@@ -92,14 +86,20 @@ export function registerServeRoute(app: Express, state: AppState): void {
         // Accept bearer tokens and validate against an external API.
         const authHeader = req.headers.authorization;
         if (!authHeader?.startsWith('Bearer ')) {
-          res.status(401).json({ success: false, message: 'Bearer token required for external authentication.' });
+          res.status(401).json({
+            success: false,
+            message: 'Bearer token required for external authentication.',
+          });
           return;
         }
         const externalToken = authHeader.slice(7);
 
         if (earlyProfile?.externalAuthConfig) {
           const { validateExternalToken } = await import('../external-auth.js');
-          const result = await validateExternalToken(externalToken, earlyProfile.externalAuthConfig);
+          const result = await validateExternalToken(
+            externalToken,
+            earlyProfile.externalAuthConfig,
+          );
           if (!result.valid) {
             res.status(401).json({ success: false, message: 'External token validation failed.' });
             return;
@@ -132,7 +132,9 @@ export function registerServeRoute(app: Express, state: AppState): void {
             }
           }
         } else {
-          res.status(500).json({ success: false, message: 'External auth not configured for this profile.' });
+          res
+            .status(500)
+            .json({ success: false, message: 'External auth not configured for this profile.' });
           return;
         }
       } else if (authMode === 'oauth') {
@@ -172,7 +174,9 @@ export function registerServeRoute(app: Express, state: AppState): void {
           tenantId,
         );
         if (oauthAuthResult.error) {
-          res.status(oauthAuthResult.status).json({ success: false, message: oauthAuthResult.error });
+          res
+            .status(oauthAuthResult.status)
+            .json({ success: false, message: oauthAuthResult.error });
           return;
         }
         userAllowedTables = oauthAuthResult.allowedTables;
@@ -194,7 +198,11 @@ export function registerServeRoute(app: Express, state: AppState): void {
         }
 
         if (!bearerToken) {
-          res.status(401).json({ success: false, message: 'Missing token. Use Authorization header (Bearer <token>) or ?token=<token> query param.' });
+          res.status(401).json({
+            success: false,
+            message:
+              'Missing token. Use Authorization header (Bearer <token>) or ?token=<token> query param.',
+          });
           return;
         }
 
@@ -206,7 +214,9 @@ export function registerServeRoute(app: Express, state: AppState): void {
           tenantId,
         );
         if (tokenAuthResult.error) {
-          res.status(tokenAuthResult.status).json({ success: false, message: tokenAuthResult.error });
+          res
+            .status(tokenAuthResult.status)
+            .json({ success: false, message: tokenAuthResult.error });
           return;
         }
         userAllowedTables = tokenAuthResult.allowedTables;
@@ -238,7 +248,9 @@ export function registerServeRoute(app: Express, state: AppState): void {
       // fast path) or simply exists in the DB for the requested tenant
       // (non-default — see `isServeProfileActive` for the rationale).
       if (!isServeProfileActive(state, tenantId, profileName)) {
-        res.status(503).json({ success: false, message: `Profile "${profileName}" is not active.` });
+        res
+          .status(503)
+          .json({ success: false, message: `Profile "${profileName}" is not active.` });
         return;
       }
 
@@ -248,7 +260,9 @@ export function registerServeRoute(app: Express, state: AppState): void {
       // unchanged until Phase 3 replaces it with adapter.registerMcpTools iteration.
       const rawProfile = loadServeProfileForTenant(state, tenantId, profileName);
       if (!rawProfile) {
-        res.status(404).json({ success: false, message: `Profile "${profileName}" is not being served.` });
+        res
+          .status(404)
+          .json({ success: false, message: `Profile "${profileName}" is not being served.` });
         return;
       }
       const profile = upgradeProfileShape(rawProfile);
@@ -259,7 +273,10 @@ export function registerServeRoute(app: Express, state: AppState): void {
       let effectiveTableOptions: Record<string, TableToolOptions> | undefined;
       let effectiveColumnMasking: Record<string, Record<string, ColumnMasking>> | undefined;
       // Document scopes merged from configurations (empty when using legacy path — profile.scopes is used directly).
-      let effectiveDocumentScopes: Record<string, Extract<ScopeSelection, { kind: 'document' }>> = {};
+      let effectiveDocumentScopes: Record<
+        string,
+        Extract<ScopeSelection, { kind: 'document' }>
+      > = {};
 
       if (profile.configurations && profile.configurations.length > 0) {
         // New path: resolve configurations and merge them
@@ -326,7 +343,9 @@ export function registerServeRoute(app: Express, state: AppState): void {
       if (userAllowedTools && effectiveTableOptions) {
         const allowed = new Set(userAllowedTools);
         for (const [, opts] of Object.entries(effectiveTableOptions)) {
-          opts.enabledTools = opts.enabledTools.filter((t) => allowed.has(t)) as TableToolOptions['enabledTools'];
+          opts.enabledTools = opts.enabledTools.filter((t) =>
+            allowed.has(t),
+          ) as TableToolOptions['enabledTools'];
         }
       }
 
@@ -337,8 +356,9 @@ export function registerServeRoute(app: Express, state: AppState): void {
         if (!userIdentity) {
           // Scoping requires individual authentication — reject if no identity
           res.status(403).json({
-            error: 'This profile requires individual authentication for data scoping. '
-              + 'Open or unauthenticated access is not compatible with dataScopeRules.',
+            error:
+              'This profile requires individual authentication for data scoping. ' +
+              'Open or unauthenticated access is not compatible with dataScopeRules.',
           });
           return;
         }
@@ -351,7 +371,12 @@ export function registerServeRoute(app: Express, state: AppState): void {
           component: `mcp/${profileName}`,
           userId: userIdentity.userId,
           email: userIdentity.email,
-          filters: scopeInfo.filters.map((f: { tableName: string; column: string; value: string }) => `${f.tableName}.${f.column}=${f.value}`).join(', '),
+          filters: scopeInfo.filters
+            .map(
+              (f: { tableName: string; column: string; value: string }) =>
+                `${f.tableName}.${f.column}=${f.value}`,
+            )
+            .join(', '),
         });
       } else {
         // No scoping: admin, legacy token, or no scope rules on profile
@@ -380,9 +405,7 @@ export function registerServeRoute(app: Express, state: AppState): void {
       }
 
       // --- Create a stateless MCP server per request ---
-      const mcpServer = new McpServer(
-        { name: `calame-${profileName}`, version: '2.0.0' },
-      );
+      const mcpServer = new McpServer({ name: `calame-${profileName}`, version: '2.0.0' });
 
       // Determines whether tool descriptions use raw DB names or human-readable labels.
       const responseMode = profile.responseMode ?? 'friendly';
@@ -451,12 +474,17 @@ export function registerServeRoute(app: Express, state: AppState): void {
         // --- Legacy path: direct registerDynamicTools iteration (unchanged) ---
 
         // Register calc once globally — same rationale as in registerToolsViaAdapters.
-        registerCalcTool(mcpServer, profileName, (s) => s, (entry) => {
-          if (state.auditLog) {
-            state.auditLog.addEntry({ ...entry, tokenLabel: resolvedTokenLabel, tenantId });
-            state.auditLog.save().catch(() => {});
-          }
-        });
+        registerCalcTool(
+          mcpServer,
+          profileName,
+          (s) => s,
+          (entry) => {
+            if (state.auditLog) {
+              state.auditLog.addEntry({ ...entry, tokenLabel: resolvedTokenLabel, tenantId });
+              state.auditLog.save().catch(() => {});
+            }
+          },
+        );
 
         // Group tables by connection
         const tablesByConnection = new Map<
@@ -632,7 +660,9 @@ export function registerServeRoute(app: Express, state: AppState): void {
   // of this catch-all. We reject any remaining GET because stateless mode
   // doesn't support SSE streams.
   app.get('/mcp/:firstSeg/:secondSeg?', async (_req: Request, res: Response) => {
-    res.status(405).json({ error: 'Method not allowed. Use POST for MCP requests in stateless mode.' });
+    res
+      .status(405)
+      .json({ error: 'Method not allowed. Use POST for MCP requests in stateless mode.' });
   });
 
   // Handle DELETE for session termination (not used in stateless mode).

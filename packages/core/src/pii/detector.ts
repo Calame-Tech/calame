@@ -16,19 +16,34 @@ const COLUMN_NAME_PATTERNS: { pattern: RegExp; category: PiiCategory }[] = [
 
   // Name — match "Name" alone, plus first/last/full/surname variants
   { pattern: /^name$/i, category: 'name' },
-  { pattern: /^(first.?name|last.?name|full.?name|display.?name|user.?name|username)/i, category: 'name' },
-  { pattern: /^(prenom|nom$|nom_|surname|given.?name|family.?name|middle.?name)/i, category: 'name' },
+  {
+    pattern: /^(first.?name|last.?name|full.?name|display.?name|user.?name|username)/i,
+    category: 'name',
+  },
+  {
+    pattern: /^(prenom|nom$|nom_|surname|given.?name|family.?name|middle.?name)/i,
+    category: 'name',
+  },
 
   // Address — including French/typo variants like "addresse", "adresse"
-  { pattern: /^(addr|address|addresse|adresse|street|city|zip|postal|code.?postal|rue|ville)/i, category: 'address' },
-  { pattern: /^(country|pays|region|state|province|street.?number|house.?number)/i, category: 'address' },
+  {
+    pattern: /^(addr|address|addresse|adresse|street|city|zip|postal|code.?postal|rue|ville)/i,
+    category: 'address',
+  },
+  {
+    pattern: /^(country|pays|region|state|province|street.?number|house.?number)/i,
+    category: 'address',
+  },
   { pattern: /(address|adresse|addresse)/i, category: 'address' },
 
   // Credit card
   { pattern: /^(cc|card|credit.?card|carte|card.?number|numero.?carte)/i, category: 'credit_card' },
 
   // Password / secrets
-  { pattern: /^(pass|password|pwd|hash|secret|token|api.?key|private.?key)/i, category: 'password' },
+  {
+    pattern: /^(pass|password|pwd|hash|secret|token|api.?key|private.?key)/i,
+    category: 'password',
+  },
 
   // IP address
   { pattern: /^(ip|ip.?addr|remote.?addr|ip.?address)/i, category: 'ip_address' },
@@ -98,10 +113,7 @@ function detectByDataSample(sampleValues: string[]): PiiCategory | null {
  * Detect PII for a single column by name and optional data samples.
  * Returns null if no PII is detected.
  */
-export function detectColumnPii(
-  columnName: string,
-  sampleValues?: string[],
-): PiiDetection | null {
+export function detectColumnPii(columnName: string, sampleValues?: string[]): PiiDetection | null {
   const nameCategory = detectByColumnName(columnName);
   const dataCategory = sampleValues ? detectByDataSample(sampleValues) : null;
 

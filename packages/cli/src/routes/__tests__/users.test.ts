@@ -140,25 +140,36 @@ describe('users routes', () => {
 
   describe('GET /api/users', () => {
     it('filters by profileName across multi-profile users', async () => {
-      await request(app).post('/api/users').set('Cookie', cookie).send({
-        name: 'Jean',
-        email: 'jean@x.com',
-        role: 'user',
-        profiles: [{ profileName: 'prod', accessMode: 'both' }, { profileName: 'compta', accessMode: 'chat' }],
-      });
-      await request(app).post('/api/users').set('Cookie', cookie).send({
-        name: 'Alice',
-        email: 'alice@x.com',
-        role: 'user',
-        profiles: [{ profileName: 'dev', accessMode: 'both' }],
-      });
+      await request(app)
+        .post('/api/users')
+        .set('Cookie', cookie)
+        .send({
+          name: 'Jean',
+          email: 'jean@x.com',
+          role: 'user',
+          profiles: [
+            { profileName: 'prod', accessMode: 'both' },
+            { profileName: 'compta', accessMode: 'chat' },
+          ],
+        });
+      await request(app)
+        .post('/api/users')
+        .set('Cookie', cookie)
+        .send({
+          name: 'Alice',
+          email: 'alice@x.com',
+          role: 'user',
+          profiles: [{ profileName: 'dev', accessMode: 'both' }],
+        });
 
       const res = await request(app)
         .get('/api/users?profileName=compta')
         .set('Cookie', cookie)
         .expect(200);
       // Admin user + Jean have access (admin has no profile, but Jean does)
-      const nonAdminUsers = res.body.users.filter((u: { email: string }) => u.email !== 'admin@test.com');
+      const nonAdminUsers = res.body.users.filter(
+        (u: { email: string }) => u.email !== 'admin@test.com',
+      );
       expect(nonAdminUsers).toHaveLength(1);
       expect(nonAdminUsers[0].name).toBe('Jean');
     });
@@ -169,7 +180,12 @@ describe('users routes', () => {
       const createRes = await request(app)
         .post('/api/users')
         .set('Cookie', cookie)
-        .send({ name: 'Jean', email: 'jean@x.com', role: 'user', profiles: [{ profileName: 'prod', accessMode: 'both' }] });
+        .send({
+          name: 'Jean',
+          email: 'jean@x.com',
+          role: 'user',
+          profiles: [{ profileName: 'prod', accessMode: 'both' }],
+        });
       const userId = createRes.body.user.id;
 
       const res = await request(app)
@@ -187,7 +203,12 @@ describe('users routes', () => {
       const createRes = await request(app)
         .post('/api/users')
         .set('Cookie', cookie)
-        .send({ name: 'Jean', email: 'jean@x.com', role: 'user', profiles: [{ profileName: 'prod', accessMode: 'both' }] });
+        .send({
+          name: 'Jean',
+          email: 'jean@x.com',
+          role: 'user',
+          profiles: [{ profileName: 'prod', accessMode: 'both' }],
+        });
       const userId = createRes.body.user.id;
       await request(app).post(`/api/users/${userId}/disable`).set('Cookie', cookie).send({});
 
@@ -206,12 +227,21 @@ describe('users routes', () => {
         .post('/api/users')
         .set('Cookie', cookie)
         .set('X-Tenant-Id', 'tenant-x')
-        .send({ name: 'X', email: 'x@x.com', role: 'user', profiles: [{ profileName: 'prod', accessMode: 'both' }] })
+        .send({
+          name: 'X',
+          email: 'x@x.com',
+          role: 'user',
+          profiles: [{ profileName: 'prod', accessMode: 'both' }],
+        })
         .expect(200);
 
-      expect(state.userManager!.listUsers({}, 'tenant-x').some((u) => u.email === 'x@x.com')).toBe(true);
+      expect(state.userManager!.listUsers({}, 'tenant-x').some((u) => u.email === 'x@x.com')).toBe(
+        true,
+      );
       // Must NOT leak into the default tenant.
-      expect(state.userManager!.listUsers({}, 'default').some((u) => u.email === 'x@x.com')).toBe(false);
+      expect(state.userManager!.listUsers({}, 'default').some((u) => u.email === 'x@x.com')).toBe(
+        false,
+      );
     });
 
     it('import refuses to cross-tenant update an email owned by another tenant', async () => {
@@ -219,7 +249,12 @@ describe('users routes', () => {
         .post('/api/users')
         .set('Cookie', cookie)
         .set('X-Tenant-Id', 'tenant-a')
-        .send({ name: 'A', email: 'shared@x.com', role: 'user', profiles: [{ profileName: 'prod', accessMode: 'both' }] })
+        .send({
+          name: 'A',
+          email: 'shared@x.com',
+          role: 'user',
+          profiles: [{ profileName: 'prod', accessMode: 'both' }],
+        })
         .expect(200);
 
       const res = await request(app)
@@ -234,7 +269,9 @@ describe('users routes', () => {
       expect(res.body.errors).toHaveLength(1);
       expect(res.body.errors[0].reason).toMatch(/another tenant/i);
       // The foreign-tenant user must be untouched.
-      expect(state.userManager!.getUserByEmail('shared@x.com')?.customAttributes?.hacked).toBeUndefined();
+      expect(
+        state.userManager!.getUserByEmail('shared@x.com')?.customAttributes?.hacked,
+      ).toBeUndefined();
     });
 
     it('import creates new users scoped to the request tenant', async () => {
@@ -246,8 +283,12 @@ describe('users routes', () => {
         .expect(200);
 
       expect(res.body.created).toBe(1);
-      expect(state.userManager!.listUsers({}, 'tenant-c').some((u) => u.email === 'newimport@x.com')).toBe(true);
-      expect(state.userManager!.listUsers({}, 'default').some((u) => u.email === 'newimport@x.com')).toBe(false);
+      expect(
+        state.userManager!.listUsers({}, 'tenant-c').some((u) => u.email === 'newimport@x.com'),
+      ).toBe(true);
+      expect(
+        state.userManager!.listUsers({}, 'default').some((u) => u.email === 'newimport@x.com'),
+      ).toBe(false);
     });
   });
 
@@ -256,7 +297,12 @@ describe('users routes', () => {
       const createRes = await request(app)
         .post('/api/users')
         .set('Cookie', cookie)
-        .send({ name: 'Jean', email: 'jean@x.com', role: 'user', profiles: [{ profileName: 'prod', accessMode: 'both' }] });
+        .send({
+          name: 'Jean',
+          email: 'jean@x.com',
+          role: 'user',
+          profiles: [{ profileName: 'prod', accessMode: 'both' }],
+        });
       const userId = createRes.body.user.id;
 
       await request(app).delete(`/api/users/${userId}`).set('Cookie', cookie).expect(200);

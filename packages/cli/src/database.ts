@@ -46,10 +46,9 @@ export class CalameDatabase {
 
   /** Record a migration version. */
   setSchemaVersion(version: number): void {
-    this.db.prepare('INSERT OR REPLACE INTO _migrations (version, applied_at) VALUES (?, ?)').run(
-      version,
-      new Date().toISOString(),
-    );
+    this.db
+      .prepare('INSERT OR REPLACE INTO _migrations (version, applied_at) VALUES (?, ?)')
+      .run(version, new Date().toISOString());
   }
 
   /** Create all tables if they don't exist. */

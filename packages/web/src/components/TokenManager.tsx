@@ -20,7 +20,10 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
   const [generating, setGenerating] = useState(false);
 
   // Newly generated token (shown once)
-  const [newlyGenerated, setNewlyGenerated] = useState<{ token: string; profileName: string } | null>(null);
+  const [newlyGenerated, setNewlyGenerated] = useState<{
+    token: string;
+    profileName: string;
+  } | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
 
   // Revoke confirmation
@@ -67,7 +70,9 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
       const data = await res.json();
       if (data.success !== false && data.token) {
         // API returns token object with plaintextToken (shown once) or legacy format
-        const tokenStr = data.token?.plaintextToken ?? (typeof data.token === 'string' ? data.token : data.token?.token ?? '');
+        const tokenStr =
+          data.token?.plaintextToken ??
+          (typeof data.token === 'string' ? data.token : (data.token?.token ?? ''));
         setNewlyGenerated({ token: tokenStr, profileName });
         setGeneratingFor(null);
         setNewLabel('');
@@ -163,12 +168,26 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
       {newlyGenerated && (
         <div className="p-4 rounded-lg border border-yellow-700/60 bg-yellow-900/20">
           <div className="flex items-start gap-3">
-            <svg className="w-5 h-5 text-yellow-500 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
+            <svg
+              className="w-5 h-5 text-yellow-500 mt-0.5 flex-shrink-0"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={1.5}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"
+              />
             </svg>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-yellow-400 mb-1">Token generated - copy it now!</p>
-              <p className="text-xs text-yellow-500/70 mb-3">This token will only be shown once. Store it securely.</p>
+              <p className="text-sm font-medium text-yellow-400 mb-1">
+                Token generated - copy it now!
+              </p>
+              <p className="text-xs text-yellow-500/70 mb-3">
+                This token will only be shown once. Store it securely.
+              </p>
               <div className="flex items-center gap-2">
                 <code className="flex-1 px-3 py-2 rounded bg-gray-900 border border-gray-700 text-sm text-gray-100 font-mono truncate">
                   {newlyGenerated.token}
@@ -193,7 +212,9 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                 return (
                   <>
                     <div className="mt-3">
-                      <p className="text-xs text-gray-400 mb-1">claude.ai (paste this URL in Settings &gt; Integrations):</p>
+                      <p className="text-xs text-gray-400 mb-1">
+                        claude.ai (paste this URL in Settings &gt; Integrations):
+                      </p>
                       <div className="flex items-center gap-2">
                         <code className="flex-1 px-3 py-2 rounded bg-gray-900 border border-gray-700 text-xs text-os-400 font-mono truncate">
                           {mcpUrl}
@@ -206,7 +227,9 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                         </button>
                       </div>
                       <p className="text-xs text-gray-600 mt-1">
-                        For remote access, expose via ngrok: <code className="text-gray-500">ngrok http {port}</code> then replace the origin.
+                        For remote access, expose via ngrok:{' '}
+                        <code className="text-gray-500">ngrok http {port}</code> then replace the
+                        origin.
                       </p>
                     </div>
 
@@ -225,14 +248,23 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
   }
 }`}</pre>
                         <button
-                          onClick={() => handleCopy(JSON.stringify({
-                            mcpServers: {
-                              [`forge-${newlyGenerated.profileName}`]: {
-                                url: mcpServerUrl,
-                                headers: { Authorization: `Bearer ${newlyGenerated.token}` },
-                              },
-                            },
-                          }, null, 2), 'config-snippet')}
+                          onClick={() =>
+                            handleCopy(
+                              JSON.stringify(
+                                {
+                                  mcpServers: {
+                                    [`forge-${newlyGenerated.profileName}`]: {
+                                      url: mcpServerUrl,
+                                      headers: { Authorization: `Bearer ${newlyGenerated.token}` },
+                                    },
+                                  },
+                                },
+                                null,
+                                2,
+                              ),
+                              'config-snippet',
+                            )
+                          }
                           className="absolute top-2 right-2 px-2 py-1 text-xs rounded border border-gray-600 text-gray-400 hover:text-gray-200 hover:bg-gray-700 transition-colors"
                         >
                           {copied === 'config-snippet' ? 'Copied!' : 'Copy'}
@@ -281,7 +313,7 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                       }
                     }}
                     className="px-4 py-2 rounded-lg bg-os-700 hover:bg-os-600 text-white text-sm font-medium transition-all duration-200"
-                >
+                  >
                     Generate Token
                   </button>
                   <HelpTip
@@ -307,7 +339,10 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                         className="input-editorial w-full text-sm"
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') handleGenerate(profile.name);
-                          if (e.key === 'Escape') { setGeneratingFor(null); setNewLabel(''); }
+                          if (e.key === 'Escape') {
+                            setGeneratingFor(null);
+                            setNewLabel('');
+                          }
                         }}
                         autoFocus
                       />
@@ -327,7 +362,10 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                       />
                     </div>
                     <button
-                      onClick={() => { setGeneratingFor(null); setNewLabel(''); }}
+                      onClick={() => {
+                        setGeneratingFor(null);
+                        setNewLabel('');
+                      }}
                       className="px-3 py-2 rounded-lg border border-white/10 text-gray-400 hover:text-gray-200 text-sm transition-colors"
                     >
                       Cancel
@@ -350,7 +388,9 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                               <div className="flex items-center gap-1">
                                 <button
                                   onClick={() => {
-                                    setRevealingTokenId(revealingTokenId === tok.id ? null : tok.id);
+                                    setRevealingTokenId(
+                                      revealingTokenId === tok.id ? null : tok.id,
+                                    );
                                     setRevealPassword('');
                                     setRevealError('');
                                   }}
@@ -383,9 +423,11 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                             {confirmRevoke === tok.id ? 'Confirm Revoke' : 'Revoke'}
                           </button>
                           <HelpTip
-                            content={confirmRevoke === tok.id
-                              ? 'Cliquer une seconde fois pour confirmer la révocation définitive de ce token.'
-                              : 'Révoquer ce token — les clients qui l\'utilisent seront immédiatement déconnectés.'}
+                            content={
+                              confirmRevoke === tok.id
+                                ? 'Cliquer une seconde fois pour confirmer la révocation définitive de ce token.'
+                                : "Révoquer ce token — les clients qui l'utilisent seront immédiatement déconnectés."
+                            }
                             position="left"
                             maxWidth={280}
                             size="xs"
@@ -396,7 +438,9 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                       {/* Inline admin password prompt */}
                       {revealingTokenId === tok.id && !revealedTokens[tok.id] && (
                         <div className="mt-2 p-3 rounded-lg border border-os-600/40 bg-os-900/20 space-y-2">
-                          <p className="text-xs text-gray-300">Enter admin password to reveal this API key.</p>
+                          <p className="text-xs text-gray-300">
+                            Enter admin password to reveal this API key.
+                          </p>
                           <div className="flex gap-2">
                             <input
                               type="password"
@@ -431,9 +475,7 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                               Cancel
                             </button>
                           </div>
-                          {revealError && (
-                            <p className="text-xs text-red-400">{revealError}</p>
-                          )}
+                          {revealError && <p className="text-xs text-red-400">{revealError}</p>}
                         </div>
                       )}
 
@@ -485,26 +527,30 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
         <p className="text-xs text-gray-500 mb-3">
           Each profile has its own MCP endpoint
           {getCurrentTenant() !== 'default' && (
-            <> — URLs include the workspace id (<code className="text-os-400">{getCurrentTenant()}</code>) so external MCP clients reach the right tenant</>
-          )}:
+            <>
+              {' '}
+              — URLs include the workspace id (
+              <code className="text-os-400">{getCurrentTenant()}</code>) so external MCP clients
+              reach the right tenant
+            </>
+          )}
+          :
         </p>
         <div className="space-y-1">
           {profiles.map((profile) => {
             const path = buildMcpPath(profile.name, getCurrentTenant());
             const url = `http://localhost:${port}${path}`;
             return (
-            <div key={profile.name} className="flex items-center gap-2">
-              <code className="text-xs text-os-400 font-mono">
-                {url}
-              </code>
-              <button
-                onClick={() => handleCopy(url, `url-${profile.name}`)}
-                title="Copier l'URL de l'endpoint MCP dans le presse-papiers"
-                className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
-              >
-                {copied === `url-${profile.name}` ? 'Copied!' : 'Copy'}
-              </button>
-            </div>
+              <div key={profile.name} className="flex items-center gap-2">
+                <code className="text-xs text-os-400 font-mono">{url}</code>
+                <button
+                  onClick={() => handleCopy(url, `url-${profile.name}`)}
+                  title="Copier l'URL de l'endpoint MCP dans le presse-papiers"
+                  className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
+                >
+                  {copied === `url-${profile.name}` ? 'Copied!' : 'Copy'}
+                </button>
+              </div>
             );
           })}
         </div>

@@ -66,7 +66,8 @@ export function expandIPv6(ip: string): number[] | null {
   const head = halves[0] ? halves[0].split(':') : [];
   const tail = halves.length === 2 && halves[1] ? halves[1].split(':') : [];
   if (halves.length === 1 && head.length !== 8) return null;
-  const fill = halves.length === 2 ? Array(Math.max(8 - head.length - tail.length, 0)).fill('0') : [];
+  const fill =
+    halves.length === 2 ? Array(Math.max(8 - head.length - tail.length, 0)).fill('0') : [];
   const parts = [...head, ...fill, ...tail];
   if (parts.length !== 8) return null;
   const groups = parts.map((g) => parseInt(g || '0', 16));
@@ -127,5 +128,6 @@ export async function assertResolvedHostSafe(hostname: string): Promise<void> {
     // The static allowlist check (if any) still applies.
     return;
   }
-  for (const r of records) if (isPrivateOrLocalHost(r.address)) throw new SsrfBlockedError('blocked');
+  for (const r of records)
+    if (isPrivateOrLocalHost(r.address)) throw new SsrfBlockedError('blocked');
 }

@@ -97,25 +97,52 @@ export default function PendingQueries({ onPendingCountChange }: PendingQueriesP
 
   const statusBadge = (status: PendingWriteQuery['status']) => {
     const statusInfo: Record<PendingWriteQuery['status'], { classes: string; tooltip: string }> = {
-      pending: { classes: 'bg-yellow-600/20 text-yellow-400', tooltip: 'En attente de validation par un administrateur.' },
-      approved: { classes: 'bg-green-600/20 text-green-400', tooltip: 'Requête approuvée et exécutée en base de données.' },
-      rejected: { classes: 'bg-red-600/20 text-red-400', tooltip: 'Requête rejetée — elle ne sera pas exécutée.' },
+      pending: {
+        classes: 'bg-yellow-600/20 text-yellow-400',
+        tooltip: 'En attente de validation par un administrateur.',
+      },
+      approved: {
+        classes: 'bg-green-600/20 text-green-400',
+        tooltip: 'Requête approuvée et exécutée en base de données.',
+      },
+      rejected: {
+        classes: 'bg-red-600/20 text-red-400',
+        tooltip: 'Requête rejetée — elle ne sera pas exécutée.',
+      },
     };
     const info = statusInfo[status];
     return (
-      <span title={info.tooltip} className={`px-2 py-0.5 rounded-full text-xs font-medium ${info.classes}`}>{status}</span>
+      <span
+        title={info.tooltip}
+        className={`px-2 py-0.5 rounded-full text-xs font-medium ${info.classes}`}
+      >
+        {status}
+      </span>
     );
   };
 
   const operationBadge = (op: PendingWriteQuery['operation']) => {
     const opInfo: Record<PendingWriteQuery['operation'], { classes: string; tooltip: string }> = {
-      insert: { classes: 'bg-blue-600/20 text-blue-400', tooltip: 'Opération INSERT — ajoute de nouvelles lignes dans la table.' },
-      update: { classes: 'bg-amber-600/20 text-amber-400', tooltip: 'Opération UPDATE — modifie des lignes existantes dans la table.' },
-      delete: { classes: 'bg-red-600/20 text-red-400', tooltip: 'Opération DELETE — supprime des lignes de la table. Irréversible sans sauvegarde.' },
+      insert: {
+        classes: 'bg-blue-600/20 text-blue-400',
+        tooltip: 'Opération INSERT — ajoute de nouvelles lignes dans la table.',
+      },
+      update: {
+        classes: 'bg-amber-600/20 text-amber-400',
+        tooltip: 'Opération UPDATE — modifie des lignes existantes dans la table.',
+      },
+      delete: {
+        classes: 'bg-red-600/20 text-red-400',
+        tooltip:
+          'Opération DELETE — supprime des lignes de la table. Irréversible sans sauvegarde.',
+      },
     };
     const info = opInfo[op];
     return (
-      <span title={info.tooltip} className={`px-2 py-0.5 rounded-full text-xs font-medium uppercase ${info.classes}`}>
+      <span
+        title={info.tooltip}
+        className={`px-2 py-0.5 rounded-full text-xs font-medium uppercase ${info.classes}`}
+      >
         {op}
       </span>
     );
@@ -153,7 +180,8 @@ export default function PendingQueries({ onPendingCountChange }: PendingQueriesP
           ))}
         </div>
         <span className="text-sm text-gray-500">
-          {total} {statusFilter === 'all' ? 'total' : statusFilter} {total === 1 ? 'query' : 'queries'}
+          {total} {statusFilter === 'all' ? 'total' : statusFilter}{' '}
+          {total === 1 ? 'query' : 'queries'}
         </span>
       </div>
 
@@ -167,10 +195,7 @@ export default function PendingQueries({ onPendingCountChange }: PendingQueriesP
       ) : (
         <div className="space-y-3">
           {entries.map((entry) => (
-            <div
-              key={entry.id}
-              className="card-primary p-4"
-            >
+            <div key={entry.id} className="card-primary p-4">
               {/* Header row */}
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3 min-w-0">
@@ -204,7 +229,11 @@ export default function PendingQueries({ onPendingCountChange }: PendingQueriesP
                   )}
                   <button
                     onClick={() => setExpandedId(expandedId === entry.id ? null : entry.id)}
-                    title={expandedId === entry.id ? 'Masquer le SQL et les paramètres de cette requête.' : 'Afficher le SQL complet et les paramètres de cette requête.'}
+                    title={
+                      expandedId === entry.id
+                        ? 'Masquer le SQL et les paramètres de cette requête.'
+                        : 'Afficher le SQL complet et les paramètres de cette requête.'
+                    }
                     className="text-gray-500 hover:text-gray-300 text-sm transition-colors"
                   >
                     {expandedId === entry.id ? 'Hide' : 'Details'}

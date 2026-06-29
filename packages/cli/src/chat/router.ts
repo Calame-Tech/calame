@@ -1,5 +1,9 @@
 import { parseToolArguments, formatParseError } from '../tool-call-parser.js';
-import { buildCategorySelectionPrompt, parseCategoryChoice, filterToolsByCategory } from '../tool-registry.js';
+import {
+  buildCategorySelectionPrompt,
+  parseCategoryChoice,
+  filterToolsByCategory,
+} from '../tool-registry.js';
 import type { ToolDef, ChatTurnOptions, ChatTurnResult } from './types.js';
 import { trimHistory } from './prompt.js';
 
@@ -13,7 +17,17 @@ export type StreamEvent =
 
 /** Execute a single chat turn with tool loop, supporting Anthropic, OpenRouter, and Custom (OpenAI-compatible) providers. */
 export async function executeChatTurn(options: ChatTurnOptions): Promise<ChatTurnResult> {
-  const { provider, apiKey, model, baseUrl, message, history: rawHistory, tools, systemPrompt, twoStageRouting } = options;
+  const {
+    provider,
+    apiKey,
+    model,
+    baseUrl,
+    message,
+    history: rawHistory,
+    tools,
+    systemPrompt,
+    twoStageRouting,
+  } = options;
   const history = trimHistory(rawHistory);
 
   const callTool = async (name: string, args: Record<string, unknown>): Promise<string> => {
@@ -25,11 +39,19 @@ export async function executeChatTurn(options: ChatTurnOptions): Promise<ChatTur
   const toolResults: Array<{ tableName: string; data: string }> = [];
 
   if (provider === 'anthropic') {
-    return executeAnthropicTurn(apiKey, model, message, history, tools, systemPrompt, callTool, toolResults);
+    return executeAnthropicTurn(
+      apiKey,
+      model,
+      message,
+      history,
+      tools,
+      systemPrompt,
+      callTool,
+      toolResults,
+    );
   } else {
     // openrouter or custom — both use OpenAI SDK
-    const effectiveBaseUrl =
-      provider === 'openrouter' ? 'https://openrouter.ai/api/v1' : baseUrl;
+    const effectiveBaseUrl = provider === 'openrouter' ? 'https://openrouter.ai/api/v1' : baseUrl;
     const effectiveModel =
       model || (provider === 'openrouter' ? 'anthropic/claude-sonnet-4' : 'default');
     const effectiveTools = twoStageRouting
@@ -82,10 +104,16 @@ async function executeAnthropicTurn(
   }> = [];
   if (Array.isArray(history)) {
     for (const h of history) {
-      if (h.role === 'assistant' && typeof h.content === 'string' && h.content.startsWith('Error:')) {
+      if (
+        h.role === 'assistant' &&
+        typeof h.content === 'string' &&
+        h.content.startsWith('Error:')
+      ) {
         continue;
       }
-      messages.push(h as { role: 'user' | 'assistant'; content: string | Array<Record<string, unknown>> });
+      messages.push(
+        h as { role: 'user' | 'assistant'; content: string | Array<Record<string, unknown>> },
+      );
     }
   }
   messages.push({ role: 'user', content: message });
@@ -102,7 +130,11 @@ async function executeAnthropicTurn(
   let toolRound = 0;
   while (response.stop_reason === 'tool_use') {
     if (++toolRound > MAX_TOOL_ROUNDS) {
-      return { success: true, response: 'Tool use limit reached. Please simplify your request.', toolResults };
+      return {
+        success: true,
+        response: 'Tool use limit reached. Please simplify your request.',
+        toolResults,
+      };
     }
     const toolUseBlocks = response.content.filter(
       (b): b is { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> } =>
@@ -172,7 +204,9 @@ async function selectToolCategory(
       ],
     });
     const response = completion.choices[0]?.message?.content ?? '';
-    console.log(JSON.stringify({ component: 'chat', event: 'category_selected', response: response.trim() }));
+    console.log(
+      JSON.stringify({ component: 'chat', event: 'category_selected', response: response.trim() }),
+    );
     const category = parseCategoryChoice(response);
     if (!category) return tools;
     const filtered = filterToolsByCategory(tools, category);
@@ -215,7 +249,11 @@ async function executeOpenAITurn(
   if (Array.isArray(history)) {
     for (const h of history) {
       // Skip assistant error messages — they pollute the model's context
-      if (h.role === 'assistant' && typeof h.content === 'string' && h.content.startsWith('Error:')) {
+      if (
+        h.role === 'assistant' &&
+        typeof h.content === 'string' &&
+        h.content.startsWith('Error:')
+      ) {
         continue;
       }
       openaiMessages.push({ role: h.role, content: h.content });
@@ -234,28 +272,48 @@ async function executeOpenAITurn(
   let toolRound = 0;
   while (completion.choices[0]?.finish_reason === 'tool_calls') {
     if (++toolRound > MAX_TOOL_ROUNDS) {
-      return { success: true, response: 'Tool use limit reached. Please simplify your request.', toolResults };
+      return {
+        success: true,
+        response: 'Tool use limit reached. Please simplify your request.',
+        toolResults,
+      };
     }
     const assistantMsg = completion.choices[0].message;
 
     // Strip reasoning fields — they waste tokens and confuse subsequent rounds
-    const { reasoning_content: _rc, provider_specific_fields: _psf, ...cleanMsg } =
-      assistantMsg as typeof assistantMsg & { reasoning_content?: unknown; provider_specific_fields?: unknown };
+    const {
+      reasoning_content: _rc,
+      provider_specific_fields: _psf,
+      ...cleanMsg
+    } = assistantMsg as typeof assistantMsg & {
+      reasoning_content?: unknown;
+      provider_specific_fields?: unknown;
+    };
     openaiMessages.push(cleanMsg as unknown as Record<string, unknown>);
 
     const toolCalls = assistantMsg.tool_calls ?? [];
     for (const tc of toolCalls) {
       if (tc.type !== 'function') continue;
       // Strip namespace prefix added by some models (e.g. Gemini via OpenRouter: "default_api.query" → "query")
-      const toolName = tc.function.name.includes('.') ? tc.function.name.split('.').pop()! : tc.function.name;
+      const toolName = tc.function.name.includes('.')
+        ? tc.function.name.split('.').pop()!
+        : tc.function.name;
       console.log(JSON.stringify({ component: 'chat', event: 'tool_call', name: toolName }));
-      const parseResult = parseToolArguments(tc.function.arguments || '{}', getToolSchema(tools, toolName));
+      const parseResult = parseToolArguments(
+        tc.function.arguments || '{}',
+        getToolSchema(tools, toolName),
+      );
       if (!parseResult.ok) {
         toolResults.push({ tableName: toolName, data: parseResult.error });
         openaiMessages.push({
           role: 'tool',
           tool_call_id: tc.id,
-          content: formatParseError(tc.function.arguments, toolName, tools.map((t) => t.name), getToolSchema(tools, toolName)),
+          content: formatParseError(
+            tc.function.arguments,
+            toolName,
+            tools.map((t) => t.name),
+            getToolSchema(tools, toolName),
+          ),
         });
         continue;
       }
@@ -290,7 +348,17 @@ async function executeOpenAITurn(
 // ---------------------------------------------------------------------------
 
 export async function* streamChatTurn(options: ChatTurnOptions): AsyncGenerator<StreamEvent> {
-  const { provider, apiKey, model, baseUrl, message, history: rawHistory, tools, systemPrompt, twoStageRouting } = options;
+  const {
+    provider,
+    apiKey,
+    model,
+    baseUrl,
+    message,
+    history: rawHistory,
+    tools,
+    systemPrompt,
+    twoStageRouting,
+  } = options;
   const history = trimHistory(rawHistory);
   const MAX_TOOL_ROUNDS = 20;
 
@@ -307,7 +375,11 @@ export async function* streamChatTurn(options: ChatTurnOptions): AsyncGenerator<
 
       const today = new Date().toISOString().split('T')[0];
       const systemBlocks = [
-        { type: 'text' as const, text: systemPrompt, cache_control: { type: 'ephemeral' as const } },
+        {
+          type: 'text' as const,
+          text: systemPrompt,
+          cache_control: { type: 'ephemeral' as const },
+        },
         { type: 'text' as const, text: `Today's date is: ${today}` },
       ];
 
@@ -324,10 +396,16 @@ export async function* streamChatTurn(options: ChatTurnOptions): AsyncGenerator<
       }> = [];
       if (Array.isArray(history)) {
         for (const h of history) {
-          if (h.role === 'assistant' && typeof h.content === 'string' && h.content.startsWith('Error:')) {
+          if (
+            h.role === 'assistant' &&
+            typeof h.content === 'string' &&
+            h.content.startsWith('Error:')
+          ) {
             continue;
           }
-          messages.push(h as { role: 'user' | 'assistant'; content: string | Array<Record<string, unknown>> });
+          messages.push(
+            h as { role: 'user' | 'assistant'; content: string | Array<Record<string, unknown>> },
+          );
         }
       }
       messages.push({ role: 'user', content: message });
@@ -355,19 +433,34 @@ export async function* streamChatTurn(options: ChatTurnOptions): AsyncGenerator<
 
         if (msg.stop_reason === 'tool_use') {
           if (++toolRound > MAX_TOOL_ROUNDS) {
-            yield { type: 'done', finalText: fullText || 'Tool use limit reached. Please simplify your request.' };
+            yield {
+              type: 'done',
+              finalText: fullText || 'Tool use limit reached. Please simplify your request.',
+            };
             return;
           }
 
           const toolUseBlocks = msg.content.filter(
-            (b): b is { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> } =>
-              b.type === 'tool_use',
+            (
+              b,
+            ): b is {
+              type: 'tool_use';
+              id: string;
+              name: string;
+              input: Record<string, unknown>;
+            } => b.type === 'tool_use',
           );
 
-          const toolResultContents: Array<{ type: 'tool_result'; tool_use_id: string; content: string }> = [];
+          const toolResultContents: Array<{
+            type: 'tool_result';
+            tool_use_id: string;
+            content: string;
+          }> = [];
 
           for (const toolUse of toolUseBlocks) {
-            console.log(JSON.stringify({ component: 'chat', event: 'tool_call', name: toolUse.name }));
+            console.log(
+              JSON.stringify({ component: 'chat', event: 'tool_call', name: toolUse.name }),
+            );
             yield { type: 'tool_call', name: toolUse.name };
             let ok = true;
             let result = '';
@@ -378,7 +471,11 @@ export async function* streamChatTurn(options: ChatTurnOptions): AsyncGenerator<
               result = err instanceof Error ? err.message : String(err);
             }
             yield { type: 'tool_result', name: toolUse.name, ok };
-            toolResultContents.push({ type: 'tool_result', tool_use_id: toolUse.id, content: result });
+            toolResultContents.push({
+              type: 'tool_result',
+              tool_use_id: toolUse.id,
+              content: result,
+            });
           }
 
           messages.push({ role: 'assistant', content: msg.content as never });
@@ -410,7 +507,8 @@ export async function* streamChatTurn(options: ChatTurnOptions): AsyncGenerator<
   try {
     const OpenAI = (await import('openai')).default;
     const effectiveBaseUrl = provider === 'openrouter' ? 'https://openrouter.ai/api/v1' : baseUrl;
-    const effectiveModel = model || (provider === 'openrouter' ? 'anthropic/claude-sonnet-4' : 'default');
+    const effectiveModel =
+      model || (provider === 'openrouter' ? 'anthropic/claude-sonnet-4' : 'default');
     const openai = new OpenAI({ apiKey: apiKey || 'not-needed', baseURL: effectiveBaseUrl });
 
     const activeTools = twoStageRouting
@@ -435,7 +533,11 @@ export async function* streamChatTurn(options: ChatTurnOptions): AsyncGenerator<
 
     if (Array.isArray(history)) {
       for (const h of history) {
-        if (h.role === 'assistant' && typeof h.content === 'string' && h.content.startsWith('Error:')) {
+        if (
+          h.role === 'assistant' &&
+          typeof h.content === 'string' &&
+          h.content.startsWith('Error:')
+        ) {
           continue;
         }
         openaiMessages.push({ role: h.role, content: h.content });
@@ -450,19 +552,21 @@ export async function* streamChatTurn(options: ChatTurnOptions): AsyncGenerator<
       let toolCallsAcc: Record<string, { name: string; argsStr: string }> = {};
       let finishReason: string | null | undefined = null;
 
-      const stream = await openai.chat.completions.create({
+      const stream = (await openai.chat.completions.create({
         model: effectiveModel,
         max_tokens: 4096,
         tools: openaiTools,
         messages: openaiMessages as never,
         stream: true,
         stream_options: { include_usage: true },
-      } as never) as unknown as AsyncIterable<Record<string, unknown>>;
+      } as never)) as unknown as AsyncIterable<Record<string, unknown>>;
 
       for await (const chunk of stream) {
         const choices = chunk['choices'] as Array<Record<string, unknown>> | undefined;
         const delta = choices?.[0]?.['delta'] as Record<string, unknown> | undefined;
-        const chunkUsage = chunk['usage'] as { prompt_tokens: number; completion_tokens: number } | undefined;
+        const chunkUsage = chunk['usage'] as
+          | { prompt_tokens: number; completion_tokens: number }
+          | undefined;
 
         if (typeof delta?.['content'] === 'string' && delta['content']) {
           yield { type: 'text_delta', delta: delta['content'] };
@@ -480,7 +584,11 @@ export async function* streamChatTurn(options: ChatTurnOptions): AsyncGenerator<
         }
 
         if (chunkUsage) {
-          yield { type: 'usage', input: chunkUsage.prompt_tokens, output: chunkUsage.completion_tokens };
+          yield {
+            type: 'usage',
+            input: chunkUsage.prompt_tokens,
+            output: chunkUsage.completion_tokens,
+          };
         }
 
         const fr = choices?.[0]?.['finish_reason'];
@@ -489,7 +597,10 @@ export async function* streamChatTurn(options: ChatTurnOptions): AsyncGenerator<
 
       if (finishReason === 'tool_calls') {
         if (++toolRound > MAX_TOOL_ROUNDS) {
-          yield { type: 'done', finalText: fullText || 'Tool use limit reached. Please simplify your request.' };
+          yield {
+            type: 'done',
+            finalText: fullText || 'Tool use limit reached. Please simplify your request.',
+          };
           return;
         }
 
@@ -508,10 +619,18 @@ export async function* streamChatTurn(options: ChatTurnOptions): AsyncGenerator<
           yield { type: 'tool_call', name: toolName };
           let ok = true;
           let result = '';
-          const parseResult = parseToolArguments(tc.function.arguments || '{}', getToolSchema(tools, toolName));
+          const parseResult = parseToolArguments(
+            tc.function.arguments || '{}',
+            getToolSchema(tools, toolName),
+          );
           if (!parseResult.ok) {
             ok = false;
-            result = formatParseError(tc.function.arguments, toolName, tools.map((t) => t.name), getToolSchema(tools, toolName));
+            result = formatParseError(
+              tc.function.arguments,
+              toolName,
+              tools.map((t) => t.name),
+              getToolSchema(tools, toolName),
+            );
           } else {
             try {
               result = await callTool(toolName, parseResult.args);

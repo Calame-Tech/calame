@@ -54,21 +54,19 @@ function validateClassifierResult(raw: unknown): ClassifierResult {
 
   const obj = raw as Record<string, unknown>;
 
-  const intent = typeof obj.intent === 'string' && VALID_INTENTS.has(obj.intent)
-    ? (obj.intent as ClassifierResult['intent'])
-    : 'query'; // default to safe intent if unknown
+  const intent =
+    typeof obj.intent === 'string' && VALID_INTENTS.has(obj.intent)
+      ? (obj.intent as ClassifierResult['intent'])
+      : 'query'; // default to safe intent if unknown
 
-  const confidence = typeof obj.confidence === 'number'
-    ? Math.max(0, Math.min(1, obj.confidence)) // clamp 0-1
-    : 0.5;
+  const confidence =
+    typeof obj.confidence === 'number'
+      ? Math.max(0, Math.min(1, obj.confidence)) // clamp 0-1
+      : 0.5;
 
-  const reasoning = typeof obj.reasoning === 'string'
-    ? obj.reasoning
-    : 'No reasoning provided';
+  const reasoning = typeof obj.reasoning === 'string' ? obj.reasoning : 'No reasoning provided';
 
-  const suggestedTool = typeof obj.suggestedTool === 'string'
-    ? obj.suggestedTool
-    : undefined;
+  const suggestedTool = typeof obj.suggestedTool === 'string' ? obj.suggestedTool : undefined;
 
   return { intent, confidence, suggestedTool, reasoning };
 }
@@ -137,7 +135,9 @@ export class LlmRouter {
 
   /** Check if a message should be blocked based on classifier result */
   shouldBlock(result: ClassifierResult): boolean {
-    return result.intent === 'injection_attempt' && result.confidence >= this.config.injectionThreshold;
+    return (
+      result.intent === 'injection_attempt' && result.confidence >= this.config.injectionThreshold
+    );
   }
 
   /** Get a user-friendly rejection message */

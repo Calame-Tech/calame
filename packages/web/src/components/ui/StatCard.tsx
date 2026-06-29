@@ -67,12 +67,7 @@ export function StatCard({
   className,
 }: StatCardProps): React.ReactElement {
   return (
-    <div
-      className={cn(
-        'card-primary p-4',
-        className,
-      )}
-    >
+    <div className={cn('card-primary p-4', className)}>
       <div className="flex items-start justify-between gap-4">
         <div className="flex flex-col gap-2 flex-1 min-w-0">
           {/* Label */}

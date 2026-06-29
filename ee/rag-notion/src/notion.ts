@@ -370,11 +370,7 @@ export function renderBlocksToText(blocks: BlockWithChildren[], depth = 0): stri
   return out.join('\n');
 }
 
-function renderOneBlock(
-  block: BlockWithChildren,
-  depth: number,
-  indent: string,
-): string | null {
+function renderOneBlock(block: BlockWithChildren, depth: number, indent: string): string | null {
   const t = block.type;
   switch (t) {
     case 'paragraph': {
@@ -446,14 +442,16 @@ function renderOneBlock(
       return `${indent}→ Database: ${title}`;
     }
     case 'image': {
-      const img = (block as {
-        image?: {
-          type?: string;
-          external?: { url?: string };
-          file?: { url?: string };
-          caption?: RichTextLike[];
-        };
-      }).image;
+      const img = (
+        block as {
+          image?: {
+            type?: string;
+            external?: { url?: string };
+            file?: { url?: string };
+            caption?: RichTextLike[];
+          };
+        }
+      ).image;
       const caption = renderRichText(img?.caption).trim();
       const url =
         img?.type === 'external'
@@ -874,9 +872,7 @@ export class NotionConnector implements DocumentSourceConnector {
     const title = pageTitle(page);
     const folderPath = folder?.path;
     const path =
-      typeof folderPath === 'string' && folderPath.length > 0
-        ? `${folderPath}/${title}`
-        : title;
+      typeof folderPath === 'string' && folderPath.length > 0 ? `${folderPath}/${title}` : title;
     const etag = typeof p.last_edited_time === 'string' ? p.last_edited_time : null;
     const deletedAt = p.archived === true ? etag : null;
     return {
@@ -907,9 +903,7 @@ function isPageResult(
   if (!result || typeof result !== 'object') return false;
   const r = result as { object?: string; archived?: unknown; last_edited_time?: unknown };
   return (
-    r.object === 'page' &&
-    typeof r.archived === 'boolean' &&
-    typeof r.last_edited_time === 'string'
+    r.object === 'page' && typeof r.archived === 'boolean' && typeof r.last_edited_time === 'string'
   );
 }
 

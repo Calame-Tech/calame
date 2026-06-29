@@ -131,15 +131,20 @@ export default function OnboardingWizard({ onComplete, onSkip }: OnboardingWizar
     setStep2Tables((s) => ({ ...s, loading: true, error: '' }));
     apiFetch(`/api/schema/${encodeURIComponent(createdConnectionName)}`, { credentials: 'include' })
       .then((r) => r.json())
-      .then((data: { success: boolean; schema?: { tables: Array<{ name: string; columns: Array<{ name: string }> }> } }) => {
-        const tables = data.schema?.tables ?? [];
-        setStep2Tables((s) => ({
-          ...s,
-          tables,
-          checked: new Set(tables.map((t) => t.name)),
-          loading: false,
-        }));
-      })
+      .then(
+        (data: {
+          success: boolean;
+          schema?: { tables: Array<{ name: string; columns: Array<{ name: string }> }> };
+        }) => {
+          const tables = data.schema?.tables ?? [];
+          setStep2Tables((s) => ({
+            ...s,
+            tables,
+            checked: new Set(tables.map((t) => t.name)),
+            loading: false,
+          }));
+        },
+      )
       .catch(() =>
         setStep2Tables((s) => ({ ...s, loading: false, error: 'Failed to load schema.' })),
       );
@@ -158,9 +163,7 @@ export default function OnboardingWizard({ onComplete, onSkip }: OnboardingWizar
     setStep2Tables((s) => ({
       ...s,
       checked:
-        s.checked.size === s.tables.length
-          ? new Set()
-          : new Set(s.tables.map((t) => t.name)),
+        s.checked.size === s.tables.length ? new Set() : new Set(s.tables.map((t) => t.name)),
     }));
   }
 
@@ -231,7 +234,10 @@ export default function OnboardingWizard({ onComplete, onSkip }: OnboardingWizar
           body: JSON.stringify({ profiles: [name] }),
         });
       } catch (activateErr) {
-        console.warn('Could not activate profile immediately; it can be activated from the dashboard.', activateErr);
+        console.warn(
+          'Could not activate profile immediately; it can be activated from the dashboard.',
+          activateErr,
+        );
       }
 
       setCreatedProfileName(name);
@@ -408,7 +414,10 @@ function StepConnect({ state, setState, onDemo, onCustom }: StepConnectProps) {
       <form onSubmit={onCustom} className="card-primary p-4 space-y-4" noValidate>
         <div>
           <label htmlFor="conn-name" className="block text-sm font-medium text-gray-300 mb-1">
-            Connection name <span className="text-red-400" aria-hidden="true">*</span>
+            Connection name{' '}
+            <span className="text-red-400" aria-hidden="true">
+              *
+            </span>
           </label>
           <input
             id="conn-name"
@@ -423,7 +432,10 @@ function StepConnect({ state, setState, onDemo, onCustom }: StepConnectProps) {
 
         <div>
           <label htmlFor="conn-type" className="block text-sm font-medium text-gray-300 mb-1">
-            Database type <span className="text-red-400" aria-hidden="true">*</span>
+            Database type{' '}
+            <span className="text-red-400" aria-hidden="true">
+              *
+            </span>
           </label>
           <select
             id="conn-type"
@@ -439,7 +451,10 @@ function StepConnect({ state, setState, onDemo, onCustom }: StepConnectProps) {
 
         <div>
           <label htmlFor="conn-string" className="block text-sm font-medium text-gray-300 mb-1">
-            Connection string <span className="text-red-400" aria-hidden="true">*</span>
+            Connection string{' '}
+            <span className="text-red-400" aria-hidden="true">
+              *
+            </span>
           </label>
           <input
             id="conn-string"
@@ -499,9 +514,8 @@ function StepTables({ state, connectionName, onToggle, onToggleAll, onNext }: St
         <p className="text-xs font-semibold tracking-widest text-os-400 uppercase mb-2">Step 2</p>
         <h1 className="heading-lg mb-2">Select tables to expose</h1>
         <p className="text-sm text-gray-400">
-          Choose which tables from{' '}
-          <span className="text-gray-200 font-mono">{connectionName}</span> will be accessible
-          through your MCP profile. All columns are included by default.
+          Choose which tables from <span className="text-gray-200 font-mono">{connectionName}</span>{' '}
+          will be accessible through your MCP profile. All columns are included by default.
         </p>
       </div>
 
@@ -610,7 +624,10 @@ function StepProfile({
       <form onSubmit={onSubmit} className="card-primary p-4 space-y-4" noValidate>
         <div>
           <label htmlFor="profile-name" className="block text-sm font-medium text-gray-300 mb-1">
-            Profile name <span className="text-red-400" aria-hidden="true">*</span>
+            Profile name{' '}
+            <span className="text-red-400" aria-hidden="true">
+              *
+            </span>
           </label>
           <input
             id="profile-name"
@@ -684,9 +701,7 @@ function StepDone({ mcpUrl, profileName, copied, onCopy, onComplete }: StepDoneP
         </div>
 
         <div>
-          <p className="text-xs font-semibold tracking-widest text-os-400 uppercase mb-2">
-            Step 4
-          </p>
+          <p className="text-xs font-semibold tracking-widest text-os-400 uppercase mb-2">Step 4</p>
           <h1 className="heading-lg mb-2">You're all set!</h1>
           <p className="text-sm text-gray-400">
             Your MCP server is ready.{' '}

@@ -21,9 +21,7 @@ interface UserChatPanelProps {
 }
 
 export default function UserChatPanel({ profiles }: UserChatPanelProps) {
-  const chatProfiles = profiles.filter(
-    (p) => p.accessMode === 'chat' || p.accessMode === 'both',
-  );
+  const chatProfiles = profiles.filter((p) => p.accessMode === 'chat' || p.accessMode === 'both');
 
   const [selectedProfile, setSelectedProfile] = useState(chatProfiles[0]?.profileName ?? '');
   const [chatInput, setChatInput] = useState('');

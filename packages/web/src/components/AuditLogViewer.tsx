@@ -29,31 +29,34 @@ export default function AuditLogViewer({ profiles }: AuditLogViewerProps) {
   const [autoRefresh, setAutoRefresh] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const fetchEntries = useCallback(async (currentOffset: number) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const params = new URLSearchParams();
-      params.set('limit', String(PAGE_SIZE));
-      params.set('offset', String(currentOffset));
-      if (filterProfile) params.set('profileName', filterProfile);
-      if (filterDateFrom) params.set('dateFrom', filterDateFrom);
-      if (filterDateTo) params.set('dateTo', filterDateTo);
+  const fetchEntries = useCallback(
+    async (currentOffset: number) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const params = new URLSearchParams();
+        params.set('limit', String(PAGE_SIZE));
+        params.set('offset', String(currentOffset));
+        if (filterProfile) params.set('profileName', filterProfile);
+        if (filterDateFrom) params.set('dateFrom', filterDateFrom);
+        if (filterDateTo) params.set('dateTo', filterDateTo);
 
-      const res = await fetch(`/api/audit?${params.toString()}`);
-      const data = await res.json();
-      if (data.success !== false) {
-        setEntries(data.entries ?? []);
-        setTotalCount(data.total ?? data.entries?.length ?? 0);
-      } else {
-        setError(data.message || 'Failed to load audit log.');
+        const res = await fetch(`/api/audit?${params.toString()}`);
+        const data = await res.json();
+        if (data.success !== false) {
+          setEntries(data.entries ?? []);
+          setTotalCount(data.total ?? data.entries?.length ?? 0);
+        } else {
+          setError(data.message || 'Failed to load audit log.');
+        }
+      } catch {
+        setError('Network error loading audit log.');
+      } finally {
+        setLoading(false);
       }
-    } catch {
-      setError('Network error loading audit log.');
-    } finally {
-      setLoading(false);
-    }
-  }, [filterProfile, filterDateFrom, filterDateTo]);
+    },
+    [filterProfile, filterDateFrom, filterDateTo],
+  );
 
   useEffect(() => {
     setOffset(0);
@@ -130,7 +133,9 @@ export default function AuditLogViewer({ profiles }: AuditLogViewerProps) {
           >
             <option value="">All profiles</option>
             {profiles.map((p) => (
-              <option key={p.name} value={p.name}>{p.label}</option>
+              <option key={p.name} value={p.name}>
+                {p.label}
+              </option>
             ))}
           </select>
         </div>
@@ -153,7 +158,11 @@ export default function AuditLogViewer({ profiles }: AuditLogViewerProps) {
         <div>
           <label className="flex items-center gap-1 text-xs text-gray-400 mb-1">
             To
-            <HelpTip content="Show only entries up to and including this date." position="top" size="xs" />
+            <HelpTip
+              content="Show only entries up to and including this date."
+              position="top"
+              size="xs"
+            />
           </label>
           <input
             type="date"
@@ -182,7 +191,11 @@ export default function AuditLogViewer({ profiles }: AuditLogViewerProps) {
           </div>
           <span className="flex items-center gap-1 text-xs text-gray-400">
             Auto-refresh
-            <HelpTip content="Automatically refreshes the log every 5 seconds." position="top" size="xs" />
+            <HelpTip
+              content="Automatically refreshes the log every 5 seconds."
+              position="top"
+              size="xs"
+            />
           </span>
         </label>
 
@@ -216,22 +229,59 @@ export default function AuditLogViewer({ profiles }: AuditLogViewerProps) {
             <tr className="text-left text-gray-400 border-b border-white/5">
               <th className="w-8 px-2 py-3" />
               <th className="px-4 py-3 font-medium">
-                <span className="flex items-center gap-1">Time <HelpTip content="Timestamp of the tool call." position="bottom" size="xs" /></span>
+                <span className="flex items-center gap-1">
+                  Time <HelpTip content="Timestamp of the tool call." position="bottom" size="xs" />
+                </span>
               </th>
               <th className="px-4 py-3 font-medium">
-                <span className="flex items-center gap-1">Profile <HelpTip content="MCP server that handled the request." position="bottom" size="xs" /></span>
+                <span className="flex items-center gap-1">
+                  Profile{' '}
+                  <HelpTip
+                    content="MCP server that handled the request."
+                    position="bottom"
+                    size="xs"
+                  />
+                </span>
               </th>
               <th className="px-4 py-3 font-medium">
-                <span className="flex items-center gap-1">Tool <HelpTip content="Name of the MCP tool that was called." position="bottom" size="xs" /></span>
+                <span className="flex items-center gap-1">
+                  Tool{' '}
+                  <HelpTip
+                    content="Name of the MCP tool that was called."
+                    position="bottom"
+                    size="xs"
+                  />
+                </span>
               </th>
               <th className="px-4 py-3 font-medium">
-                <span className="flex items-center gap-1">Result <HelpTip content="Execution outcome: success or error." position="bottom" size="xs" /></span>
+                <span className="flex items-center gap-1">
+                  Result{' '}
+                  <HelpTip
+                    content="Execution outcome: success or error."
+                    position="bottom"
+                    size="xs"
+                  />
+                </span>
               </th>
               <th className="px-4 py-3 font-medium">
-                <span className="flex items-center gap-1">Duration <HelpTip content="Total execution time of the tool, in milliseconds or seconds." position="bottom" size="xs" /></span>
+                <span className="flex items-center gap-1">
+                  Duration{' '}
+                  <HelpTip
+                    content="Total execution time of the tool, in milliseconds or seconds."
+                    position="bottom"
+                    size="xs"
+                  />
+                </span>
               </th>
               <th className="px-4 py-3 font-medium">
-                <span className="flex items-center gap-1">Summary <HelpTip content="Short summary of the result or error returned." position="bottom" size="xs" /></span>
+                <span className="flex items-center gap-1">
+                  Summary{' '}
+                  <HelpTip
+                    content="Short summary of the result or error returned."
+                    position="bottom"
+                    size="xs"
+                  />
+                </span>
               </th>
             </tr>
           </thead>
@@ -266,11 +316,11 @@ export default function AuditLogViewer({ profiles }: AuditLogViewerProps) {
                   <Fragment key={entry.id}>
                     <tr
                       className={`border-b border-white/5 transition-colors ${
-                        isExpandable
-                          ? 'hover:bg-gray-800/40 cursor-pointer'
-                          : ''
+                        isExpandable ? 'hover:bg-gray-800/40 cursor-pointer' : ''
                       }`}
-                      onClick={isExpandable ? () => setExpandedId(isExpanded ? null : entry.id) : undefined}
+                      onClick={
+                        isExpandable ? () => setExpandedId(isExpanded ? null : entry.id) : undefined
+                      }
                     >
                       <td className="w-8 px-2 py-3 text-center text-gray-500">
                         {isExpandable && (
@@ -290,7 +340,11 @@ export default function AuditLogViewer({ profiles }: AuditLogViewerProps) {
                       </td>
                       <td className="px-4 py-3">
                         <span
-                          title={entry.result === 'success' ? "L'outil a été exécuté sans erreur." : "L'outil a échoué. Cliquez sur la ligne pour voir les détails."}
+                          title={
+                            entry.result === 'success'
+                              ? "L'outil a été exécuté sans erreur."
+                              : "L'outil a échoué. Cliquez sur la ligne pour voir les détails."
+                          }
                           className={`px-2 py-0.5 rounded-full text-xs ${
                             entry.result === 'success'
                               ? 'bg-green-500/20 text-green-400'

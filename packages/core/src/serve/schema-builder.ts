@@ -11,8 +11,34 @@ import { makeFilterMapSchema, FILTER_OPS_DESC } from './filter-builder.js';
 
 // Shared constants — referenced in Zod .describe() calls to avoid repeating
 // verbose strings multiple times in the tool manifest.
-const AGG_OPS = ['count', 'sum', 'avg', 'min', 'max', 'ratio', 'count_distinct', 'weighted_ratio', 'median', 'stddev', 'variance', 'percentile'] as const;
-const AGG_OPS_JOIN = ['count', 'sum', 'avg', 'min', 'max', 'ratio', 'count_distinct', 'weighted_ratio', 'median', 'stddev', 'variance', 'percentile'] as const;
+const AGG_OPS = [
+  'count',
+  'sum',
+  'avg',
+  'min',
+  'max',
+  'ratio',
+  'count_distinct',
+  'weighted_ratio',
+  'median',
+  'stddev',
+  'variance',
+  'percentile',
+] as const;
+const AGG_OPS_JOIN = [
+  'count',
+  'sum',
+  'avg',
+  'min',
+  'max',
+  'ratio',
+  'count_distinct',
+  'weighted_ratio',
+  'median',
+  'stddev',
+  'variance',
+  'percentile',
+] as const;
 const DATE_BUCKETS = ['day', 'week', 'month', 'quarter', 'year'] as const;
 const ORDER_DIRS = ['asc', 'desc'] as const;
 
@@ -39,17 +65,28 @@ export function buildAggregateArgsShape(tableEnum: z.ZodTypeAny): Record<string,
     aggregation_column: z
       .string()
       .optional()
-      .describe('Required for sum/avg/min/max (numeric), count_distinct (any col), median/stddev/variance/percentile (numeric).'),
+      .describe(
+        'Required for sum/avg/min/max (numeric), count_distinct (any col), median/stddev/variance/percentile (numeric).',
+      ),
     numerator_column: z.string().optional().describe('Numeric numerator col for weighted_ratio.'),
-    denominator_column: z.string().optional().describe('Numeric denominator col for weighted_ratio.'),
+    denominator_column: z
+      .string()
+      .optional()
+      .describe('Numeric denominator col for weighted_ratio.'),
     percentile_p: z
       .number()
       .min(0.01)
       .max(0.99)
       .optional()
-      .describe('Required when aggregation is "percentile". Value between 0.01 and 0.99 (e.g. 0.95 for p95).'),
-    filters: makeFilterMapSchema().describe(`WHERE filters (denominator for ratio). ${FILTER_OPS_DESC}`),
-    ratio_filter: makeFilterMapSchema().describe('Numerator filter for ratio. Same shape as filters.'),
+      .describe(
+        'Required when aggregation is "percentile". Value between 0.01 and 0.99 (e.g. 0.95 for p95).',
+      ),
+    filters: makeFilterMapSchema().describe(
+      `WHERE filters (denominator for ratio). ${FILTER_OPS_DESC}`,
+    ),
+    ratio_filter: makeFilterMapSchema().describe(
+      'Numerator filter for ratio. Same shape as filters.',
+    ),
     having_min_total: z
       .number()
       .optional()
@@ -58,15 +95,23 @@ export function buildAggregateArgsShape(tableEnum: z.ZodTypeAny): Record<string,
     group_by_bucket: z
       .enum(DATE_BUCKETS)
       .optional()
-      .describe('Date truncation granularity for group_by on a date/timestamp column (DATE_TRUNC).'),
+      .describe(
+        'Date truncation granularity for group_by on a date/timestamp column (DATE_TRUNC).',
+      ),
     group_by_secondary: z
       .string()
       .optional()
-      .describe('Second GROUP BY column for 2D pivots. Combine with top_n_per_group for top-N rankings.'),
+      .describe(
+        'Second GROUP BY column for 2D pivots. Combine with top_n_per_group for top-N rankings.',
+      ),
     top_n_per_group: z
       .object({
-        partition_by: z.string().describe('Partition column — must match group_by or group_by_secondary.'),
-        order_by: z.string().describe('Sort column per partition (use "result" for aggregate value).'),
+        partition_by: z
+          .string()
+          .describe('Partition column — must match group_by or group_by_secondary.'),
+        order_by: z
+          .string()
+          .describe('Sort column per partition (use "result" for aggregate value).'),
         n: z.number().describe('Rows to keep per partition (>= 1).'),
       })
       .optional()
@@ -113,7 +158,9 @@ export function buildAggregateArgsShape(tableEnum: z.ZodTypeAny): Record<string,
 export function buildJoinAggregateArgsShape(tableEnum: z.ZodTypeAny): Record<string, z.ZodTypeAny> {
   return {
     primary_table: tableEnum.describe('Left side of the JOIN.'),
-    join_table: tableEnum.describe('Right side of the JOIN. Does NOT need to be directly FK-linked to primary_table — the system auto-resolves the FK path through intermediate tables (up to 3 hops). Example: primary=colis, join=zone works even if the FK chain is colis→livreur→zone.'),
+    join_table: tableEnum.describe(
+      'Right side of the JOIN. Does NOT need to be directly FK-linked to primary_table — the system auto-resolves the FK path through intermediate tables (up to 3 hops). Example: primary=colis, join=zone works even if the FK chain is colis→livreur→zone.',
+    ),
     aggregation: z
       .enum(AGG_OPS_JOIN)
       .describe(
@@ -127,10 +174,17 @@ export function buildJoinAggregateArgsShape(tableEnum: z.ZodTypeAny): Record<str
     aggregation_column: z
       .string()
       .optional()
-      .describe('Required for sum/avg/min/max/count_distinct/median/stddev/variance/percentile. Col from aggregation_column_table side.'),
+      .describe(
+        'Required for sum/avg/min/max/count_distinct/median/stddev/variance/percentile. Col from aggregation_column_table side.',
+      ),
     numerator_column: z.string().optional().describe('Numeric numerator col for weighted_ratio.'),
-    denominator_column: z.string().optional().describe('Numeric denominator col for weighted_ratio.'),
-    ratio_filter: makeFilterMapSchema().describe('Numerator filter for ratio aggregation. Columns belong to ratio_filter_table side. Same shape as filters.'),
+    denominator_column: z
+      .string()
+      .optional()
+      .describe('Numeric denominator col for weighted_ratio.'),
+    ratio_filter: makeFilterMapSchema().describe(
+      'Numerator filter for ratio aggregation. Columns belong to ratio_filter_table side. Same shape as filters.',
+    ),
     ratio_filter_table: z
       .enum(['primary', 'join'])
       .optional()
@@ -140,7 +194,9 @@ export function buildJoinAggregateArgsShape(tableEnum: z.ZodTypeAny): Record<str
       .min(0.01)
       .max(0.99)
       .optional()
-      .describe('Required when aggregation is "percentile". Value between 0.01 and 0.99 (e.g. 0.95 for p95).'),
+      .describe(
+        'Required when aggregation is "percentile". Value between 0.01 and 0.99 (e.g. 0.95 for p95).',
+      ),
     aggregation_column_table: z
       .enum(['primary', 'join'])
       .optional()
@@ -161,7 +217,9 @@ export function buildJoinAggregateArgsShape(tableEnum: z.ZodTypeAny): Record<str
     group_by_secondary_column: z
       .string()
       .optional()
-      .describe('Second GROUP BY column for 2D cross-table pivots. Does not support date bucketing.'),
+      .describe(
+        'Second GROUP BY column for 2D cross-table pivots. Does not support date bucketing.',
+      ),
     group_by_secondary_table: z
       .enum(['primary', 'join'])
       .optional()
@@ -204,7 +262,10 @@ export function buildWriteArgsShape(tableEnum: z.ZodTypeAny): Record<string, z.Z
     table: tableEnum.describe('Target table.'),
     operation: z.enum(['insert', 'update', 'delete']).describe('Write operation.'),
     description: z.string().describe('What this write does and why.'),
-    values: z.record(z.string(), z.any()).optional().describe('Column-value pairs for INSERT or UPDATE.'),
+    values: z
+      .record(z.string(), z.any())
+      .optional()
+      .describe('Column-value pairs for INSERT or UPDATE.'),
     filters: makeFilterMapSchema().describe('Filters for UPDATE/DELETE (required for those).'),
   };
 }

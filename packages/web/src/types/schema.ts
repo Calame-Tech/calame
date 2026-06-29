@@ -56,7 +56,16 @@ export interface TableToolOptions {
 }
 
 // PII & Masking types
-export type PiiCategory = 'email' | 'phone' | 'name' | 'address' | 'credit_card' | 'password' | 'ip_address' | 'ssn' | 'encrypted';
+export type PiiCategory =
+  | 'email'
+  | 'phone'
+  | 'name'
+  | 'address'
+  | 'credit_card'
+  | 'password'
+  | 'ip_address'
+  | 'ssn'
+  | 'encrypted';
 export type MaskingMode = 'none' | 'exclude' | 'hash' | 'truncate' | 'replace' | 'aggregate_only';
 
 export interface PiiDetection {

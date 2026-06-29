@@ -1,12 +1,39 @@
 import type { ColumnMasking, MaskingMode } from '../types/schema.js';
 
 const MODES: { value: MaskingMode; label: string; description: string }[] = [
-  { value: 'none', label: 'None', description: 'Aucun masquage — la valeur brute est exposée telle quelle.' },
-  { value: 'exclude', label: 'Exclude', description: 'Exclut complètement cette colonne des résultats renvoyés par le serveur MCP.' },
-  { value: 'hash', label: 'Hash', description: 'Remplace la valeur par son empreinte SHA-256. Permet la comparaison sans révéler la donnée réelle.' },
-  { value: 'truncate', label: 'Truncate', description: 'Masque une partie de la valeur en ne conservant que les premiers et/ou derniers caractères configurés.' },
-  { value: 'replace', label: 'Replace', description: 'Remplace la valeur entière par une chaîne fixe (ex. [MASQUÉ]).' },
-  { value: 'aggregate_only', label: 'Aggregate only', description: 'Autorise uniquement les agrégats (COUNT, SUM…). Les valeurs individuelles ne sont pas accessibles.' },
+  {
+    value: 'none',
+    label: 'None',
+    description: 'Aucun masquage — la valeur brute est exposée telle quelle.',
+  },
+  {
+    value: 'exclude',
+    label: 'Exclude',
+    description: 'Exclut complètement cette colonne des résultats renvoyés par le serveur MCP.',
+  },
+  {
+    value: 'hash',
+    label: 'Hash',
+    description:
+      'Remplace la valeur par son empreinte SHA-256. Permet la comparaison sans révéler la donnée réelle.',
+  },
+  {
+    value: 'truncate',
+    label: 'Truncate',
+    description:
+      'Masque une partie de la valeur en ne conservant que les premiers et/ou derniers caractères configurés.',
+  },
+  {
+    value: 'replace',
+    label: 'Replace',
+    description: 'Remplace la valeur entière par une chaîne fixe (ex. [MASQUÉ]).',
+  },
+  {
+    value: 'aggregate_only',
+    label: 'Aggregate only',
+    description:
+      'Autorise uniquement les agrégats (COUNT, SUM…). Les valeurs individuelles ne sont pas accessibles.',
+  },
 ];
 
 interface MaskingSelectorProps {
@@ -36,7 +63,9 @@ export default function MaskingSelector({ masking, onChange }: MaskingSelectorPr
         className="px-2 py-1 rounded bg-gray-800/80 border border-white/10 text-gray-200 text-xs focus:outline-none focus:border-os-500 focus:ring-1 focus:ring-os-500/30"
       >
         {MODES.map((m) => (
-          <option key={m.value} value={m.value}>{m.label}</option>
+          <option key={m.value} value={m.value}>
+            {m.label}
+          </option>
         ))}
       </select>
 

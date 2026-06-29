@@ -148,10 +148,7 @@ export default function SourcesPage({
                   >
                     {tab.count}
                   </span>
-                  <span
-                    className="text-gray-600 text-[10px] leading-none"
-                    aria-hidden="true"
-                  >
+                  <span className="text-gray-600 text-[10px] leading-none" aria-hidden="true">
                     ⓘ
                   </span>
                 </button>
@@ -175,9 +172,7 @@ export default function SourcesPage({
                 <span
                   className={[
                     'ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-mono',
-                    isActive
-                      ? 'bg-os-500/20 text-os-400'
-                      : 'bg-gray-800 text-gray-500',
+                    isActive ? 'bg-os-500/20 text-os-400' : 'bg-gray-800 text-gray-500',
                   ].join(' ')}
                   aria-label={`${tab.count} items`}
                 >
@@ -200,8 +195,8 @@ export default function SourcesPage({
           />
         )}
 
-        {currentTab === 'knowledge' && (
-          ragEnabled ? (
+        {currentTab === 'knowledge' &&
+          (ragEnabled ? (
             <Suspense
               fallback={
                 <div className="text-sm text-gray-500 italic py-8 text-center">
@@ -241,8 +236,7 @@ export default function SourcesPage({
                   'The RAG (Retrieval-Augmented Generation) feature is not available on this instance.'}
               </p>
             </div>
-          )
-        )}
+          ))}
       </div>
 
       {/* Add source modal — rendered at page level as a fallback when no external handler */}

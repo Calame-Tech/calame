@@ -17,21 +17,21 @@ import type { ParsedDocument } from './types.js';
  * usable section signal.
  */
 export async function parse(buffer: Buffer): Promise<ParsedDocument> {
-	// unpdf expects a Uint8Array, not a Node Buffer slice.
-	const bytes = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
-	const pdf = await getDocumentProxy(bytes);
-	const result = await extractText(pdf, { mergePages: false });
+  // unpdf expects a Uint8Array, not a Node Buffer slice.
+  const bytes = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+  const pdf = await getDocumentProxy(bytes);
+  const result = await extractText(pdf, { mergePages: false });
 
-	// `text` is string[] when mergePages is false.
-	const pages: string[] = Array.isArray(result.text) ? result.text : [result.text];
-	const normalized = pages
-		.map((p) => (typeof p === 'string' ? p.trim() : ''))
-		.filter((p) => p.length > 0)
-		.join('\n\n');
+  // `text` is string[] when mergePages is false.
+  const pages: string[] = Array.isArray(result.text) ? result.text : [result.text];
+  const normalized = pages
+    .map((p) => (typeof p === 'string' ? p.trim() : ''))
+    .filter((p) => p.length > 0)
+    .join('\n\n');
 
-	return {
-		text: normalized,
-		format: 'plain',
-		metadata: { pageCount: pages.length },
-	};
+  return {
+    text: normalized,
+    format: 'plain',
+    metadata: { pageCount: pages.length },
+  };
 }

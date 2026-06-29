@@ -61,8 +61,9 @@ function makeMockProvider(): MockProvider {
   return {
     generateCodeVerifier: vi.fn(() => 'test-verifier'),
     // Include the state param in the redirect URL so initiateLogin can extract it.
-    getAuthorizationUrl: vi.fn(async (stateParam: string) =>
-      `https://idp.example.com/auth?state=${stateParam}&response_type=code`,
+    getAuthorizationUrl: vi.fn(
+      async (stateParam: string) =>
+        `https://idp.example.com/auth?state=${stateParam}&response_type=code`,
     ),
     exchangeCode: vi.fn(async () => ({
       idToken: 'mock-id-token',
@@ -131,7 +132,8 @@ function buildTestApp(state: AppState, mp: MockProvider): express.Express {
   app.use(express.json());
   const deps = makeSsoDeps(state);
   const options: OidcAuthRouteOptions = {
-    providerFactory: () => mp as unknown as ReturnType<OidcAuthRouteOptions['providerFactory'] & {}>,
+    providerFactory: () =>
+      mp as unknown as ReturnType<OidcAuthRouteOptions['providerFactory'] & {}>,
   };
   registerOidcAuthRoutes(app, state, deps, options);
   return app;
@@ -145,10 +147,7 @@ async function initiateLogin(
   app: express.Express,
   redirect: string,
 ): Promise<{ stateParam: string }> {
-  const res = await request(app)
-    .get('/api/auth/oidc/login')
-    .query({ redirect })
-    .redirects(0);
+  const res = await request(app).get('/api/auth/oidc/login').query({ redirect }).redirects(0);
 
   const location = res.headers['location'] as string | undefined;
   if (!location) throw new Error('No Location header from /login');
@@ -338,7 +337,12 @@ describe('OIDC callback — SSO auto-grant logic', () => {
         email: 'sso-user@example.com',
         role: 'user',
         profiles: [
-          { profileName: adminProfile, allowedTables: null, allowedTools: null, accessMode: 'both' },
+          {
+            profileName: adminProfile,
+            allowedTables: null,
+            allowedTools: null,
+            accessMode: 'both',
+          },
           { profileName: idpProfile, allowedTables: null, allowedTools: null, accessMode: 'both' },
         ],
       });
@@ -364,7 +368,14 @@ describe('OIDC callback — SSO auto-grant logic', () => {
         name: 'Existing',
         email: 'sso-user@example.com',
         role: 'user',
-        profiles: [{ profileName: adminProfile, allowedTables: null, allowedTools: null, accessMode: 'both' }],
+        profiles: [
+          {
+            profileName: adminProfile,
+            allowedTables: null,
+            allowedTools: null,
+            accessMode: 'both',
+          },
+        ],
       });
       userManager.consumeOnboardingCode(userManager.getUserById(id)!.onboardingCode!);
       userManager.setOidcSubject(id, 'oidc-subject-123');
@@ -390,7 +401,9 @@ describe('OIDC callback — SSO auto-grant logic', () => {
         name: 'Engineer',
         email: 'sso-user@example.com',
         role: 'user',
-        profiles: [{ profileName: 'other', allowedTables: null, allowedTools: null, accessMode: 'both' }],
+        profiles: [
+          { profileName: 'other', allowedTables: null, allowedTools: null, accessMode: 'both' },
+        ],
       });
       userManager.consumeOnboardingCode(userManager.getUserById(id)!.onboardingCode!);
       userManager.setOidcSubject(id, 'oidc-subject-123');
@@ -419,7 +432,14 @@ describe('OIDC callback — SSO auto-grant logic', () => {
         name: 'Engineer',
         email: 'sso-user@example.com',
         role: 'user',
-        profiles: [{ profileName: adminProfile, allowedTables: null, allowedTools: null, accessMode: 'both' }],
+        profiles: [
+          {
+            profileName: adminProfile,
+            allowedTables: null,
+            allowedTools: null,
+            accessMode: 'both',
+          },
+        ],
       });
       userManager.consumeOnboardingCode(userManager.getUserById(id)!.onboardingCode!);
       userManager.setOidcSubject(id, 'oidc-subject-123');
@@ -443,7 +463,9 @@ describe('OIDC callback — SSO auto-grant logic', () => {
         name: 'Existing',
         email: 'sso-user@example.com',
         role: 'user',
-        profiles: [{ profileName: 'other', allowedTables: null, allowedTools: null, accessMode: 'both' }],
+        profiles: [
+          { profileName: 'other', allowedTables: null, allowedTools: null, accessMode: 'both' },
+        ],
       });
       userManager.consumeOnboardingCode(userManager.getUserById(id)!.onboardingCode!);
       userManager.setOidcSubject(id, 'oidc-subject-123');
@@ -461,7 +483,9 @@ describe('OIDC callback — SSO auto-grant logic', () => {
         name: 'Existing',
         email: 'sso-user@example.com',
         role: 'user',
-        profiles: [{ profileName: 'other', allowedTables: null, allowedTools: null, accessMode: 'both' }],
+        profiles: [
+          { profileName: 'other', allowedTables: null, allowedTools: null, accessMode: 'both' },
+        ],
         customAttributes: { dept: 'old', tenure: '5y' },
       });
       userManager.consumeOnboardingCode(userManager.getUserById(id)!.onboardingCode!);
@@ -483,7 +507,9 @@ describe('OIDC callback — SSO auto-grant logic', () => {
         name: 'Existing',
         email: 'sso-user@example.com',
         role: 'user',
-        profiles: [{ profileName: 'other', allowedTables: null, allowedTools: null, accessMode: 'both' }],
+        profiles: [
+          { profileName: 'other', allowedTables: null, allowedTools: null, accessMode: 'both' },
+        ],
         customAttributes: { dept: 'eng' },
       });
       userManager.consumeOnboardingCode(userManager.getUserById(id)!.onboardingCode!);
@@ -514,7 +540,9 @@ describe('OIDC callback — SSO auto-grant logic', () => {
         name: 'Email User',
         email: 'sso-user@example.com',
         role: 'user',
-        profiles: [{ profileName: 'other', allowedTables: null, allowedTools: null, accessMode: 'both' }],
+        profiles: [
+          { profileName: 'other', allowedTables: null, allowedTools: null, accessMode: 'both' },
+        ],
       });
       userManager.consumeOnboardingCode(userManager.getUserById(id)!.onboardingCode!);
 
@@ -539,7 +567,9 @@ describe('OIDC callback — SSO auto-grant logic', () => {
         name: 'Email User',
         email: 'sso-user@example.com',
         role: 'user',
-        profiles: [{ profileName: idpProfile, allowedTables: null, allowedTools: null, accessMode: 'both' }],
+        profiles: [
+          { profileName: idpProfile, allowedTables: null, allowedTools: null, accessMode: 'both' },
+        ],
       });
       userManager.consumeOnboardingCode(userManager.getUserById(id)!.onboardingCode!);
 
@@ -562,7 +592,9 @@ describe('OIDC callback — SSO auto-grant logic', () => {
         name: 'Email User',
         email: 'sso-user@example.com',
         role: 'user',
-        profiles: [{ profileName: 'other', allowedTables: null, allowedTools: null, accessMode: 'both' }],
+        profiles: [
+          { profileName: 'other', allowedTables: null, allowedTools: null, accessMode: 'both' },
+        ],
       });
       userManager.consumeOnboardingCode(userManager.getUserById(id)!.onboardingCode!);
 
@@ -579,7 +611,9 @@ describe('OIDC callback — SSO auto-grant logic', () => {
         name: 'Email User',
         email: 'sso-user@example.com',
         role: 'user',
-        profiles: [{ profileName: 'other', allowedTables: null, allowedTools: null, accessMode: 'both' }],
+        profiles: [
+          { profileName: 'other', allowedTables: null, allowedTools: null, accessMode: 'both' },
+        ],
         customAttributes: { team: 'core' },
       });
       userManager.consumeOnboardingCode(userManager.getUserById(id)!.onboardingCode!);
@@ -630,9 +664,7 @@ describe('OIDC callback — SSO auto-grant logic', () => {
 
   describe('error handling', () => {
     it('returns 400 when code or state is missing', async () => {
-      const res = await request(app)
-        .get('/api/auth/oidc/callback')
-        .query({ code: 'only-code' });
+      const res = await request(app).get('/api/auth/oidc/callback').query({ code: 'only-code' });
       expect(res.status).toBe(400);
     });
 

@@ -73,9 +73,7 @@ export class TokenManager {
                            last_used_at, token_encrypted, tenant_id)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     );
-    this.stmtSelectAll = this.db.prepare(
-      `SELECT * FROM tokens WHERE tenant_id = ?`,
-    );
+    this.stmtSelectAll = this.db.prepare(`SELECT * FROM tokens WHERE tenant_id = ?`);
     /**
      * Tenant-agnostic full scan used by `verifyToken` only. Bearer-token
      * authentication doesn't know the tenant upfront — the token row IS
@@ -86,9 +84,7 @@ export class TokenManager {
       `SELECT * FROM tokens WHERE profile_name = ? AND tenant_id = ?`,
     );
     this.stmtUpdateLastUsed = this.db.prepare(`UPDATE tokens SET last_used_at = ? WHERE id = ?`);
-    this.stmtDelete = this.db.prepare(
-      `DELETE FROM tokens WHERE id = ? AND tenant_id = ?`,
-    );
+    this.stmtDelete = this.db.prepare(`DELETE FROM tokens WHERE id = ? AND tenant_id = ?`);
     this.stmtSelectEncryptedById = this.db.prepare(
       `SELECT token_encrypted FROM tokens WHERE id = ? AND tenant_id = ?`,
     );

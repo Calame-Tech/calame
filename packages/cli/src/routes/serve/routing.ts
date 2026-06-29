@@ -119,11 +119,13 @@ export function distinctValuesCacheKey(
   columnMasking: Record<string, Record<string, ColumnMasking>> | undefined,
 ): string {
   // Stable JSON: sort keys at the top level.
-  const stTable = Object.keys(selectedTables).sort()
+  const stTable = Object.keys(selectedTables)
+    .sort()
     .map((k) => `${k}:${[...selectedTables[k]].sort().join(',')}`)
     .join(';');
   const cmTable = columnMasking
-    ? Object.keys(columnMasking).sort()
+    ? Object.keys(columnMasking)
+        .sort()
         .map((k) => `${k}:${JSON.stringify(columnMasking[k])}`)
         .join(';')
     : '';

@@ -46,7 +46,8 @@ function accessModeBadge(mode: string): { label: string; className: string } {
   }
   return {
     label: 'MCP + Chat',
-    className: 'bg-gradient-to-r from-os-500/10 to-emerald-500/10 text-os-200 border border-os-500/20',
+    className:
+      'bg-gradient-to-r from-os-500/10 to-emerald-500/10 text-os-200 border border-os-500/20',
   };
 }
 
@@ -138,8 +139,19 @@ export default function WelcomePage({ code }: WelcomePageProps) {
       <div className="min-h-screen bg-gray-950 flex items-center justify-center">
         <div className="flex items-center gap-3 text-gray-500">
           <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            <circle
+              className="opacity-25"
+              cx="12"
+              cy="12"
+              r="10"
+              stroke="currentColor"
+              strokeWidth="4"
+            />
+            <path
+              className="opacity-75"
+              fill="currentColor"
+              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+            />
           </svg>
           <span className="font-mono-plex text-xs tracking-widest uppercase">Loading</span>
         </div>
@@ -153,14 +165,25 @@ export default function WelcomePage({ code }: WelcomePageProps) {
       <div className="min-h-screen bg-gray-950 flex items-center justify-center p-6">
         <div className="bg-gray-900/60 border border-white/5 rounded-2xl p-10 max-w-md text-center">
           <div className="w-12 h-12 rounded-full bg-rose-500/10 border border-rose-500/20 flex items-center justify-center mx-auto mb-5">
-            <svg className="w-5 h-5 text-rose-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+            <svg
+              className="w-5 h-5 text-rose-400"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+              aria-hidden="true"
+            >
+              <path
+                fillRule="evenodd"
+                d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+                clipRule="evenodd"
+              />
             </svg>
           </div>
           <p className="font-mono-plex text-[10px] uppercase tracking-[0.25em] text-rose-400/70 mb-2">
             Invalid Link
           </p>
-          <h1 className="font-display text-2xl font-light text-white mb-3">Something went wrong.</h1>
+          <h1 className="font-display text-2xl font-light text-white mb-3">
+            Something went wrong.
+          </h1>
           <p className="text-gray-400 text-sm leading-relaxed">{error}</p>
         </div>
       </div>
@@ -200,7 +223,8 @@ export default function WelcomePage({ code }: WelcomePageProps) {
               Calame
             </p>
             <h1 className="font-display font-light text-6xl leading-[0.95] text-white mb-5">
-              Welcome,<br />
+              Welcome,
+              <br />
               <span className="text-os-300">{user.name}.</span>
             </h1>
             <p className="text-gray-400 max-w-sm leading-relaxed text-sm">
@@ -220,20 +244,33 @@ export default function WelcomePage({ code }: WelcomePageProps) {
                       isDone
                         ? 'text-emerald-400 opacity-80'
                         : isActive
-                        ? 'text-os-400'
-                        : 'text-gray-700'
+                          ? 'text-os-400'
+                          : 'text-gray-700'
                     }`}
                   >
                     {isDone ? (
-                      <svg className="w-6 h-6 mt-1.5 text-emerald-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                      <svg
+                        className="w-6 h-6 mt-1.5 text-emerald-400"
+                        viewBox="0 0 20 20"
+                        fill="currentColor"
+                        aria-hidden="true"
+                      >
+                        <path
+                          fillRule="evenodd"
+                          d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                          clipRule="evenodd"
+                        />
                       </svg>
                     ) : (
                       step.n
                     )}
                   </span>
-                  <div className={`transition-all duration-300 ${isActive ? 'opacity-100' : isDone ? 'opacity-60' : 'opacity-30'}`}>
-                    <p className={`text-sm font-medium ${isActive ? 'text-gray-100' : 'text-gray-400'}`}>
+                  <div
+                    className={`transition-all duration-300 ${isActive ? 'opacity-100' : isDone ? 'opacity-60' : 'opacity-30'}`}
+                  >
+                    <p
+                      className={`text-sm font-medium ${isActive ? 'text-gray-100' : 'text-gray-400'}`}
+                    >
                       {step.label}
                     </p>
                     {isActive && (
@@ -248,7 +285,10 @@ export default function WelcomePage({ code }: WelcomePageProps) {
           </div>
 
           {/* Footer */}
-          <p className="font-mono-plex text-[10px] text-gray-700 tracking-wider animate-fade-in-up" style={{ animationDelay: '160ms' }}>
+          <p
+            className="font-mono-plex text-[10px] text-gray-700 tracking-wider animate-fade-in-up"
+            style={{ animationDelay: '160ms' }}
+          >
             Powered by Calame
           </p>
         </div>
@@ -279,7 +319,9 @@ export default function WelcomePage({ code }: WelcomePageProps) {
                       <span className="font-display text-lg text-os-300 truncate">
                         {p.profileName}
                       </span>
-                      <span className={`font-mono-plex text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full ${badge.className}`}>
+                      <span
+                        className={`font-mono-plex text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full ${badge.className}`}
+                      >
                         {badge.label}
                       </span>
                     </div>
@@ -300,14 +342,19 @@ export default function WelcomePage({ code }: WelcomePageProps) {
               className="card-primary p-6 animate-fade-in-up"
               style={{ animationDelay: '160ms' }}
             >
-              <h2 className="font-display text-2xl font-light text-white mb-1">Set up your account</h2>
+              <h2 className="font-display text-2xl font-light text-white mb-1">
+                Set up your account
+              </h2>
               <p className="text-gray-500 text-sm mb-6">
                 Choose a password to secure your Calame account.
               </p>
 
               <div className="space-y-4 max-w-sm">
                 <div>
-                  <label className="block font-mono-plex text-[10px] uppercase tracking-widest text-gray-500 mb-2" htmlFor="password">
+                  <label
+                    className="block font-mono-plex text-[10px] uppercase tracking-widest text-gray-500 mb-2"
+                    htmlFor="password"
+                  >
                     Password
                   </label>
                   <input
@@ -334,14 +381,19 @@ export default function WelcomePage({ code }: WelcomePageProps) {
                         ))}
                       </div>
                       {pwStrength.label && (
-                        <p className="font-mono-plex text-[10px] text-gray-500">{pwStrength.label}</p>
+                        <p className="font-mono-plex text-[10px] text-gray-500">
+                          {pwStrength.label}
+                        </p>
                       )}
                     </div>
                   )}
                 </div>
 
                 <div>
-                  <label className="block font-mono-plex text-[10px] uppercase tracking-widest text-gray-500 mb-2" htmlFor="confirm-password">
+                  <label
+                    className="block font-mono-plex text-[10px] uppercase tracking-widest text-gray-500 mb-2"
+                    htmlFor="confirm-password"
+                  >
                     Confirm password
                   </label>
                   <input
@@ -356,7 +408,9 @@ export default function WelcomePage({ code }: WelcomePageProps) {
                 </div>
 
                 {passwordError && (
-                  <p className="text-rose-400 text-sm font-mono-plex text-[11px]">{passwordError}</p>
+                  <p className="text-rose-400 text-sm font-mono-plex text-[11px]">
+                    {passwordError}
+                  </p>
                 )}
 
                 <button
@@ -366,7 +420,16 @@ export default function WelcomePage({ code }: WelcomePageProps) {
                   aria-label="Activate my account"
                 >
                   Activate My Account
-                  <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <svg
+                    className="w-4 h-4"
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
                     <path d="M3 8h10M9 4l4 4-4 4" />
                   </svg>
                 </button>
@@ -382,8 +445,17 @@ export default function WelcomePage({ code }: WelcomePageProps) {
                 {/* Activated badge */}
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center shrink-0">
-                    <svg className="w-4 h-4 text-emerald-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    <svg
+                      className="w-4 h-4 text-emerald-400"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                      aria-hidden="true"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                        clipRule="evenodd"
+                      />
                     </svg>
                   </div>
                   <div>
@@ -397,15 +469,27 @@ export default function WelcomePage({ code }: WelcomePageProps) {
                 {/* Token spotlight card */}
                 <div className="relative card-primary p-6 overflow-hidden ring-2 ring-os-500/40 shadow-[0_0_60px_rgba(76,110,245,0.2)]">
                   {/* Glow blob */}
-                  <div className="absolute -top-12 -right-12 w-40 h-40 bg-os-500/10 rounded-full blur-3xl" aria-hidden="true" />
+                  <div
+                    className="absolute -top-12 -right-12 w-40 h-40 bg-os-500/10 rounded-full blur-3xl"
+                    aria-hidden="true"
+                  />
 
                   <div className="relative">
                     <div className="flex items-center gap-2 mb-1">
                       <Eyebrow accent>Your Access Token</Eyebrow>
                     </div>
                     <div className="flex items-center gap-2 mb-4">
-                      <svg className="w-3.5 h-3.5 text-amber-400 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                        <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                      <svg
+                        className="w-3.5 h-3.5 text-amber-400 shrink-0"
+                        viewBox="0 0 20 20"
+                        fill="currentColor"
+                        aria-hidden="true"
+                      >
+                        <path
+                          fillRule="evenodd"
+                          d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                          clipRule="evenodd"
+                        />
                       </svg>
                       <span className="font-mono-plex text-[10px] uppercase tracking-[0.2em] text-amber-400/80">
                         One-time display — copy now
@@ -437,7 +521,9 @@ export default function WelcomePage({ code }: WelcomePageProps) {
                       <button
                         onClick={() =>
                           copyToClipboard(
-                            activateResult.mcpUrls.map((m) => `${m.profileName}: ${m.url}`).join('\n'),
+                            activateResult.mcpUrls
+                              .map((m) => `${m.profileName}: ${m.url}`)
+                              .join('\n'),
                             'all-urls',
                           )
                         }
@@ -480,7 +566,9 @@ export default function WelcomePage({ code }: WelcomePageProps) {
                     <div className="flex items-center justify-between px-6 py-4 hairline-b">
                       <Eyebrow>Configuration</Eyebrow>
                       <button
-                        onClick={() => copyToClipboard(buildConfigSnippet(activateResult), 'config')}
+                        onClick={() =>
+                          copyToClipboard(buildConfigSnippet(activateResult), 'config')
+                        }
                         className="font-mono-plex text-[10px] uppercase tracking-wider text-os-400/70 hover:text-os-300 transition-colors focus:outline-none"
                         aria-label="Copy configuration snippet"
                       >
@@ -488,7 +576,10 @@ export default function WelcomePage({ code }: WelcomePageProps) {
                       </button>
                     </div>
                     <div className="relative">
-                      <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-os-500/50" aria-hidden="true" />
+                      <div
+                        className="absolute left-0 top-0 bottom-0 w-0.5 bg-os-500/50"
+                        aria-hidden="true"
+                      />
                       <pre className="bg-black/60 px-6 py-5 text-[11px] font-mono-plex text-gray-300 overflow-x-auto leading-relaxed">
                         {buildConfigSnippet(activateResult)}
                       </pre>
@@ -508,7 +599,16 @@ export default function WelcomePage({ code }: WelcomePageProps) {
                     className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-os-600 to-os-500 hover:from-os-500 hover:to-os-400 text-white font-medium tracking-wide rounded-lg shadow-lg shadow-os-600/20 transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-os-500/50"
                   >
                     Go to My Account
-                    <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <svg
+                      className="w-4 h-4"
+                      viewBox="0 0 16 16"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
                       <path d="M3 8h10M9 4l4 4-4 4" />
                     </svg>
                   </a>

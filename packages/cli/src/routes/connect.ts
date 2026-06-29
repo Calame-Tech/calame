@@ -33,7 +33,12 @@ export function registerConnectRoute(app: Express, state: AppState): void {
         return;
       }
 
-      const { connectionString, databaseType: dbType, name: connectionName, sslConfig } = parsed.data;
+      const {
+        connectionString,
+        databaseType: dbType,
+        name: connectionName,
+        sslConfig,
+      } = parsed.data;
 
       const connector = getConnector(dbType);
       const schema = await connector.introspect(connectionString, {

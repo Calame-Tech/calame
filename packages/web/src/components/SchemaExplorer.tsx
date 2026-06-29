@@ -18,16 +18,21 @@ interface SchemaExplorerProps {
 /** Map common PG type keywords to badge colors */
 function getTypeBadgeClasses(pgType: string): string {
   const t = pgType.toLowerCase();
-  if (t.includes('int') || t.includes('numeric') || t.includes('float') || t.includes('double') || t.includes('decimal') || t.includes('serial') || t.includes('real'))
+  if (
+    t.includes('int') ||
+    t.includes('numeric') ||
+    t.includes('float') ||
+    t.includes('double') ||
+    t.includes('decimal') ||
+    t.includes('serial') ||
+    t.includes('real')
+  )
     return 'bg-emerald-500/15 text-emerald-400 ring-emerald-500/25';
-  if (t.includes('bool'))
-    return 'bg-amber-500/15 text-amber-400 ring-amber-500/25';
+  if (t.includes('bool')) return 'bg-amber-500/15 text-amber-400 ring-amber-500/25';
   if (t.includes('time') || t.includes('date') || t.includes('interval'))
     return 'bg-purple-500/15 text-purple-400 ring-purple-500/25';
-  if (t.includes('json'))
-    return 'bg-pink-500/15 text-pink-400 ring-pink-500/25';
-  if (t.includes('uuid'))
-    return 'bg-cyan-500/15 text-cyan-400 ring-cyan-500/25';
+  if (t.includes('json')) return 'bg-pink-500/15 text-pink-400 ring-pink-500/25';
+  if (t.includes('uuid')) return 'bg-cyan-500/15 text-cyan-400 ring-cyan-500/25';
   // text, varchar, char, etc.
   return 'bg-blue-500/15 text-blue-400 ring-blue-500/25';
 }
@@ -175,11 +180,7 @@ export default function SchemaExplorer({
   }, [schema, selectedTables]);
 
   if (!schema || schema.tables.length === 0) {
-    return (
-      <p className="text-gray-400">
-        No tables found. Connect a database first.
-      </p>
-    );
+    return <p className="text-gray-400">No tables found. Connect a database first.</p>;
   }
 
   // Handle clicking a table toggle button — toggle in set (multi-open)
@@ -223,11 +224,7 @@ export default function SchemaExplorer({
         {/* Selection indicator dot */}
         <span
           className={`flex-shrink-0 w-2 h-2 rounded-full ${
-            allColumnsSelected
-              ? 'bg-os-400'
-              : hasSelection
-                ? 'bg-os-600'
-                : 'bg-gray-600'
+            allColumnsSelected ? 'bg-os-400' : hasSelection ? 'bg-os-600' : 'bg-gray-600'
           }`}
         />
         {/* Table name */}
@@ -258,7 +255,10 @@ export default function SchemaExplorer({
     const color = connName ? getConnColor(connName) : null;
 
     return (
-      <div key={`accordion-${table.name}`} className="col-span-full mt-1 mb-2 rounded-xl border border-os-500/40 bg-gray-900/60 p-4">
+      <div
+        key={`accordion-${table.name}`}
+        className="col-span-full mt-1 mb-2 rounded-xl border border-os-500/40 bg-gray-900/60 p-4"
+      >
         {/* Accordion header */}
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
@@ -269,7 +269,9 @@ export default function SchemaExplorer({
               </span>
             </h3>
             {color && connName && (
-              <span className={`text-[10px] px-1.5 py-0.5 rounded border font-medium ${color.badge}`}>
+              <span
+                className={`text-[10px] px-1.5 py-0.5 rounded border font-medium ${color.badge}`}
+              >
                 {connectionLabels?.[connName] ?? connName}
               </span>
             )}
@@ -296,9 +298,13 @@ export default function SchemaExplorer({
                   title={tooltipText}
                   className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-gray-700/50 border border-gray-700 cursor-default"
                 >
-                  <span className="text-blue-400 font-mono">{isFrom ? r.fromColumn : r.toColumn}</span>
+                  <span className="text-blue-400 font-mono">
+                    {isFrom ? r.fromColumn : r.toColumn}
+                  </span>
                   <span className="text-gray-600">&rarr;</span>
-                  <span className="text-gray-400 font-mono">{isFrom ? `${r.toTable}.${r.toColumn}` : `${r.fromTable}.${r.fromColumn}`}</span>
+                  <span className="text-gray-400 font-mono">
+                    {isFrom ? `${r.toTable}.${r.toColumn}` : `${r.fromTable}.${r.fromColumn}`}
+                  </span>
                 </span>
               );
             })}
@@ -366,8 +372,10 @@ export default function SchemaExplorer({
         <div>
           <h2 className="heading-md">Tables &amp; Columns</h2>
           <p className="text-sm text-gray-500 mt-1">
-            <span className="text-os-400 font-medium">{stats.tablesSelected}</span> table{stats.tablesSelected !== 1 ? 's' : ''} selected,{' '}
-            <span className="text-os-400 font-medium">{stats.columnsTotal}</span> column{stats.columnsTotal !== 1 ? 's' : ''} total
+            <span className="text-os-400 font-medium">{stats.tablesSelected}</span> table
+            {stats.tablesSelected !== 1 ? 's' : ''} selected,{' '}
+            <span className="text-os-400 font-medium">{stats.columnsTotal}</span> column
+            {stats.columnsTotal !== 1 ? 's' : ''} total
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -383,7 +391,11 @@ export default function SchemaExplorer({
           )}
           <button
             onClick={allSelected ? deselectAllTables : selectAllTables}
-            title={allSelected ? 'Désélectionner toutes les tables et colonnes de ce schéma.' : 'Sélectionner toutes les tables et colonnes de ce schéma pour les inclure dans le serveur MCP.'}
+            title={
+              allSelected
+                ? 'Désélectionner toutes les tables et colonnes de ce schéma.'
+                : 'Sélectionner toutes les tables et colonnes de ce schéma pour les inclure dans le serveur MCP.'
+            }
             className="px-3 py-1.5 text-xs font-medium rounded-md border border-gray-700 text-gray-300 hover:bg-gray-800 hover:border-gray-600 transition-all duration-200"
           >
             {allSelected ? 'Deselect All' : 'Select All'}
@@ -393,8 +405,18 @@ export default function SchemaExplorer({
 
       {/* Search bar */}
       <div className="relative mb-4">
-        <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+        <svg
+          className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={2}
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"
+          />
         </svg>
         <input
           type="text"
@@ -421,7 +443,9 @@ export default function SchemaExplorer({
                 <div className="flex items-center gap-2 mb-3">
                   <span className={`w-2 h-2 rounded-full ${color.dot}`} />
                   <h3 className="text-sm font-semibold text-gray-200">{displayName}</h3>
-                  <span className="text-xs text-gray-500">({tables.length} table{tables.length !== 1 ? 's' : ''})</span>
+                  <span className="text-xs text-gray-500">
+                    ({tables.length} table{tables.length !== 1 ? 's' : ''})
+                  </span>
                 </div>
 
                 {/* Table buttons grid */}

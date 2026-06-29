@@ -112,9 +112,7 @@ describe('HttpConnector.testConnection', () => {
   });
 
   it('throws when sitemap parses to zero <loc> entries', async () => {
-    fetchMock.mockResolvedValue(
-      fakeResponse({ status: 200, body: '<urlset></urlset>' }),
-    );
+    fetchMock.mockResolvedValue(fakeResponse({ status: 200, body: '<urlset></urlset>' }));
     const connector = new HttpConnector();
     await expect(
       connector.testConnection({ sitemapUrl: 'https://x.test/sitemap.xml' }),
@@ -142,15 +140,11 @@ describe('HttpConnector.testConnection', () => {
     await expect(connector.testConnection({})).rejects.toThrow(
       /at least one of `urls` .* or `sitemapUrl`/,
     );
-    await expect(connector.testConnection({ urls: [] })).rejects.toThrow(
-      /at least one of `urls`/,
+    await expect(connector.testConnection({ urls: [] })).rejects.toThrow(/at least one of `urls`/);
+    await expect(connector.testConnection({ urls: ['ftp://nope.test/'] })).rejects.toThrow(
+      /must use http: or https:/,
     );
-    await expect(
-      connector.testConnection({ urls: ['ftp://nope.test/'] }),
-    ).rejects.toThrow(/must use http: or https:/);
-    await expect(
-      connector.testConnection({ urls: ['not-a-url'] }),
-    ).rejects.toThrow(/invalid URL/);
+    await expect(connector.testConnection({ urls: ['not-a-url'] })).rejects.toThrow(/invalid URL/);
   });
 });
 
@@ -161,10 +155,7 @@ describe('HttpConnector.testConnection', () => {
 describe('HttpConnector.listFolders', () => {
   it('returns a single synthetic root folder when parent is omitted', async () => {
     const connector = new HttpConnector();
-    const folders = await connector.listFolders(
-      { urls: ['https://example.com/'] },
-      'src-1',
-    );
+    const folders = await connector.listFolders({ urls: ['https://example.com/'] }, 'src-1');
     expect(folders).toHaveLength(1);
     expect(folders[0]).toMatchObject({
       sourceId: 'src-1',
@@ -177,18 +168,14 @@ describe('HttpConnector.listFolders', () => {
 
   it('returns [] when parent is provided (HTTP has no nested folders)', async () => {
     const connector = new HttpConnector();
-    const folders = await connector.listFolders(
-      { urls: ['https://example.com/'] },
-      'src-1',
-      {
-        id: 'fake-parent',
-        sourceId: 'src-1',
-        parentId: null,
-        path: '/',
-        name: 'root',
-        createdAt: '',
-      },
-    );
+    const folders = await connector.listFolders({ urls: ['https://example.com/'] }, 'src-1', {
+      id: 'fake-parent',
+      sourceId: 'src-1',
+      parentId: null,
+      path: '/',
+      name: 'root',
+      createdAt: '',
+    });
     expect(folders).toEqual([]);
   });
 });
@@ -225,7 +212,10 @@ describe('HttpConnector.listDocuments', () => {
 
     const connector = new HttpConnector();
     const docs = await connector.listDocuments(
-      { urls: ['https://example.com/a', 'https://example.com/b.pdf'], allowedHosts: ['example.com'] },
+      {
+        urls: ['https://example.com/a', 'https://example.com/b.pdf'],
+        allowedHosts: ['example.com'],
+      },
       'src-1',
     );
     expect(docs).toHaveLength(2);
@@ -357,11 +347,7 @@ describe('HttpConnector.listDocuments', () => {
     const connector = new HttpConnector();
     const docs = await connector.listDocuments(
       {
-        urls: [
-          'https://e.test/etag',
-          'https://e.test/lm-only',
-          'https://e.test/no-version',
-        ],
+        urls: ['https://e.test/etag', 'https://e.test/lm-only', 'https://e.test/no-version'],
         allowedHosts: ['e.test'],
       },
       'src-1',

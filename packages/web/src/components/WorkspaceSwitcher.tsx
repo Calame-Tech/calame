@@ -78,7 +78,10 @@ const IconBuildingOffice = (
  * the new tenant context. This is intentional: there is no "soft switch" because
  * the entire App state (connections, profiles, configurations) is tenant-scoped.
  */
-export default function WorkspaceSwitcher({ className, onManageWorkspaces }: WorkspaceSwitcherProps) {
+export default function WorkspaceSwitcher({
+  className,
+  onManageWorkspaces,
+}: WorkspaceSwitcherProps) {
   const [tenant] = useState<string>(() => getCurrentTenant());
   const isNonDefault = tenant !== 'default';
   const [open, setOpen] = useState(false);
@@ -170,10 +173,7 @@ export default function WorkspaceSwitcher({ className, onManageWorkspaces }: Wor
             : 'bg-white/5 border border-white/10 text-gray-400 hover:bg-white/8 hover:text-gray-300',
         ].join(' ')}
       >
-        <span
-          className={isNonDefault ? 'text-violet-400' : 'text-gray-500'}
-          aria-hidden="true"
-        >
+        <span className={isNonDefault ? 'text-violet-400' : 'text-gray-500'} aria-hidden="true">
           {IconBuildingOffice}
         </span>
 
@@ -234,9 +234,7 @@ export default function WorkspaceSwitcher({ className, onManageWorkspaces }: Wor
                     ].join(' ')}
                   >
                     <span className="flex-1 text-left truncate font-medium">{t}</span>
-                    {isActive && (
-                      <span className="text-os-400">{IconCheck}</span>
-                    )}
+                    {isActive && <span className="text-os-400">{IconCheck}</span>}
                   </button>
                 </li>
               );
@@ -281,7 +279,11 @@ export default function WorkspaceSwitcher({ className, onManageWorkspaces }: Wor
               </button>
             </div>
             {inputError && (
-              <p id="ws-input-error" role="alert" className="mt-1.5 text-[10px] text-red-400 leading-tight">
+              <p
+                id="ws-input-error"
+                role="alert"
+                className="mt-1.5 text-[10px] text-red-400 leading-tight"
+              >
                 {inputError}
               </p>
             )}

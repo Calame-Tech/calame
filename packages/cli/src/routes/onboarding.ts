@@ -32,9 +32,7 @@ export function registerOnboardingRoute(app: Express, state: AppState): void {
       const profilesInfo = user.profiles.map((pa) => {
         const profile = state.serveProfiles[pa.profileName];
         const tableNames = profile ? getProfileTableNames(profile) : [];
-        const tables = tableNames.filter(
-          (t) => !pa.allowedTables || pa.allowedTables.includes(t),
-        );
+        const tables = tableNames.filter((t) => !pa.allowedTables || pa.allowedTables.includes(t));
         const mcpUrl = `${protocol}://${host}/mcp/${pa.profileName}`;
         return {
           profileName: pa.profileName,

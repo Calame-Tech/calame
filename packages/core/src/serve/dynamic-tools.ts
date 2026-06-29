@@ -39,7 +39,10 @@ interface DynamicToolsOptions {
   selectedTables: Record<string, string[]>; // which tables/columns are visible
   tableOptions?: Record<string, TableToolOptions>;
   columnMasking?: Record<string, Record<string, ColumnMasking>>;
-  executeQuery: (sql: string, params: unknown[]) => Promise<{ rows: Record<string, unknown>[]; fields: { name: string }[] }>;
+  executeQuery: (
+    sql: string,
+    params: unknown[],
+  ) => Promise<{ rows: Record<string, unknown>[]; fields: { name: string }[] }>;
   onAuditLog?: (entry: Omit<AuditLogEntry, 'id' | 'timestamp'>) => void;
   onWriteRequest?: (query: Omit<PendingWriteQuery, 'id' | 'timestamp' | 'status'>) => string;
   profileName: string;
@@ -111,7 +114,9 @@ function buildCatalogue(
     for (const col of at.visibleColumns) {
       const friendly = friendlyTypeLabel(col.type);
       const distinct = distinctValuesByTable[at.table.name]?.[col.name];
-      const fk = at.relations.find(r => r.fromTable === at.table.name && r.fromColumn === col.name);
+      const fk = at.relations.find(
+        (r) => r.fromTable === at.table.name && r.fromColumn === col.name,
+      );
       const fkSuffix = fk ? `→${fk.toTable}.${fk.toColumn}` : '';
       let typeLabel: string;
       // Determine whether to encode as enum. Rules:
@@ -139,7 +144,7 @@ function buildCatalogue(
         return true;
       })();
       if (shouldEncodeAsEnum) {
-        typeLabel = `enum:${distinct!.map(v => String(v)).join('|')}`;
+        typeLabel = `enum:${distinct!.map((v) => String(v)).join('|')}`;
       } else {
         typeLabel = friendly;
         // Detect ISO date format for string-typed columns using available samples
@@ -170,11 +175,7 @@ function buildCompactCatalogue(accessible: AccessibleTable[]): string {
   ];
   for (const at of accessible) {
     const fkTargets = Array.from(
-      new Set(
-        at.relations
-          .filter(r => r.fromTable === at.table.name)
-          .map(r => r.toTable),
-      ),
+      new Set(at.relations.filter((r) => r.fromTable === at.table.name).map((r) => r.toTable)),
     );
     const fkSuffix = fkTargets.length > 0 ? ` → ${fkTargets.join(', ')}` : '';
     lines.push(`  ${at.table.name}: ${at.visibleColumns.length} cols${fkSuffix}`);
@@ -185,9 +186,6 @@ function buildCompactCatalogue(accessible: AccessibleTable[]): string {
   lines.push('     contains, starts_with, ends_with (case-insensitive substring match on text)');
   return lines.join('\n');
 }
-
-
-
 
 // ===========================================================================
 // Phase-2 entry point — registers a small generic tool surface
@@ -238,7 +236,8 @@ export function registerCalcTool(
           result = values.reduce((acc, v) => acc + v, 0);
           break;
         case 'avg':
-          if (values.length === 0) throw new Error('calc: cannot compute average of an empty array');
+          if (values.length === 0)
+            throw new Error('calc: cannot compute average of an empty array');
           result = values.reduce((acc, v) => acc + v, 0) / values.length;
           break;
         case 'min':
@@ -334,8 +333,9 @@ function buildAccessibleTables(
     if (!selectedCols || selectedCols.length === 0) continue;
 
     if (scopeGuard.active) {
-      try { scopeGuard.checkTableAccess(table.name); }
-      catch (e) {
+      try {
+        scopeGuard.checkTableAccess(table.name);
+      } catch (e) {
         if (e instanceof ScopeBlockedError) continue;
         throw e;
       }
@@ -354,23 +354,21 @@ function buildAccessibleTables(
     }
 
     const visibleColumns = table.columns.filter(
-      c => selectedCols.includes(c.name) && !excludedCols.has(c.name),
+      (c) => selectedCols.includes(c.name) && !excludedCols.has(c.name),
     );
     if (visibleColumns.length === 0) continue;
 
-    const labelMap = buildLabelMap(visibleColumns.map(c => ({ name: c.name })));
-    const filterableCols = visibleColumns.filter(c => pgTypeToZod(c.type) !== null);
-    const numericCols = visibleColumns
-      .filter(c => isNumericType(c.type))
-      .map(c => c.name);
+    const labelMap = buildLabelMap(visibleColumns.map((c) => ({ name: c.name })));
+    const filterableCols = visibleColumns.filter((c) => pgTypeToZod(c.type) !== null);
+    const numericCols = visibleColumns.filter((c) => isNumericType(c.type)).map((c) => c.name);
     const groupableColumns = (
       opts?.groupableColumns && opts.groupableColumns.length > 0
         ? opts.groupableColumns
-        : filterableCols.map(c => c.name)
-    ).filter(c => !excludedCols.has(c));
-    const allColumnNames = visibleColumns.map(c => c.name);
+        : filterableCols.map((c) => c.name)
+    ).filter((c) => !excludedCols.has(c));
+    const allColumnNames = visibleColumns.map((c) => c.name);
     const tableRelations = options.relations.filter(
-      r => r.fromTable === table.name || r.toTable === table.name,
+      (r) => r.fromTable === table.name || r.toTable === table.name,
     );
 
     result.push({

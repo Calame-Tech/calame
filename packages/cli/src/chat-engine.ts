@@ -128,7 +128,8 @@ export function createCalcTool(): ToolDef {
           result = values.reduce((acc, v) => acc + v, 0);
           break;
         case 'avg':
-          if (values.length === 0) throw new Error('calc: cannot compute average of an empty array');
+          if (values.length === 0)
+            throw new Error('calc: cannot compute average of an empty array');
           result = values.reduce((acc, v) => acc + v, 0) / values.length;
           break;
         case 'min':

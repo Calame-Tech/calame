@@ -40,13 +40,11 @@ export function snakeCaseToLabel(name: string): string {
       .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
       .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
       .split(' ');
-    words.push(...split.filter(w => w.length > 0));
+    words.push(...split.filter((w) => w.length > 0));
   }
 
   // Capitalize the first letter of every word, lowercase the rest
-  return words
-    .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-    .join(' ');
+  return words.map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
 }
 
 // ---------------------------------------------------------------------------
@@ -68,26 +66,43 @@ export function friendlyType(sqlType: string): string {
   const t = sqlType.toLowerCase().trim();
 
   if (
-    t === 'integer' || t === 'int' || t === 'int2' || t === 'int4' || t === 'int8' ||
-    t === 'smallint' || t === 'bigint' || t === 'serial' || t === 'smallserial' ||
-    t === 'bigserial' || t === 'numeric' || t === 'decimal' || t === 'real' ||
-    t === 'float4' || t === 'float8' || t === 'double precision' || t === 'money' ||
+    t === 'integer' ||
+    t === 'int' ||
+    t === 'int2' ||
+    t === 'int4' ||
+    t === 'int8' ||
+    t === 'smallint' ||
+    t === 'bigint' ||
+    t === 'serial' ||
+    t === 'smallserial' ||
+    t === 'bigserial' ||
+    t === 'numeric' ||
+    t === 'decimal' ||
+    t === 'real' ||
+    t === 'float4' ||
+    t === 'float8' ||
+    t === 'double precision' ||
+    t === 'money' ||
     t === 'oid'
   ) {
     return 'Nombre';
   }
 
-  if (
-    t === 'boolean' || t === 'bool'
-  ) {
+  if (t === 'boolean' || t === 'bool') {
     return 'Oui/Non';
   }
 
   if (
-    t === 'timestamp' || t === 'timestamp with time zone' ||
-    t === 'timestamp without time zone' || t === 'timestamptz' ||
-    t === 'date' || t === 'time' || t === 'time with time zone' ||
-    t === 'time without time zone' || t === 'timetz' || t === 'interval'
+    t === 'timestamp' ||
+    t === 'timestamp with time zone' ||
+    t === 'timestamp without time zone' ||
+    t === 'timestamptz' ||
+    t === 'date' ||
+    t === 'time' ||
+    t === 'time with time zone' ||
+    t === 'time without time zone' ||
+    t === 'timetz' ||
+    t === 'interval'
   ) {
     return 'Date';
   }
@@ -133,9 +148,7 @@ export function buildLabelMap(
  * If two columns share the same label (should not happen in practice), the
  * last one wins.
  */
-export function buildReverseLabelMap(
-  labelMap: Record<string, string>,
-): Record<string, string> {
+export function buildReverseLabelMap(labelMap: Record<string, string>): Record<string, string> {
   const reverse: Record<string, string> = {};
   for (const [colName, label] of Object.entries(labelMap)) {
     reverse[label] = colName;

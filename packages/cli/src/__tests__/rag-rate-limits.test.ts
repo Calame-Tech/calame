@@ -53,10 +53,7 @@ describe('parseRateLimitEnv', () => {
 
   it('accepts unknown types but logs a note', () => {
     const logger = { warn: vi.fn() };
-    const out = parseRateLimitEnv(
-      { CALAME_RAG_RATE_LIMIT_DROPBOX: '5:20' },
-      logger,
-    );
+    const out = parseRateLimitEnv({ CALAME_RAG_RATE_LIMIT_DROPBOX: '5:20' }, logger);
     expect(out.dropbox).toEqual({ capacity: 20, refillPerSec: 5 });
     expect(logger.warn).toHaveBeenCalledTimes(1);
     expect(logger.warn.mock.calls[0]![0]).toMatch(/unknown connector type/i);
@@ -69,10 +66,7 @@ describe('parseRateLimitEnv', () => {
 
   it('ignores empty-string values without warning (treats as unset)', () => {
     const logger = { warn: vi.fn() };
-    const out = parseRateLimitEnv(
-      { CALAME_RAG_RATE_LIMIT_NOTION: '' },
-      logger,
-    );
+    const out = parseRateLimitEnv({ CALAME_RAG_RATE_LIMIT_NOTION: '' }, logger);
     expect(out).toEqual({});
     expect(logger.warn).not.toHaveBeenCalled();
   });

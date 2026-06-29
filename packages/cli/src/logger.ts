@@ -41,10 +41,7 @@ function formatJson(
   });
 }
 
-export function createLogger(config: {
-  level: LogLevel;
-  format: LogFormat;
-}): Logger {
+export function createLogger(config: { level: LogLevel; format: LogFormat }): Logger {
   return createChildLogger(config, {});
 }
 
@@ -72,7 +69,6 @@ function createChildLogger(
     info: (msg, meta) => log('info', msg, meta),
     warn: (msg, meta) => log('warn', msg, meta),
     error: (msg, meta) => log('error', msg, meta),
-    child: (childContext) =>
-      createChildLogger(config, { ...context, ...childContext }),
+    child: (childContext) => createChildLogger(config, { ...context, ...childContext }),
   };
 }

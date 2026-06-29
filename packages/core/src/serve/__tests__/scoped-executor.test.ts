@@ -226,7 +226,9 @@ describe('ScopeGuard with complex user filters', () => {
       ['montant'],
       pgDialect,
     );
-    expect(result.clause).toBe('WHERE "numero_client" = $1 AND "montant" >= $2 AND "montant" <= $3');
+    expect(result.clause).toBe(
+      'WHERE "numero_client" = $1 AND "montant" >= $2 AND "montant" <= $3',
+    );
     expect(result.values).toEqual(['CLT-00042', 100, 500]);
   });
 

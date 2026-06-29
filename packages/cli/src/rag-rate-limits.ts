@@ -13,8 +13,8 @@
  * this module synchronously importable without forcing the EE dep on
  * apache-only builds. */
 export interface ParsedRateLimit {
-	capacity: number;
-	refillPerSec: number;
+  capacity: number;
+  refillPerSec: number;
 }
 
 const ENV_PREFIX = 'CALAME_RAG_RATE_LIMIT_';
@@ -23,15 +23,7 @@ const ENV_PREFIX = 'CALAME_RAG_RATE_LIMIT_';
  * an env var sets a limit for a type that won't be respected. We do NOT
  * filter unknown types out (forward-compat: future connectors should pick up
  * their env overrides without a code change in this file) — we only warn. */
-const KNOWN_TYPES = new Set([
-	'notion',
-	'cohere',
-	'sharepoint',
-	'gdrive',
-	'gsheets',
-	's3',
-	'http',
-]);
+const KNOWN_TYPES = new Set(['notion', 'cohere', 'sharepoint', 'gdrive', 'gsheets', 's3', 'http']);
 
 /**
  * Parse every `CALAME_RAG_RATE_LIMIT_*` env var on the supplied `env` map
@@ -45,57 +37,53 @@ const KNOWN_TYPES = new Set([
  *               console).
  */
 export function parseRateLimitEnv(
-	env: Record<string, string | undefined> = process.env,
-	logger?: { warn: (msg: string) => void },
+  env: Record<string, string | undefined> = process.env,
+  logger?: { warn: (msg: string) => void },
 ): Record<string, ParsedRateLimit> {
-	const out: Record<string, ParsedRateLimit> = {};
-	const warn = (msg: string): void => {
-		if (logger) logger.warn(msg);
-		else console.warn(msg);
-	};
+  const out: Record<string, ParsedRateLimit> = {};
+  const warn = (msg: string): void => {
+    if (logger) logger.warn(msg);
+    else console.warn(msg);
+  };
 
-	for (const [key, rawValue] of Object.entries(env)) {
-		if (!key.startsWith(ENV_PREFIX)) continue;
-		if (typeof rawValue !== 'string' || rawValue.length === 0) continue;
+  for (const [key, rawValue] of Object.entries(env)) {
+    if (!key.startsWith(ENV_PREFIX)) continue;
+    if (typeof rawValue !== 'string' || rawValue.length === 0) continue;
 
-		const type = key.slice(ENV_PREFIX.length).toLowerCase();
-		if (type.length === 0) {
-			warn(`Ignoring env var "${key}": connector type is empty after prefix.`);
-			continue;
-		}
+    const type = key.slice(ENV_PREFIX.length).toLowerCase();
+    if (type.length === 0) {
+      warn(`Ignoring env var "${key}": connector type is empty after prefix.`);
+      continue;
+    }
 
-		const parts = rawValue.split(':');
-		if (parts.length !== 2) {
-			warn(
-				`Ignoring env var "${key}=${rawValue}": expected "<refillPerSec>:<capacity>" (e.g. "3:9").`,
-			);
-			continue;
-		}
+    const parts = rawValue.split(':');
+    if (parts.length !== 2) {
+      warn(
+        `Ignoring env var "${key}=${rawValue}": expected "<refillPerSec>:<capacity>" (e.g. "3:9").`,
+      );
+      continue;
+    }
 
-		const refillPerSec = Number(parts[0]);
-		const capacity = Number(parts[1]);
-		if (!Number.isFinite(refillPerSec) || refillPerSec <= 0) {
-			warn(
-				`Ignoring env var "${key}=${rawValue}": refillPerSec must be a positive finite number.`,
-			);
-			continue;
-		}
-		if (!Number.isFinite(capacity) || capacity <= 0) {
-			warn(
-				`Ignoring env var "${key}=${rawValue}": capacity must be a positive finite number.`,
-			);
-			continue;
-		}
+    const refillPerSec = Number(parts[0]);
+    const capacity = Number(parts[1]);
+    if (!Number.isFinite(refillPerSec) || refillPerSec <= 0) {
+      warn(`Ignoring env var "${key}=${rawValue}": refillPerSec must be a positive finite number.`);
+      continue;
+    }
+    if (!Number.isFinite(capacity) || capacity <= 0) {
+      warn(`Ignoring env var "${key}=${rawValue}": capacity must be a positive finite number.`);
+      continue;
+    }
 
-		if (!KNOWN_TYPES.has(type)) {
-			warn(
-				`Note: env var "${key}" sets a rate limit for an unknown connector type "${type}". ` +
-					`Continuing — this is forward-compatible, but verify the type name matches a real connector.`,
-			);
-		}
+    if (!KNOWN_TYPES.has(type)) {
+      warn(
+        `Note: env var "${key}" sets a rate limit for an unknown connector type "${type}". ` +
+          `Continuing — this is forward-compatible, but verify the type name matches a real connector.`,
+      );
+    }
 
-		out[type] = { capacity, refillPerSec };
-	}
+    out[type] = { capacity, refillPerSec };
+  }
 
-	return out;
+  return out;
 }

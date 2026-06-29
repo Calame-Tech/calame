@@ -204,9 +204,7 @@ export function registerTenantsRoutes(app: Express, state: AppState): void {
       // wipe every row in every single-tenant install (the v12 migration
       // tagged every existing row with 'default').
       if (tenantId === DEFAULT_TENANT_ID) {
-        res
-          .status(400)
-          .json({ success: false, message: 'Cannot delete the default tenant.' });
+        res.status(400).json({ success: false, message: 'Cannot delete the default tenant.' });
         return;
       }
 
@@ -241,7 +239,11 @@ export function registerTenantsRoutes(app: Express, state: AppState): void {
       // cleaned up at the next vacuum.
       // -----------------------------------------------------------------
       const vectorStore = state.ragRuntime?.vectorStore;
-      if (vectorStore && tableExists(raw, 'rag_documents') && hasTenantColumn(raw, 'rag_documents')) {
+      if (
+        vectorStore &&
+        tableExists(raw, 'rag_documents') &&
+        hasTenantColumn(raw, 'rag_documents')
+      ) {
         const docIds = raw
           .prepare(`SELECT id FROM rag_documents WHERE tenant_id = ?`)
           .all(tenantId) as Array<{ id: string }>;
@@ -250,10 +252,11 @@ export function registerTenantsRoutes(app: Express, state: AppState): void {
             vectorStore.deleteByDocument(id);
           } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : String(err);
-            state.logger?.warn(
-              `Vector wipe failed for document ${id} during tenant delete`,
-              { component: 'tenants', tenantId, error: msg },
-            );
+            state.logger?.warn(`Vector wipe failed for document ${id} during tenant delete`, {
+              component: 'tenants',
+              tenantId,
+              error: msg,
+            });
           }
         }
       }
@@ -289,9 +292,7 @@ export function registerTenantsRoutes(app: Express, state: AppState): void {
 
       const cascade = raw.transaction((tid: string) => {
         for (const table of orderedTables) {
-          const result = raw
-            .prepare(`DELETE FROM ${table} WHERE tenant_id = ?`)
-            .run(tid);
+          const result = raw.prepare(`DELETE FROM ${table} WHERE tenant_id = ?`).run(tid);
           const key = COUNT_KEY_BY_TABLE[table] ?? table;
           counts[key] = result.changes;
         }

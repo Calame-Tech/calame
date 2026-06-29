@@ -106,16 +106,12 @@ export default function DarkSelect({
                       buttonRef.current?.focus();
                     }}
                     className={`w-full text-left px-3 py-1.5 text-sm transition-colors flex items-center justify-between gap-2 ${
-                      isSelected
-                        ? 'bg-os-700/30 text-os-300'
-                        : 'text-gray-200 hover:bg-gray-800/70'
+                      isSelected ? 'bg-os-700/30 text-os-300' : 'text-gray-200 hover:bg-gray-800/70'
                     }`}
                   >
                     <span className="truncate">
                       {opt.label}
-                      {opt.hint && (
-                        <span className="text-xs text-gray-500 ml-1.5">{opt.hint}</span>
-                      )}
+                      {opt.hint && <span className="text-xs text-gray-500 ml-1.5">{opt.hint}</span>}
                     </span>
                     {isSelected && (
                       <span aria-hidden="true" className="text-os-400 text-xs shrink-0">

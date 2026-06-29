@@ -122,7 +122,11 @@ describe('OAuth security — redirect_uri validation (GET /authorize)', () => {
     }
     state.ssoRuntime = { OidcProvider: FakeOidc } as never;
     state.oidcConfigManager = {
-      getConfig: () => ({ enabled: true, issuerUrl: 'https://idp.example', clientId: 'idp-client' }),
+      getConfig: () => ({
+        enabled: true,
+        issuerUrl: 'https://idp.example',
+        clientId: 'idp-client',
+      }),
     } as never;
 
     const clientId = await registerClient(app, ['https://client.example/cb']);
@@ -157,13 +161,15 @@ describe('OAuth security — /token PKCE + redirect_uri', () => {
     redirectUri: string;
     codeChallenge?: string;
   }): Promise<string> {
-    const res = await request(app).get('/authorize').query({
-      profile: 'openp',
-      response_type: 'code',
-      client_id: opts.clientId,
-      redirect_uri: opts.redirectUri,
-      code_challenge: opts.codeChallenge ?? PKCE_CHALLENGE,
-    });
+    const res = await request(app)
+      .get('/authorize')
+      .query({
+        profile: 'openp',
+        response_type: 'code',
+        client_id: opts.clientId,
+        redirect_uri: opts.redirectUri,
+        code_challenge: opts.codeChallenge ?? PKCE_CHALLENGE,
+      });
     expect(res.status).toBe(302);
     const location = res.headers.location as string;
     const code = new URL(location).searchParams.get('code');

@@ -123,9 +123,7 @@ function deleteConfigurationRow(
   name: string,
   tenantId: string = DEFAULT_TENANT_ID,
 ): void {
-  db.raw
-    .prepare('DELETE FROM configurations WHERE name = ? AND tenant_id = ?')
-    .run(name, tenantId);
+  db.raw.prepare('DELETE FROM configurations WHERE name = ? AND tenant_id = ?').run(name, tenantId);
 }
 
 export { readConfigurationsFile };

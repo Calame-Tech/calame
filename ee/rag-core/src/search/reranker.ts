@@ -231,7 +231,11 @@ export class CohereReranker implements Reranker {
     } catch (err: unknown) {
       throw new RerankerError('Cohere rerank: malformed JSON response', { cause: err });
     }
-    if (typeof json !== 'object' || json === null || !Array.isArray((json as { results?: unknown }).results)) {
+    if (
+      typeof json !== 'object' ||
+      json === null ||
+      !Array.isArray((json as { results?: unknown }).results)
+    ) {
       throw new RerankerError('Cohere rerank: missing "results" array in response');
     }
 

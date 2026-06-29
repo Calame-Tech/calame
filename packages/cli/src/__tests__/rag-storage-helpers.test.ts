@@ -108,7 +108,10 @@ describe('resolveFolderId', () => {
  * also break these tests.
  */
 async function listFoldersLogic(
-  db: FolderResolverDb & { allFolders: ReturnType<typeof vi.fn>; childFolders: ReturnType<typeof vi.fn> },
+  db: FolderResolverDb & {
+    allFolders: ReturnType<typeof vi.fn>;
+    childFolders: ReturnType<typeof vi.fn>;
+  },
   sourceId: string,
   parent?: string,
 ) {
@@ -125,7 +128,11 @@ async function listFoldersLogic(
 }
 
 describe('listFolders logic', () => {
-  function makeStorageDb(resolvedId: string | undefined, allResult: unknown[] = [], childResult: unknown[] = []) {
+  function makeStorageDb(
+    resolvedId: string | undefined,
+    allResult: unknown[] = [],
+    childResult: unknown[] = [],
+  ) {
     return {
       prepare: vi.fn().mockReturnValue({
         get: vi.fn().mockReturnValue(resolvedId ? { id: resolvedId } : undefined),

@@ -14,7 +14,9 @@ function StatusBadge({ status }: { status: string }) {
     invited: 'bg-yellow-900/50 text-yellow-300 border-yellow-700',
   };
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border ${colors[status] ?? 'bg-gray-700 text-gray-300 border-gray-600'}`}>
+    <span
+      className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border ${colors[status] ?? 'bg-gray-700 text-gray-300 border-gray-600'}`}
+    >
       {status}
     </span>
   );
@@ -136,8 +138,11 @@ export default function McpUsers({ profileName, onNavigateToUser }: McpUsersProp
   const formatDate = (date: string | null) => {
     if (!date) return '—';
     return new Date(date).toLocaleDateString('fr-FR', {
-      day: '2-digit', month: '2-digit', year: 'numeric',
-      hour: '2-digit', minute: '2-digit',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
     });
   };
 
@@ -146,14 +151,20 @@ export default function McpUsers({ profileName, onNavigateToUser }: McpUsersProp
       {/* Action buttons */}
       <div className="flex items-center gap-2">
         <button
-          onClick={() => { setShowQuickCreate(!showQuickCreate); setShowAddExisting(false); }}
+          onClick={() => {
+            setShowQuickCreate(!showQuickCreate);
+            setShowAddExisting(false);
+          }}
           className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded transition-colors"
         >
           + New User
         </button>
         {usersNotOnProfile.length > 0 && (
           <button
-            onClick={() => { setShowAddExisting(!showAddExisting); setShowQuickCreate(false); }}
+            onClick={() => {
+              setShowAddExisting(!showAddExisting);
+              setShowQuickCreate(false);
+            }}
             className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded transition-colors"
           >
             + Add Existing User
@@ -164,7 +175,9 @@ export default function McpUsers({ profileName, onNavigateToUser }: McpUsersProp
       {/* Token display */}
       {newToken && (
         <div className="bg-green-900/30 border border-green-700 rounded-lg p-3">
-          <p className="text-green-300 text-sm font-medium mb-1">Token — copy now, shown once only</p>
+          <p className="text-green-300 text-sm font-medium mb-1">
+            Token — copy now, shown once only
+          </p>
           <div className="flex items-center gap-2">
             <code className="flex-1 bg-gray-800 px-3 py-1.5 rounded text-green-300 text-xs font-mono break-all">
               {newToken}
@@ -188,7 +201,9 @@ export default function McpUsers({ profileName, onNavigateToUser }: McpUsersProp
       {error && (
         <div className="bg-red-900/30 border border-red-700 rounded-lg p-2 text-red-300 text-sm">
           {error}
-          <button onClick={() => setError('')} className="ml-2 text-red-400 hover:text-red-200">×</button>
+          <button onClick={() => setError('')} className="ml-2 text-red-400 hover:text-red-200">
+            ×
+          </button>
         </div>
       )}
 
@@ -222,10 +237,17 @@ export default function McpUsers({ profileName, onNavigateToUser }: McpUsersProp
               <option value="mcp">MCP only</option>
               <option value="chat">Chat only</option>
             </select>
-            <button type="submit" className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded">
+            <button
+              type="submit"
+              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded"
+            >
               Create
             </button>
-            <button type="button" onClick={() => setShowQuickCreate(false)} className="px-2 py-1.5 text-gray-400 hover:text-white text-sm">
+            <button
+              type="button"
+              onClick={() => setShowQuickCreate(false)}
+              className="px-2 py-1.5 text-gray-400 hover:text-white text-sm"
+            >
               Cancel
             </button>
           </div>
@@ -250,7 +272,10 @@ export default function McpUsers({ profileName, onNavigateToUser }: McpUsersProp
           </div>
           <div className="space-y-1 max-h-40 overflow-y-auto">
             {usersNotOnProfile.map((u) => (
-              <div key={u.id} className="flex items-center justify-between px-2 py-1.5 rounded hover:bg-gray-700">
+              <div
+                key={u.id}
+                className="flex items-center justify-between px-2 py-1.5 rounded hover:bg-gray-700"
+              >
                 <div>
                   <span className="text-sm text-white">{u.name}</span>
                   <span className="text-xs text-gray-500 ml-2">{u.email}</span>
@@ -264,7 +289,10 @@ export default function McpUsers({ profileName, onNavigateToUser }: McpUsersProp
               </div>
             ))}
           </div>
-          <button onClick={() => setShowAddExisting(false)} className="text-xs text-gray-400 hover:text-white">
+          <button
+            onClick={() => setShowAddExisting(false)}
+            className="text-xs text-gray-400 hover:text-white"
+          >
             Cancel
           </button>
         </div>
@@ -303,7 +331,9 @@ export default function McpUsers({ profileName, onNavigateToUser }: McpUsersProp
                   <td className="px-3 py-2">
                     <span className="text-xs text-gray-400">{pa?.accessMode ?? '—'}</span>
                   </td>
-                  <td className="px-3 py-2"><StatusBadge status={user.status} /></td>
+                  <td className="px-3 py-2">
+                    <StatusBadge status={user.status} />
+                  </td>
                   <td className="px-3 py-2 text-gray-500">{formatDate(user.lastActiveAt)}</td>
                   <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                     <button

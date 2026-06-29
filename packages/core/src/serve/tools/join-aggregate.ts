@@ -28,16 +28,27 @@ export function registerJoinAggregateGeneric(
   accessible: AccessibleTable[],
   allRelations: Relation[],
 ): void {
-  const { server, executeQuery, dialect, onAuditLog, profileName, responseMode, wrapResponse, maxOffset, scopeGuard, toolName } = ctx;
+  const {
+    server,
+    executeQuery,
+    dialect,
+    onAuditLog,
+    profileName,
+    responseMode,
+    wrapResponse,
+    maxOffset,
+    scopeGuard,
+    toolName,
+  } = ctx;
 
   // Only tables where aggregate is enabled. Disabling aggregate on a table
   // must also block joins against it.
-  const eligible = accessible.filter(at => at.enabledTools.includes('aggregate'));
+  const eligible = accessible.filter((at) => at.enabledTools.includes('aggregate'));
   if (eligible.length < 2) return;
 
   // Restrict the table enum to tables that have at least one FK pointing to
   // (or coming from) another eligible table. No FK -> no JOIN possible.
-  const eligibleNames = new Set(eligible.map(at => at.table.name));
+  const eligibleNames = new Set(eligible.map((at) => at.table.name));
   // Relations restricted to eligible tables only
   const eligibleRelations = allRelations.filter(
     (r) => eligibleNames.has(r.fromTable) && eligibleNames.has(r.toTable),
@@ -95,7 +106,19 @@ export function registerJoinAggregateGeneric(
       } = args as {
         primary_table: string;
         join_table: string;
-        aggregation: 'count' | 'sum' | 'avg' | 'min' | 'max' | 'ratio' | 'count_distinct' | 'weighted_ratio' | 'median' | 'stddev' | 'variance' | 'percentile';
+        aggregation:
+          | 'count'
+          | 'sum'
+          | 'avg'
+          | 'min'
+          | 'max'
+          | 'ratio'
+          | 'count_distinct'
+          | 'weighted_ratio'
+          | 'median'
+          | 'stddev'
+          | 'variance'
+          | 'percentile';
         aggregation_column?: string;
         numerator_column?: string;
         denominator_column?: string;
@@ -116,7 +139,14 @@ export function registerJoinAggregateGeneric(
       };
 
       return executeWithAudit(
-        { executeQuery, dialect, onAuditLog, profileName, toolName: toolName('join_aggregate'), toolArgs: args },
+        {
+          executeQuery,
+          dialect,
+          onAuditLog,
+          profileName,
+          toolName: toolName('join_aggregate'),
+          toolArgs: args,
+        },
         async (exec) => {
           if (typeof primary_table !== 'string' || typeof join_table !== 'string') {
             return structuredError({
@@ -183,7 +213,9 @@ export function registerJoinAggregateGeneric(
           let ratioSelectExpr: string | null = null;
           if (aggregation === 'ratio') {
             if (!ratio_filter || Object.keys(ratio_filter).length === 0) {
-              return structuredError({ error: 'ratio_filter is required for aggregation: "ratio"' });
+              return structuredError({
+                error: 'ratio_filter is required for aggregation: "ratio"',
+              });
             }
             const rfAt = ratio_filter_table === 'join' ? jAt : pAt;
             const rfAlias = ratio_filter_table === 'join' ? jAlias : pAlias;
@@ -320,7 +352,12 @@ export function registerJoinAggregateGeneric(
               });
             }
             selectExpr = `COUNT(DISTINCT ${aggAlias}.${dialect.quoteIdent(aggregation_column)}) as result`;
-          } else if (aggregation === 'median' || aggregation === 'percentile' || aggregation === 'stddev' || aggregation === 'variance') {
+          } else if (
+            aggregation === 'median' ||
+            aggregation === 'percentile' ||
+            aggregation === 'stddev' ||
+            aggregation === 'variance'
+          ) {
             // Statistical aggregations — require aggregation_column (numeric).
             if (!aggregation_column) {
               return structuredError({
@@ -347,7 +384,8 @@ export function registerJoinAggregateGeneric(
             } else if (aggregation === 'percentile') {
               if (percentile_p == null) {
                 return structuredError({
-                  error: 'percentile_p is required when aggregation is "percentile" (e.g. 0.95 for p95)',
+                  error:
+                    'percentile_p is required when aggregation is "percentile" (e.g. 0.95 for p95)',
                 });
               }
               const expr = dialect.percentileExpr(statCol, percentile_p);
@@ -460,7 +498,9 @@ export function registerJoinAggregateGeneric(
             allowed: string[],
           ): { ok: true } | { ok: false; payload: Record<string, unknown> } => {
             for (const sf of scopeInfo.filters.filter((f) => f.tableName === tableName)) {
-              conditions.push(`${alias}.${dialect.quoteIdent(sf.column)} = ${dialect.param(paramIndex++)}`);
+              conditions.push(
+                `${alias}.${dialect.quoteIdent(sf.column)} = ${dialect.param(paramIndex++)}`,
+              );
               values.push(sf.value);
             }
             if (!userFilters) return { ok: true };
@@ -505,7 +545,9 @@ export function registerJoinAggregateGeneric(
                   break;
                 case 'between': {
                   const [min, max] = filter.value as [unknown, unknown];
-                  conditions.push(`${qi} >= ${dialect.param(paramIndex++)} AND ${qi} <= ${dialect.param(paramIndex++)}`);
+                  conditions.push(
+                    `${qi} >= ${dialect.param(paramIndex++)} AND ${qi} <= ${dialect.param(paramIndex++)}`,
+                  );
                   values.push(min, max);
                   break;
                 }
@@ -514,7 +556,10 @@ export function registerJoinAggregateGeneric(
                   const arr: unknown[] = Array.isArray(raw)
                     ? raw
                     : typeof raw === 'string'
-                      ? raw.split(',').map((s) => s.trim()).filter((s) => s.length > 0)
+                      ? raw
+                          .split(',')
+                          .map((s) => s.trim())
+                          .filter((s) => s.length > 0)
                       : [raw];
                   if (arr.length === 0) {
                     conditions.push('1=0');
@@ -541,9 +586,19 @@ export function registerJoinAggregateGeneric(
             return { ok: true };
           };
 
-          const r1 = buildPrefixedFilters(primary_table, pAlias, filters, pAt.filterableCols.map(c => c.name));
+          const r1 = buildPrefixedFilters(
+            primary_table,
+            pAlias,
+            filters,
+            pAt.filterableCols.map((c) => c.name),
+          );
           if (!r1.ok) return structuredError(r1.payload);
-          const r2 = buildPrefixedFilters(join_table, jAlias, join_filters, jAt.filterableCols.map(c => c.name));
+          const r2 = buildPrefixedFilters(
+            join_table,
+            jAlias,
+            join_filters,
+            jAt.filterableCols.map((c) => c.name),
+          );
           if (!r2.ok) return structuredError(r2.payload);
 
           // Apply scope filters for intermediate tables in the join path
@@ -561,7 +616,9 @@ export function registerJoinAggregateGeneric(
               });
             }
             for (const sf of scopeInfo.filters.filter((f) => f.tableName === intermediateTable)) {
-              conditions.push(`${intermediateAlias}.${dialect.quoteIdent(sf.column)} = ${dialect.param(paramIndex++)}`);
+              conditions.push(
+                `${intermediateAlias}.${dialect.quoteIdent(sf.column)} = ${dialect.param(paramIndex++)}`,
+              );
               values.push(sf.value);
             }
           }
@@ -616,7 +673,8 @@ export function registerJoinAggregateGeneric(
           if (groupBySecondaryOriginal) {
             const at2 = byName.get(groupBySecondaryOriginal.table)!;
             const colRule2 = at2.maskingRules[groupBySecondaryOriginal.column];
-            if (colRule2) rows = applyMasking(rows, { [groupBySecondaryOriginal.column]: colRule2 });
+            if (colRule2)
+              rows = applyMasking(rows, { [groupBySecondaryOriginal.column]: colRule2 });
           }
 
           // Friendly mode: surface human labels for the group-by columns.
@@ -630,7 +688,8 @@ export function registerJoinAggregateGeneric(
           if (groupBySecondaryOriginal) {
             const at2 = byName.get(groupBySecondaryOriginal.table)!;
             if (at2.labelMap[groupBySecondaryOriginal.column]) {
-              labelMap[groupBySecondaryOriginal.column] = at2.labelMap[groupBySecondaryOriginal.column];
+              labelMap[groupBySecondaryOriginal.column] =
+                at2.labelMap[groupBySecondaryOriginal.column];
             }
           }
           const formattedRows = formatResponseRows(rows, labelMap, responseMode);

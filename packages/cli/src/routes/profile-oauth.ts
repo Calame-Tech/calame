@@ -148,13 +148,17 @@ export function registerProfileOAuthRoutes(app: Express, state: AppState): void 
     }
 
     if (profile.authMode !== 'oauth') {
-      res.status(400).json({ error: `Profile "${profileName}" does not use OAuth authentication.` });
+      res
+        .status(400)
+        .json({ error: `Profile "${profileName}" does not use OAuth authentication.` });
       return;
     }
 
     const oauthConfig = profile.oauthConfig;
     if (!oauthConfig) {
-      res.status(500).json({ error: `Profile "${profileName}" has authMode 'oauth' but no oauthConfig.` });
+      res
+        .status(500)
+        .json({ error: `Profile "${profileName}" has authMode 'oauth' but no oauthConfig.` });
       return;
     }
 
@@ -313,7 +317,7 @@ export function registerProfileOAuthRoutes(app: Express, state: AppState): void 
       const name =
         typeof userInfo[providerConfig.nameField] === 'string'
           ? (userInfo[providerConfig.nameField] as string)
-          : email ?? 'OAuth User';
+          : (email ?? 'OAuth User');
 
       // Build an OIDC-style subject: "<provider>:<id>"
       const oidcSubject = `oauth:${oauthConfig.provider}:${providerIdStr}`;
@@ -325,7 +329,9 @@ export function registerProfileOAuthRoutes(app: Express, state: AppState): void 
 
       if (existingBySubject) {
         if (existingBySubject.status !== 'active') {
-          res.status(403).json({ error: 'Your account has been disabled. Contact your administrator.' });
+          res
+            .status(403)
+            .json({ error: 'Your account has been disabled. Contact your administrator.' });
           return;
         }
         plaintextToken = userManager.getUserToken(existingBySubject.id);

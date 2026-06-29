@@ -84,7 +84,12 @@ export class AppState {
     if (value === null) return;
     if (this._connections.size === 0) {
       this._connections.set('default', {
-        connection: { name: 'default', label: 'Default', databaseType: 'postgresql', connectionString: '' },
+        connection: {
+          name: 'default',
+          label: 'Default',
+          databaseType: 'postgresql',
+          connectionString: '',
+        },
         schema: value,
         piiDetections: null,
       });
@@ -148,7 +153,12 @@ export class AppState {
   set cachedPiiDetections(value: Record<string, Record<string, PiiDetection>> | null) {
     if (this._connections.size === 0 && value) {
       this._connections.set('default', {
-        connection: { name: 'default', label: 'Default', databaseType: 'postgresql', connectionString: '' },
+        connection: {
+          name: 'default',
+          label: 'Default',
+          databaseType: 'postgresql',
+          connectionString: '',
+        },
         schema: { tables: [], relations: [] },
         piiDetections: value,
       });

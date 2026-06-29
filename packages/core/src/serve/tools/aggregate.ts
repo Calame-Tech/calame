@@ -21,11 +21,24 @@ export function registerAggregateGeneric(
   accessible: AccessibleTable[],
   catalogue: string,
 ): void {
-  const { server, executeQuery, dialect, onAuditLog, profileName, responseMode, wrapResponse, maxOffset, scopeGuard, toolName } = ctx;
+  const {
+    server,
+    executeQuery,
+    dialect,
+    onAuditLog,
+    profileName,
+    responseMode,
+    wrapResponse,
+    maxOffset,
+    scopeGuard,
+    toolName,
+  } = ctx;
 
-  const eligible = accessible.filter(at => at.enabledTools.includes('aggregate') && at.numericCols.length > 0);
+  const eligible = accessible.filter(
+    (at) => at.enabledTools.includes('aggregate') && at.numericCols.length > 0,
+  );
   if (eligible.length === 0) return;
-  const tableEnum = zodEnum(eligible.map(at => at.table.name));
+  const tableEnum = zodEnum(eligible.map((at) => at.table.name));
   if (!tableEnum) return;
 
   const inputShape = buildAggregateArgsShape(tableEnum);
@@ -48,8 +61,8 @@ export function registerAggregateGeneric(
         return structuredError({
           error: `Table '${at.table.name}' has no numeric columns and cannot be aggregated`,
           valid_tables: accessible
-            .filter(a => a.enabledTools.includes('aggregate') && a.numericCols.length > 0)
-            .map(a => a.table.name),
+            .filter((a) => a.enabledTools.includes('aggregate') && a.numericCols.length > 0)
+            .map((a) => a.table.name),
         });
       }
 
@@ -57,7 +70,7 @@ export function registerAggregateGeneric(
       const schemaName = at.table.schema || 'public';
       const qualifiedTable = dialect.quoteTable(schemaName, tableName);
       const maxLimit = at.opts?.maxLimit ?? 1000;
-      const allowedFilterColumns = at.filterableCols.map(c => c.name);
+      const allowedFilterColumns = at.filterableCols.map((c) => c.name);
 
       const {
         aggregation,
@@ -106,7 +119,14 @@ export function registerAggregateGeneric(
       };
 
       return executeWithAudit(
-        { executeQuery, dialect, onAuditLog, profileName, toolName: toolName('aggregate'), toolArgs: args },
+        {
+          executeQuery,
+          dialect,
+          onAuditLog,
+          profileName,
+          toolName: toolName('aggregate'),
+          toolArgs: args,
+        },
         async (exec) => {
           const cappedLimit = Math.min(limit ?? 20, maxLimit);
           const cappedOffset = Math.min(offset ?? 0, maxOffset ?? 10_000);
@@ -115,16 +135,16 @@ export function registerAggregateGeneric(
           // comparisons is ambiguous — both windows would need separate offsets).
           if (compare_to && cappedOffset > 0) {
             return structuredError({
-              error: 'offset is not compatible with compare_to — pagination of period comparisons is ambiguous',
+              error:
+                'offset is not compatible with compare_to — pagination of period comparisons is ambiguous',
             });
           }
 
-          const { clause: whereClause, values, nextParamIndex } = scopeGuard.buildWhereClause(
-            tableName,
-            filters,
-            allowedFilterColumns,
-            dialect,
-          );
+          const {
+            clause: whereClause,
+            values,
+            nextParamIndex,
+          } = scopeGuard.buildWhereClause(tableName, filters, allowedFilterColumns, dialect);
           // Capture the count of WHERE values so compare_to can splice in a
           // shifted-date version later. All subsequent pushes (ratio_filter
           // doubled values, having_min_total, top_n.n, cappedLimit) appear
@@ -136,14 +156,21 @@ export function registerAggregateGeneric(
           let selectExpr: string;
           if (aggregation === 'ratio') {
             if (!ratio_filter || Object.keys(ratio_filter).length === 0) {
-              return structuredError({ error: 'ratio_filter is required for aggregation: "ratio"' });
+              return structuredError({
+                error: 'ratio_filter is required for aggregation: "ratio"',
+              });
             }
             // The CASE WHEN expression appears twice in the SELECT (once for
             // `result`, once for `numerator`). Each occurrence has its own
             // positional placeholders, so we build the conditions twice with
             // independent paramIndex windows and push the values twice. This
             // keeps SQLite (`?`) and Postgres (`$N`) consistent.
-            const first = buildPlainConditions(ratio_filter, allowedFilterColumns, dialect, paramCursor);
+            const first = buildPlainConditions(
+              ratio_filter,
+              allowedFilterColumns,
+              dialect,
+              paramCursor,
+            );
             if (first.conditions.length === 0) {
               return structuredError({
                 error: 'ratio_filter has no usable conditions',
@@ -152,7 +179,12 @@ export function registerAggregateGeneric(
             }
             values.push(...first.values);
             paramCursor = first.nextParamIndex;
-            const second = buildPlainConditions(ratio_filter, allowedFilterColumns, dialect, paramCursor);
+            const second = buildPlainConditions(
+              ratio_filter,
+              allowedFilterColumns,
+              dialect,
+              paramCursor,
+            );
             values.push(...second.values);
             paramCursor = second.nextParamIndex;
             const caseFirst = `CASE WHEN ${first.conditions.join(' AND ')} THEN 1 ELSE 0 END`;
@@ -212,7 +244,12 @@ export function registerAggregateGeneric(
               });
             }
             selectExpr = `COUNT(DISTINCT ${dialect.quoteIdent(aggregation_column)}) as result`;
-          } else if (aggregation === 'median' || aggregation === 'percentile' || aggregation === 'stddev' || aggregation === 'variance') {
+          } else if (
+            aggregation === 'median' ||
+            aggregation === 'percentile' ||
+            aggregation === 'stddev' ||
+            aggregation === 'variance'
+          ) {
             // Statistical aggregations — require aggregation_column (numeric).
             if (!aggregation_column) {
               return structuredError({
@@ -239,7 +276,8 @@ export function registerAggregateGeneric(
             } else if (aggregation === 'percentile') {
               if (percentile_p == null) {
                 return structuredError({
-                  error: 'percentile_p is required when aggregation is "percentile" (e.g. 0.95 for p95)',
+                  error:
+                    'percentile_p is required when aggregation is "percentile" (e.g. 0.95 for p95)',
                 });
               }
               const expr = dialect.percentileExpr(statCol, percentile_p);
@@ -308,9 +346,7 @@ export function registerAggregateGeneric(
               ? dateBucketExpr(dialect, group_by_bucket, dialect.quoteIdent(group_by))
               : dialect.quoteIdent(group_by);
             const groupAlias = dialect.quoteIdent(group_by);
-            selectPrefix = group_by_bucket
-              ? `${colExpr} as ${groupAlias}, `
-              : `${colExpr}, `;
+            selectPrefix = group_by_bucket ? `${colExpr} as ${groupAlias}, ` : `${colExpr}, `;
             groupByClause = `GROUP BY ${colExpr}`;
           }
 
@@ -368,7 +404,8 @@ export function registerAggregateGeneric(
             const partitionCols = [group_by, group_by_secondary].filter(Boolean) as string[];
             if (partitionCols.length === 0) {
               return structuredError({
-                error: '`top_n_per_group` requires `group_by` (and optionally `group_by_secondary`) to be set',
+                error:
+                  '`top_n_per_group` requires `group_by` (and optionally `group_by_secondary`) to be set',
               });
             }
             if (!partitionCols.includes(top_n_per_group.partition_by)) {
@@ -506,7 +543,8 @@ export function registerAggregateGeneric(
             );
             if (prevWhere.values.length !== whereValueCount) {
               return structuredError({
-                error: 'compare_to: previous WHERE clause produced a different number of params than current — likely an internal bug',
+                error:
+                  'compare_to: previous WHERE clause produced a different number of params than current — likely an internal bug',
               });
             }
             const prevValues = [...prevWhere.values, ...values.slice(whereValueCount)];

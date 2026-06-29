@@ -9,13 +9,7 @@ export type PiiCategory =
   | 'ssn'
   | 'encrypted';
 
-export type MaskingMode =
-  | 'none'
-  | 'exclude'
-  | 'hash'
-  | 'truncate'
-  | 'replace'
-  | 'aggregate_only';
+export type MaskingMode = 'none' | 'exclude' | 'hash' | 'truncate' | 'replace' | 'aggregate_only';
 
 export interface PiiDetection {
   category: PiiCategory;

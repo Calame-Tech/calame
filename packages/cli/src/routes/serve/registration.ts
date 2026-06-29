@@ -17,11 +17,7 @@ import {
   sourceAdapterRegistry,
 } from '@calame/core';
 import { DEFAULT_TENANT_ID } from '../../tenancy.js';
-import {
-  distinctValuesCache,
-  distinctValuesCacheKey,
-  getQueryTimeoutMs,
-} from './routing.js';
+import { distinctValuesCache, distinctValuesCacheKey, getQueryTimeoutMs } from './routing.js';
 
 // ---------------------------------------------------------------------------
 // Phase 3c — adapter-driven tool registration
@@ -172,9 +168,10 @@ function resolveAdapterConfig(
     if (!state.ragRuntime || !state.db) return null;
     try {
       const row = state.db.raw
-        .prepare<[string], { config_encrypted: string }>(
-          'SELECT config_encrypted FROM rag_sources WHERE id = ? LIMIT 1',
-        )
+        .prepare<
+          [string],
+          { config_encrypted: string }
+        >('SELECT config_encrypted FROM rag_sources WHERE id = ? LIMIT 1')
         .get(sourceId);
       if (!row) return null;
       const decrypted = state.ragRuntime.decryptConfig(row.config_encrypted);
@@ -276,9 +273,12 @@ export async function registerToolsViaAdapters(opts: RegisterAdaptersOptions): P
         // is a config-defined / legacy connection: treat it as the default tenant
         // so single-tenant fan-out keeps working, while a row owned by a *different*
         // tenant is still blocked.
-        const connRow = state.db?.raw.prepare<[string], { tenant_id: string | null }>(
-          'SELECT tenant_id FROM rag_connections WHERE id = ?',
-        ).get(realId);
+        const connRow = state.db?.raw
+          .prepare<
+            [string],
+            { tenant_id: string | null }
+          >('SELECT tenant_id FROM rag_connections WHERE id = ?')
+          .get(realId);
         const connTenant = connRow?.tenant_id ?? DEFAULT_TENANT_ID;
         if (connTenant !== tenantId) {
           state.logger?.warn(
@@ -333,20 +333,16 @@ export async function registerToolsViaAdapters(opts: RegisterAdaptersOptions): P
   for (const { sourceId, scope } of relationalPairs) {
     const resolved = resolveAdapterForSource(sourceId, scope, state);
     if (!resolved) {
-      state.logger?.warn(
-        `No adapter found for relational source "${sourceId}" — skipping`,
-        { component: `mcp/${profileName}` },
-      );
+      state.logger?.warn(`No adapter found for relational source "${sourceId}" — skipping`, {
+        component: `mcp/${profileName}`,
+      });
       continue;
     }
 
     const { adapter, source } = resolved;
 
     // Compute toolNamespace: empty when only one relational source, prefixed otherwise.
-    const toolNamespace =
-      relationalKindCount >= 2
-        ? sanitizeToolNamespace(source.name) + '_'
-        : '';
+    const toolNamespace = relationalKindCount >= 2 ? sanitizeToolNamespace(source.name) + '_' : '';
 
     // Build the adapter config.
     const config = resolveAdapterConfig(sourceId, scope, state);
@@ -439,22 +435,28 @@ export async function registerToolsViaAdapters(opts: RegisterAdaptersOptions): P
     };
 
     // Inject wrapResponse / maxOffset / distinctValuesByTable for the DB adapter.
-    (ctx as McpRegistrationContext & {
-      wrapResponse?: (json: string) => string;
-      maxOffset?: number;
-      distinctValuesByTable?: Record<string, Record<string, unknown[]>>;
-    }).wrapResponse = wrapResponse;
-    (ctx as McpRegistrationContext & {
-      wrapResponse?: (json: string) => string;
-      maxOffset?: number;
-      distinctValuesByTable?: Record<string, Record<string, unknown[]>>;
-    }).maxOffset = 10000;
-    if (distinctValuesByTable) {
-      (ctx as McpRegistrationContext & {
+    (
+      ctx as McpRegistrationContext & {
         wrapResponse?: (json: string) => string;
         maxOffset?: number;
         distinctValuesByTable?: Record<string, Record<string, unknown[]>>;
-      }).distinctValuesByTable = distinctValuesByTable;
+      }
+    ).wrapResponse = wrapResponse;
+    (
+      ctx as McpRegistrationContext & {
+        wrapResponse?: (json: string) => string;
+        maxOffset?: number;
+        distinctValuesByTable?: Record<string, Record<string, unknown[]>>;
+      }
+    ).maxOffset = 10000;
+    if (distinctValuesByTable) {
+      (
+        ctx as McpRegistrationContext & {
+          wrapResponse?: (json: string) => string;
+          maxOffset?: number;
+          distinctValuesByTable?: Record<string, Record<string, unknown[]>>;
+        }
+      ).distinctValuesByTable = distinctValuesByTable;
     }
 
     try {
@@ -462,10 +464,9 @@ export async function registerToolsViaAdapters(opts: RegisterAdaptersOptions): P
       anyRegistered = true;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      state.logger?.warn(
-        `registerMcpTools failed for relational source "${sourceId}": ${msg}`,
-        { component: `mcp/${profileName}` },
-      );
+      state.logger?.warn(`registerMcpTools failed for relational source "${sourceId}": ${msg}`, {
+        component: `mcp/${profileName}`,
+      });
     }
   }
 
@@ -495,9 +496,10 @@ export async function registerToolsViaAdapters(opts: RegisterAdaptersOptions): P
           let sourceTenantId: string | undefined;
           try {
             const row = state.db.raw
-              .prepare<[string], { tenant_id: string }>(
-                'SELECT tenant_id FROM rag_sources WHERE id = ?',
-              )
+              .prepare<
+                [string],
+                { tenant_id: string }
+              >('SELECT tenant_id FROM rag_sources WHERE id = ?')
               .get(sourceId);
             sourceTenantId = row?.tenant_id;
           } catch {
@@ -515,10 +517,9 @@ export async function registerToolsViaAdapters(opts: RegisterAdaptersOptions): P
 
         const resolved = resolveAdapterForSource(sourceId, scope, state);
         if (!resolved) {
-          state.logger?.warn(
-            `No adapter found for document source "${sourceId}" — skipping`,
-            { component: `mcp/${profileName}` },
-          );
+          state.logger?.warn(`No adapter found for document source "${sourceId}" — skipping`, {
+            component: `mcp/${profileName}`,
+          });
           continue;
         }
 
@@ -552,10 +553,9 @@ export async function registerToolsViaAdapters(opts: RegisterAdaptersOptions): P
           anyRegistered = true;
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
-          state.logger?.warn(
-            `registerMergedDocumentRagTools failed: ${msg}`,
-            { component: `mcp/${profileName}` },
-          );
+          state.logger?.warn(`registerMergedDocumentRagTools failed: ${msg}`, {
+            component: `mcp/${profileName}`,
+          });
         }
       }
     }

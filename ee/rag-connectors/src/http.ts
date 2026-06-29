@@ -9,11 +9,7 @@ import { assertResolvedHostSafe, SsrfBlockedError } from '@calame/connectors/ssr
 
 import type { RagDocument, RagFolder, RagSourceType } from '@calame-ee/rag-core';
 
-import type {
-  DocumentSourceConfig,
-  DocumentSourceConnector,
-  RateLimiterLike,
-} from './types.js';
+import type { DocumentSourceConfig, DocumentSourceConnector, RateLimiterLike } from './types.js';
 import { deterministicId } from './utils.js';
 
 /**

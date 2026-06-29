@@ -37,7 +37,9 @@ describe('getOAuthProvider', () => {
 
     it('does not mutate the shared constant when URLs are overridden', () => {
       const original = OAUTH_PROVIDERS['github'].authorizationUrl;
-      getOAuthProvider('github', { authorizationUrl: 'https://github.example.com/login/oauth/authorize' });
+      getOAuthProvider('github', {
+        authorizationUrl: 'https://github.example.com/login/oauth/authorize',
+      });
       expect(OAUTH_PROVIDERS['github'].authorizationUrl).toBe(original);
     });
   });

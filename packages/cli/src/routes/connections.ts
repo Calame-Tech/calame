@@ -86,12 +86,16 @@ function readConnectionsFile(db: CalameDatabase): ConnectionsFileData {
     if (row.ssl_config) {
       try {
         conn.sslConfig = JSON.parse(row.ssl_config);
-      } catch { /* ignore malformed JSON */ }
+      } catch {
+        /* ignore malformed JSON */
+      }
     }
     if (row.ssh_config) {
       try {
         conn.sshConfig = JSON.parse(row.ssh_config);
-      } catch { /* ignore malformed JSON */ }
+      } catch {
+        /* ignore malformed JSON */
+      }
     }
     connections[row.name] = conn;
   }
@@ -99,11 +103,7 @@ function readConnectionsFile(db: CalameDatabase): ConnectionsFileData {
 }
 
 /** Write a single connection to SQLite. Encrypts the connection string automatically. */
-function writeConnection(
-  db: CalameDatabase,
-  name: string,
-  conn: PersistedConnection,
-): void {
+function writeConnection(db: CalameDatabase, name: string, conn: PersistedConnection): void {
   const sslConfigJson = conn.sslConfig ? JSON.stringify(conn.sslConfig) : null;
   const sshConfigJson = conn.sshConfig ? JSON.stringify(conn.sshConfig) : null;
   db.raw
@@ -140,7 +140,9 @@ function rewriteConnStringPort(connectionString: string, localPort: number): str
       url.port = String(localPort);
       return url.toString();
     }
-  } catch { /* not a URL — fall through to DSN style */ }
+  } catch {
+    /* not a URL — fall through to DSN style */
+  }
 
   // DSN key=value style: host=myhost port=5432 ...
   let result = connectionString
@@ -387,7 +389,10 @@ export function registerConnectionsRoute(app: Express, state: AppState): void {
       }
 
       // Resolve secret:// references before connecting (store original with secret:// in SQLite)
-      let effectiveConnString = await resolveSecret(connectionString as string, state.secretsProvider);
+      let effectiveConnString = await resolveSecret(
+        connectionString as string,
+        state.secretsProvider,
+      );
 
       // Create SSH tunnel if configured
       if (sshConfig?.enabled) {
@@ -403,10 +408,9 @@ export function registerConnectionsRoute(app: Express, state: AppState): void {
         const tunnel = await createSshTunnel(tunnelCfg);
         state._tunnels.set(name as string, tunnel);
         effectiveConnString = rewriteConnStringPort(connectionString as string, tunnel.localPort);
-        state.logger?.info(
-          `SSH tunnel for "${name}" opened on local port ${tunnel.localPort}`,
-          { component: 'connections' },
-        );
+        state.logger?.info(`SSH tunnel for "${name}" opened on local port ${tunnel.localPort}`, {
+          component: 'connections',
+        });
       }
 
       // Build connection options from SSL config
@@ -446,16 +450,18 @@ export function registerConnectionsRoute(app: Express, state: AppState): void {
         databaseType,
         connectionString: connectionString as string,
         sslConfig: namedConnection.sslConfig,
-        sshConfig: sshConfig?.enabled ? {
-          enabled: true,
-          host: sshConfig.host,
-          port: sshConfig.port ?? 22,
-          username: sshConfig.username,
-          privateKey: sshConfig.privateKey,
-          password: sshConfig.password,
-          dbHost: sshConfig.dbHost ?? '127.0.0.1',
-          dbPort: sshConfig.dbPort ?? 5432,
-        } : undefined,
+        sshConfig: sshConfig?.enabled
+          ? {
+              enabled: true,
+              host: sshConfig.host,
+              port: sshConfig.port ?? 22,
+              username: sshConfig.username,
+              privateKey: sshConfig.privateKey,
+              password: sshConfig.password,
+              dbHost: sshConfig.dbHost ?? '127.0.0.1',
+              dbPort: sshConfig.dbPort ?? 5432,
+            }
+          : undefined,
       });
 
       res.json({ success: true, name, tableCount: schema.tables.length });

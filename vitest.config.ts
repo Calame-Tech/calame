@@ -1,5 +1,7 @@
 import { defineConfig } from 'vitest/config';
 
+// Root config — provides the global coverage settings for the workspace run
+// (see vitest.workspace.ts for the per-package projects/environments).
 export default defineConfig({
   test: {
     globals: true,

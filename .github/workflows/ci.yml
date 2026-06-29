@@ -79,4 +79,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Security scan (semgrep)
-        run: semgrep ci --config p/javascript --config p/owasp-top-ten --config p/security-audit --fail-level exit
+        # `semgrep ci` needs a Semgrep Cloud token and `--fail-level` is not a
+        # valid flag — that combination made this job error out. Use `scan` with
+        # explicit rulesets; fail the build only on ERROR-severity findings.
+        run: semgrep scan --config p/javascript --config p/owasp-top-ten --config p/security-audit --severity ERROR --error --metrics off

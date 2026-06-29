@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Calame Tech inc. Licensed under the Business Source License 1.1.
 // See ee/LICENSE.BUSL at the root of the ee/ directory for terms.
 
+import { webcrypto as crypto } from 'node:crypto';
 import * as jose from 'jose';
 
 export interface OidcProviderConfig {

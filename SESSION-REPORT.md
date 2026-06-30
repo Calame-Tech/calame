@@ -5,6 +5,29 @@ every commit. Newest first.
 
 ---
 
+## 2026-06-30 — Phase 2 #12: split `rag-runtime.ts` (branch `refacto/tooling-qualite`, PR #17)
+
+**Commit `d0e5f0a`.** Last remaining god-file of Phase 2 backend track.
+
+### #12 — `rag-runtime.ts` decomposition (behavior-preserving, code moved verbatim)
+- Split the 1277-line `packages/cli/src/rag-runtime.ts` into cohesive modules under `packages/cli/src/rag/`; `rag-runtime.ts` kept as a thin **orchestrator (1277 → 419 lines)** + re-exports so the public import path is unchanged.
+- New modules:
+  - `rag/types.ts` — `RagRuntime` interface + shared `RagLogger`.
+  - `rag/folder-helpers.ts` — `normaliseFolderArg`, `resolveFolderId`, `FolderResolverDb` (the unit-tested pure helpers).
+  - `rag/bootstrap.ts` — `loadEeModules` (lazy EE load of rag-core + connectors/gdrive/gsheets/notion/microsoft; 501 degradation when absent).
+  - `rag/store-init.ts` — `DEFAULT_DIMENSION`, `readExistingDimension`, `initVectorStore` (dimension pick + vec0 auto-heal + SqliteVecStore).
+  - `rag/connector-dispatch.ts` — `buildConnectorResolver` (+ shared `withRateLimiter`).
+  - `rag/embeddings.ts` — `buildEmbeddingResolvers`, `pickDefaultEmbeddingClient`, `makeUnconfiguredEmbeddingClient`, `resolveCohereReranker`.
+  - `rag/document-adapters.ts` — `buildDocumentAdapterDeps` (SQLite `DocumentStorage` + hybrid/rerank `DocumentSearchIndex` + PII config) and `registerDocumentAdapters` (516 lines, the largest extracted block).
+- **Public surface preserved via re-exports** (`initRagRuntime`, `RagRuntime`, `normaliseFolderArg`, `resolveFolderId`, `FolderResolverDb`) — consumers (`index.ts`, `state.ts`) and the `rag-storage-helpers` test untouched.
+
+### State / next
+- Verified: **typecheck, build, lint, full test suite (1760 tests) all green**; prettier-conformant. Not yet pushed.
+- **Phase 2 backend god-file track (#6–#12): COMPLETE.**
+- Next: Phase 3 (split `App.tsx` ~3392 lines → router + per-domain pages), Phase 4 (DB/connector abstractions), Phase 5 (build/release — #21 Docker-EE already on `main`). Coverage climb to 70% remains its own track.
+
+---
+
 ## 2026-06-29 — Phase 2 god-file refactor + green CI (branch `refacto/tooling-qualite`, PR #17)
 
 **Context:** project migrated from the old `forge-mcp` repo to **Calame**; work continues on `refacto/tooling-qualite`.

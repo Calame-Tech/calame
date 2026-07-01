@@ -5,6 +5,35 @@ every commit. Newest first.
 
 ---
 
+## 2026-07-02 — Manual test session: 2 pre-existing bugs fixed, PR #17 ready to merge
+
+Manual smoke test of the refactored UI (`pnpm dev`, full click-through). The Phase 3 refactor itself surfaced no regressions; the session caught two **pre-existing** bugs and cleared the last pre-merge blocker.
+
+### Bug 1 — onboarding wizard created invalid profile names (`9dadc08`)
+- The wizard saved the raw typed text as the profile *name* (its placeholder literally is "My first profile"), while the chat/auth routes only accept `[a-zA-Z0-9_-]+` → any onboarding-created profile with a space had a broken public chat ("Invalid profile name").
+- Fix: shared `slugifyProfileName()` in `lib/profiles.ts` — typed text becomes the display label, the slug becomes the name (slug preview under the input, same UX as ServePanel, which now reuses the helper). 8 unit tests incl. the invariant that every non-empty slug passes the backend validation.
+
+### Bug 2 — fan-out tenant filter queried a table that never existed (`1bc2c74`)
+- The relational fan-out security filter (from `1038c91`, came in via `fix/security-pr8`) read `SELECT tenant_id FROM rag_connections` — **no commit in repo history ever created that table**. On any live server the first profile hitting the fan-out path crashed its MCP registration in a loop; tests never caught it because their `state.db` is undefined, which short-circuits the query.
+- Fix: `lookupSourceTenant()` queries `rag_sources` (where tenant ownership actually lives) and falls back to the default tenant when the row or the whole rag_* schema is missing — matching the documented intent. Cross-tenant rows still blocked. 5 regression tests with a real in-memory SQLite DB.
+
+### Pre-merge blocker cleared (`56a38c7`)
+- Dropped `.github/workflows/release.yml` — duplicate of main's `publish-docker.yml` (both fired on `v*` tags and pushed the same GHCR image → two racing builds per release).
+
+### Branding feature: NOT lost, parked
+- The per-tenant logo/favicon settings (`019ba0a`, `BrandingSettings.tsx` + `lib/branding.tsx` + `routes/branding.ts` + migration) were merged via PR #11 **into `fix/security-pr8` only — never into `main`**. Decision: dedicated PR after #17 merges (cherry-pick `019ba0a` onto fresh `main`, renumber the DB migration to v13, mount the provider in `main.tsx`, expose as a Settings tab). **Do not delete `feature/branding` until then.**
+
+### Release path (agreed order)
+1. Merge PR #17 (branch already contains all of `main` and all unique `fix/security-pr8` commits except branding).
+2. Dedicated branding PR (see above).
+3. Branch cleanup: `fix/security-pr8` (nothing unique left), `feature/branding` (after branding PR), `feature/rag` (audit first).
+4. Prod release = tag `vX.Y.Z` on `main` → `publish-docker.yml` pushes the GHCR image.
+5. Phases 4–5 continue as small PRs off the new `main`.
+
+Suite at end of session: **115 files / 1805 tests green**, CI green on every push.
+
+---
+
 ## 2026-07-01 — Phase 3 complete: `App.tsx` god-component split (branch `refacto/tooling-qualite`, PR #17)
 
 **Commits `b153b1c` (#13), `c07c92f` (#15 part 1), `ff179d1` (#14), `02fb4b5` (#16).** All pushed, CI green (last one queued at time of writing). Behavior-preserving, code moved verbatim.

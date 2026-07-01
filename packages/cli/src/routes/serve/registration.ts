@@ -49,6 +49,26 @@ export interface RegisterAdaptersOptions {
 }
 
 /**
+ * Resolve the owning tenant of a fan-out target connection. Reads
+ * `rag_sources.tenant_id`; a missing row — or a missing `rag_sources` table
+ * (RAG schema not initialised, e.g. EE absent) — means the connection is
+ * config-defined/legacy and belongs to the default tenant.
+ */
+export function lookupSourceTenant(state: AppState, sourceId: string): string {
+  try {
+    const row = state.db?.raw
+      .prepare<
+        [string],
+        { tenant_id: string | null }
+      >('SELECT tenant_id FROM rag_sources WHERE id = ?')
+      .get(sourceId);
+    return row?.tenant_id ?? DEFAULT_TENANT_ID;
+  } catch {
+    return DEFAULT_TENANT_ID;
+  }
+}
+
+/**
  * Sanitizes a source name/id into a tool-name-safe prefix:
  * lowercase alphanumeric + underscore, max 32 chars, trailing underscore appended by caller.
  */
@@ -269,17 +289,14 @@ export async function registerToolsViaAdapters(opts: RegisterAdaptersOptions): P
       }
       for (const realId of liveConnIds) {
         // Security: filter fan-out to only connections belonging to this tenant.
-        // A connection without a `rag_connections` row (or with a null tenant_id)
-        // is a config-defined / legacy connection: treat it as the default tenant
+        // Tenant ownership lives in `rag_sources` (the unified-sources table); a
+        // connection without a row there (or with a null tenant_id) is a
+        // config-defined / legacy connection: treat it as the default tenant
         // so single-tenant fan-out keeps working, while a row owned by a *different*
-        // tenant is still blocked.
-        const connRow = state.db?.raw
-          .prepare<
-            [string],
-            { tenant_id: string | null }
-          >('SELECT tenant_id FROM rag_connections WHERE id = ?')
-          .get(realId);
-        const connTenant = connRow?.tenant_id ?? DEFAULT_TENANT_ID;
+        // tenant is still blocked. The rag_* schema only exists once the EE RAG
+        // runtime has initialised it — a missing table means no tenant-scoped
+        // sources exist at all, so it degrades to the same default.
+        const connTenant = lookupSourceTenant(state, realId);
         if (connTenant !== tenantId) {
           state.logger?.warn(
             `Fan-out: connection "${realId}" (tenant="${connTenant}") does not match profile tenant "${tenantId}" — skipping`,

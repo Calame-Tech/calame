@@ -105,6 +105,7 @@ import type {
 } from './types/schema.js';
 import { Redirect, useNavigation, resolveLocationRoutes } from './router/index.js';
 import type { View } from './router/index.js';
+import { useSession } from './context/SessionContext.js';
 
 /**
  * Lazy-loaded KnowledgeBaseManager from the ee package. The import is deferred
@@ -207,82 +208,31 @@ function buildProfilesData(profiles: Profile[]): Record<string, Record<string, u
 }
 
 export default function App() {
-  // --- Auth state ---
-  const [authChecked, setAuthChecked] = useState(false);
-  const [authenticated, setAuthenticated] = useState(false);
-  // Whether the RAG runtime is available on this instance (from /health).
-  const [ragEnabled, setRagEnabled] = useState(false);
-  // Human-readable reason when RAG is unavailable (null when ragEnabled is true).
-  const [ragDisabledReason, setRagDisabledReason] = useState<string | null>(null);
-  const [authRequired, setAuthRequired] = useState(false);
-  const [needsSetup, setNeedsSetup] = useState(false);
-  const [showOnboarding, setShowOnboarding] = useState(false);
-  const [dataVersion, setDataVersion] = useState(0);
+  // Session / auth state — owned by SessionProvider (context/SessionContext).
+  const {
+    authChecked,
+    authenticated,
+    authRequired,
+    needsSetup,
+    showOnboarding,
+    userAuthenticated,
+    currentUser,
+    ragEnabled,
+    ragDisabledReason,
+    dataVersion,
+    setAuthenticated,
+    setAuthRequired,
+    setNeedsSetup,
+    setShowOnboarding,
+    setUserAuthenticated,
+    bumpDataVersion,
+    logout,
+  } = useSession();
 
   // Special, URL-driven pages (no admin auth needed). Resolved once from the
   // current pathname — see router/locationRoutes.ts.
   const { welcomeMatch, chatMatch, isAccountPage, isUserLoginPage, isUserPage } =
     resolveLocationRoutes();
-
-  // User auth state (for /account and /login pages)
-  const [userAuthenticated, setUserAuthenticated] = useState(false);
-
-  // Logged-in admin user info (email + role) for the Sidebar footer
-  const [currentUser, setCurrentUser] = useState<{ email: string; role: string } | null>(null);
-
-  // Check auth status on mount
-  useEffect(() => {
-    if (welcomeMatch || chatMatch) {
-      setAuthChecked(true);
-      return;
-    }
-    (async () => {
-      try {
-        // Always check both admin and user auth status and health (for ragEnabled).
-        const [adminRes, userRes, healthRes] = await Promise.all([
-          apiFetch('/api/auth/status', { credentials: 'include' }),
-          apiFetch('/api/auth/user-status', { credentials: 'include' }),
-          apiFetch('/health').catch(() => null),
-        ]);
-
-        if (healthRes?.ok) {
-          try {
-            const healthData = (await healthRes.json()) as {
-              ragEnabled?: boolean;
-              ragDisabledReason?: string | null;
-            };
-            setRagEnabled(healthData.ragEnabled === true);
-            setRagDisabledReason(healthData.ragDisabledReason ?? null);
-          } catch {
-            // Ignore parse errors — ragEnabled stays false.
-          }
-        }
-        const adminData = await adminRes.json();
-        const userData = await userRes.json();
-
-        if (adminData.success) {
-          setAuthenticated(adminData.authenticated);
-          setAuthRequired(adminData.authRequired);
-          setNeedsSetup(!!adminData.needsSetup);
-        }
-        if (userData.success) {
-          setUserAuthenticated(userData.authenticated);
-          // Populate the Sidebar user info when the admin is authenticated
-          if (userData.authenticated && userData.user) {
-            const u = userData.user as { email?: string; role?: string };
-            setCurrentUser({
-              email: u.email ?? '',
-              role: u.role ?? 'admin',
-            });
-          }
-        }
-      } catch {
-        // Network error — keep defaults (not authenticated)
-      } finally {
-        setAuthChecked(true);
-      }
-    })();
-  }, []);
 
   // View-based navigation (state owned by the router module).
   const { view, setView } = useNavigation();
@@ -765,7 +715,7 @@ export default function App() {
     const dismissOnboarding = () => {
       localStorage.setItem('calame_onboarding_dismissed', '1');
       setShowOnboarding(false);
-      setDataVersion((v) => v + 1);
+      bumpDataVersion();
     };
     return <OnboardingWizard onComplete={dismissOnboarding} onSkip={dismissOnboarding} />;
   }
@@ -793,16 +743,6 @@ export default function App() {
     );
   }
 
-  /** Logout handler — extracted from the old header for reuse in Sidebar footer */
-  const handleLogout = async () => {
-    try {
-      await apiFetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
-    } catch {
-      /* ignore network errors */
-    }
-    setAuthenticated(false);
-  };
-
   return (
     <div className="min-h-screen flex flex-col md:flex-row bg-gray-950 text-gray-100">
       {/* Left sidebar navigation */}
@@ -810,7 +750,7 @@ export default function App() {
         currentPage={view.page}
         onNavigate={(page) => setView({ page } as View)}
         user={currentUser ?? undefined}
-        onLogout={handleLogout}
+        onLogout={logout}
       />
 
       {/* Main content column */}

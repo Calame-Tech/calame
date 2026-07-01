@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { apiFetch, getCurrentTenant } from '../lib/api.js';
+import { slugifyProfileName } from '../lib/profiles.js';
 import { buildMcpUrl } from '../lib/mcp-url.js';
 
 interface OnboardingWizardProps {
@@ -173,9 +174,19 @@ export default function OnboardingWizard({ onComplete, onSkip }: OnboardingWizar
 
   async function createProfile(e?: React.FormEvent) {
     e?.preventDefault();
-    const name = step3Profile.profileName.trim();
-    if (!name) {
+    const label = step3Profile.profileName.trim();
+    // The backend chat/auth routes only accept [a-zA-Z0-9_-]+ profile names —
+    // the typed text becomes the display label, the slug becomes the name.
+    const name = slugifyProfileName(label);
+    if (!label) {
       setStep3Profile((s) => ({ ...s, error: 'Profile name is required.' }));
+      return;
+    }
+    if (!name) {
+      setStep3Profile((s) => ({
+        ...s,
+        error: 'Profile name must contain at least one letter or number.',
+      }));
       return;
     }
     if (step2Tables.checked.size === 0) {
@@ -204,6 +215,7 @@ export default function OnboardingWizard({ onComplete, onSkip }: OnboardingWizar
         body: JSON.stringify({
           profiles: {
             [name]: {
+              label,
               sources: [createdConnectionName],
               scopes: {
                 [createdConnectionName]: {
@@ -638,6 +650,11 @@ function StepProfile({
             placeholder="My first profile"
             autoFocus
           />
+          {slugifyProfileName(state.profileName) && (
+            <p className="text-xs text-gray-500 font-mono mt-1">
+              {slugifyProfileName(state.profileName)}
+            </p>
+          )}
         </div>
 
         {state.error && (

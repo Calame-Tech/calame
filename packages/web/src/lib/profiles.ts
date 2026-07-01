@@ -9,6 +9,19 @@ export function createDefaultProfile(): Profile {
   return { name: 'default', label: 'Default' };
 }
 
+/**
+ * Derive a URL-safe profile name from a human-readable label. The backend
+ * chat/auth routes only accept `[a-zA-Z0-9_-]+` profile names, so every
+ * profile-creation UI must go through this (the label keeps the raw text).
+ */
+export function slugifyProfileName(label: string): string {
+  return label
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9-]/g, '');
+}
+
 /** Convert Set-based selection to array-based for Profile storage */
 export function setsToArrays(sel: Record<string, Set<string>>): Record<string, string[]> {
   const result: Record<string, string[]> = {};

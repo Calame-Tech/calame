@@ -9,6 +9,7 @@ import {
   getProfileColumnMasking,
 } from '../lib/profile-accessors.js';
 import { buildMcpPath } from '../lib/mcp-url.js';
+import { slugifyProfileName } from '../lib/profiles.js';
 import ChatPanel from './ChatPanel.js';
 import TokenManager from './TokenManager.js';
 import AuditLogViewer from './AuditLogViewer.js';
@@ -513,13 +514,7 @@ export default function ServePanel({
                 value={newLabel}
                 onChange={(e) => {
                   setNewLabel(e.target.value);
-                  setNewName(
-                    e.target.value
-                      .toLowerCase()
-                      .trim()
-                      .replace(/\s+/g, '-')
-                      .replace(/[^a-z0-9-]/g, ''),
-                  );
+                  setNewName(slugifyProfileName(e.target.value));
                 }}
                 placeholder="MCP name..."
                 autoFocus

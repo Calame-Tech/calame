@@ -5,6 +5,34 @@ every commit. Newest first.
 
 ---
 
+## 2026-07-01 — Phase 3 complete: `App.tsx` god-component split (branch `refacto/tooling-qualite`, PR #17)
+
+**Commits `b153b1c` (#13), `c07c92f` (#15 part 1), `ff179d1` (#14), `02fb4b5` (#16).** All pushed, CI green (last one queued at time of writing). Behavior-preserving, code moved verbatim.
+
+### #13 — router module (`b153b1c`)
+- `packages/web/src/router/`: `View` union (`view.ts`), `resolveLocationRoutes()` (pure URL-path detection for /welcome, /chat, /login, /account), `Redirect.tsx`, `useNavigation` hook, barrel.
+
+### #15 — contexts (`c07c92f` + decision)
+- `context/SessionContext.tsx`: admin+user auth state, RAG availability, onboarding flag, `dataVersion` counter, the mount-time auth/health probe and logout. `main.tsx` wraps `<App/>` in `<SessionProvider>`.
+- **TenantContext: deliberately NOT built.** Workspace switching is `setCurrentTenant()` (localStorage) + `window.location.reload()` — the tenant is immutable for the life of a React session, and `X-Tenant-Id` injection is already centralised in `lib/api.ts#apiFetch`. A reactive context would add nothing. #15 closed with SessionContext + the existing BrandingProvider.
+
+### #14 — per-domain pages (`ff179d1`)
+- **`App.tsx`: 3551 → 317 lines** (target <400). App keeps auth gates, layout, and a view dispatch rendering one page component per `view.page` branch.
+- New `packages/web/src/pages/`: Dashboard, Sources, Connections, Knowledge (three thin wrappers of `components/SourcesPage`), Configurations (+`ConfigurationListView`), ConfigurationDetail (+`ConfigurationDetailView`), McpList, McpDetail (+`McpDetailView`, the largest moved block, and the TokenManager/McpUsers/AuditLogViewer lazy wrappers), Settings (+`SettingsTab`/`SETTINGS_TABS`), Users, Metrics, Tenants + `lazy.tsx` (shared KnowledgeBaseManager lazy) + barrel.
+- New `hooks/useAppData.ts`: shared admin data state (connections, configurations, profiles, serve status, audit activity, PII/masking), the three loading effects (auth/dataVersion loader, 5s serve-status poller, 15s audit poller), derived values and CRUD handlers; reads session state from `useSession()`.
+- New `lib/profiles.ts`: `createDefaultProfile`, `setsToArrays`, `arraysToSets`, `persistProfiles`, `buildProfilesData`.
+- EE components stay behind dynamic `lazy()` imports (license boundary intact).
+
+### #16 — component tests (`02fb4b5`)
+- `pages/__tests__/`: 10 test files, **32 new tests** — ≥1 render + ≥1 interaction test per page (setView payload assertions, tab switches, the full configuration-create flow, unknown-profile branch). `testUtils.tsx` provides a SessionContext mock, a URL-aware fetch stub and an act-flush helper. EE lazy modules are `vi.mock`ed (BUSL boundary never crossed).
+- Suite: **113 files / 1792 tests** (was 103/1760); coverage lines 38.84% (threshold 30).
+
+### State / next
+- **Phase 3 (#13–#16): COMPLETE.** Verified at each step: typecheck, build, lint, format:check, full suite green.
+- Next: manual smoke test of the refactored UI, then Phase 4 (abstractions: `SchemaProvider` multi-DBMS introspection, `BaseDocumentSourceConnector`, `narrowConfig` + error hierarchy, encrypted-config ADR) and Phase 5 (changesets, incremental CI build, file-size budget; #21 Docker-EE already on `main`).
+
+---
+
 ## 2026-06-30 — Phase 2 #12: split `rag-runtime.ts` (branch `refacto/tooling-qualite`, PR #17)
 
 **Commit `d0e5f0a`.** Last remaining god-file of Phase 2 backend track.

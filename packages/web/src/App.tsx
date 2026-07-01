@@ -103,6 +103,8 @@ import type {
   DataScopeRule,
   ScopeSelection,
 } from './types/schema.js';
+import { Redirect, useNavigation, resolveLocationRoutes } from './router/index.js';
+import type { View } from './router/index.js';
 
 /**
  * Lazy-loaded KnowledgeBaseManager from the ee package. The import is deferred
@@ -140,37 +142,6 @@ const RagAccessSelector = lazy(() =>
       },
     })),
 );
-
-/** View-based navigation replacing the old step wizard */
-type View =
-  | { page: 'dashboard' }
-  /**
-   * Unified sources page — databases and knowledge bases in one place.
-   * `tab` defaults to 'databases' when omitted.
-   */
-  | { page: 'sources'; tab?: 'databases' | 'knowledge'; backTo?: View; editConnectionName?: string }
-  /**
-   * Legacy alias for `{ page: 'sources', tab: 'databases' }`.
-   * Kept for backwards-compat (existing navigation calls, deep links).
-   */
-  | { page: 'connections'; backTo?: View; editConnectionName?: string }
-  | { page: 'configurations' }
-  | { page: 'config-detail'; configName: string; backTo?: View }
-  | { page: 'mcp-list' }
-  | { page: 'mcp-detail'; profileName: string; activeSection?: string }
-  | { page: 'users'; selectedUserId?: string; backTo?: View }
-  | { page: 'settings'; backTo?: View; initialTab?: 'ai' | 'email' | 'sso' }
-  | { page: 'metrics' }
-  /**
-   * Tenant administration page — lists every distinct tenant id discovered
-   * across tenanted tables and lets the admin hard-delete one.
-   */
-  | { page: 'tenants' }
-  /**
-   * Legacy alias for `{ page: 'sources', tab: 'knowledge' }`.
-   * Kept for backwards-compat.
-   */
-  | { page: 'knowledge' };
 
 function createDefaultProfile(): Profile {
   return { name: 'default', label: 'Default' };
@@ -235,18 +206,6 @@ function buildProfilesData(profiles: Profile[]): Record<string, Record<string, u
   return result;
 }
 
-/**
- * Navigate to another URL via a useEffect so the redirect is a post-mount side
- * effect rather than an impure render. Returns null so the current route renders
- * nothing while the browser transitions away.
- */
-function Redirect({ to }: { to: string }): null {
-  useEffect(() => {
-    window.location.href = to;
-  }, [to]);
-  return null;
-}
-
 export default function App() {
   // --- Auth state ---
   const [authChecked, setAuthChecked] = useState(false);
@@ -260,11 +219,10 @@ export default function App() {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [dataVersion, setDataVersion] = useState(0);
 
-  // Check if we're on a special page (no admin auth needed)
-  const welcomeMatch = window.location.pathname.match(/^\/welcome\/([a-f0-9]+)$/);
-  const chatMatch = window.location.pathname.match(/^\/chat\/(.+)/);
-  const isAccountPage = window.location.pathname === '/account';
-  const isUserLoginPage = window.location.pathname === '/login';
+  // Special, URL-driven pages (no admin auth needed). Resolved once from the
+  // current pathname — see router/locationRoutes.ts.
+  const { welcomeMatch, chatMatch, isAccountPage, isUserLoginPage, isUserPage } =
+    resolveLocationRoutes();
 
   // User auth state (for /account and /login pages)
   const [userAuthenticated, setUserAuthenticated] = useState(false);
@@ -326,8 +284,8 @@ export default function App() {
     })();
   }, []);
 
-  // View-based navigation
-  const [view, setView] = useState<View>({ page: 'dashboard' });
+  // View-based navigation (state owned by the router module).
+  const { view, setView } = useNavigation();
 
   // Multi-connection state
   const [connections, setConnections] = useState<NamedConnection[]>([]);
@@ -357,8 +315,6 @@ export default function App() {
     profiles: [],
     totalRequests: 0,
   });
-
-  const isUserPage = isUserLoginPage || isAccountPage || !!welcomeMatch || !!chatMatch;
 
   // Auto-load connections then profiles once authenticated (re-runs on dataVersion bump)
   useEffect(() => {

@@ -23,6 +23,11 @@ function fail(msg) { console.error(`  ${RED}✗${RESET} ${msg}`); }
 function dim(msg) { console.log(`${DIM}${msg}${RESET}`); }
 
 function run(cmd, opts = {}) {
+  // Bootstrap CLI command runner. Callers pass static, developer-authored docker
+  // CLI strings (and a localhost open-browser command); shell:true is required to
+  // parse the multi-word commands (e.g. "docker compose up -d"). This runs locally
+  // under the operator's own account — no network/untrusted input crosses here.
+  // nosemgrep: javascript.lang.security.detect-child-process.detect-child-process
   return spawnSync(cmd, { shell: true, encoding: 'utf8', ...opts });
 }
 

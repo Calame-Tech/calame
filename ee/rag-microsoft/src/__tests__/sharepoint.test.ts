@@ -232,9 +232,7 @@ describe('SharePointConnector.testConnection', () => {
     const connector = new SharePointConnector();
     await expect(connector.testConnection(baseConfig)).resolves.toBeUndefined();
     // The 'root' call must have been made against DRIVE_ID (the first one).
-    expect(getCalls.some((c) => c.path === `/sites/${SITE_ID}/drives/${DRIVE_ID}/root`)).toBe(
-      true,
-    );
+    expect(getCalls.some((c) => c.path === `/sites/${SITE_ID}/drives/${DRIVE_ID}/root`)).toBe(true);
   });
 
   it('errors when an explicit driveName has no match', async () => {
@@ -371,8 +369,7 @@ describe('SharePointConnector.listDocuments', () => {
           size: 500,
           eTag: '"{02ABC},2"',
           file: {
-            mimeType:
-              'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
             hashes: { quickXorHash: 'qx-hash-bytes' },
           },
           parentReference: { path: `/drives/${DRIVE_ID}/root:` },
@@ -461,9 +458,7 @@ describe('SharePointConnector.fetchDocument', () => {
     expect(out.mimeType).toBe('application/pdf');
     expect(await drainToString(out.stream)).toBe('PDF-BYTES');
     // The /content call must have requested a STREAM response type.
-    const streamCall = getCalls.find((c) =>
-      c.path.endsWith('/items/D1/content'),
-    );
+    const streamCall = getCalls.find((c) => c.path.endsWith('/items/D1/content'));
     expect(streamCall?.responseType).toBe('stream');
   });
 
@@ -493,11 +488,7 @@ describe('SharePointConnector.fetchDocument', () => {
 
 describe('doc id encode/decode', () => {
   it('round-trips driveItem ids verbatim with the sharepoint: prefix', () => {
-    const cases = [
-      '01ABCDEF1234567890',
-      'opaque-graph-id-with_special.chars',
-      'simple',
-    ];
+    const cases = ['01ABCDEF1234567890', 'opaque-graph-id-with_special.chars', 'simple'];
     for (const id of cases) {
       const docId = __testing.encodeDocId(id);
       expect(docId).toBe(`sharepoint:${id}`);
@@ -527,12 +518,12 @@ describe('narrowConfig', () => {
   });
 
   it('leaves hostname-relative and raw site id forms unchanged', () => {
-    expect(
-      __testing.normaliseSiteUrl('contoso.sharepoint.com:/sites/intranet'),
-    ).toBe('contoso.sharepoint.com:/sites/intranet');
-    expect(
-      __testing.normaliseSiteUrl('contoso.sharepoint.com,site-guid,web-guid'),
-    ).toBe('contoso.sharepoint.com,site-guid,web-guid');
+    expect(__testing.normaliseSiteUrl('contoso.sharepoint.com:/sites/intranet')).toBe(
+      'contoso.sharepoint.com:/sites/intranet',
+    );
+    expect(__testing.normaliseSiteUrl('contoso.sharepoint.com,site-guid,web-guid')).toBe(
+      'contoso.sharepoint.com,site-guid,web-guid',
+    );
   });
 
   it('throws when tenantId / clientId / clientSecret / siteUrl are missing or empty', () => {
@@ -556,9 +547,9 @@ describe('narrowConfig', () => {
     expect(() =>
       __testing.narrowConfig({ ...baseConfig, includeMimeTypes: 'not-an-array' }),
     ).toThrow(/includeMimeTypes/);
-    expect(() =>
-      __testing.narrowConfig({ ...baseConfig, excludeMimeTypes: [1, 2] }),
-    ).toThrow(/excludeMimeTypes/);
+    expect(() => __testing.narrowConfig({ ...baseConfig, excludeMimeTypes: [1, 2] })).toThrow(
+      /excludeMimeTypes/,
+    );
   });
 });
 
@@ -574,9 +565,9 @@ describe('helpers', () => {
   });
 
   it('parseGraphPath strips the /drives/<id>/root: prefix and decodes URI components', () => {
-    expect(
-      __testing.parseGraphPath('/drives/D/root:/Shared%20Documents/Projects'),
-    ).toBe('/Shared Documents/Projects');
+    expect(__testing.parseGraphPath('/drives/D/root:/Shared%20Documents/Projects')).toBe(
+      '/Shared Documents/Projects',
+    );
     expect(__testing.parseGraphPath('/drives/D/root:')).toBe('');
     expect(__testing.parseGraphPath(undefined)).toBe('');
     expect(__testing.parseGraphPath('not-a-graph-path')).toBe('');
@@ -619,16 +610,12 @@ describe('helpers', () => {
       SharePointPermissionError,
     );
     expect(
-      __testing
-        .mapTestConnectionError(
-          graphError(403, 'denied', 'Authorization_RequestDenied'),
-          'site',
-        )
-        .message,
+      __testing.mapTestConnectionError(
+        graphError(403, 'denied', 'Authorization_RequestDenied'),
+        'site',
+      ).message,
     ).toMatch(/Sites\.Read\.All/);
-    expect(__testing.mapTestConnectionError(graphError(404), 'my-site').message).toMatch(
-      /my-site/,
-    );
+    expect(__testing.mapTestConnectionError(graphError(404), 'my-site').message).toMatch(/my-site/);
     expect(__testing.mapTestConnectionError(new Error('boom'), 'site').message).toMatch(
       /cannot reach/i,
     );

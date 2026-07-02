@@ -63,9 +63,9 @@ const TENANT_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
  * the header.
  */
 export interface TenantRequestLike {
-	headers?: Record<string, string | string[] | undefined>;
-	/** Populated by the auth middleware in Phase C. */
-	auth?: { tenantId?: string };
+  headers?: Record<string, string | string[] | undefined>;
+  /** Populated by the auth middleware in Phase C. */
+  auth?: { tenantId?: string };
 }
 
 /**
@@ -78,15 +78,15 @@ export interface TenantRequestLike {
  * case the client sent.
  */
 function readHeader(value: string | string[] | undefined): string | null {
-	if (typeof value === 'string') {
-		return value.length > 0 ? value : null;
-	}
-	if (Array.isArray(value)) {
-		for (const v of value) {
-			if (typeof v === 'string' && v.length > 0) return v;
-		}
-	}
-	return null;
+  if (typeof value === 'string') {
+    return value.length > 0 ? value : null;
+  }
+  if (Array.isArray(value)) {
+    for (const v of value) {
+      if (typeof v === 'string' && v.length > 0) return v;
+    }
+  }
+  return null;
 }
 
 /**
@@ -106,24 +106,49 @@ function readHeader(value: string | string[] | undefined): string | null {
  * obtain the default explicitly (rather than hard-coding the literal).
  */
 export function getTenantId(req?: TenantRequestLike): string {
-	// 1. Auth-derived tenant (Phase C). Surfaced today so the call sites
-	// already pass `req` — once the auth middleware lands the value will
-	// flow through without further refactor.
-	const authTenant = req?.auth?.tenantId;
-	if (typeof authTenant === 'string' && TENANT_ID_RE.test(authTenant)) {
-		return authTenant;
-	}
+  // 1. Auth-derived tenant (Phase C). Surfaced today so the call sites
+  // already pass `req` — once the auth middleware lands the value will
+  // flow through without further refactor.
+  const authTenant = req?.auth?.tenantId;
+  if (typeof authTenant === 'string' && TENANT_ID_RE.test(authTenant)) {
+    return authTenant;
+  }
 
-	// 2. Header-derived tenant. Express lower-cases header keys, so we
-	// look up the canonical lowercased form.
-	const headerValue = readHeader(req?.headers?.['x-tenant-id']);
-	if (headerValue !== null && TENANT_ID_RE.test(headerValue)) {
-		return headerValue;
-	}
+  // 2. Header-derived tenant. Express lower-cases header keys, so we
+  // look up the canonical lowercased form.
+  const headerValue = readHeader(req?.headers?.['x-tenant-id']);
+  if (headerValue !== null && TENANT_ID_RE.test(headerValue)) {
+    return headerValue;
+  }
 
-	// 3. Default — preserves the Phase A behaviour for every caller that
-	// does not yet send the header.
-	return DEFAULT_TENANT_ID;
+  // 3. Default — preserves the Phase A behaviour for every caller that
+  // does not yet send the header.
+  return DEFAULT_TENANT_ID;
+}
+
+/**
+ * Fail-closed variant of {@link getTenantId}. Resolves the tenant from
+ * the auth context / `X-Tenant-Id` header using the exact same rules,
+ * but returns `null` instead of falling back to {@link DEFAULT_TENANT_ID}
+ * when neither source yields a valid tenant.
+ *
+ * Routes that expose tenant-scoped, security-sensitive resources (e.g.
+ * the user-admin endpoints, some of which return plaintext tokens) use
+ * this and translate a `null` result into a `403 Forbidden`, so an
+ * untenanted request can never silently operate on the default tenant.
+ */
+export function getTenantIdStrict(req?: TenantRequestLike): string | null {
+  const authTenant = req?.auth?.tenantId;
+  if (typeof authTenant === 'string' && TENANT_ID_RE.test(authTenant)) {
+    return authTenant;
+  }
+
+  const headerValue = readHeader(req?.headers?.['x-tenant-id']);
+  if (headerValue !== null && TENANT_ID_RE.test(headerValue)) {
+    return headerValue;
+  }
+
+  return null;
 }
 
 /**
@@ -133,5 +158,5 @@ export function getTenantId(req?: TenantRequestLike): string {
  * non-default tenant exists).
  */
 export function isDefaultTenant(tenantId: string): boolean {
-	return tenantId === DEFAULT_TENANT_ID;
+  return tenantId === DEFAULT_TENANT_ID;
 }

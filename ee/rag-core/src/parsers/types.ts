@@ -25,34 +25,34 @@ export type ParsedDocumentFormat = 'markdown' | 'csv' | 'code' | 'plain';
  * plain strategy because we have no reliable boundary signal.
  */
 export type CodeLanguage =
-	| 'typescript'
-	| 'javascript'
-	| 'python'
-	| 'go'
-	| 'rust'
-	| 'java'
-	| 'unknown';
+  | 'typescript'
+  | 'javascript'
+  | 'python'
+  | 'go'
+  | 'rust'
+  | 'java'
+  | 'unknown';
 
 /** Common return shape for every parser. */
 export interface ParsedDocument {
-	text: string;
-	/**
-	 * Format hint. Optional for backwards compatibility: omitted is treated
-	 * as `'plain'` by the chunker selector.
-	 */
-	format?: ParsedDocumentFormat;
-	/**
-	 * Detected programming language (only set when `format === 'code'`).
-	 * Propagated through to the code chunker so it can pick the right regex
-	 * patterns and comment prefix.
-	 */
-	language?: CodeLanguage;
-	/**
-	 * Original filename (without path), when known. The code chunker uses it
-	 * to render the `// File: …` preamble of each chunk.
-	 */
-	filename?: string;
-	metadata?: Record<string, unknown>;
+  text: string;
+  /**
+   * Format hint. Optional for backwards compatibility: omitted is treated
+   * as `'plain'` by the chunker selector.
+   */
+  format?: ParsedDocumentFormat;
+  /**
+   * Detected programming language (only set when `format === 'code'`).
+   * Propagated through to the code chunker so it can pick the right regex
+   * patterns and comment prefix.
+   */
+  language?: CodeLanguage;
+  /**
+   * Original filename (without path), when known. The code chunker uses it
+   * to render the `// File: …` preamble of each chunk.
+   */
+  filename?: string;
+  metadata?: Record<string, unknown>;
 }
 
 /**

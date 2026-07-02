@@ -13,10 +13,10 @@
  *   MODELS          Comma-separated OpenRouter model IDs (default: see below)
  */
 
-const CALAME_BASE    = process.env.CALAME_BASE    || 'http://localhost:4567';
+const CALAME_BASE = process.env.CALAME_BASE || 'http://localhost:4567';
 const CALAME_PROFILE = process.env.CALAME_PROFILE || 'test-logistique';
 const SESSION_COOKIE = process.env.CALAME_SESSION;
-const BEARER_TOKEN   = process.env.CALAME_TOKEN;
+const BEARER_TOKEN = process.env.CALAME_TOKEN;
 
 const DEFAULT_MODELS = [
   'qwen/qwen3.5-35b-a3b',
@@ -25,7 +25,7 @@ const DEFAULT_MODELS = [
 ];
 
 const MODELS = process.env.MODELS
-  ? process.env.MODELS.split(',').map(m => m.trim())
+  ? process.env.MODELS.split(',').map((m) => m.trim())
   : DEFAULT_MODELS;
 
 if (!SESSION_COOKIE && !BEARER_TOKEN) {
@@ -37,10 +37,10 @@ if (!SESSION_COOKIE && !BEARER_TOKEN) {
 
 // ── Ground truth (pre-computed from demo-logistique-v2.db) ──────────────────
 const GROUND_TRUTH = {
-  colis_livre:             8009,
-  colis_en_cours:          1936,
-  incidents_resolus:        269,
-  top_livreur_nom:        'Bernard',
+  colis_livre: 8009,
+  colis_en_cours: 1936,
+  incidents_resolus: 269,
+  top_livreur_nom: 'Bernard',
   total_paiements_valides: 220054.22,
 };
 
@@ -130,10 +130,10 @@ const QUESTIONS = [
 
 // ── SSE stream reader ────────────────────────────────────────────────────────
 
-async function streamChat(message, model) {
+async function streamChat(message, _model) {
   const headers = { 'Content-Type': 'application/json' };
   if (SESSION_COOKIE) headers['Cookie'] = `calame_session=${SESSION_COOKIE}`;
-  if (BEARER_TOKEN)   headers['Authorization'] = `Bearer ${BEARER_TOKEN}`;
+  if (BEARER_TOKEN) headers['Authorization'] = `Bearer ${BEARER_TOKEN}`;
 
   const body = JSON.stringify({
     message,
@@ -156,7 +156,7 @@ async function streamChat(message, model) {
   const decoder = new TextDecoder();
   let buffer = '';
 
-  while (true) {
+  for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
@@ -171,12 +171,17 @@ async function streamChat(message, model) {
       } else if (line.startsWith('data: ') && eventType) {
         try {
           const data = JSON.parse(line.slice(6));
-          if (eventType === 'text_delta') { fullText += data.delta ?? ''; events.text_delta.push(data.delta); }
-          else if (eventType === 'tool_call') events.tool_call.push(data.name);
-          else if (eventType === 'tool_result') events.tool_result.push({ name: data.name, ok: data.ok });
+          if (eventType === 'text_delta') {
+            fullText += data.delta ?? '';
+            events.text_delta.push(data.delta);
+          } else if (eventType === 'tool_call') events.tool_call.push(data.name);
+          else if (eventType === 'tool_result')
+            events.tool_result.push({ name: data.name, ok: data.ok });
           else if (eventType === 'usage') events.usage = data;
           else if (eventType === 'error') events.error = data.message;
-        } catch { /* ignore malformed SSE */ }
+        } catch {
+          /* ignore malformed SSE */
+        }
         eventType = null;
       }
     }
@@ -212,13 +217,22 @@ async function runModel(model) {
       result = await streamChat(q.q, model);
     } catch (err) {
       console.log(`ERROR: ${err.message}`);
-      results.push({ id: q.id, category: q.category, ok: null, detail: err.message, latency: Date.now() - t0, tools: [], tokens: null, response: '' });
+      results.push({
+        id: q.id,
+        category: q.category,
+        ok: null,
+        detail: err.message,
+        latency: Date.now() - t0,
+        tools: [],
+        tokens: null,
+        response: '',
+      });
       continue;
     }
 
     const latency = Date.now() - t0;
     const checkResult = q.check ? q.check(result.fullText) : null;
-    const ok = result.error ? false : (checkResult ? checkResult.ok : null);
+    const ok = result.error ? false : checkResult ? checkResult.ok : null;
 
     const icon = result.error ? '💥' : checkResult === null ? '📋' : checkResult.ok ? '✅' : '❌';
     console.log(`${icon} ${latency}ms | tools: [${result.tool_call.join(', ')}]`);
@@ -227,10 +241,10 @@ async function runModel(model) {
       id: q.id,
       category: q.category,
       ok,
-      detail: result.error ?? (checkResult?.detail ?? '(pas de vérification)'),
+      detail: result.error ?? checkResult?.detail ?? '(pas de vérification)',
       latency,
       tools: result.tool_call,
-      toolsFailed: result.tool_result.filter(r => !r.ok).map(r => r.name),
+      toolsFailed: result.tool_result.filter((r) => !r.ok).map((r) => r.name),
       tokens: result.usage,
       response: result.fullText,
     });
@@ -241,19 +255,22 @@ async function runModel(model) {
   console.log(`  ${pad('ID', 28)} ${pad('Cat.', 9)} ${pad('Résultat', 28)} ${pad('ms', 6)}`);
   console.log(`  ${'─'.repeat(66)}`);
   for (const r of results) {
-    const status = r.ok === null ? '—' : r.ok ? 'OK' : 'KO';
-    console.log(`  ${pad(r.id, 28)} ${pad(r.category, 9)} ${pad(r.detail.slice(0,27), 28)} ${pad(r.latency, 6)}`);
+    console.log(
+      `  ${pad(r.id, 28)} ${pad(r.category, 9)} ${pad(r.detail.slice(0, 27), 28)} ${pad(r.latency, 6)}`,
+    );
   }
   console.log(`  ${'─'.repeat(66)}`);
 
-  const verifiable  = results.filter(r => r.ok !== null);
-  const passed      = verifiable.filter(r => r.ok === true).length;
-  const toolsFailed = results.some(r => r.toolsFailed?.length > 0);
-  const avgLatency  = Math.round(results.reduce((s, r) => s + r.latency, 0) / results.length);
-  const totalTools  = results.reduce((s, r) => s + r.tools.length, 0);
+  const verifiable = results.filter((r) => r.ok !== null);
+  const passed = verifiable.filter((r) => r.ok === true).length;
+  const toolsFailed = results.some((r) => r.toolsFailed?.length > 0);
+  const avgLatency = Math.round(results.reduce((s, r) => s + r.latency, 0) / results.length);
+  const totalTools = results.reduce((s, r) => s + r.tools.length, 0);
 
   console.log(`\n  Score vérifiable : ${passed}/${verifiable.length}`);
-  console.log(`  Tools appelés    : ${totalTools} (${results.filter(r=>r.tools.length>0).length} questions)`);
+  console.log(
+    `  Tools appelés    : ${totalTools} (${results.filter((r) => r.tools.length > 0).length} questions)`,
+  );
   if (toolsFailed) console.log(`  ⚠  Certains tool calls ont échoué`);
   console.log(`  Latence moyenne  : ${avgLatency}ms`);
 
@@ -293,12 +310,14 @@ async function main() {
     console.log(`\n${'═'.repeat(70)}`);
     console.log('  Comparaison inter-modèles');
     console.log('═'.repeat(70));
-    const verifiableIds = QUESTIONS.filter(q => q.check).map(q => q.id);
-    console.log(`\n  ${pad('Question', 28)} ${MODELS.map(m => pad(m.split('/')[1]?.slice(0,14) ?? m.slice(0,14), 16)).join(' ')}`);
+    const verifiableIds = QUESTIONS.filter((q) => q.check).map((q) => q.id);
+    console.log(
+      `\n  ${pad('Question', 28)} ${MODELS.map((m) => pad(m.split('/')[1]?.slice(0, 14) ?? m.slice(0, 14), 16)).join(' ')}`,
+    );
     console.log(`  ${'─'.repeat(28 + MODELS.length * 17)}`);
     for (const id of verifiableIds) {
-      const row = MODELS.map(m => {
-        const r = allResults[m]?.find(x => x.id === id);
+      const row = MODELS.map((m) => {
+        const r = allResults[m]?.find((x) => x.id === id);
         return pad(r ? (r.ok ? 'OK' : 'KO') : '?', 16);
       }).join(' ');
       console.log(`  ${pad(id, 28)} ${row}`);
@@ -308,7 +327,7 @@ async function main() {
   console.log('\n✅  Test terminé.\n');
 }
 
-main().catch(err => {
+main().catch((err) => {
   console.error('Fatal:', err);
   process.exit(1);
 });

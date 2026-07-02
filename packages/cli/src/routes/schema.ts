@@ -9,7 +9,9 @@ export function registerSchemaRoute(app: Express, state: AppState): void {
     if (connState) {
       res.json({ success: true, schema: connState.schema });
     } else {
-      res.status(404).json({ success: false, message: `Connection "${connectionName}" not found.` });
+      res
+        .status(404)
+        .json({ success: false, message: `Connection "${connectionName}" not found.` });
     }
   });
 

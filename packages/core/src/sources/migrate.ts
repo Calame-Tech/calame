@@ -156,8 +156,7 @@ function assertPlainObject(
   fnName: string,
 ): asserts value is Record<string, unknown> {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-    const got =
-      value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value;
+    const got = value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value;
     throw new TypeError(`${fnName}: expected a plain object, got ${got}`);
   }
 }
@@ -257,10 +256,7 @@ function distributeScope(
   const scopes: Record<string, ScopeSelection> = {};
   for (let i = 0; i < sourceIds.length; i++) {
     const id = sourceIds[i];
-    scopes[id] =
-      i === 0
-        ? scopeBlock
-        : (JSON.parse(JSON.stringify(scopeBlock)) as ScopeSelection);
+    scopes[id] = i === 0 ? scopeBlock : (JSON.parse(JSON.stringify(scopeBlock)) as ScopeSelection);
   }
   return scopes;
 }

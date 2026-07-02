@@ -10,9 +10,9 @@ import type { Database as BetterSqlite3Database } from 'better-sqlite3';
  * host's audit log.
  */
 export interface PollAuditEntry {
-	type: string;
-	payload: Record<string, unknown>;
-	timestamp: string;
+  type: string;
+  payload: Record<string, unknown>;
+  timestamp: string;
 }
 
 /**
@@ -26,20 +26,20 @@ export interface PollAuditEntry {
  * the same source). This keeps the scheduler decoupled from any storage shape.
  */
 export interface PollSchedulerDeps {
-	/** Shared SQLite handle. Used at boot to discover sources with polling enabled. */
-	db: BetterSqlite3Database;
-	/**
-	 * Triggers a sync for the given source. Implementations MUST:
-	 *   1. Insert a `pending` row into `rag_jobs`,
-	 *   2. Call `SyncQueue.enqueue(sourceId, jobId)`,
-	 *   3. On rejection by the queue, DELETE the inserted row and return `null`.
-	 *   4. Otherwise return the inserted `jobId`.
-	 *
-	 * This shape mirrors the route handler at `POST /api/rag/sources/:id/sync`.
-	 */
-	triggerSync: (sourceId: string) => string | null;
-	/** Optional audit hook called on every poll tick (success and skip). */
-	onAudit?: (event: PollAuditEntry) => void;
+  /** Shared SQLite handle. Used at boot to discover sources with polling enabled. */
+  db: BetterSqlite3Database;
+  /**
+   * Triggers a sync for the given source. Implementations MUST:
+   *   1. Insert a `pending` row into `rag_jobs`,
+   *   2. Call `SyncQueue.enqueue(sourceId, jobId)`,
+   *   3. On rejection by the queue, DELETE the inserted row and return `null`.
+   *   4. Otherwise return the inserted `jobId`.
+   *
+   * This shape mirrors the route handler at `POST /api/rag/sources/:id/sync`.
+   */
+  triggerSync: (sourceId: string) => string | null;
+  /** Optional audit hook called on every poll tick (success and skip). */
+  onAudit?: (event: PollAuditEntry) => void;
 }
 
 /**
@@ -76,156 +76,156 @@ export interface PollSchedulerDeps {
  * for the same source is skipped (audit `rag.sync.poll.skipped`).
  */
 export class PollScheduler {
-	#timers: Map<string, NodeJS.Timeout> = new Map();
-	readonly #deps: PollSchedulerDeps;
+  #timers: Map<string, NodeJS.Timeout> = new Map();
+  readonly #deps: PollSchedulerDeps;
 
-	constructor(deps: PollSchedulerDeps) {
-		this.#deps = deps;
-	}
+  constructor(deps: PollSchedulerDeps) {
+    this.#deps = deps;
+  }
 
-	/**
-	 * Bootstrap: read every source with `polling_interval_seconds IS NOT NULL`
-	 * and register a timer for each. Idempotent — calling twice replaces the
-	 * timer set.
-	 *
-	 * Defensive: the column may not exist yet on older DBs that haven't run
-	 * the v4 migration. We probe `table_info` first and silently no-op when
-	 * the column is missing, so callers that forget to run migrations don't
-	 * crash at boot.
-	 */
-	start(): void {
-		const cols = this.#deps.db.pragma('table_info(rag_sources)') as Array<{ name: string }>;
-		if (!cols.some((c) => c.name === 'polling_interval_seconds')) {
-			// Migration not run yet — nothing to schedule.
-			return;
-		}
-		interface Row {
-			id: string;
-			polling_interval_seconds: number;
-		}
-		// Defensive: filter on `deleted_at IS NULL` so soft-deleted sources
-		// (v8) are never auto-synced. The column may be missing on legacy
-		// DBs that haven't run `runRagMigrations` yet — we probe table_info
-		// to keep the boot path tolerant of partial schemas. Without this
-		// guard a v7 DB would crash with "no such column: deleted_at" on
-		// every boot until the host upgrade ran.
-		const hasDeletedAt = cols.some((c) => c.name === 'deleted_at');
-		const whereSql = hasDeletedAt
-			? `WHERE polling_interval_seconds IS NOT NULL AND deleted_at IS NULL`
-			: `WHERE polling_interval_seconds IS NOT NULL`;
-		const rows = this.#deps.db
-			.prepare<[], Row>(
-				`SELECT id, polling_interval_seconds FROM rag_sources
+  /**
+   * Bootstrap: read every source with `polling_interval_seconds IS NOT NULL`
+   * and register a timer for each. Idempotent — calling twice replaces the
+   * timer set.
+   *
+   * Defensive: the column may not exist yet on older DBs that haven't run
+   * the v4 migration. We probe `table_info` first and silently no-op when
+   * the column is missing, so callers that forget to run migrations don't
+   * crash at boot.
+   */
+  start(): void {
+    const cols = this.#deps.db.pragma('table_info(rag_sources)') as Array<{ name: string }>;
+    if (!cols.some((c) => c.name === 'polling_interval_seconds')) {
+      // Migration not run yet — nothing to schedule.
+      return;
+    }
+    interface Row {
+      id: string;
+      polling_interval_seconds: number;
+    }
+    // Defensive: filter on `deleted_at IS NULL` so soft-deleted sources
+    // (v8) are never auto-synced. The column may be missing on legacy
+    // DBs that haven't run `runRagMigrations` yet — we probe table_info
+    // to keep the boot path tolerant of partial schemas. Without this
+    // guard a v7 DB would crash with "no such column: deleted_at" on
+    // every boot until the host upgrade ran.
+    const hasDeletedAt = cols.some((c) => c.name === 'deleted_at');
+    const whereSql = hasDeletedAt
+      ? `WHERE polling_interval_seconds IS NOT NULL AND deleted_at IS NULL`
+      : `WHERE polling_interval_seconds IS NOT NULL`;
+    const rows = this.#deps.db
+      .prepare<[], Row>(
+        `SELECT id, polling_interval_seconds FROM rag_sources
 				 ${whereSql}`,
-			)
-			.all();
-		for (const row of rows) {
-			this.upsert(row.id, row.polling_interval_seconds);
-		}
-	}
+      )
+      .all();
+    for (const row of rows) {
+      this.upsert(row.id, row.polling_interval_seconds);
+    }
+  }
 
-	/**
-	 * Stop all timers. Idempotent: safe to call when no timers are registered.
-	 * Always call this from tests to avoid the test runner hanging on an
-	 * active interval.
-	 */
-	stop(): void {
-		for (const timer of this.#timers.values()) {
-			clearInterval(timer);
-		}
-		this.#timers.clear();
-	}
+  /**
+   * Stop all timers. Idempotent: safe to call when no timers are registered.
+   * Always call this from tests to avoid the test runner hanging on an
+   * active interval.
+   */
+  stop(): void {
+    for (const timer of this.#timers.values()) {
+      clearInterval(timer);
+    }
+    this.#timers.clear();
+  }
 
-	/**
-	 * Register or update the timer for `sourceId`.
-	 *
-	 *   - `intervalSeconds === null` → remove the timer if present (no-op
-	 *     otherwise). Used when a source's polling is disabled via PATCH.
-	 *   - `intervalSeconds` is a positive integer → clear any existing timer
-	 *     for the source and replace it with a fresh `setInterval`. Replacing
-	 *     the timer (rather than mutating an existing one) keeps the
-	 *     scheduling deterministic: the next fire is exactly `intervalSeconds`
-	 *     from the call to `upsert`, regardless of how long the previous
-	 *     interval had been running.
-	 *
-	 * Validation of the interval range (60–86400) is the caller's responsibility
-	 * — we trust the value because it has already been validated by the Zod
-	 * schema at the API boundary. The scheduler treats any non-null number as
-	 * a valid millisecond multiplier.
-	 */
-	upsert(sourceId: string, intervalSeconds: number | null): void {
-		// Always clear the existing timer first so the call is fully idempotent
-		// regardless of which branch we take below.
-		const existing = this.#timers.get(sourceId);
-		if (existing !== undefined) {
-			clearInterval(existing);
-			this.#timers.delete(sourceId);
-		}
-		if (intervalSeconds === null) {
-			return;
-		}
-		const timer = setInterval(() => {
-			this.#tick(sourceId);
-		}, intervalSeconds * 1000);
-		this.#timers.set(sourceId, timer);
-	}
+  /**
+   * Register or update the timer for `sourceId`.
+   *
+   *   - `intervalSeconds === null` → remove the timer if present (no-op
+   *     otherwise). Used when a source's polling is disabled via PATCH.
+   *   - `intervalSeconds` is a positive integer → clear any existing timer
+   *     for the source and replace it with a fresh `setInterval`. Replacing
+   *     the timer (rather than mutating an existing one) keeps the
+   *     scheduling deterministic: the next fire is exactly `intervalSeconds`
+   *     from the call to `upsert`, regardless of how long the previous
+   *     interval had been running.
+   *
+   * Validation of the interval range (60–86400) is the caller's responsibility
+   * — we trust the value because it has already been validated by the Zod
+   * schema at the API boundary. The scheduler treats any non-null number as
+   * a valid millisecond multiplier.
+   */
+  upsert(sourceId: string, intervalSeconds: number | null): void {
+    // Always clear the existing timer first so the call is fully idempotent
+    // regardless of which branch we take below.
+    const existing = this.#timers.get(sourceId);
+    if (existing !== undefined) {
+      clearInterval(existing);
+      this.#timers.delete(sourceId);
+    }
+    if (intervalSeconds === null) {
+      return;
+    }
+    const timer = setInterval(() => {
+      this.#tick(sourceId);
+    }, intervalSeconds * 1000);
+    this.#timers.set(sourceId, timer);
+  }
 
-	/**
-	 * Remove the timer for a deleted source. Idempotent: no-op when the
-	 * source has no registered timer (e.g. the source was created without
-	 * polling and is now being deleted).
-	 */
-	remove(sourceId: string): void {
-		const timer = this.#timers.get(sourceId);
-		if (timer !== undefined) {
-			clearInterval(timer);
-			this.#timers.delete(sourceId);
-		}
-	}
+  /**
+   * Remove the timer for a deleted source. Idempotent: no-op when the
+   * source has no registered timer (e.g. the source was created without
+   * polling and is now being deleted).
+   */
+  remove(sourceId: string): void {
+    const timer = this.#timers.get(sourceId);
+    if (timer !== undefined) {
+      clearInterval(timer);
+      this.#timers.delete(sourceId);
+    }
+  }
 
-	/**
-	 * Test-only helper: returns the set of sourceIds with an active timer.
-	 */
-	active(): string[] {
-		return Array.from(this.#timers.keys());
-	}
+  /**
+   * Test-only helper: returns the set of sourceIds with an active timer.
+   */
+  active(): string[] {
+    return Array.from(this.#timers.keys());
+  }
 
-	/**
-	 * Internal tick: invoked by the underlying `setInterval` every
-	 * `intervalSeconds` seconds. Calls `triggerSync` and surfaces the outcome
-	 * via the audit hook.
-	 *
-	 * Errors from `triggerSync` are caught so a single bad tick can't crash
-	 * the timer (Node's setInterval keeps firing even after a thrown error,
-	 * but the unhandled rejection would still propagate up the event loop).
-	 */
-	#tick(sourceId: string): void {
-		const timestamp = new Date().toISOString();
-		try {
-			const jobId = this.#deps.triggerSync(sourceId);
-			if (jobId === null) {
-				// Queue rejected — sync already running or queued for this source.
-				// This is the expected outcome when a long sync overlaps with
-				// the next poll tick; we log via audit and keep the timer alive.
-				this.#deps.onAudit?.({
-					type: 'rag.sync.poll.skipped',
-					payload: { sourceId, reason: 'sync-already-active' },
-					timestamp,
-				});
-				return;
-			}
-			this.#deps.onAudit?.({
-				type: 'rag.sync.poll.triggered',
-				payload: { sourceId, jobId },
-				timestamp,
-			});
-		} catch (err: unknown) {
-			const message = err instanceof Error ? err.message : String(err);
-			this.#deps.onAudit?.({
-				type: 'rag.sync.poll.failed',
-				payload: { sourceId, error: message },
-				timestamp,
-			});
-		}
-	}
+  /**
+   * Internal tick: invoked by the underlying `setInterval` every
+   * `intervalSeconds` seconds. Calls `triggerSync` and surfaces the outcome
+   * via the audit hook.
+   *
+   * Errors from `triggerSync` are caught so a single bad tick can't crash
+   * the timer (Node's setInterval keeps firing even after a thrown error,
+   * but the unhandled rejection would still propagate up the event loop).
+   */
+  #tick(sourceId: string): void {
+    const timestamp = new Date().toISOString();
+    try {
+      const jobId = this.#deps.triggerSync(sourceId);
+      if (jobId === null) {
+        // Queue rejected — sync already running or queued for this source.
+        // This is the expected outcome when a long sync overlaps with
+        // the next poll tick; we log via audit and keep the timer alive.
+        this.#deps.onAudit?.({
+          type: 'rag.sync.poll.skipped',
+          payload: { sourceId, reason: 'sync-already-active' },
+          timestamp,
+        });
+        return;
+      }
+      this.#deps.onAudit?.({
+        type: 'rag.sync.poll.triggered',
+        payload: { sourceId, jobId },
+        timestamp,
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.#deps.onAudit?.({
+        type: 'rag.sync.poll.failed',
+        payload: { sourceId, error: message },
+        timestamp,
+      });
+    }
+  }
 }

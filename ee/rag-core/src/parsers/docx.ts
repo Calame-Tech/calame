@@ -11,10 +11,10 @@ import type { ParsedDocument } from './types.js';
  * so the rest of the file stays type-safe.
  */
 interface MammothMarkdown {
-	convertToMarkdown: (
-		input: { buffer: Buffer },
-		options?: Record<string, unknown>,
-	) => Promise<{ value: string; messages: unknown[] }>;
+  convertToMarkdown: (
+    input: { buffer: Buffer },
+    options?: Record<string, unknown>,
+  ) => Promise<{ value: string; messages: unknown[] }>;
 }
 
 /**
@@ -28,18 +28,18 @@ interface MammothMarkdown {
  * picked.
  */
 export async function parse(buffer: Buffer): Promise<ParsedDocument> {
-	const mm = mammoth as unknown as MammothMarkdown & typeof mammoth;
+  const mm = mammoth as unknown as MammothMarkdown & typeof mammoth;
 
-	try {
-		const result = await mm.convertToMarkdown({ buffer });
-		const text = (result.value ?? '').trim();
-		if (text.length === 0) {
-			const raw = await mammoth.extractRawText({ buffer });
-			return { text: raw.value ?? '', format: 'plain' };
-		}
-		return { text, format: 'markdown' };
-	} catch {
-		const raw = await mammoth.extractRawText({ buffer });
-		return { text: raw.value ?? '', format: 'plain' };
-	}
+  try {
+    const result = await mm.convertToMarkdown({ buffer });
+    const text = (result.value ?? '').trim();
+    if (text.length === 0) {
+      const raw = await mammoth.extractRawText({ buffer });
+      return { text: raw.value ?? '', format: 'plain' };
+    }
+    return { text, format: 'markdown' };
+  } catch {
+    const raw = await mammoth.extractRawText({ buffer });
+    return { text: raw.value ?? '', format: 'plain' };
+  }
 }

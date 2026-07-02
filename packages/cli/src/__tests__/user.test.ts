@@ -30,7 +30,12 @@ describe('UserManager', () => {
         role: 'user',
         profiles: [
           { profileName: 'prod', accessMode: 'both', allowedTables: null, allowedTools: null },
-          { profileName: 'compta', accessMode: 'chat', allowedTables: ['factures'], allowedTools: ['describe'] },
+          {
+            profileName: 'compta',
+            accessMode: 'chat',
+            allowedTables: ['factures'],
+            allowedTools: ['describe'],
+          },
         ],
       });
 
@@ -48,7 +53,9 @@ describe('UserManager', () => {
         name: 'Jean',
         email: 'jean@example.com',
         role: 'user',
-        profiles: [{ profileName: 'prod', accessMode: 'both', allowedTables: null, allowedTools: null }],
+        profiles: [
+          { profileName: 'prod', accessMode: 'both', allowedTables: null, allowedTools: null },
+        ],
       });
 
       expect(() =>
@@ -56,7 +63,9 @@ describe('UserManager', () => {
           name: 'Jean 2',
           email: 'JEAN@example.com',
           role: 'user',
-          profiles: [{ profileName: 'prod', accessMode: 'both', allowedTables: null, allowedTools: null }],
+          profiles: [
+            { profileName: 'prod', accessMode: 'both', allowedTables: null, allowedTools: null },
+          ],
         }),
       ).toThrow('already exists');
     });
@@ -79,7 +88,9 @@ describe('UserManager', () => {
         name: 'Jean',
         email: 'jean@example.com',
         role: 'user',
-        profiles: [{ profileName: 'prod', accessMode: 'both', allowedTables: null, allowedTools: null }],
+        profiles: [
+          { profileName: 'prod', accessMode: 'both', allowedTables: null, allowedTools: null },
+        ],
       });
       const enabled = manager.enableUser(entry.id)!;
       const verified = manager.verifyToken(enabled._plaintextToken);
@@ -92,7 +103,9 @@ describe('UserManager', () => {
         name: 'Jean',
         email: 'jean@example.com',
         role: 'user',
-        profiles: [{ profileName: 'prod', accessMode: 'both', allowedTables: null, allowedTools: null }],
+        profiles: [
+          { profileName: 'prod', accessMode: 'both', allowedTables: null, allowedTools: null },
+        ],
       });
       const enabled = manager.enableUser(entry.id)!;
       manager.disableUser(entry.id, 'Left company');
@@ -112,7 +125,12 @@ describe('UserManager', () => {
         role: 'user',
         profiles: [
           { profileName: 'prod', accessMode: 'mcp', allowedTables: null, allowedTools: null },
-          { profileName: 'compta', accessMode: 'chat', allowedTables: ['factures'], allowedTools: null },
+          {
+            profileName: 'compta',
+            accessMode: 'chat',
+            allowedTables: ['factures'],
+            allowedTools: null,
+          },
         ],
       });
 
@@ -127,7 +145,9 @@ describe('UserManager', () => {
         name: 'Jean',
         email: 'jean@example.com',
         role: 'user',
-        profiles: [{ profileName: 'prod', accessMode: 'both', allowedTables: null, allowedTools: null }],
+        profiles: [
+          { profileName: 'prod', accessMode: 'both', allowedTables: null, allowedTools: null },
+        ],
       });
       expect(manager.getUserProfileAccess(entry, 'compta')).toBeNull();
     });
@@ -139,7 +159,9 @@ describe('UserManager', () => {
         name: 'Jean',
         email: 'jean@example.com',
         role: 'user',
-        profiles: [{ profileName: 'prod', accessMode: 'both', allowedTables: null, allowedTools: null }],
+        profiles: [
+          { profileName: 'prod', accessMode: 'both', allowedTables: null, allowedTools: null },
+        ],
       });
 
       manager.addProfileAccess(entry.id, {
@@ -159,7 +181,9 @@ describe('UserManager', () => {
         name: 'Jean',
         email: 'jean@example.com',
         role: 'user',
-        profiles: [{ profileName: 'prod', accessMode: 'both', allowedTables: null, allowedTools: null }],
+        profiles: [
+          { profileName: 'prod', accessMode: 'both', allowedTables: null, allowedTools: null },
+        ],
       });
 
       manager.addProfileAccess(entry.id, {
@@ -199,7 +223,9 @@ describe('UserManager', () => {
         name: 'Jean',
         email: 'jean@example.com',
         role: 'user',
-        profiles: [{ profileName: 'prod', accessMode: 'both', allowedTables: null, allowedTools: null }],
+        profiles: [
+          { profileName: 'prod', accessMode: 'both', allowedTables: null, allowedTools: null },
+        ],
       });
       const disabled = manager.disableUser(entry.id, 'Quit');
       expect(disabled!.status).toBe('disabled');
@@ -211,7 +237,9 @@ describe('UserManager', () => {
         name: 'Jean',
         email: 'jean@example.com',
         role: 'user',
-        profiles: [{ profileName: 'prod', accessMode: 'both', allowedTables: null, allowedTools: null }],
+        profiles: [
+          { profileName: 'prod', accessMode: 'both', allowedTables: null, allowedTools: null },
+        ],
       });
       manager.disableUser(entry.id);
       const enabled = manager.enableUser(entry.id);
@@ -226,7 +254,9 @@ describe('UserManager', () => {
         name: 'Jean',
         email: 'jean@example.com',
         role: 'user',
-        profiles: [{ profileName: 'prod', accessMode: 'both', allowedTables: null, allowedTools: null }],
+        profiles: [
+          { profileName: 'prod', accessMode: 'both', allowedTables: null, allowedTools: null },
+        ],
       });
       manager.enableUser(entry.id);
       const newResult = manager.regenerateToken(entry.id)!;
@@ -250,7 +280,9 @@ describe('UserManager', () => {
         name: 'B',
         email: 'b@x.com',
         role: 'user',
-        profiles: [{ profileName: 'dev', accessMode: 'both', allowedTables: null, allowedTools: null }],
+        profiles: [
+          { profileName: 'dev', accessMode: 'both', allowedTables: null, allowedTools: null },
+        ],
       });
 
       const comptaUsers = manager.listUsers({ profileName: 'compta' });
@@ -270,7 +302,12 @@ describe('UserManager', () => {
         role: 'user',
         profiles: [
           { profileName: 'prod', accessMode: 'both', allowedTables: null, allowedTools: null },
-          { profileName: 'compta', accessMode: 'chat', allowedTables: ['factures'], allowedTools: null },
+          {
+            profileName: 'compta',
+            accessMode: 'chat',
+            allowedTables: ['factures'],
+            allowedTools: null,
+          },
         ],
       });
       manager.enableUser(entry.id);
@@ -289,7 +326,9 @@ describe('UserManager', () => {
         name: 'Jean',
         email: 'jean@example.com',
         role: 'user',
-        profiles: [{ profileName: 'prod', accessMode: 'both', allowedTables: null, allowedTools: null }],
+        profiles: [
+          { profileName: 'prod', accessMode: 'both', allowedTables: null, allowedTools: null },
+        ],
       });
       const consumed = manager.consumeOnboardingCode(entry.onboardingCode!);
       expect(consumed!.status).toBe('active');
@@ -303,7 +342,9 @@ describe('UserManager', () => {
         name: 'Jean',
         email: 'jean@example.com',
         role: 'user',
-        profiles: [{ profileName: 'prod', accessMode: 'both', allowedTables: null, allowedTools: null }],
+        profiles: [
+          { profileName: 'prod', accessMode: 'both', allowedTables: null, allowedTools: null },
+        ],
       });
       expect(manager.deleteUser(entry.id)).toBe(true);
       expect(manager.getUserById(entry.id)).toBeNull();

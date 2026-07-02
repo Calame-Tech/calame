@@ -39,7 +39,9 @@ export function registerSmtpSettingsRoute(app: Express, state: AppState): void {
 
     const parsedPort = typeof port === 'number' ? port : parseInt(String(port), 10);
     if (!port || isNaN(parsedPort) || parsedPort < 1 || parsedPort > 65535) {
-      res.status(400).json({ success: false, message: 'port must be a valid port number (1-65535).' });
+      res
+        .status(400)
+        .json({ success: false, message: 'port must be a valid port number (1-65535).' });
       return;
     }
 
@@ -81,7 +83,9 @@ export function registerSmtpSettingsRoute(app: Express, state: AppState): void {
       if (ok) {
         res.json({ success: true, message: 'SMTP connection verified successfully.' });
       } else {
-        res.status(502).json({ success: false, message: 'SMTP connection failed. Check your settings.' });
+        res
+          .status(502)
+          .json({ success: false, message: 'SMTP connection failed. Check your settings.' });
       }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Connection test failed.';

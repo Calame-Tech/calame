@@ -9,11 +9,11 @@ import type { ParsedDocument } from './types.js';
  * Returns the markdown body unchanged when no front-matter is present.
  */
 function stripFrontMatter(text: string): string {
-	if (!text.startsWith('---')) return text;
-	const closing = text.indexOf('\n---', 3);
-	if (closing === -1) return text;
-	const afterClosing = text.indexOf('\n', closing + 4);
-	return afterClosing === -1 ? '' : text.slice(afterClosing + 1);
+  if (!text.startsWith('---')) return text;
+  const closing = text.indexOf('\n---', 3);
+  if (closing === -1) return text;
+  const afterClosing = text.indexOf('\n', closing + 4);
+  return afterClosing === -1 ? '' : text.slice(afterClosing + 1);
 }
 
 /**
@@ -28,7 +28,7 @@ function stripFrontMatter(text: string): string {
  * we now keep the markdown intact.
  */
 export async function parse(buffer: Buffer): Promise<ParsedDocument> {
-	const raw = buffer.toString('utf8');
-	const body = stripFrontMatter(raw);
-	return { text: body, format: 'markdown' };
+  const raw = buffer.toString('utf8');
+  const body = stripFrontMatter(raw);
+  return { text: body, format: 'markdown' };
 }

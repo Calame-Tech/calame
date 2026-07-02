@@ -85,24 +85,18 @@ export function narrowConfig(config: DocumentSourceConfig): GDriveConfig {
       key = parsed as Record<string, unknown>;
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
-      throw new Error(
-        `GDriveConnector: \`serviceAccountKey\` is not valid JSON (${reason})`,
-      );
+      throw new Error(`GDriveConnector: \`serviceAccountKey\` is not valid JSON (${reason})`);
     }
   } else if (typeof rawKey === 'object' && !Array.isArray(rawKey)) {
     key = rawKey as Record<string, unknown>;
   } else {
-    throw new Error(
-      'GDriveConnector: `serviceAccountKey` must be an object or a JSON string',
-    );
+    throw new Error('GDriveConnector: `serviceAccountKey` must be an object or a JSON string');
   }
 
   for (const field of ['client_email', 'private_key', 'token_uri'] as const) {
     const v = key[field];
     if (typeof v !== 'string' || v.length === 0) {
-      throw new Error(
-        `GDriveConnector: serviceAccountKey is missing required field "${field}"`,
-      );
+      throw new Error(`GDriveConnector: serviceAccountKey is missing required field "${field}"`);
     }
   }
 
@@ -118,19 +112,13 @@ export function narrowConfig(config: DocumentSourceConfig): GDriveConfig {
 
   const includeMimeTypes = config.includeMimeTypes;
   if (includeMimeTypes !== undefined) {
-    if (
-      !Array.isArray(includeMimeTypes) ||
-      !includeMimeTypes.every((m) => typeof m === 'string')
-    ) {
+    if (!Array.isArray(includeMimeTypes) || !includeMimeTypes.every((m) => typeof m === 'string')) {
       throw new Error('GDriveConnector: `includeMimeTypes` must be an array of strings');
     }
   }
   const excludeMimeTypes = config.excludeMimeTypes;
   if (excludeMimeTypes !== undefined) {
-    if (
-      !Array.isArray(excludeMimeTypes) ||
-      !excludeMimeTypes.every((m) => typeof m === 'string')
-    ) {
+    if (!Array.isArray(excludeMimeTypes) || !excludeMimeTypes.every((m) => typeof m === 'string')) {
       throw new Error('GDriveConnector: `excludeMimeTypes` must be an array of strings');
     }
   }
@@ -143,9 +131,8 @@ export function narrowConfig(config: DocumentSourceConfig): GDriveConfig {
   return {
     serviceAccountKey: key,
     rootFolderId,
-    impersonateAs: typeof impersonateAs === 'string' && impersonateAs.length > 0
-      ? impersonateAs
-      : undefined,
+    impersonateAs:
+      typeof impersonateAs === 'string' && impersonateAs.length > 0 ? impersonateAs : undefined,
     includeMimeTypes: includeMimeTypes as string[] | undefined,
     excludeMimeTypes: excludeMimeTypes as string[] | undefined,
     recursive: recursive === undefined ? true : recursive,

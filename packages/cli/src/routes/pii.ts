@@ -29,8 +29,16 @@ export function registerPiiRoute(app: Express, state: AppState): void {
             // Sample data only for text-like columns
             let samples: string[] | undefined;
             if (TEXT_TYPE_PATTERNS.test(column.type)) {
-              const connOptions = connState.connection.sslConfig ? { ssl: connState.connection.sslConfig } : undefined;
-              samples = await connector.sampleColumnValues(dsn, table.name, column.name, 100, connOptions);
+              const connOptions = connState.connection.sslConfig
+                ? { ssl: connState.connection.sslConfig }
+                : undefined;
+              samples = await connector.sampleColumnValues(
+                dsn,
+                table.name,
+                column.name,
+                100,
+                connOptions,
+              );
             }
 
             const detection = detectColumnPii(column.name, samples);

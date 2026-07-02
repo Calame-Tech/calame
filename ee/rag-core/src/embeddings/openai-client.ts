@@ -25,50 +25,50 @@ function readEmbedTimeoutMs(): number {
 
 /** Thrown when the AI setting's provider is incompatible with embeddings. */
 export class EmbeddingNotSupportedError extends Error {
-	constructor(provider: string) {
-		super(
-			`Provider "${provider}" does not support embeddings. Use a setting whose ` +
-				`capabilities include "embeddings" (provider: openrouter or custom).`,
-		);
-		this.name = 'EmbeddingNotSupportedError';
-	}
+  constructor(provider: string) {
+    super(
+      `Provider "${provider}" does not support embeddings. Use a setting whose ` +
+        `capabilities include "embeddings" (provider: openrouter or custom).`,
+    );
+    this.name = 'EmbeddingNotSupportedError';
+  }
 }
 
 /** Thrown when the AI setting is missing the embeddingModel field. */
 export class EmbeddingModelMissingError extends Error {
-	constructor() {
-		super(
-			`AI setting is missing "embeddingModel". Set it on the setting before using ` +
-				`it as an embedding source.`,
-		);
-		this.name = 'EmbeddingModelMissingError';
-	}
+  constructor() {
+    super(
+      `AI setting is missing "embeddingModel". Set it on the setting before using ` +
+        `it as an embedding source.`,
+    );
+    this.name = 'EmbeddingModelMissingError';
+  }
 }
 
 /** Thrown when a custom provider has no baseUrl configured. */
 export class EmbeddingBaseUrlMissingError extends Error {
-	constructor() {
-		super(`Custom embedding provider requires a baseUrl. Set it on the AI setting.`);
-		this.name = 'EmbeddingBaseUrlMissingError';
-	}
+  constructor() {
+    super(`Custom embedding provider requires a baseUrl. Set it on the AI setting.`);
+    this.name = 'EmbeddingBaseUrlMissingError';
+  }
 }
 
 export interface OpenAiCompatibleEmbeddingClientOptions {
-	/** Base URL up to (but not including) `/embeddings`. e.g. `https://api.openai.com/v1`. */
-	baseUrl: string;
-	/** API key sent as `Authorization: Bearer <apiKey>`. Optional for keyless local servers. */
-	apiKey?: string;
-	/** Model identifier (e.g. `text-embedding-3-small`, `nomic-embed-text`). */
-	model: string;
-	/**
-	 * Number of dimensions the model produces. Caller must supply this — we do
-	 * NOT introspect from the API because some providers omit it. Common values:
-	 *  - `text-embedding-3-small` → 1536
-	 *  - `text-embedding-3-large` → 3072
-	 *  - `nomic-embed-text` → 768
-	 *  - `bge-m3` → 1024
-	 */
-	dimensions: number;
+  /** Base URL up to (but not including) `/embeddings`. e.g. `https://api.openai.com/v1`. */
+  baseUrl: string;
+  /** API key sent as `Authorization: Bearer <apiKey>`. Optional for keyless local servers. */
+  apiKey?: string;
+  /** Model identifier (e.g. `text-embedding-3-small`, `nomic-embed-text`). */
+  model: string;
+  /**
+   * Number of dimensions the model produces. Caller must supply this — we do
+   * NOT introspect from the API because some providers omit it. Common values:
+   *  - `text-embedding-3-small` → 1536
+   *  - `text-embedding-3-large` → 3072
+   *  - `nomic-embed-text` → 768
+   *  - `bge-m3` → 1024
+   */
+  dimensions: number;
 }
 
 /**
@@ -78,121 +78,120 @@ export interface OpenAiCompatibleEmbeddingClientOptions {
  * Works with: OpenAI, OpenRouter, Ollama (`/v1`), LM Studio, vLLM, llama.cpp.
  */
 export class OpenAiCompatibleEmbeddingClient implements EmbeddingClient {
-	readonly dimensions: number;
-	readonly modelName: string;
-	private readonly baseUrl: string;
-	private readonly apiKey: string | undefined;
+  readonly dimensions: number;
+  readonly modelName: string;
+  private readonly baseUrl: string;
+  private readonly apiKey: string | undefined;
 
-	constructor(opts: OpenAiCompatibleEmbeddingClientOptions) {
-		if (!opts.baseUrl) throw new Error('OpenAiCompatibleEmbeddingClient: baseUrl is required');
-		if (!opts.model) throw new Error('OpenAiCompatibleEmbeddingClient: model is required');
-		if (!Number.isInteger(opts.dimensions) || opts.dimensions <= 0) {
-			throw new Error(
-				`OpenAiCompatibleEmbeddingClient: dimensions must be a positive integer, got ${opts.dimensions}`,
-			);
-		}
-		this.baseUrl = opts.baseUrl.replace(/\/+$/, '');
-		this.apiKey = opts.apiKey;
-		this.modelName = opts.model;
-		this.dimensions = opts.dimensions;
-	}
+  constructor(opts: OpenAiCompatibleEmbeddingClientOptions) {
+    if (!opts.baseUrl) throw new Error('OpenAiCompatibleEmbeddingClient: baseUrl is required');
+    if (!opts.model) throw new Error('OpenAiCompatibleEmbeddingClient: model is required');
+    if (!Number.isInteger(opts.dimensions) || opts.dimensions <= 0) {
+      throw new Error(
+        `OpenAiCompatibleEmbeddingClient: dimensions must be a positive integer, got ${opts.dimensions}`,
+      );
+    }
+    this.baseUrl = opts.baseUrl.replace(/\/+$/, '');
+    this.apiKey = opts.apiKey;
+    this.modelName = opts.model;
+    this.dimensions = opts.dimensions;
+  }
 
-	async embed(texts: string[]): Promise<number[][]> {
-		if (texts.length === 0) return [];
+  async embed(texts: string[]): Promise<number[][]> {
+    if (texts.length === 0) return [];
 
-		const out: number[][] = [];
-		for (let i = 0; i < texts.length; i += BATCH_SIZE) {
-			const batch = texts.slice(i, i + BATCH_SIZE);
-			const batchEmbeddings = await this.embedBatch(batch);
-			out.push(...batchEmbeddings);
-		}
-		return out;
-	}
+    const out: number[][] = [];
+    for (let i = 0; i < texts.length; i += BATCH_SIZE) {
+      const batch = texts.slice(i, i + BATCH_SIZE);
+      const batchEmbeddings = await this.embedBatch(batch);
+      out.push(...batchEmbeddings);
+    }
+    return out;
+  }
 
-	private async embedBatch(batch: string[]): Promise<number[][]> {
-		const url = `${this.baseUrl}/embeddings`;
-		const headers: Record<string, string> = {
-			'Content-Type': 'application/json',
-			Accept: 'application/json',
-		};
-		if (this.apiKey) headers.Authorization = `Bearer ${this.apiKey}`;
+  private async embedBatch(batch: string[]): Promise<number[][]> {
+    const url = `${this.baseUrl}/embeddings`;
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    };
+    if (this.apiKey) headers.Authorization = `Bearer ${this.apiKey}`;
 
-		const body = JSON.stringify({ input: batch, model: this.modelName });
+    const body = JSON.stringify({ input: batch, model: this.modelName });
 
-		const timeoutMs = readEmbedTimeoutMs();
-		const controller = new AbortController();
-		const timer =
-			timeoutMs > 0
-				? setTimeout(
-						() =>
-							controller.abort(new Error(`Embedding request timed out after ${timeoutMs}ms`)),
-						timeoutMs,
-					)
-				: null;
+    const timeoutMs = readEmbedTimeoutMs();
+    const controller = new AbortController();
+    const timer =
+      timeoutMs > 0
+        ? setTimeout(
+            () => controller.abort(new Error(`Embedding request timed out after ${timeoutMs}ms`)),
+            timeoutMs,
+          )
+        : null;
 
-		let response: Response;
-		try {
-			response = await fetch(url, {
-				method: 'POST',
-				headers,
-				body,
-				signal: controller.signal,
-			});
-		} catch (err: unknown) {
-			// Convert AbortError into a clear, actionable error message that lands
-			// in `rag_jobs.error` so the user knows WHY the sync stalled.
-			if (err instanceof Error && err.name === 'AbortError') {
-				throw new Error(
-					`Embeddings request to ${this.baseUrl}/embeddings timed out after ${timeoutMs}ms. ` +
-						`The upstream embedding service may be unresponsive. ` +
-						`Increase CALAME_RAG_EMBED_TIMEOUT_MS or check the provider's health.`,
-				);
-			}
-			throw err;
-		} finally {
-			if (timer !== null) clearTimeout(timer);
-		}
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body,
+        signal: controller.signal,
+      });
+    } catch (err: unknown) {
+      // Convert AbortError into a clear, actionable error message that lands
+      // in `rag_jobs.error` so the user knows WHY the sync stalled.
+      if (err instanceof Error && err.name === 'AbortError') {
+        throw new Error(
+          `Embeddings request to ${this.baseUrl}/embeddings timed out after ${timeoutMs}ms. ` +
+            `The upstream embedding service may be unresponsive. ` +
+            `Increase CALAME_RAG_EMBED_TIMEOUT_MS or check the provider's health.`,
+        );
+      }
+      throw err;
+    } finally {
+      if (timer !== null) clearTimeout(timer);
+    }
 
-		if (!response.ok) {
-			const errText = await response.text().catch(() => '<no body>');
-			throw new Error(
-				`Embeddings request failed (${response.status} ${response.statusText}): ${errText}`,
-			);
-		}
+    if (!response.ok) {
+      const errText = await response.text().catch(() => '<no body>');
+      throw new Error(
+        `Embeddings request failed (${response.status} ${response.statusText}): ${errText}`,
+      );
+    }
 
-		const json = (await response.json()) as unknown;
-		if (typeof json !== 'object' || json === null || !('data' in json)) {
-			throw new Error('Embeddings response: missing "data" field');
-		}
-		const data = (json as { data: unknown }).data;
-		if (!Array.isArray(data)) {
-			throw new Error('Embeddings response: "data" is not an array');
-		}
+    const json = (await response.json()) as unknown;
+    if (typeof json !== 'object' || json === null || !('data' in json)) {
+      throw new Error('Embeddings response: missing "data" field');
+    }
+    const data = (json as { data: unknown }).data;
+    if (!Array.isArray(data)) {
+      throw new Error('Embeddings response: "data" is not an array');
+    }
 
-		// Ensure embeddings are returned in input order.
-		const ordered: number[][] = new Array(batch.length);
-		for (let idx = 0; idx < data.length; idx++) {
-			const entry = data[idx];
-			if (typeof entry !== 'object' || entry === null) {
-				throw new Error(`Embeddings response: data[${idx}] is not an object`);
-			}
-			const embedding = (entry as { embedding?: unknown }).embedding;
-			if (!Array.isArray(embedding) || !embedding.every((n) => typeof n === 'number')) {
-				throw new Error(`Embeddings response: data[${idx}].embedding is not number[]`);
-			}
-			const indexField = (entry as { index?: unknown }).index;
-			const target = typeof indexField === 'number' ? indexField : idx;
-			ordered[target] = embedding as number[];
-		}
+    // Ensure embeddings are returned in input order.
+    const ordered: number[][] = new Array(batch.length);
+    for (let idx = 0; idx < data.length; idx++) {
+      const entry = data[idx];
+      if (typeof entry !== 'object' || entry === null) {
+        throw new Error(`Embeddings response: data[${idx}] is not an object`);
+      }
+      const embedding = (entry as { embedding?: unknown }).embedding;
+      if (!Array.isArray(embedding) || !embedding.every((n) => typeof n === 'number')) {
+        throw new Error(`Embeddings response: data[${idx}].embedding is not number[]`);
+      }
+      const indexField = (entry as { index?: unknown }).index;
+      const target = typeof indexField === 'number' ? indexField : idx;
+      ordered[target] = embedding as number[];
+    }
 
-		// Validate every slot was filled.
-		for (let i = 0; i < ordered.length; i++) {
-			if (!ordered[i]) {
-				throw new Error(`Embeddings response: missing embedding for input ${i}`);
-			}
-		}
-		return ordered;
-	}
+    // Validate every slot was filled.
+    for (let i = 0; i < ordered.length; i++) {
+      if (!ordered[i]) {
+        throw new Error(`Embeddings response: missing embedding for input ${i}`);
+      }
+    }
+    return ordered;
+  }
 }
 
 /**
@@ -201,10 +200,10 @@ export class OpenAiCompatibleEmbeddingClient implements EmbeddingClient {
  * packages/cli to keep ee/rag-core decoupled.
  */
 export interface EmbeddingSettingShape {
-	provider: string;
-	apiKey: string;
-	baseUrl?: string;
-	embeddingModel?: string;
+  provider: string;
+  apiKey: string;
+  baseUrl?: string;
+  embeddingModel?: string;
 }
 
 /**
@@ -218,32 +217,32 @@ export interface EmbeddingSettingShape {
  *  - `custom` → uses `setting.baseUrl` (required, throws otherwise)
  */
 export function createEmbeddingClient(
-	setting: EmbeddingSettingShape,
-	dimensions: number,
+  setting: EmbeddingSettingShape,
+  dimensions: number,
 ): EmbeddingClient {
-	if (!setting.embeddingModel) {
-		throw new EmbeddingModelMissingError();
-	}
+  if (!setting.embeddingModel) {
+    throw new EmbeddingModelMissingError();
+  }
 
-	let baseUrl: string;
-	switch (setting.provider) {
-		case 'anthropic':
-			throw new EmbeddingNotSupportedError(setting.provider);
-		case 'openrouter':
-			baseUrl = 'https://openrouter.ai/api/v1';
-			break;
-		case 'custom':
-			if (!setting.baseUrl) throw new EmbeddingBaseUrlMissingError();
-			baseUrl = setting.baseUrl;
-			break;
-		default:
-			throw new EmbeddingNotSupportedError(setting.provider);
-	}
+  let baseUrl: string;
+  switch (setting.provider) {
+    case 'anthropic':
+      throw new EmbeddingNotSupportedError(setting.provider);
+    case 'openrouter':
+      baseUrl = 'https://openrouter.ai/api/v1';
+      break;
+    case 'custom':
+      if (!setting.baseUrl) throw new EmbeddingBaseUrlMissingError();
+      baseUrl = setting.baseUrl;
+      break;
+    default:
+      throw new EmbeddingNotSupportedError(setting.provider);
+  }
 
-	return new OpenAiCompatibleEmbeddingClient({
-		baseUrl,
-		apiKey: setting.apiKey || undefined,
-		model: setting.embeddingModel,
-		dimensions,
-	});
+  return new OpenAiCompatibleEmbeddingClient({
+    baseUrl,
+    apiKey: setting.apiKey || undefined,
+    model: setting.embeddingModel,
+    dimensions,
+  });
 }

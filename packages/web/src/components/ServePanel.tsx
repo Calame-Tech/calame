@@ -9,6 +9,7 @@ import {
   getProfileColumnMasking,
 } from '../lib/profile-accessors.js';
 import { buildMcpPath } from '../lib/mcp-url.js';
+import { slugifyProfileName } from '../lib/profiles.js';
 import ChatPanel from './ChatPanel.js';
 import TokenManager from './TokenManager.js';
 import AuditLogViewer from './AuditLogViewer.js';
@@ -59,7 +60,17 @@ interface ServePanelProps {
 
 type DashboardTab = 'chat' | 'pending';
 
-export default function ServePanel({ config, selectedTables, profiles, serveStatus, onServeAction, onSelectProfile, onCreateProfile, onDeleteProfile, onPreviewProfile }: ServePanelProps) {
+export default function ServePanel({
+  config,
+  selectedTables,
+  profiles,
+  serveStatus,
+  onServeAction,
+  onSelectProfile,
+  onCreateProfile,
+  onDeleteProfile,
+  onPreviewProfile,
+}: ServePanelProps) {
   const [selectedProfile, setSelectedProfile] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<DashboardTab>('chat');
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -80,9 +91,7 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
 
   // Count active profiles
   const activeCount = useMemo(() => {
-    return allProfiles.filter(
-      (p) => serveStatus.profileStatuses?.[p.name]?.active === true,
-    ).length;
+    return allProfiles.filter((p) => serveStatus.profileStatuses?.[p.name]?.active === true).length;
   }, [allProfiles, serveStatus.profileStatuses]);
 
   const hasAnyActive = activeCount > 0;
@@ -170,7 +179,6 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
     });
   }, []);
 
-
   // Get the currently selected profile object
   const detailProfile = useMemo(() => {
     if (!selectedProfile) return null;
@@ -192,9 +200,10 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
     // backend's `profileStatus.endpoint` is left as a default-tenant string
     // and is only used as a fallback for the default workspace.
     const tenant = getCurrentTenant();
-    const basePath = tenant === 'default'
-      ? (profileStatus?.endpoint ?? `/mcp/${detailProfile.name}`)
-      : buildMcpPath(detailProfile.name, tenant);
+    const basePath =
+      tenant === 'default'
+        ? (profileStatus?.endpoint ?? `/mcp/${detailProfile.name}`)
+        : buildMcpPath(detailProfile.name, tenant);
     const endpoint = `${window.location.origin}${basePath}`;
     const tableCount = getProfileTableNames(detailProfile).length;
 
@@ -259,21 +268,34 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
                     : 'bg-os-700/30 text-os-400 hover:bg-os-700/50'
                 }`}
               >
-                {togglingProfile === detailProfile.name
-                  ? (
-                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
-                  )
-                  : isActive
-                    ? 'Stop'
-                    : 'Start'}
+                {togglingProfile === detailProfile.name ? (
+                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    />
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                    />
+                  </svg>
+                ) : isActive ? (
+                  'Stop'
+                ) : (
+                  'Start'
+                )}
               </button>
               <HelpTip
-                content={isActive
-                  ? 'Arrêter le serveur MCP pour ce profil. Les clients connectés seront déconnectés.'
-                  : 'Démarrer le serveur MCP pour ce profil et le rendre accessible aux clients.'}
+                content={
+                  isActive
+                    ? 'Arrêter le serveur MCP pour ce profil. Les clients connectés seront déconnectés.'
+                    : 'Démarrer le serveur MCP pour ce profil et le rendre accessible aux clients.'
+                }
                 position="left"
                 size="sm"
               />
@@ -309,7 +331,6 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
           )}
         </div>
 
-
         {/* Tables section */}
         <div className="card-primary p-4">
           <h3 className="eyebrow mb-3">Tables</h3>
@@ -318,14 +339,10 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
           ) : (
             <div className="space-y-2">
               {Object.entries(getProfileSelectedTables(detailProfile)).map(([table, columns]) => (
-                <div
-                  key={table}
-                  className="card-nested px-4 py-3"
-                >
+                <div key={table} className="card-nested px-4 py-3">
                   <p className="text-sm font-medium text-gray-200">{table}</p>
                   <p className="text-xs text-gray-500 mt-1">
-                    {columns.length} column{columns.length !== 1 ? 's' : ''}:{' '}
-                    {columns.join(', ')}
+                    {columns.length} column{columns.length !== 1 ? 's' : ''}: {columns.join(', ')}
                   </p>
                 </div>
               ))}
@@ -376,10 +393,7 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
                 <p className="text-xs text-gray-500 mb-1">Table Options</p>
                 <div className="space-y-2">
                   {Object.entries(getProfileTableOptions(detailProfile)).map(([table, opts]) => (
-                    <div
-                      key={table}
-                      className="card-nested px-4 py-3"
-                    >
+                    <div key={table} className="card-nested px-4 py-3">
                       <p className="text-sm font-medium text-gray-200">{table}</p>
                       <div className="mt-1 text-xs text-gray-500 space-y-0.5">
                         <p>Max limit: {opts.maxLimit}</p>
@@ -403,28 +417,25 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
               <div>
                 <p className="text-xs text-gray-500 mb-1 mt-3">Column Masking</p>
                 <div className="space-y-2">
-                  {Object.entries(getProfileColumnMasking(detailProfile)).map(([table, columns]) => (
-                    <div
-                      key={table}
-                      className="card-nested px-4 py-3"
-                    >
-                      <p className="text-sm font-medium text-gray-200">{table}</p>
-                      <div className="mt-1 text-xs text-gray-500 space-y-0.5">
-                        {Object.entries(columns).map(([col, masking]) => (
-                          <p key={col}>
-                            {col}:{' '}
-                            <span className="text-os-400">{masking.maskingMode}</span>
-                            {masking.piiDetected && (
-                              <span className="ml-1 text-yellow-500">
-                                ({masking.piiDetected.category},{' '}
-                                {masking.piiDetected.confidence})
-                              </span>
-                            )}
-                          </p>
-                        ))}
+                  {Object.entries(getProfileColumnMasking(detailProfile)).map(
+                    ([table, columns]) => (
+                      <div key={table} className="card-nested px-4 py-3">
+                        <p className="text-sm font-medium text-gray-200">{table}</p>
+                        <div className="mt-1 text-xs text-gray-500 space-y-0.5">
+                          {Object.entries(columns).map(([col, masking]) => (
+                            <p key={col}>
+                              {col}: <span className="text-os-400">{masking.maskingMode}</span>
+                              {masking.piiDetected && (
+                                <span className="ml-1 text-yellow-500">
+                                  ({masking.piiDetected.category}, {masking.piiDetected.confidence})
+                                </span>
+                              )}
+                            </p>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ),
+                  )}
                 </div>
               </div>
             ) : (
@@ -476,7 +487,11 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
               >
                 {stoppingAll ? 'Stopping...' : 'Stop All'}
               </button>
-              <HelpTip content="Stop all currently active MCP servers at once." position="left" size="sm" />
+              <HelpTip
+                content="Stop all currently active MCP servers at once."
+                position="left"
+                size="sm"
+              />
             </div>
           )}
         </div>
@@ -499,17 +514,13 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
                 value={newLabel}
                 onChange={(e) => {
                   setNewLabel(e.target.value);
-                  setNewName(
-                    e.target.value.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
-                  );
+                  setNewName(slugifyProfileName(e.target.value));
                 }}
                 placeholder="MCP name..."
                 autoFocus
                 className="input-editorial w-full text-sm"
               />
-              {newName && (
-                <p className="text-xs text-gray-500 font-mono">{newName}</p>
-              )}
+              {newName && <p className="text-xs text-gray-500 font-mono">{newName}</p>}
             </div>
             <div className="flex gap-2 mt-3">
               <button
@@ -527,7 +538,11 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
                 Create
               </button>
               <button
-                onClick={() => { setShowCreateForm(false); setNewLabel(''); setNewName(''); }}
+                onClick={() => {
+                  setShowCreateForm(false);
+                  setNewLabel('');
+                  setNewName('');
+                }}
                 className="px-3 py-1.5 rounded-lg text-gray-400 hover:text-gray-200 text-xs font-medium transition-all duration-200"
               >
                 Cancel
@@ -551,9 +566,10 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
           // Tenant-qualified path for non-default workspaces (same logic as
           // the detail view above — see comment there for the rationale).
           const tenant = getCurrentTenant();
-          const basePath = tenant === 'default'
-            ? (profileStatus?.endpoint ?? `/mcp/${profile.name}`)
-            : buildMcpPath(profile.name, tenant);
+          const basePath =
+            tenant === 'default'
+              ? (profileStatus?.endpoint ?? `/mcp/${profile.name}`)
+              : buildMcpPath(profile.name, tenant);
           const endpoint = `${window.location.origin}${basePath}`;
           const tableCount = getProfileTableNames(profile).length;
           const profileSources = getProfileRelationalSources(profile);
@@ -564,13 +580,21 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
             <div
               key={profile.name}
               className="relative card-interactive p-4 cursor-pointer flex flex-col justify-between min-h-[140px]"
-              onClick={() => onSelectProfile ? onSelectProfile(profile.name) : setSelectedProfile(profile.name)}
+              onClick={() =>
+                onSelectProfile ? onSelectProfile(profile.name) : setSelectedProfile(profile.name)
+              }
             >
               {/* Delete button */}
               {confirmDeleteProfile === profile.name ? (
-                <div className="absolute top-2 right-2 flex items-center gap-1 z-10" onClick={(e) => e.stopPropagation()}>
+                <div
+                  className="absolute top-2 right-2 flex items-center gap-1 z-10"
+                  onClick={(e) => e.stopPropagation()}
+                >
                   <button
-                    onClick={() => { if (onDeleteProfile && profileIdx >= 0) onDeleteProfile(profileIdx); setConfirmDeleteProfile(null); }}
+                    onClick={() => {
+                      if (onDeleteProfile && profileIdx >= 0) onDeleteProfile(profileIdx);
+                      setConfirmDeleteProfile(null);
+                    }}
                     className="px-2 py-0.5 text-xs bg-red-600 hover:bg-red-500 text-white rounded transition-all duration-200"
                   >
                     Yes
@@ -584,13 +608,26 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
                 </div>
               ) : (
                 <button
-                  onClick={(e) => { e.stopPropagation(); setConfirmDeleteProfile(profile.name); }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setConfirmDeleteProfile(profile.name);
+                  }}
                   title={`Supprimer ce serveur MCP et sa configuration`}
                   className="absolute top-2 right-2 p-1 text-gray-500 hover:text-red-400 transition-all duration-200 rounded hover:bg-red-500/10 z-10"
                   aria-label={`Supprimer le profil ${profile.label || profile.name}`}
                 >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"
+                    />
                   </svg>
                 </button>
               )}
@@ -599,9 +636,7 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
                 <div className="flex items-center gap-2 mb-2 pr-8">
                   <div
                     className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                      isActive
-                        ? 'bg-green-500 shadow-lg shadow-green-500/30'
-                        : 'bg-gray-600'
+                      isActive ? 'bg-green-500 shadow-lg shadow-green-500/30' : 'bg-gray-600'
                     }`}
                   />
                   <p className="text-sm font-semibold text-gray-100 truncate">
@@ -645,7 +680,10 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
 
                 {/* Chat link — only shown when profile is active */}
                 {isActive && (
-                  <div className="mt-2 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                  <div
+                    className="mt-2 flex items-center gap-2"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <span className="text-xs text-gray-500 flex-shrink-0">Chat:</span>
                     <code className="text-xs text-os-400 bg-gray-800/50 px-2 py-0.5 rounded font-mono truncate min-w-0">
                       {window.location.origin}/chat/{encodeURIComponent(profile.name)}
@@ -701,21 +739,34 @@ export default function ServePanel({ config, selectedTables, profiles, serveStat
                         : 'bg-os-700/30 text-os-400 hover:bg-os-700/50'
                     }`}
                   >
-                    {togglingProfile === profile.name
-                      ? (
-                        <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                        </svg>
-                      )
-                      : isActive
-                        ? 'Stop'
-                        : 'Start'}
+                    {togglingProfile === profile.name ? (
+                      <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                        <circle
+                          className="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                        />
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                        />
+                      </svg>
+                    ) : isActive ? (
+                      'Stop'
+                    ) : (
+                      'Start'
+                    )}
                   </button>
                   <HelpTip
-                    content={isActive
-                      ? 'Arrêter le serveur MCP pour ce profil'
-                      : 'Démarrer le serveur MCP pour ce profil'}
+                    content={
+                      isActive
+                        ? 'Arrêter le serveur MCP pour ce profil'
+                        : 'Démarrer le serveur MCP pour ce profil'
+                    }
                     position="top"
                     size="xs"
                   />

@@ -91,7 +91,9 @@ export default function ConnectionManager({
   // Toggle to show/hide the identifier (slug) field
   const [showIdentifier, setShowIdentifier] = useState(false);
   // Form state
-  const [formStatus, setFormStatus] = useState<'idle' | 'testing' | 'connecting' | 'success' | 'error'>('idle');
+  const [formStatus, setFormStatus] = useState<
+    'idle' | 'testing' | 'connecting' | 'success' | 'error'
+  >('idle');
   const [formMessage, setFormMessage] = useState('');
   // SSL state
   const [sslExpanded, setSslExpanded] = useState(false);
@@ -350,24 +352,17 @@ export default function ConnectionManager({
 
   // ── Connect (create) ────────────────────────────────────────────
   // ── Build card data from local connections + remote statuses ─────
-  const allConnectionNames = new Set([
-    ...connections.map((c) => c.name),
-    ...Object.keys(statuses),
-  ]);
+  const allConnectionNames = new Set([...connections.map((c) => c.name), ...Object.keys(statuses)]);
 
   // Check if name already exists (skip the current name when editing)
   const nameAlreadyExists =
-    formName.length > 0 &&
-    allConnectionNames.has(formName) &&
-    formName !== editingConnection;
+    formName.length > 0 && allConnectionNames.has(formName) && formName !== editingConnection;
 
   const handleConnect = async () => {
     if (!formConnStr || !formName || !formLabel) return;
     if (nameAlreadyExists) {
       setFormStatus('error');
-      setFormMessage(
-        `A connection with identifier "${formName}" already exists.`,
-      );
+      setFormMessage(`A connection with identifier "${formName}" already exists.`);
       return;
     }
     setFormStatus('connecting');
@@ -431,7 +426,10 @@ export default function ConnectionManager({
 
       // Also fetch schemas for all other connected connections
       if (allData.success && allData.connections) {
-        for (const [n, info] of Object.entries(allData.connections) as [string, Record<string, unknown>][]) {
+        for (const [n, info] of Object.entries(allData.connections) as [
+          string,
+          Record<string, unknown>,
+        ][]) {
           if (n !== formName && info.connected && (info.tableCount as number) > 0) {
             try {
               const sRes = await fetch(`/api/schema/${encodeURIComponent(n)}`);
@@ -529,10 +527,7 @@ export default function ConnectionManager({
           const tableCount = remote?.tableCount ?? 0;
 
           return (
-            <div
-              key={name}
-              className="relative p-4 card-interactive"
-            >
+            <div key={name} className="relative p-4 card-interactive">
               {/* Action buttons (edit + delete) */}
               {confirmDelete === name ? (
                 <div className="absolute top-2 right-2 flex items-center gap-1">
@@ -559,7 +554,13 @@ export default function ConnectionManager({
                     title="Modifier la configuration de cette connexion"
                     className="p-1 text-gray-500 hover:text-os-400 transition-all duration-200 rounded hover:bg-os-500/10"
                   >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <svg
+                      className="w-4 h-4"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                    >
                       <path
                         strokeLinecap="round"
                         strokeLinejoin="round"
@@ -573,7 +574,13 @@ export default function ConnectionManager({
                     title="Supprimer cette connexion de la liste"
                     className="p-1 text-gray-500 hover:text-red-400 transition-all duration-200 rounded hover:bg-red-500/10"
                   >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <svg
+                      className="w-4 h-4"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                    >
                       <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                     </svg>
                   </button>
@@ -583,7 +590,11 @@ export default function ConnectionManager({
               {/* Status dot + name */}
               <div className="flex items-center gap-2 mb-2 pr-16">
                 <span
-                  title={connected ? 'Connexion active' : 'Non connecté — cliquez sur Modifier pour vous connecter'}
+                  title={
+                    connected
+                      ? 'Connexion active'
+                      : 'Non connecté — cliquez sur Modifier pour vous connecter'
+                  }
                   className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${
                     connected ? 'bg-green-400 shadow-sm shadow-green-400/50' : 'bg-gray-500'
                   }`}
@@ -664,7 +675,9 @@ export default function ConnectionManager({
 
           {/* Label */}
           <div>
-            <label className="block eyebrow mb-1.5">Name <span className="text-red-400">*</span></label>
+            <label className="block eyebrow mb-1.5">
+              Name <span className="text-red-400">*</span>
+            </label>
             <input
               type="text"
               value={formLabel}
@@ -765,7 +778,11 @@ export default function ConnectionManager({
             <div className="relative">
               <input
                 type={showPassword ? 'text' : 'password'}
-                value={hasSavedConnStr && !connStringRevealed && !formConnStr ? '••••••••••••••••••••••••' : formConnStr}
+                value={
+                  hasSavedConnStr && !connStringRevealed && !formConnStr
+                    ? '••••••••••••••••••••••••'
+                    : formConnStr
+                }
                 onChange={(e) => setFormConnStr(e.target.value)}
                 placeholder={activeDbOption.placeholder}
                 readOnly={hasSavedConnStr && !connStringRevealed && !formConnStr}
@@ -796,7 +813,11 @@ export default function ConnectionManager({
                 }
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-500 hover:text-gray-300"
               >
-                {hasSavedConnStr && !connStringRevealed && !formConnStr ? 'Show' : showPassword ? 'Hide' : 'Show'}
+                {hasSavedConnStr && !connStringRevealed && !formConnStr
+                  ? 'Show'
+                  : showPassword
+                    ? 'Hide'
+                    : 'Show'}
               </button>
             </div>
             <p className="mt-1.5 text-xs text-gray-500">{activeDbOption.helpText}</p>
@@ -804,7 +825,9 @@ export default function ConnectionManager({
             {/* Admin password prompt to reveal connection string */}
             {showRevealPrompt && (
               <div className="mt-3 p-3 rounded-lg border border-os-600/40 bg-os-900/20 space-y-2">
-                <p className="text-xs text-gray-300">Enter your admin password to reveal the connection string.</p>
+                <p className="text-xs text-gray-300">
+                  Enter your admin password to reveal the connection string.
+                </p>
                 <div className="flex items-center gap-2">
                   <input
                     type="password"
@@ -813,7 +836,9 @@ export default function ConnectionManager({
                     placeholder="Admin password"
                     autoFocus
                     className="input-editorial flex-1 text-sm"
-                    onKeyDown={(e) => { if (e.key === 'Enter') handleRevealConnectionString(); }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleRevealConnectionString();
+                    }}
                   />
                   <button
                     type="button"
@@ -825,15 +850,17 @@ export default function ConnectionManager({
                   </button>
                   <button
                     type="button"
-                    onClick={() => { setShowRevealPrompt(false); setRevealPassword(''); setRevealError(''); }}
+                    onClick={() => {
+                      setShowRevealPrompt(false);
+                      setRevealPassword('');
+                      setRevealError('');
+                    }}
                     className="px-2 py-1.5 text-gray-500 hover:text-gray-300 text-sm transition-all duration-200"
                   >
                     Cancel
                   </button>
                 </div>
-                {revealStatus === 'error' && (
-                  <p className="text-xs text-red-400">{revealError}</p>
-                )}
+                {revealStatus === 'error' && <p className="text-xs text-red-400">{revealError}</p>}
               </div>
             )}
           </div>
@@ -891,13 +918,19 @@ export default function ConnectionManager({
                           value={sslCa}
                           onChange={(e) => setSslCa(e.target.value)}
                           rows={4}
-                          placeholder={"-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"}
+                          placeholder={
+                            '-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----'
+                          }
                           className="input-editorial w-full text-xs resize-none"
                         />
-                        <p className="mt-1 text-xs text-gray-600">Paste your server CA certificate in PEM format.</p>
+                        <p className="mt-1 text-xs text-gray-600">
+                          Paste your server CA certificate in PEM format.
+                        </p>
                       </div>
                       <div>
-                        <label className="block eyebrow mb-1">Client Certificate (PEM, optional)</label>
+                        <label className="block eyebrow mb-1">
+                          Client Certificate (PEM, optional)
+                        </label>
                         <textarea
                           value={sslCert}
                           onChange={(e) => setSslCert(e.target.value)}
@@ -934,7 +967,8 @@ export default function ConnectionManager({
                       </label>
                       {!sslRejectUnauthorized && (
                         <p className="text-xs text-yellow-500/80 bg-yellow-900/10 border border-yellow-700/30 rounded px-2 py-1">
-                          Warning: disabling certificate verification exposes you to man-in-the-middle attacks.
+                          Warning: disabling certificate verification exposes you to
+                          man-in-the-middle attacks.
                         </p>
                       )}
                     </>
@@ -992,7 +1026,8 @@ export default function ConnectionManager({
                   <>
                     {/* Visual connection diagram */}
                     <div className="text-xs text-gray-500 bg-gray-800/50 rounded p-2 font-mono">
-                      Calame → SSH ({sshHost || '...'}:{sshPort}) → DB ({sshDbHost || '...'}:{sshDbPort})
+                      Calame → SSH ({sshHost || '...'}:{sshPort}) → DB ({sshDbHost || '...'}:
+                      {sshDbPort})
                     </div>
 
                     {/* SSH Host + Port */}
@@ -1044,9 +1079,7 @@ export default function ConnectionManager({
 
                     {/* Password */}
                     <div>
-                      <label className="block eyebrow mb-1">
-                        Password (if no key)
-                      </label>
+                      <label className="block eyebrow mb-1">Password (if no key)</label>
                       <input
                         type="password"
                         value={sshPassword}
@@ -1058,9 +1091,7 @@ export default function ConnectionManager({
                     {/* Remote DB Host + Port */}
                     <div className="grid grid-cols-3 gap-2">
                       <div className="col-span-2">
-                        <label className="block eyebrow mb-1">
-                          DB Host (from bastion)
-                        </label>
+                        <label className="block eyebrow mb-1">DB Host (from bastion)</label>
                         <input
                           type="text"
                           value={sshDbHost}
@@ -1101,35 +1132,69 @@ export default function ConnectionManager({
           <div className="flex items-center gap-3 pt-1">
             <button
               onClick={handleTest}
-              disabled={!formConnStr || !formName || formStatus === 'testing' || formStatus === 'connecting'}
+              disabled={
+                !formConnStr || !formName || formStatus === 'testing' || formStatus === 'connecting'
+              }
               className="px-4 py-2 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 rounded-lg font-medium text-sm transition-all duration-200 flex items-center gap-2"
             >
               {formStatus === 'testing' && (
                 <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                  />
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                  />
                 </svg>
               )}
               {formStatus === 'testing' ? 'Testing...' : 'Test'}
             </button>
-            <HelpTip content="Test the connection without saving — verifies that the parameters are correct." position="top" />
+            <HelpTip
+              content="Test the connection without saving — verifies that the parameters are correct."
+              position="top"
+            />
 
             <button
               onClick={handleConnect}
               disabled={
-                !formConnStr || !formName || !formLabel || formStatus === 'testing' || formStatus === 'connecting'
+                !formConnStr ||
+                !formName ||
+                !formLabel ||
+                formStatus === 'testing' ||
+                formStatus === 'connecting'
               }
               className="px-4 py-2 bg-os-700 hover:bg-os-600 disabled:opacity-50 rounded-lg font-medium text-sm transition-all duration-200 shadow-md shadow-os-900/20 hover:shadow-lg hover:shadow-os-900/30 disabled:shadow-none flex items-center gap-2"
             >
               {formStatus === 'connecting' && (
                 <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                  />
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                  />
                 </svg>
               )}
               {formStatus === 'connecting' ? 'Connecting...' : 'Connect'}
             </button>
-            <HelpTip content="Save and establish the connection — the schema will be imported automatically." position="top" />
+            <HelpTip
+              content="Save and establish the connection — the schema will be imported automatically."
+              position="top"
+            />
 
             <button
               onClick={resetForm}

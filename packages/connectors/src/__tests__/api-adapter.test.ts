@@ -179,16 +179,12 @@ describe('scopeSelectionSchema', () => {
 
   it('rejects a scope missing the kind discriminator', () => {
     const adapter = buildHttpApiSourceAdapter();
-    expect(() =>
-      adapter.scopeSelectionSchema.parse({ allowedOperations: ['http_get'] }),
-    ).toThrow();
+    expect(() => adapter.scopeSelectionSchema.parse({ allowedOperations: ['http_get'] })).toThrow();
   });
 
   it('rejects a scope with kind=api but no allowedOperations array', () => {
     const adapter = buildHttpApiSourceAdapter();
-    expect(() =>
-      adapter.scopeSelectionSchema.parse({ kind: 'api' }),
-    ).toThrow();
+    expect(() => adapter.scopeSelectionSchema.parse({ kind: 'api' })).toThrow();
   });
 });
 
@@ -199,10 +195,7 @@ describe('scopeSelectionSchema', () => {
 describe('introspect', () => {
   it('returns the static MVP schema with one service and one operation', async () => {
     const adapter = buildHttpApiSourceAdapter();
-    const schema = await adapter.introspect!(
-      { baseUrl: 'https://api.example.com/' },
-      'src1',
-    );
+    const schema = await adapter.introspect!({ baseUrl: 'https://api.example.com/' }, 'src1');
     expect(schema.kind).toBe('api');
     expect(schema.services).toHaveLength(1);
     expect(schema.services[0].id).toBe('default');
@@ -242,19 +235,24 @@ describe('testConnection', () => {
   it('throws on a 404', async () => {
     mockFetchOnce({ status: 404, ok: false });
     const adapter = buildHttpApiSourceAdapter();
-    await expect(
-      adapter.testConnection({ baseUrl: 'https://api.example.com' }),
-    ).rejects.toThrow(/404/);
+    await expect(adapter.testConnection({ baseUrl: 'https://api.example.com' })).rejects.toThrow(
+      /404/,
+    );
   });
 
-  it('throws on a network error', async () => {
+  it('masks the underlying network reason and never leaks it to the caller', async () => {
     (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
       new Error('ECONNREFUSED'),
     );
     const adapter = buildHttpApiSourceAdapter();
-    await expect(
-      adapter.testConnection({ baseUrl: 'https://api.example.com' }),
-    ).rejects.toThrow(/ECONNREFUSED/);
+    const err = await adapter
+      .testConnection({ baseUrl: 'https://api.example.com' })
+      .then(() => null)
+      .catch((e: unknown) => e as Error);
+    expect(err).toBeInstanceOf(Error);
+    expect(err?.message).toBe('Network error while contacting the remote host.');
+    // Security: the raw network reason (e.g. ECONNREFUSED) must never leak.
+    expect(err?.message).not.toMatch(/ECONNREFUSED/);
   });
 });
 

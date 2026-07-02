@@ -229,9 +229,7 @@ export default function TenantManagement() {
                   </th>
                 ))}
                 <th className="text-right px-3 py-2.5 font-medium text-gray-300">Total</th>
-                <th className="text-right px-4 py-2.5 font-medium text-gray-300 w-32">
-                  Actions
-                </th>
+                <th className="text-right px-4 py-2.5 font-medium text-gray-300 w-32">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -328,10 +326,7 @@ export default function TenantManagement() {
           }}
         >
           <Card className="max-w-lg w-full p-6 border border-red-500/30 bg-gray-950">
-            <h2
-              id="tenant-delete-modal-title"
-              className="text-lg font-semibold text-red-300 mb-3"
-            >
+            <h2 id="tenant-delete-modal-title" className="text-lg font-semibold text-red-300 mb-3">
               Supprimer définitivement le workspace ?
             </h2>
             <p className="text-sm text-gray-300 leading-relaxed">
@@ -371,9 +366,8 @@ export default function TenantManagement() {
             {/* Typed confirmation input */}
             <div className="mt-5">
               <label htmlFor="tenant-confirm-input" className="block text-xs text-gray-400 mb-1.5">
-                Saisissez{' '}
-                <code className="font-mono-plex text-red-300">{pendingDelete.id}</code> pour
-                confirmer :
+                Saisissez <code className="font-mono-plex text-red-300">{pendingDelete.id}</code>{' '}
+                pour confirmer :
               </label>
               <input
                 id="tenant-confirm-input"

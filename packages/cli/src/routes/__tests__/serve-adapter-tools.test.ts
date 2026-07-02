@@ -39,7 +39,10 @@ const {
     get: vi.fn((type: string) => registeredAdapters.get(type)),
     has: vi.fn((type: string) => registeredAdapters.has(type)),
     register: vi.fn((adapter: { type: string; registerMcpTools?: ReturnType<typeof vi.fn> }) => {
-      registeredAdapters.set(adapter.type, adapter as unknown as { registerMcpTools: ReturnType<typeof vi.fn> });
+      registeredAdapters.set(
+        adapter.type,
+        adapter as unknown as { registerMcpTools: ReturnType<typeof vi.fn> },
+      );
     }),
     list: vi.fn(() => Array.from(registeredAdapters.values())),
   };
@@ -71,19 +74,20 @@ vi.mock('@calame/core', () => ({
   getProfileSelectedTables: vi.fn(
     (p: { selectedTables?: Record<string, string[]> }) => p.selectedTables ?? {},
   ),
-  getProfileTableOptions: vi.fn(
-    (p: { tableOptions?: Record<string, unknown> }) => p.tableOptions,
-  ),
+  getProfileTableOptions: vi.fn((p: { tableOptions?: Record<string, unknown> }) => p.tableOptions),
   getProfileColumnMasking: vi.fn(
     (p: { columnMasking?: Record<string, Record<string, unknown>> }) => p.columnMasking,
   ),
-  getProfileRelationalSources: vi.fn(
-    (p: { sources?: string[]; connections?: string[] }) =>
-      p.sources && p.sources.length > 0 ? p.sources : (p.connections ?? []),
+  getProfileRelationalSources: vi.fn((p: { sources?: string[]; connections?: string[] }) =>
+    p.sources && p.sources.length > 0 ? p.sources : (p.connections ?? []),
   ),
   // Configuration accessors — used by mergeConfigurations inside serve.ts.
   getConfigurationRelationalSources: vi.fn(
-    (c: { connections?: string[]; sources?: string[]; scopes?: Record<string, { kind: string }> }) => {
+    (c: {
+      connections?: string[];
+      sources?: string[];
+      scopes?: Record<string, { kind: string }>;
+    }) => {
       if (c.sources && c.scopes) {
         return c.sources.filter((id: string) => c.scopes![id]?.kind === 'relational');
       }
@@ -91,7 +95,10 @@ vi.mock('@calame/core', () => ({
     },
   ),
   getConfigurationSelectedTables: vi.fn(
-    (c: { selectedTables?: Record<string, string[]>; scopes?: Record<string, { kind: string; selectedTables?: Record<string, string[]> }> }) => {
+    (c: {
+      selectedTables?: Record<string, string[]>;
+      scopes?: Record<string, { kind: string; selectedTables?: Record<string, string[]> }>;
+    }) => {
       if (c.scopes) {
         const out: Record<string, string[]> = {};
         for (const scope of Object.values(c.scopes)) {
@@ -111,12 +118,35 @@ vi.mock('@calame/core', () => ({
     (c: { columnMasking?: Record<string, Record<string, unknown>> }) => c.columnMasking,
   ),
   getConfigurationDocumentScopes: vi.fn(
-    (c: { scopes?: Record<string, { kind: string; mode?: string; allowedFolders?: readonly string[]; allowedDocuments?: readonly string[] }> }) => {
+    (c: {
+      scopes?: Record<
+        string,
+        {
+          kind: string;
+          mode?: string;
+          allowedFolders?: readonly string[];
+          allowedDocuments?: readonly string[];
+        }
+      >;
+    }) => {
       if (!c.scopes) return {};
-      const out: Record<string, { kind: 'document'; mode: string; allowedFolders: readonly string[]; allowedDocuments: readonly string[] }> = {};
+      const out: Record<
+        string,
+        {
+          kind: 'document';
+          mode: string;
+          allowedFolders: readonly string[];
+          allowedDocuments: readonly string[];
+        }
+      > = {};
       for (const [id, scope] of Object.entries(c.scopes)) {
         if (scope.kind === 'document') {
-          out[id] = scope as { kind: 'document'; mode: string; allowedFolders: readonly string[]; allowedDocuments: readonly string[] };
+          out[id] = scope as {
+            kind: 'document';
+            mode: string;
+            allowedFolders: readonly string[];
+            allowedDocuments: readonly string[];
+          };
         }
       }
       return out;
@@ -142,20 +172,22 @@ vi.mock('@modelcontextprotocol/sdk/server/mcp.js', () => ({
   })),
 }));
 
-const handleRequestMock = vi.fn().mockImplementation(
-  (_req: unknown, res: { status: (c: number) => { json: (b: unknown) => void } }) => {
-    res.status(200).json({
-      jsonrpc: '2.0',
-      id: 1,
-      result: {
-        protocolVersion: '2024-11-05',
-        capabilities: {},
-        serverInfo: { name: 'test', version: '1.0' },
-      },
-    });
-    return Promise.resolve();
-  },
-);
+const handleRequestMock = vi
+  .fn()
+  .mockImplementation(
+    (_req: unknown, res: { status: (c: number) => { json: (b: unknown) => void } }) => {
+      res.status(200).json({
+        jsonrpc: '2.0',
+        id: 1,
+        result: {
+          protocolVersion: '2024-11-05',
+          capabilities: {},
+          serverInfo: { name: 'test', version: '1.0' },
+        },
+      });
+      return Promise.resolve();
+    },
+  );
 vi.mock('@modelcontextprotocol/sdk/server/streamableHttp.js', () => ({
   StreamableHTTPServerTransport: vi.fn().mockImplementation(() => ({
     handleRequest: handleRequestMock,
@@ -212,7 +244,9 @@ function makeConnectionState(name: string, label?: string): ConnectionState {
 }
 
 /** Relational scope selection for the 'users' table. */
-function relationalScope(tables: Record<string, string[]> = { users: ['id', 'email'] }): ScopeSelection {
+function relationalScope(
+  tables: Record<string, string[]> = { users: ['id', 'email'] },
+): ScopeSelection {
   return { kind: 'relational', selectedTables: tables };
 }
 
@@ -244,7 +278,12 @@ function makeRagRuntime(mockDb: { raw: { prepare: ReturnType<typeof vi.fn> } }) 
     documentAdapterDeps: {
       resolveConnector: vi.fn().mockReturnValue(null),
       searchIndex: { search: vi.fn().mockResolvedValue({ chunks: [] }) },
-      storage: { listFolders: vi.fn(), listDocuments: vi.fn(), getDocument: vi.fn(), listSources: vi.fn() },
+      storage: {
+        listFolders: vi.fn(),
+        listDocuments: vi.fn(),
+        getDocument: vi.fn(),
+        listSources: vi.fn(),
+      },
     },
     ragCore: {
       registerMergedDocumentRagTools: registerMergedDocumentRagToolsMock,
@@ -295,9 +334,7 @@ async function postInitialize(app: express.Express, profileName: string) {
 // by both `SELECT type` and `SELECT tenant_id` queries so the cross-tenant guard in
 // registerToolsViaAdapters can verify ownership. When absent, `tenant_id` is omitted
 // from the row (simulates a source that hasn't been migrated yet — guard falls through).
-function makeRagDb(
-  sourceMap: Record<string, { type: string; name: string; tenant_id?: string }>,
-) {
+function makeRagDb(sourceMap: Record<string, { type: string; name: string; tenant_id?: string }>) {
   return {
     raw: {
       prepare: vi.fn().mockImplementation((sql: string) => ({

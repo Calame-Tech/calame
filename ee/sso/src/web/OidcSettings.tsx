@@ -223,9 +223,7 @@ export default function OidcSettings({ availableProfiles = [] }: OidcSettingsPro
               maxWidth={300}
             />
           </div>
-          <p className="text-sm text-gray-500 mt-1">
-            Configure Single Sign-On via OpenID Connect.
-          </p>
+          <p className="text-sm text-gray-500 mt-1">Configure Single Sign-On via OpenID Connect.</p>
         </div>
         <div className="flex items-center gap-2">
           <div
@@ -289,7 +287,12 @@ export default function OidcSettings({ availableProfiles = [] }: OidcSettingsPro
           onChange={(e) => {
             const newValue = e.target.value;
             setIssuerUrl(newValue);
-            if (newValue.trim() !== '' && clientId.trim() !== '' && !hasAutoEnabled.current && !enabled) {
+            if (
+              newValue.trim() !== '' &&
+              clientId.trim() !== '' &&
+              !hasAutoEnabled.current &&
+              !enabled
+            ) {
               hasAutoEnabled.current = true;
               setEnabled(true);
             }
@@ -318,7 +321,12 @@ export default function OidcSettings({ availableProfiles = [] }: OidcSettingsPro
           onChange={(e) => {
             const newValue = e.target.value;
             setClientId(newValue);
-            if (newValue.trim() !== '' && issuerUrl.trim() !== '' && !hasAutoEnabled.current && !enabled) {
+            if (
+              newValue.trim() !== '' &&
+              issuerUrl.trim() !== '' &&
+              !hasAutoEnabled.current &&
+              !enabled
+            ) {
               hasAutoEnabled.current = true;
               setEnabled(true);
             }
@@ -409,9 +417,7 @@ export default function OidcSettings({ availableProfiles = [] }: OidcSettingsPro
                 Cancel
               </button>
             </div>
-            {revealStatus === 'error' && (
-              <p className="text-xs text-red-400">{revealError}</p>
-            )}
+            {revealStatus === 'error' && <p className="text-xs text-red-400">{revealError}</p>}
           </div>
         )}
 
@@ -563,9 +569,13 @@ export default function OidcSettings({ availableProfiles = [] }: OidcSettingsPro
                   aria-label={`Calame profile for mapping ${i + 1}`}
                   className="input-editorial flex-1 text-sm"
                 >
-                  <option value="" className="bg-gray-800">Select a profile...</option>
+                  <option value="" className="bg-gray-800">
+                    Select a profile...
+                  </option>
                   {availableProfiles.map((p) => (
-                    <option key={p} value={p} className="bg-gray-800">{p}</option>
+                    <option key={p} value={p} className="bg-gray-800">
+                      {p}
+                    </option>
                   ))}
                 </select>
               ) : (

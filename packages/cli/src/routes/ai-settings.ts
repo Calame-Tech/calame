@@ -47,7 +47,9 @@ function validateProviderFields(body: SettingPayload): string | null {
   return null;
 }
 
-async function testConnection(setting: AiSetting): Promise<{ ok: true; response: string } | { ok: false; message: string }> {
+async function testConnection(
+  setting: AiSetting,
+): Promise<{ ok: true; response: string } | { ok: false; message: string }> {
   try {
     const capabilities = setting.capabilities ?? ['chat'];
     const hasChat = capabilities.includes('chat');
@@ -55,7 +57,7 @@ async function testConnection(setting: AiSetting): Promise<{ ok: true; response:
 
     if (setting.provider === 'anthropic') {
       if (!hasChat) {
-        return { ok: false, message: 'Anthropic ne propose pas de modèles d\'embeddings.' };
+        return { ok: false, message: "Anthropic ne propose pas de modèles d'embeddings." };
       }
       const Anthropic = (await import('@anthropic-ai/sdk')).default;
       const anthropic = new Anthropic({ apiKey: setting.apiKey });
@@ -79,7 +81,8 @@ async function testConnection(setting: AiSetting): Promise<{ ok: true; response:
     if (hasChat) {
       const completion = await openai.chat.completions.create({
         model:
-          setting.model || (setting.provider === 'openrouter' ? 'anthropic/claude-sonnet-4' : 'default'),
+          setting.model ||
+          (setting.provider === 'openrouter' ? 'anthropic/claude-sonnet-4' : 'default'),
         max_tokens: 50,
         messages: [
           { role: 'system', content: 'You are a test assistant.' },
@@ -91,7 +94,7 @@ async function testConnection(setting: AiSetting): Promise<{ ok: true; response:
 
     if (hasEmbeddings) {
       if (!setting.embeddingModel) {
-        return { ok: false, message: 'Aucun modèle d\'embeddings configuré.' };
+        return { ok: false, message: "Aucun modèle d'embeddings configuré." };
       }
       const embedding = await openai.embeddings.create({
         model: setting.embeddingModel,
@@ -103,7 +106,10 @@ async function testConnection(setting: AiSetting): Promise<{ ok: true; response:
 
     return { ok: false, message: 'Aucune capacité activée pour cette configuration.' };
   } catch (error: unknown) {
-    return { ok: false, message: error instanceof Error ? error.message : 'Connection test failed.' };
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : 'Connection test failed.',
+    };
   }
 }
 
@@ -118,7 +124,7 @@ async function probeEmbeddingDimensions(
   try {
     const provider = payload.provider as AiProvider;
     if (provider === 'anthropic') {
-      return { ok: false, message: 'Anthropic ne propose pas de modèles d\'embeddings.' };
+      return { ok: false, message: "Anthropic ne propose pas de modèles d'embeddings." };
     }
     if (!payload.embeddingModel) {
       return { ok: false, message: 'embeddingModel manquant.' };
@@ -132,7 +138,7 @@ async function probeEmbeddingDimensions(
     });
     const dims = response.data[0]?.embedding?.length ?? 0;
     if (!dims) {
-      return { ok: false, message: 'La réponse de l\'API ne contient pas de vecteur d\'embedding.' };
+      return { ok: false, message: "La réponse de l'API ne contient pas de vecteur d'embedding." };
     }
     return { ok: true, dimensions: dims };
   } catch (error: unknown) {
@@ -308,7 +314,10 @@ export function registerAiSettingsRoute(app: Express, state: AppState): void {
     const willUseEmbeddings = body.capabilities?.includes('embeddings') ?? false;
     const modelChanged = body.embeddingModel !== existing.embeddingModel;
     const wasEmbeddings = existing.capabilities?.includes('embeddings') ?? false;
-    if (willUseEmbeddings && (modelChanged || !wasEmbeddings || existing.embeddingDimensions === undefined)) {
+    if (
+      willUseEmbeddings &&
+      (modelChanged || !wasEmbeddings || existing.embeddingDimensions === undefined)
+    ) {
       const probePayload: SettingPayload = { ...body, apiKey: finalApiKey };
       const probe = await probeEmbeddingDimensions(probePayload);
       if (!probe.ok) {

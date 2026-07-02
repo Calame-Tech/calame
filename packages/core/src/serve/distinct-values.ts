@@ -73,7 +73,8 @@ export async function computeDistinctValues(
     }
 
     const visibleColumns = table.columns.filter(
-      (c) => selectedCols.includes(c.name) && !excludedCols.has(c.name) && looksLikeCategorical(c.type),
+      (c) =>
+        selectedCols.includes(c.name) && !excludedCols.has(c.name) && looksLikeCategorical(c.type),
     );
     if (visibleColumns.length === 0) continue;
 
@@ -135,16 +136,28 @@ function looksLikeCategorical(sqlType: string): boolean {
   const t = sqlType.toLowerCase();
   // String-like
   if (
-    t === 'text' || t === 'varchar' || t === 'character varying' ||
-    t === 'char' || t === 'character' || t === 'name' || t === 'citext' ||
+    t === 'text' ||
+    t === 'varchar' ||
+    t === 'character varying' ||
+    t === 'char' ||
+    t === 'character' ||
+    t === 'name' ||
+    t === 'citext' ||
     t === 'uuid'
-  ) return true;
+  )
+    return true;
   // Integer types — covers bool-as-int (0/1), status codes, small enums.
   if (
-    t === 'integer' || t === 'int' || t === 'int4' ||
-    t === 'smallint' || t === 'int2' || t === 'tinyint' ||
-    t === 'serial' || t === 'smallserial'
-  ) return true;
+    t === 'integer' ||
+    t === 'int' ||
+    t === 'int4' ||
+    t === 'smallint' ||
+    t === 'int2' ||
+    t === 'tinyint' ||
+    t === 'serial' ||
+    t === 'smallserial'
+  )
+    return true;
   // Boolean
   if (t === 'boolean' || t === 'bool') return true;
   return false;

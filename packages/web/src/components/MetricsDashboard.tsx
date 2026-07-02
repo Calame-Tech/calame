@@ -59,12 +59,7 @@ function BarChart({ bars }: { bars: Array<{ label: string; count: number }> }) {
 
   return (
     <div className="overflow-x-auto">
-      <svg
-        width={svgWidth}
-        height={svgHeight}
-        aria-label="Requests over time bar chart"
-        role="img"
-      >
+      <svg width={svgWidth} height={svgHeight} aria-label="Requests over time bar chart" role="img">
         <defs>
           <linearGradient id="bar-gradient" x1="0" y1="1" x2="0" y2="0">
             <stop offset="0%" stopColor="#4c6ef5" stopOpacity="0.9" />
@@ -202,7 +197,9 @@ function HorizontalBar({
   return (
     <div className="flex items-center gap-3 py-1.5">
       {rank !== undefined && (
-        <span className="font-mono-plex text-os-400/60 text-xs w-5 shrink-0 text-right">{rank}.</span>
+        <span className="font-mono-plex text-os-400/60 text-xs w-5 shrink-0 text-right">
+          {rank}.
+        </span>
       )}
       <span className="w-36 text-sm text-gray-200 font-medium truncate shrink-0" title={label}>
         {label}
@@ -332,7 +329,9 @@ function DonutChart({
             <span className="text-gray-300 text-xs">Success</span>
           </div>
           <div className="text-right">
-            <span className="text-emerald-400 font-mono-plex text-xs font-medium">{successPct}%</span>
+            <span className="text-emerald-400 font-mono-plex text-xs font-medium">
+              {successPct}%
+            </span>
             <span className="text-gray-600 font-mono-plex text-[10px] ml-2">{successCount}</span>
           </div>
         </div>
@@ -433,7 +432,9 @@ function PoolStatBar({
           aria-label={`${label}: ${value}`}
         />
       </div>
-      <span className="font-mono-plex text-[10px] text-gray-500 w-6 text-right shrink-0">{value}</span>
+      <span className="font-mono-plex text-[10px] text-gray-500 w-6 text-right shrink-0">
+        {value}
+      </span>
     </div>
   );
 }
@@ -515,9 +516,7 @@ export default function MetricsDashboard() {
   const maxToolCount = metrics ? Math.max(...metrics.topTools.map((t) => t.count), 1) : 1;
   const maxTokenCount = metrics ? Math.max(...metrics.topTokens.map((t) => t.count), 1) : 1;
 
-  const totalRequests = metrics
-    ? metrics.errorRate.reduce((sum, r) => sum + r.count, 0)
-    : 0;
+  const totalRequests = metrics ? metrics.errorRate.reduce((sum, r) => sum + r.count, 0) : 0;
   const errorCount = metrics
     ? (metrics.errorRate.find((r) => r.result === 'error')?.count ?? 0)
     : 0;
@@ -584,15 +583,29 @@ export default function MetricsDashboard() {
       {loading && !metrics ? (
         <div className="flex items-center justify-center py-16 text-gray-500 text-sm gap-2">
           <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            <circle
+              className="opacity-25"
+              cx="12"
+              cy="12"
+              r="10"
+              stroke="currentColor"
+              strokeWidth="4"
+            />
+            <path
+              className="opacity-75"
+              fill="currentColor"
+              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+            />
           </svg>
           <span className="font-mono-plex text-xs tracking-widest">Loading metrics...</span>
         </div>
       ) : (
         <>
           {/* Row 0: KPI grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 animate-fade-in-up" style={{ animationDelay: '80ms' }}>
+          <div
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 animate-fade-in-up"
+            style={{ animationDelay: '80ms' }}
+          >
             <KpiCard
               accent="indigo"
               eyebrow="Total Requests"
@@ -667,10 +680,7 @@ export default function MetricsDashboard() {
           </div>
 
           {/* Row 1: Requests over time */}
-          <div
-            className="card-primary p-6 animate-fade-in-up"
-            style={{ animationDelay: '160ms' }}
-          >
+          <div className="card-primary p-6 animate-fade-in-up" style={{ animationDelay: '160ms' }}>
             <div className="flex items-center justify-between mb-5">
               <h3 className="flex items-center gap-2 font-display font-light text-2xl text-gray-100">
                 Requests over time
@@ -691,7 +701,10 @@ export default function MetricsDashboard() {
           </div>
 
           {/* Row 2: 3-column grid */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5 animate-fade-in-up" style={{ animationDelay: '240ms' }}>
+          <div
+            className="grid grid-cols-1 md:grid-cols-3 gap-5 animate-fade-in-up"
+            style={{ animationDelay: '240ms' }}
+          >
             {/* Success vs Errors */}
             <div className="card-primary p-6">
               <h3 className="flex items-center gap-2 font-mono-plex uppercase tracking-widest text-[10px] text-gray-500 mb-5">
@@ -756,7 +769,9 @@ export default function MetricsDashboard() {
                 />
               </h3>
               {!metrics || metrics.topTokens.length === 0 ? (
-                <p className="text-gray-600 text-sm text-center py-4">No token activity recorded.</p>
+                <p className="text-gray-600 text-sm text-center py-4">
+                  No token activity recorded.
+                </p>
               ) : (
                 <div className="space-y-0.5 max-h-64 overflow-y-auto pr-1">
                   {metrics.topTokens.map((t, i) => (
@@ -775,10 +790,7 @@ export default function MetricsDashboard() {
           </div>
 
           {/* Row 3: Avg response time by profile */}
-          <div
-            className="card-primary p-6 animate-fade-in-up"
-            style={{ animationDelay: '320ms' }}
-          >
+          <div className="card-primary p-6 animate-fade-in-up" style={{ animationDelay: '320ms' }}>
             <h3 className="flex items-center gap-2 font-mono-plex uppercase tracking-widest text-[10px] text-gray-500 mb-5">
               Average Response Time by Profile
               <HelpTip
@@ -789,7 +801,9 @@ export default function MetricsDashboard() {
               />
             </h3>
             {!metrics || metrics.avgResponseTime.length === 0 ? (
-              <p className="text-gray-600 text-sm text-center py-4">No response time data available.</p>
+              <p className="text-gray-600 text-sm text-center py-4">
+                No response time data available.
+              </p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full" aria-label="Average response time per profile">
@@ -814,10 +828,13 @@ export default function MetricsDashboard() {
                         row.avgMs < 100
                           ? 'bg-emerald-400'
                           : row.avgMs <= 500
-                          ? 'bg-amber-400'
-                          : 'bg-rose-400';
+                            ? 'bg-amber-400'
+                            : 'bg-rose-400';
                       return (
-                        <tr key={row.profileName} className="hover:bg-os-500/[0.02] transition-colors">
+                        <tr
+                          key={row.profileName}
+                          className="hover:bg-os-500/[0.02] transition-colors"
+                        >
                           <td className="py-4 pr-6">
                             <span className="font-display text-lg text-gray-200">
                               {row.profileName}
@@ -826,10 +843,14 @@ export default function MetricsDashboard() {
                           <td className="py-4 pr-6 text-right">
                             <div className="flex flex-col items-end gap-1">
                               <div>
-                                <span className={`font-display text-2xl ${responseTimeColor(row.avgMs)}`}>
+                                <span
+                                  className={`font-display text-2xl ${responseTimeColor(row.avgMs)}`}
+                                >
                                   {Math.round(row.avgMs)}
                                 </span>
-                                <span className="font-mono-plex text-xs text-gray-500 ml-1">ms</span>
+                                <span className="font-mono-plex text-xs text-gray-500 ml-1">
+                                  ms
+                                </span>
                               </div>
                               <div className="w-20 h-[3px] bg-white/5 rounded-full overflow-hidden">
                                 <div

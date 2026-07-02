@@ -167,7 +167,10 @@ describe('buildDatabaseSourceAdapter', () => {
       const dbSchema = makeDbSchema();
       mockPostgresIntrospect.mockResolvedValueOnce(dbSchema);
       const adapter = buildDatabaseSourceAdapter('postgresql', 'PostgreSQL');
-      const result = await adapter.introspect!({ connectionString: 'postgresql://localhost/db' }, 'src1');
+      const result = await adapter.introspect!(
+        { connectionString: 'postgresql://localhost/db' },
+        'src1',
+      );
       expect(result.kind).toBe('relational');
       expect(result.tables).toStrictEqual(dbSchema.tables);
       expect(result.relations).toStrictEqual(dbSchema.relations);
@@ -273,7 +276,15 @@ describe('buildDatabaseSourceAdapter', () => {
 
       adapter.registerMcpTools!({
         server,
-        source: { id: 'src1', name: 'prod', type: 'postgresql', configEncrypted: '', capabilities: [], createdAt: '', updatedAt: '' },
+        source: {
+          id: 'src1',
+          name: 'prod',
+          type: 'postgresql',
+          configEncrypted: '',
+          capabilities: [],
+          createdAt: '',
+          updatedAt: '',
+        },
         config: { connectionString: 'postgresql://localhost/db' },
         schema,
         selection,
@@ -304,7 +315,15 @@ describe('buildDatabaseSourceAdapter', () => {
 
       adapter.registerMcpTools!({
         server,
-        source: { id: 'src1', name: 'prod', type: 'postgresql', configEncrypted: '', capabilities: [], createdAt: '', updatedAt: '' },
+        source: {
+          id: 'src1',
+          name: 'prod',
+          type: 'postgresql',
+          configEncrypted: '',
+          capabilities: [],
+          createdAt: '',
+          updatedAt: '',
+        },
         config: { connectionString: 'postgresql://localhost/db' },
         schema,
         selection,
@@ -334,7 +353,15 @@ describe('buildDatabaseSourceAdapter', () => {
       expect(() =>
         adapter.registerMcpTools!({
           server,
-          source: { id: 's1', name: 'kb', type: 'postgresql', configEncrypted: '', capabilities: [], createdAt: '', updatedAt: '' },
+          source: {
+            id: 's1',
+            name: 'kb',
+            type: 'postgresql',
+            configEncrypted: '',
+            capabilities: [],
+            createdAt: '',
+            updatedAt: '',
+          },
           config: { connectionString: 'postgresql://localhost/db' },
           schema,
           selection,

@@ -20,32 +20,32 @@ const STRIP_TAGS = ['script', 'style', 'nav', 'footer', 'noscript', 'svg', 'ifra
  * token windows.
  */
 export async function parse(buffer: Buffer): Promise<ParsedDocument> {
-	const root = parseHtml(buffer.toString('utf8'), {
-		blockTextElements: { script: false, noscript: false, style: false },
-	});
+  const root = parseHtml(buffer.toString('utf8'), {
+    blockTextElements: { script: false, noscript: false, style: false },
+  });
 
-	for (const tag of STRIP_TAGS) {
-		for (const node of root.querySelectorAll(tag)) {
-			node.remove();
-		}
-	}
+  for (const tag of STRIP_TAGS) {
+    for (const node of root.querySelectorAll(tag)) {
+      node.remove();
+    }
+  }
 
-	const cleaned = root.toString();
+  const cleaned = root.toString();
 
-	const turndown = new TurndownService({
-		headingStyle: 'atx',
-		codeBlockStyle: 'fenced',
-		bulletListMarker: '-',
-		emDelimiter: '_',
-		strongDelimiter: '**',
-	});
+  const turndown = new TurndownService({
+    headingStyle: 'atx',
+    codeBlockStyle: 'fenced',
+    bulletListMarker: '-',
+    emDelimiter: '_',
+    strongDelimiter: '**',
+  });
 
-	const markdown = turndown
-		.turndown(cleaned)
-		// Collapse runs of more than 2 blank lines that turndown sometimes
-		// emits around block elements.
-		.replace(/\n{3,}/g, '\n\n')
-		.trim();
+  const markdown = turndown
+    .turndown(cleaned)
+    // Collapse runs of more than 2 blank lines that turndown sometimes
+    // emits around block elements.
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 
-	return { text: markdown, format: 'markdown' };
+  return { text: markdown, format: 'markdown' };
 }

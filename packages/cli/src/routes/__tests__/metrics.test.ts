@@ -72,11 +72,15 @@ describe('metrics routes', () => {
       const mockDb = {
         raw: {
           prepare: vi.fn().mockReturnValue({
-            all: vi.fn()
+            all: vi
+              .fn()
               .mockReturnValueOnce([{ hour: '2026-03-20T08:00', profile_name: 'prod', count: 12 }])
               .mockReturnValueOnce([{ tool_name: 'query_users', count: 42 }])
               .mockReturnValueOnce([{ token_label: 'alice', count: 10 }])
-              .mockReturnValueOnce([{ result: 'success', count: 50 }, { result: 'error', count: 2 }])
+              .mockReturnValueOnce([
+                { result: 'success', count: 50 },
+                { result: 'error', count: 2 },
+              ])
               .mockReturnValueOnce([{ profile_name: 'prod', avg_ms: 123.4, count: 52 }]),
           }),
         },

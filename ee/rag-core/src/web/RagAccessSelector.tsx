@@ -105,8 +105,7 @@ function deriveSourceCheckState(node: SourceNode, folderMap: FolderMap): CheckSt
     deriveFolderCheckState(fid, folderMap, true),
   );
   const hasPartial = allFolderStates.some((s) => s === 'partial');
-  const allChecked =
-    allFolderStates.length > 0 && allFolderStates.every((s) => s === 'checked');
+  const allChecked = allFolderStates.length > 0 && allFolderStates.every((s) => s === 'checked');
 
   if (allChecked && node.rootDocuments.length === 0) return 'checked';
   if (hasPartial || allFolderStates.some((s) => s === 'unchecked')) return 'partial';
@@ -445,10 +444,7 @@ function FolderRow({
 
       {/* Load error */}
       {node.loadError && (
-        <div
-          className="text-xs text-red-400 py-1"
-          style={{ paddingLeft: `${depth * 16 + 36}px` }}
-        >
+        <div className="text-xs text-red-400 py-1" style={{ paddingLeft: `${depth * 16 + 36}px` }}>
           {node.loadError}
         </div>
       )}
@@ -478,9 +474,7 @@ function FolderRow({
             // OR an ancestor folder is auto-include (recursive coverage), OR
             // the doc is in the explicit allowlist of a strict folder.
             const checked =
-              node.mode === 'auto-include' ||
-              coveredByAncestor ||
-              node.checkedDocIds.has(doc.id);
+              node.mode === 'auto-include' || coveredByAncestor || node.checkedDocIds.has(doc.id);
             // Lock the doc checkbox only when an ancestor is auto-include —
             // toggling has no effect at save time. When the folder itself is
             // auto-include, clicking a doc remains useful: it bascules into
@@ -632,9 +626,7 @@ function SourceRow({
       </div>
 
       {/* Source load error */}
-      {node.loadError && (
-        <div className="px-10 py-1.5 text-xs text-red-400">{node.loadError}</div>
-      )}
+      {node.loadError && <div className="px-10 py-1.5 text-xs text-red-400">{node.loadError}</div>}
 
       {/* Expanded tree */}
       {node.expanded && node.loaded && (
@@ -766,9 +758,7 @@ export default function RagAccessSelector({
   const [saving, setSaving] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [piiMaskingDisabled, setPiiMaskingDisabled] = useState<boolean>(() =>
-    Object.values(initialScopes).some(
-      (s) => s.kind === 'document' && s.piiMaskingMode === 'off',
-    ),
+    Object.values(initialScopes).some((s) => s.kind === 'document' && s.piiMaskingMode === 'off'),
   );
   const [directFetchDisabled, setDirectFetchDisabled] = useState<boolean>(() =>
     Object.values(initialScopes).some(
@@ -843,7 +833,6 @@ export default function RagAccessSelector({
     // intentionally silenced because re-fetching on every save round-trip
     // (`initialSources` changes reference every time the parent rebuilds the
     // memoised array) would flash the loading spinner and wipe UI state.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -875,9 +864,7 @@ export default function RagAccessSelector({
   const loadSourceContents = useCallback(
     async (sourceId: string) => {
       setSourceNodes((prev) =>
-        prev.map((n) =>
-          n.source.id === sourceId ? { ...n, loading: true, loadError: null } : n,
-        ),
+        prev.map((n) => (n.source.id === sourceId ? { ...n, loading: true, loadError: null } : n)),
       );
 
       try {
@@ -899,8 +886,9 @@ export default function RagAccessSelector({
           const next = { ...prev };
           for (const folder of rootFolders) {
             if (!next[folder.id]) {
-              const mode: FolderMode =
-                docScope?.allowedFolders.includes(folder.path) ? 'auto-include' : 'strict';
+              const mode: FolderMode = docScope?.allowedFolders.includes(folder.path)
+                ? 'auto-include'
+                : 'strict';
               next[folder.id] = {
                 folder,
                 loaded: false,
@@ -970,8 +958,9 @@ export default function RagAccessSelector({
 
           for (const folder of childFolders) {
             if (!next[folder.id]) {
-              const mode: FolderMode =
-                docScope?.allowedFolders.includes(folder.path) ? 'auto-include' : 'strict';
+              const mode: FolderMode = docScope?.allowedFolders.includes(folder.path)
+                ? 'auto-include'
+                : 'strict';
               next[folder.id] = {
                 folder,
                 loaded: false,
@@ -1184,8 +1173,7 @@ export default function RagAccessSelector({
       {/* Header */}
       <div>
         <h3 className="text-sm font-semibold text-gray-200">
-          Scopes RAG — profile{' '}
-          <span className="text-os-400 font-mono">"{profileName}"</span>
+          Scopes RAG — profile <span className="text-os-400 font-mono">"{profileName}"</span>
         </h3>
         <p className="text-xs text-gray-500 mt-0.5">
           Sélectionnez les bases de connaissance et dossiers accessibles pour ce profile.

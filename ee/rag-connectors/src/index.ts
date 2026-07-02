@@ -25,4 +25,10 @@ export {
 } from './http.js';
 export type { HttpConfig } from './http.js';
 
-export { PathEscapeError, deterministicId, matchGlobs, safeResolveUnderRoot, streamSha256 } from './utils.js';
+export {
+  PathEscapeError,
+  deterministicId,
+  matchGlobs,
+  safeResolveUnderRoot,
+  streamSha256,
+} from './utils.js';

@@ -111,7 +111,12 @@ describe('mergeConfigurations — Phase 5 unified shape (no legacy fields)', () 
         kind: 'relational',
         selectedTables: { products: ['id'] },
         tableOptions: {
-          products: { enabledTools: ['query'], maxLimit: 100, filterableColumns: [], groupableColumns: [] },
+          products: {
+            enabledTools: ['query'],
+            maxLimit: 100,
+            filterableColumns: [],
+            groupableColumns: [],
+          },
         },
       },
     });

@@ -8,7 +8,10 @@ import type { SourceAdapter, ScopeSelection } from '../types.js';
 // ---------------------------------------------------------------------------
 
 const scopeSelectionSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('relational'), selectedTables: z.record(z.string(), z.array(z.string())) }),
+  z.object({
+    kind: z.literal('relational'),
+    selectedTables: z.record(z.string(), z.array(z.string())),
+  }),
   z.object({
     kind: z.literal('document'),
     mode: z.enum(['allowAll', 'allowList']),

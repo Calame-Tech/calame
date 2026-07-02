@@ -100,24 +100,18 @@ export function narrowConfig(config: DocumentSourceConfig): GSheetsConfig {
       key = parsed as Record<string, unknown>;
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
-      throw new Error(
-        `GSheetsConnector: \`serviceAccountKey\` is not valid JSON (${reason})`,
-      );
+      throw new Error(`GSheetsConnector: \`serviceAccountKey\` is not valid JSON (${reason})`);
     }
   } else if (typeof rawKey === 'object' && !Array.isArray(rawKey)) {
     key = rawKey as Record<string, unknown>;
   } else {
-    throw new Error(
-      'GSheetsConnector: `serviceAccountKey` must be an object or a JSON string',
-    );
+    throw new Error('GSheetsConnector: `serviceAccountKey` must be an object or a JSON string');
   }
 
   for (const field of ['client_email', 'private_key', 'token_uri'] as const) {
     const v = key[field];
     if (typeof v !== 'string' || v.length === 0) {
-      throw new Error(
-        `GSheetsConnector: serviceAccountKey is missing required field "${field}"`,
-      );
+      throw new Error(`GSheetsConnector: serviceAccountKey is missing required field "${field}"`);
     }
   }
 
@@ -506,9 +500,7 @@ export class GSheetsConnector implements DocumentSourceConnector {
     const folderId = config.driveFolderId;
     if (!folderId) {
       // narrowConfig already enforces at-least-one, so this is defensive.
-      throw new Error(
-        'GSheetsConnector: neither `spreadsheetIds` nor `driveFolderId` is set',
-      );
+      throw new Error('GSheetsConnector: neither `spreadsheetIds` nor `driveFolderId` is set');
     }
     let resp: { data?: drive_v3.Schema$File };
     try {
@@ -618,12 +610,7 @@ export class GSheetsConnector implements DocumentSourceConnector {
       } catch (err: unknown) {
         const serviceEmail =
           ((config.serviceAccountKey as Record<string, unknown>).client_email as string) ?? '';
-        throw mapTestConnectionError(
-          err,
-          serviceEmail,
-          config.driveFolderId,
-          'folder',
-        );
+        throw mapTestConnectionError(err, serviceEmail, config.driveFolderId, 'folder');
       }
       for (const f of files) {
         if (typeof f.id !== 'string' || typeof f.name !== 'string') continue;

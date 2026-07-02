@@ -51,15 +51,12 @@ vi.mock('@calame/core', () => ({
   getProfileSelectedTables: vi.fn(
     (p: { selectedTables?: Record<string, string[]> }) => p.selectedTables ?? {},
   ),
-  getProfileTableOptions: vi.fn(
-    (p: { tableOptions?: Record<string, unknown> }) => p.tableOptions,
-  ),
+  getProfileTableOptions: vi.fn((p: { tableOptions?: Record<string, unknown> }) => p.tableOptions),
   getProfileColumnMasking: vi.fn(
     (p: { columnMasking?: Record<string, Record<string, unknown>> }) => p.columnMasking,
   ),
-  getProfileRelationalSources: vi.fn(
-    (p: { sources?: string[]; connections?: string[] }) =>
-      p.sources && p.sources.length > 0 ? p.sources : (p.connections ?? []),
+  getProfileRelationalSources: vi.fn((p: { sources?: string[]; connections?: string[] }) =>
+    p.sources && p.sources.length > 0 ? p.sources : (p.connections ?? []),
   ),
 }));
 
@@ -81,12 +78,22 @@ vi.mock('@modelcontextprotocol/sdk/server/mcp.js', () => ({
 
 // handleRequest must actually send an HTTP response so supertest's request resolves.
 // We implement it as a function that writes a minimal 200 JSON-RPC response to `res`.
-const handleRequestMock = vi.fn().mockImplementation(
-  (_req: unknown, res: { status: (c: number) => { json: (b: unknown) => void } }) => {
-    res.status(200).json({ jsonrpc: '2.0', id: 1, result: { protocolVersion: '2024-11-05', capabilities: {}, serverInfo: { name: 'test', version: '1.0' } } });
-    return Promise.resolve();
-  },
-);
+const handleRequestMock = vi
+  .fn()
+  .mockImplementation(
+    (_req: unknown, res: { status: (c: number) => { json: (b: unknown) => void } }) => {
+      res.status(200).json({
+        jsonrpc: '2.0',
+        id: 1,
+        result: {
+          protocolVersion: '2024-11-05',
+          capabilities: {},
+          serverInfo: { name: 'test', version: '1.0' },
+        },
+      });
+      return Promise.resolve();
+    },
+  );
 vi.mock('@modelcontextprotocol/sdk/server/streamableHttp.js', () => ({
   StreamableHTTPServerTransport: vi.fn().mockImplementation(() => ({
     handleRequest: handleRequestMock,
@@ -302,9 +309,7 @@ describe('serve route — fix for MCP -32601 on empty / unmatched profiles', () 
     state.activeProfileNames.add('demo');
 
     const app = makeApp(state);
-    const res = await request(app)
-      .get('/mcp/demo')
-      .set('Authorization', 'Bearer valid-token');
+    const res = await request(app).get('/mcp/demo').set('Authorization', 'Bearer valid-token');
     expect(res.status).toBe(405);
   });
 });

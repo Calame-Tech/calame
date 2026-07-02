@@ -26,15 +26,12 @@ export const DEFAULT_TENANT_ID = 'default';
  * @param tenantId    Tenant id; defaults to `DEFAULT_TENANT_ID`.
  * @returns Path starting with `/mcp/`.
  */
-export function buildMcpPath(
-	profileName: string,
-	tenantId: string = DEFAULT_TENANT_ID,
-): string {
-	const encodedProfile = encodeURIComponent(profileName);
-	if (tenantId === DEFAULT_TENANT_ID) {
-		return `/mcp/${encodedProfile}`;
-	}
-	return `/mcp/${encodeURIComponent(tenantId)}/${encodedProfile}`;
+export function buildMcpPath(profileName: string, tenantId: string = DEFAULT_TENANT_ID): string {
+  const encodedProfile = encodeURIComponent(profileName);
+  if (tenantId === DEFAULT_TENANT_ID) {
+    return `/mcp/${encodedProfile}`;
+  }
+  return `/mcp/${encodeURIComponent(tenantId)}/${encodedProfile}`;
 }
 
 /**
@@ -45,10 +42,10 @@ export function buildMcpPath(
  * @param tenantId   Tenant id; defaults to `DEFAULT_TENANT_ID`.
  */
 export function buildMcpUrl(
-	origin: string,
-	profileName: string,
-	tenantId: string = DEFAULT_TENANT_ID,
+  origin: string,
+  profileName: string,
+  tenantId: string = DEFAULT_TENANT_ID,
 ): string {
-	const trimmed = origin.endsWith('/') ? origin.slice(0, -1) : origin;
-	return `${trimmed}${buildMcpPath(profileName, tenantId)}`;
+  const trimmed = origin.endsWith('/') ? origin.slice(0, -1) : origin;
+  return `${trimmed}${buildMcpPath(profileName, tenantId)}`;
 }

@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Calame Tech inc. Licensed under the Business Source License 1.1.
 // See ee/LICENSE.BUSL at the root of the ee/ directory for terms.
 
+import { webcrypto as crypto } from 'node:crypto';
 import * as jose from 'jose';
 
 export interface OidcProviderConfig {
@@ -114,9 +115,7 @@ export class OidcProvider {
       },
       {},
     );
-    return groups
-      .map((g) => lowercaseMap[g.toLowerCase()])
-      .filter((p): p is string => !!p);
+    return groups.map((g) => lowercaseMap[g.toLowerCase()]).filter((p): p is string => !!p);
   }
 
   extractCustomAttributes(payload: jose.JWTPayload): Record<string, string> | null {

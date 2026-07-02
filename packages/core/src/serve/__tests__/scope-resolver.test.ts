@@ -34,25 +34,31 @@ describe('resolveUserScope', () => {
       { tableName: 'orders', column: 'ext_ref', identityField: 'externalId' },
     ];
     const filters = resolveUserScope(rules, baseIdentity);
-    expect(filters).toEqual([
-      { tableName: 'orders', column: 'ext_ref', value: 'ext_42' },
-    ]);
+    expect(filters).toEqual([{ tableName: 'orders', column: 'ext_ref', value: 'ext_42' }]);
   });
 
   it('resolves custom identity field via customKey', () => {
     const rules: DataScopeRule[] = [
-      { tableName: 'colis', column: 'numero_client', identityField: 'custom', customKey: 'client_id' },
+      {
+        tableName: 'colis',
+        column: 'numero_client',
+        identityField: 'custom',
+        customKey: 'client_id',
+      },
     ];
     const filters = resolveUserScope(rules, baseIdentity);
-    expect(filters).toEqual([
-      { tableName: 'colis', column: 'numero_client', value: 'CLT-00042' },
-    ]);
+    expect(filters).toEqual([{ tableName: 'colis', column: 'numero_client', value: 'CLT-00042' }]);
   });
 
   it('resolves multiple rules for different tables', () => {
     const rules: DataScopeRule[] = [
       { tableName: 'colis', column: 'client_email', identityField: 'email' },
-      { tableName: 'factures', column: 'numero_client', identityField: 'custom', customKey: 'client_id' },
+      {
+        tableName: 'factures',
+        column: 'numero_client',
+        identityField: 'custom',
+        customKey: 'client_id',
+      },
     ];
     const filters = resolveUserScope(rules, baseIdentity);
     expect(filters).toHaveLength(2);
@@ -87,7 +93,12 @@ describe('resolveUserScope', () => {
         customAttributes: { region: 'EU' },
       };
       const rules: DataScopeRule[] = [
-        { tableName: 'colis', column: 'numero_client', identityField: 'custom', customKey: 'client_id' },
+        {
+          tableName: 'colis',
+          column: 'numero_client',
+          identityField: 'custom',
+          customKey: 'client_id',
+        },
       ];
       const filters = resolveUserScope(rules, identity);
       expect(filters[0].value).toBe('__calame_scope_blocked__');
@@ -96,7 +107,12 @@ describe('resolveUserScope', () => {
     it('uses sentinel when customAttributes is undefined', () => {
       const identity: UserIdentity = { email: 'a@b.com', userId: 'usr_001' };
       const rules: DataScopeRule[] = [
-        { tableName: 'colis', column: 'numero_client', identityField: 'custom', customKey: 'client_id' },
+        {
+          tableName: 'colis',
+          column: 'numero_client',
+          identityField: 'custom',
+          customKey: 'client_id',
+        },
       ];
       const filters = resolveUserScope(rules, identity);
       expect(filters[0].value).toBe('__calame_scope_blocked__');

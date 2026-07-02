@@ -271,12 +271,7 @@ function getInitials(email?: string): string {
   return (parts[0][0] + parts[1][0]).toUpperCase();
 }
 
-export default function Sidebar({
-  currentPage,
-  onNavigate,
-  user,
-  onLogout,
-}: SidebarProps) {
+export default function Sidebar({ currentPage, onNavigate, user, onLogout }: SidebarProps) {
   const [isOpen, setIsOpen] = useState(false);
 
   // Lock body scroll when the mobile drawer is open
@@ -380,10 +375,7 @@ export default function Sidebar({
           {/* Workspace switcher — always visible, subtle when on 'default'.
               We pass `onManageWorkspaces` so the dropdown surfaces a link to
               the tenant CRUD page; the Sidebar already knows how to navigate. */}
-          <WorkspaceSwitcher
-            className="mt-3"
-            onManageWorkspaces={() => onNavigate('tenants')}
-          />
+          <WorkspaceSwitcher className="mt-3" onManageWorkspaces={() => onNavigate('tenants')} />
         </div>
 
         {/* Navigation sections — flex-1 so user footer is pushed to the bottom */}
@@ -428,7 +420,6 @@ export default function Sidebar({
                     </li>
                   );
                 })}
-
               </ul>
             </div>
           ))}

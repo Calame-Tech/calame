@@ -141,11 +141,13 @@ describe('oidc-settings routes', () => {
     it('returns 400 when groupToProfile is not a valid object', async () => {
       state.oidcConfigManager = makeMockManager(null);
 
-      const res = await request(app).post('/api/oidc-settings').send({
-        issuerUrl: 'https://accounts.example.com',
-        clientId: 'my-client',
-        groupToProfile: ['invalid', 'array'],
-      });
+      const res = await request(app)
+        .post('/api/oidc-settings')
+        .send({
+          issuerUrl: 'https://accounts.example.com',
+          clientId: 'my-client',
+          groupToProfile: ['invalid', 'array'],
+        });
       expect(res.status).toBe(400);
       expect(res.body.success).toBe(false);
       expect(res.body.message).toMatch(/groupToProfile/);
@@ -155,17 +157,19 @@ describe('oidc-settings routes', () => {
       const mgr = makeMockManager(null);
       state.oidcConfigManager = mgr;
 
-      const res = await request(app).post('/api/oidc-settings').send({
-        enabled: true,
-        issuerUrl: 'https://accounts.example.com',
-        clientId: 'my-client',
-        clientSecret: 'super-secret',
-        redirectUri: 'https://app.example.com/callback',
-        scopes: 'openid profile email',
-        groupClaim: 'groups',
-        groupToProfile: { admins: 'admin' },
-        autoCreateUsers: true,
-      });
+      const res = await request(app)
+        .post('/api/oidc-settings')
+        .send({
+          enabled: true,
+          issuerUrl: 'https://accounts.example.com',
+          clientId: 'my-client',
+          clientSecret: 'super-secret',
+          redirectUri: 'https://app.example.com/callback',
+          scopes: 'openid profile email',
+          groupClaim: 'groups',
+          groupToProfile: { admins: 'admin' },
+          autoCreateUsers: true,
+        });
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);

@@ -129,10 +129,7 @@ function InlineChatPanel({
         )}
 
         {chatMessages.map((msg, i) => (
-          <div
-            key={i}
-            className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-          >
+          <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div
               className={`max-w-[80%] px-4 py-2 rounded-lg text-sm ${
                 msg.role === 'user'
@@ -235,13 +232,7 @@ function InlineChatPanel({
 // ---------------------------------------------------------------------------
 // Auth form — token mode
 // ---------------------------------------------------------------------------
-function TokenLoginForm({
-  profile,
-  onSuccess,
-}: {
-  profile: ChatProfile;
-  onSuccess: () => void;
-}) {
+function TokenLoginForm({ profile, onSuccess }: { profile: ChatProfile; onSuccess: () => void }) {
   const [token, setToken] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -285,10 +276,7 @@ function TokenLoginForm({
 
         <div className="space-y-4">
           <div>
-            <label
-              htmlFor="token-input"
-              className="block text-sm font-medium text-gray-300 mb-1.5"
-            >
+            <label htmlFor="token-input" className="block text-sm font-medium text-gray-300 mb-1.5">
               API Key <span className="text-red-400">*</span>
             </label>
             <input
@@ -328,13 +316,7 @@ function TokenLoginForm({
 // ---------------------------------------------------------------------------
 // Auth form — calame mode (email + password)
 // ---------------------------------------------------------------------------
-function CalameLoginForm({
-  profile,
-  onSuccess,
-}: {
-  profile: ChatProfile;
-  onSuccess: () => void;
-}) {
+function CalameLoginForm({ profile, onSuccess }: { profile: ChatProfile; onSuccess: () => void }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -380,10 +362,7 @@ function CalameLoginForm({
 
         <form onSubmit={handleEmailLogin} className="space-y-4" noValidate>
           <div>
-            <label
-              htmlFor="email-input"
-              className="block text-sm font-medium text-gray-300 mb-1.5"
-            >
+            <label htmlFor="email-input" className="block text-sm font-medium text-gray-300 mb-1.5">
               Email address <span className="text-red-400">*</span>
             </label>
             <input
@@ -582,8 +561,18 @@ function ChatView({ profile, onLogout }: { profile: ChatProfile; onLogout: () =>
               onClick={handleLogout}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-gray-400 hover:text-gray-200 hover:bg-gray-800/60 transition-all duration-200"
             >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={1.5}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9"
+                />
               </svg>
               Logout
             </button>

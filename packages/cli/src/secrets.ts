@@ -84,9 +84,7 @@ export function createSecretsProvider(config: SecretsConfig): SecretsProvider | 
   switch (config.provider) {
     case 'vault':
       if (!config.vaultAddr || !config.vaultToken) {
-        throw new Error(
-          'Vault requires CALAME_SECRETS_VAULT_ADDR and CALAME_SECRETS_VAULT_TOKEN',
-        );
+        throw new Error('Vault requires CALAME_SECRETS_VAULT_ADDR and CALAME_SECRETS_VAULT_TOKEN');
       }
       return new VaultProvider(config.vaultAddr, config.vaultToken);
     case 'aws':
@@ -111,9 +109,7 @@ export async function resolveSecret(
 ): Promise<string> {
   if (!connectionString.startsWith('secret://')) return connectionString;
   if (!provider)
-    throw new Error(
-      'Connection string references a secret but no secrets provider is configured',
-    );
+    throw new Error('Connection string references a secret but no secrets provider is configured');
 
   const path = connectionString.slice('secret://'.length);
   // Remove provider prefix if present: "vault/secret/data/..." -> "secret/data/..."

@@ -5,7 +5,9 @@ import os from 'os';
 import { AuditLog } from '../audit.js';
 import { CalameDatabase } from '../database.js';
 
-function makeEntry(overrides: Partial<{ profileName: string; toolName: string; result: 'success' | 'error' }> = {}) {
+function makeEntry(
+  overrides: Partial<{ profileName: string; toolName: string; result: 'success' | 'error' }> = {},
+) {
   return {
     profileName: overrides.profileName ?? 'default',
     toolName: overrides.toolName ?? 'query_users',
@@ -71,7 +73,7 @@ describe('AuditLog', () => {
 
     const { entries, total } = audit.getEntries({ profileName: 'alpha' });
     expect(total).toBe(2);
-    expect(entries.every(e => e.profileName === 'alpha')).toBe(true);
+    expect(entries.every((e) => e.profileName === 'alpha')).toBe(true);
   });
 
   it('getEntries filters by since date', () => {
@@ -83,7 +85,7 @@ describe('AuditLog', () => {
     const { entries } = audit.getEntries({ since: sinceDate });
     // Both should match since >= includes the boundary
     expect(entries.length).toBeGreaterThanOrEqual(1);
-    expect(entries.every(e => e.timestamp >= sinceDate)).toBe(true);
+    expect(entries.every((e) => e.timestamp >= sinceDate)).toBe(true);
   });
 
   it('getEntries paginates with limit/offset', () => {

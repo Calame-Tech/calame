@@ -62,10 +62,7 @@ export interface LocalDocumentAdapterConfig {
 
 type DocumentCaps = 'enumerate' | 'fetch' | 'search' | 'introspect';
 
-type DocumentSchema = Extract<
-  import('@calame/core').SourceSchema,
-  { kind: 'document' }
->;
+type DocumentSchema = Extract<import('@calame/core').SourceSchema, { kind: 'document' }>;
 
 // ---------------------------------------------------------------------------
 // Dependencies
@@ -118,9 +115,7 @@ export interface DocumentSearchIndex {
 export interface DocumentStorage {
   listFolders(sourceId: string, parent?: string): Promise<RagFolder[]>;
   listDocuments(sourceId: string, folder?: string): Promise<RagDocument[]>;
-  getDocument(
-    documentId: string,
-  ): Promise<{ doc: RagDocument; text: string } | null>;
+  getDocument(documentId: string): Promise<{ doc: RagDocument; text: string } | null>;
   listSources(): Promise<
     Array<{
       id: string;
@@ -141,9 +136,7 @@ export interface DocumentStorage {
    * document does not exist, or when the chain has already been fully walked
    * and no ancestor folder is recorded.
    */
-  getDocumentFolderChain(
-    documentId: string,
-  ): Promise<Array<{ id: string; path: string }>>;
+  getDocumentFolderChain(documentId: string): Promise<Array<{ id: string; path: string }>>;
 }
 
 /**
@@ -374,12 +367,7 @@ export function buildDocumentSourceAdapter(
           : new Proxy(ctx.server, {
               get(target, prop, receiver) {
                 if (prop === 'tool') {
-                  return (
-                    name: string,
-                    description: string,
-                    schema: unknown,
-                    handler: unknown,
-                  ) => {
+                  return (name: string, description: string, schema: unknown, handler: unknown) => {
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     return (target.tool as (...args: any[]) => unknown)(
                       `${ns}${name}`,

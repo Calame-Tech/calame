@@ -1,4 +1,10 @@
-export type ParserName = 'strict' | 'markdown_extract' | 'hermes' | 'xml' | 'json_repair' | 'json_extract';
+export type ParserName =
+  | 'strict'
+  | 'markdown_extract'
+  | 'hermes'
+  | 'xml'
+  | 'json_repair'
+  | 'json_extract';
 
 export interface ParseSuccess {
   ok: true;
@@ -43,7 +49,8 @@ function normalizeArgs(
 ): Record<string, unknown> {
   if (!schema) return args;
 
-  const properties = (schema['properties'] as Record<string, Record<string, unknown>> | undefined) ?? {};
+  const properties =
+    (schema['properties'] as Record<string, Record<string, unknown>> | undefined) ?? {};
   const expectedKeys = Object.keys(properties);
   if (expectedKeys.length === 0) return args;
 

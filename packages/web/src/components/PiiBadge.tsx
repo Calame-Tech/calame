@@ -9,7 +9,15 @@ const CONFIDENCE_CLASSES: Record<PiiDetection['confidence'], string> = {
 };
 
 export const ALL_PII_CATEGORIES: PiiCategory[] = [
-  'email', 'phone', 'name', 'address', 'credit_card', 'password', 'ip_address', 'ssn', 'encrypted',
+  'email',
+  'phone',
+  'name',
+  'address',
+  'credit_card',
+  'password',
+  'ip_address',
+  'ssn',
+  'encrypted',
 ];
 
 export const CATEGORY_LABELS: Record<PiiCategory, string> = {
@@ -103,7 +111,10 @@ export default function PiiBadge({ detection, onChangeCategory, onRemove }: PiiB
             <>
               <div className="border-t border-white/5 my-1" />
               <button
-                onClick={() => { onRemove(); setOpen(false); }}
+                onClick={() => {
+                  onRemove();
+                  setOpen(false);
+                }}
                 className="block w-full text-left px-3 py-1 text-xs text-red-400 hover:bg-gray-800 transition-colors"
               >
                 Remove PII tag

@@ -153,11 +153,7 @@ describe('friendlyType', () => {
 
 describe('buildLabelMap', () => {
   it('auto-generates labels from column names when no custom label is provided', () => {
-    const map = buildLabelMap([
-      { name: 'user_id' },
-      { name: 'created_at' },
-      { name: 'email' },
-    ]);
+    const map = buildLabelMap([{ name: 'user_id' }, { name: 'created_at' }, { name: 'email' }]);
     expect(map).toEqual({
       user_id: 'User Id',
       created_at: 'Created At',
@@ -166,10 +162,7 @@ describe('buildLabelMap', () => {
   });
 
   it('uses the custom label when provided', () => {
-    const map = buildLabelMap([
-      { name: 'user_id', label: 'Identifiant' },
-      { name: 'email' },
-    ]);
+    const map = buildLabelMap([{ name: 'user_id', label: 'Identifiant' }, { name: 'email' }]);
     expect(map).toEqual({
       user_id: 'Identifiant',
       email: 'Email',
@@ -204,7 +197,7 @@ describe('buildReverseLabelMap', () => {
     const reverse = buildReverseLabelMap(labelMap);
     expect(reverse).toEqual({
       'User Id': 'user_id',
-      'Email': 'email',
+      Email: 'email',
       'Created At': 'created_at',
     });
   });

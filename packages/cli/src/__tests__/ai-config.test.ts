@@ -164,7 +164,11 @@ describe('AiSettingsManager — capabilities', () => {
 
   it('creates a setting with capabilities chat+embeddings and embeddingModel', () => {
     const mgr = makeManager();
-    mgr.createSetting({ ...BASE, capabilities: ['chat', 'embeddings'], embeddingModel: 'nomic-embed-text' });
+    mgr.createSetting({
+      ...BASE,
+      capabilities: ['chat', 'embeddings'],
+      embeddingModel: 'nomic-embed-text',
+    });
     const saved = mgr.getSetting('ollama');
     expect(saved).not.toBeNull();
     expect(saved!.capabilities).toEqual(['chat', 'embeddings']);
@@ -173,7 +177,11 @@ describe('AiSettingsManager — capabilities', () => {
 
   it('creates a setting with only embeddings capability and embeddingModel', () => {
     const mgr = makeManager();
-    mgr.createSetting({ ...BASE, capabilities: ['embeddings'], embeddingModel: 'text-embedding-3-small' });
+    mgr.createSetting({
+      ...BASE,
+      capabilities: ['embeddings'],
+      embeddingModel: 'text-embedding-3-small',
+    });
     const saved = mgr.getSetting('ollama');
     expect(saved!.capabilities).toEqual(['embeddings']);
     expect(saved!.embeddingModel).toBe('text-embedding-3-small');
@@ -219,7 +227,10 @@ describe('AiSettingsManager — capabilities', () => {
   it('updates a setting to add capabilities and embeddingModel', () => {
     const mgr = makeManager();
     mgr.createSetting({ ...BASE });
-    mgr.updateSetting('ollama', { capabilities: ['chat', 'embeddings'], embeddingModel: 'nomic-embed-text' });
+    mgr.updateSetting('ollama', {
+      capabilities: ['chat', 'embeddings'],
+      embeddingModel: 'nomic-embed-text',
+    });
     const updated = mgr.getSetting('ollama');
     expect(updated!.capabilities).toEqual(['chat', 'embeddings']);
     expect(updated!.embeddingModel).toBe('nomic-embed-text');

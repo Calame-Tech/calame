@@ -42,15 +42,12 @@ vi.mock('@calame/core', () => ({
   getProfileSelectedTables: vi.fn(
     (p: { selectedTables?: Record<string, string[]> }) => p.selectedTables ?? {},
   ),
-  getProfileTableOptions: vi.fn(
-    (p: { tableOptions?: Record<string, unknown> }) => p.tableOptions,
-  ),
+  getProfileTableOptions: vi.fn((p: { tableOptions?: Record<string, unknown> }) => p.tableOptions),
   getProfileColumnMasking: vi.fn(
     (p: { columnMasking?: Record<string, Record<string, unknown>> }) => p.columnMasking,
   ),
-  getProfileRelationalSources: vi.fn(
-    (p: { sources?: string[]; connections?: string[] }) =>
-      p.sources && p.sources.length > 0 ? p.sources : (p.connections ?? []),
+  getProfileRelationalSources: vi.fn((p: { sources?: string[]; connections?: string[] }) =>
+    p.sources && p.sources.length > 0 ? p.sources : (p.connections ?? []),
   ),
   sourceAdapterRegistry: { get: vi.fn().mockReturnValue(null) },
 }));
@@ -71,20 +68,22 @@ vi.mock('@modelcontextprotocol/sdk/server/mcp.js', () => ({
   })),
 }));
 
-const handleRequestMock = vi.fn().mockImplementation(
-  (_req: unknown, res: { status: (c: number) => { json: (b: unknown) => void } }) => {
-    res.status(200).json({
-      jsonrpc: '2.0',
-      id: 1,
-      result: {
-        protocolVersion: '2024-11-05',
-        capabilities: {},
-        serverInfo: { name: 'test', version: '1.0' },
-      },
-    });
-    return Promise.resolve();
-  },
-);
+const handleRequestMock = vi
+  .fn()
+  .mockImplementation(
+    (_req: unknown, res: { status: (c: number) => { json: (b: unknown) => void } }) => {
+      res.status(200).json({
+        jsonrpc: '2.0',
+        id: 1,
+        result: {
+          protocolVersion: '2024-11-05',
+          capabilities: {},
+          serverInfo: { name: 'test', version: '1.0' },
+        },
+      });
+      return Promise.resolve();
+    },
+  );
 vi.mock('@modelcontextprotocol/sdk/server/streamableHttp.js', () => ({
   StreamableHTTPServerTransport: vi.fn().mockImplementation(() => ({
     handleRequest: handleRequestMock,
@@ -387,17 +386,13 @@ describe('MCP route — tenant-qualified URL /mcp/<tenant>/<profile>', () => {
             name: 'tenantA_table',
             schema: 'public',
             primaryKeys: ['id'],
-            columns: [
-              { name: 'id', type: 'integer', nullable: false, defaultValue: null },
-            ],
+            columns: [{ name: 'id', type: 'integer', nullable: false, defaultValue: null }],
           },
           {
             name: 'tenantB_table',
             schema: 'public',
             primaryKeys: ['id'],
-            columns: [
-              { name: 'id', type: 'integer', nullable: false, defaultValue: null },
-            ],
+            columns: [{ name: 'id', type: 'integer', nullable: false, defaultValue: null }],
           },
         ],
         relations: [],

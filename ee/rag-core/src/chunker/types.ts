@@ -8,15 +8,15 @@
  * atomic.
  */
 export interface ChunkOptions {
-	/** Maximum tokens per chunk. Default 512. */
-	maxTokens?: number;
-	/** Overlap (in tokens) between consecutive chunks. Default 64. */
-	overlap?: number;
-	/**
-	 * Minimum tokens per chunk before merging with the next one. Default 50.
-	 * Honored by structure-aware chunkers (markdown). Ignored by plain.
-	 */
-	minTokens?: number;
+  /** Maximum tokens per chunk. Default 512. */
+  maxTokens?: number;
+  /** Overlap (in tokens) between consecutive chunks. Default 64. */
+  overlap?: number;
+  /**
+   * Minimum tokens per chunk before merging with the next one. Default 50.
+   * Honored by structure-aware chunkers (markdown). Ignored by plain.
+   */
+  minTokens?: number;
 }
 
 /**
@@ -25,12 +25,12 @@ export interface ChunkOptions {
  * not care which strategy produced them.
  */
 export interface Chunk {
-	/** 0-based ordinal of the chunk within the source text. */
-	position: number;
-	/** Decoded text for this chunk. */
-	text: string;
-	/** Number of tokens in this chunk (always <= maxTokens). */
-	tokenCount: number;
+  /** 0-based ordinal of the chunk within the source text. */
+  position: number;
+  /** Decoded text for this chunk. */
+  text: string;
+  /** Number of tokens in this chunk (always <= maxTokens). */
+  tokenCount: number;
 }
 
 /** Signature implemented by every chunker. */

@@ -12,11 +12,7 @@ import {
   S3Client,
 } from '@aws-sdk/client-s3';
 
-import {
-  S3Connector,
-  S3DocumentNotFoundError,
-  __testing,
-} from '../s3.js';
+import { S3Connector, S3DocumentNotFoundError, __testing } from '../s3.js';
 import type { RagFolder } from '@calame-ee/rag-core';
 
 const baseConfig = {
@@ -83,9 +79,7 @@ describe('S3Connector.testConnection', () => {
 
   it('rejects malformed configs (missing bucket / creds)', async () => {
     const connector = new S3Connector();
-    await expect(connector.testConnection({ region: 'us-east-1' })).rejects.toThrow(
-      /bucket/i,
-    );
+    await expect(connector.testConnection({ region: 'us-east-1' })).rejects.toThrow(/bucket/i);
     await expect(connector.testConnection({ bucket: 'b' })).rejects.toThrow(/region/i);
   });
 });
@@ -120,11 +114,9 @@ describe('S3Connector.listFolders', () => {
 
   it('lists multiple folders and respects parent.path scoping', async () => {
     // First call (root): two folders.
-    s3Mock
-      .on(ListObjectsV2Command, { Bucket: 'my-bucket', Prefix: '', Delimiter: '/' })
-      .resolves({
-        CommonPrefixes: [{ Prefix: 'a/' }, { Prefix: 'b/' }],
-      });
+    s3Mock.on(ListObjectsV2Command, { Bucket: 'my-bucket', Prefix: '', Delimiter: '/' }).resolves({
+      CommonPrefixes: [{ Prefix: 'a/' }, { Prefix: 'b/' }],
+    });
     // Second call (under "a"): one folder.
     s3Mock
       .on(ListObjectsV2Command, { Bucket: 'my-bucket', Prefix: 'a/', Delimiter: '/' })
@@ -169,10 +161,7 @@ describe('S3Connector.listFolders', () => {
         CommonPrefixes: [{ Prefix: 'docs/faq/' }, { Prefix: 'docs/api/' }],
       });
     const connector = new S3Connector();
-    const folders = await connector.listFolders(
-      { ...baseConfig, prefix: 'docs/' },
-      'src-1',
-    );
+    const folders = await connector.listFolders({ ...baseConfig, prefix: 'docs/' }, 'src-1');
     expect(folders.map((f) => f.path).sort()).toEqual(['api', 'faq']);
   });
 });
@@ -326,9 +315,9 @@ describe('S3Connector.fetchDocument', () => {
   it('rejects keys that contain ".." segments (defense-in-depth)', async () => {
     const connector = new S3Connector();
     const docId = __testing.encodeDocId('../etc/passwd');
-    await expect(
-      connector.fetchDocument(baseConfig, 'src-1', docId),
-    ).rejects.toThrow(/contains ".."/);
+    await expect(connector.fetchDocument(baseConfig, 'src-1', docId)).rejects.toThrow(
+      /contains ".."/,
+    );
   });
 });
 
@@ -398,12 +387,8 @@ describe('helpers', () => {
   });
 
   it('mapS3Error returns distinct messages for 403 / 404 / 301 / generic', () => {
-    expect(__testing.mapS3Error(sdkError('Forbidden', 403), 'b').message).toMatch(
-      /access denied/i,
-    );
-    expect(__testing.mapS3Error(sdkError('NotFound', 404), 'b').message).toMatch(
-      /does not exist/i,
-    );
+    expect(__testing.mapS3Error(sdkError('Forbidden', 403), 'b').message).toMatch(/access denied/i);
+    expect(__testing.mapS3Error(sdkError('NotFound', 404), 'b').message).toMatch(/does not exist/i);
     expect(__testing.mapS3Error(sdkError('PermanentRedirect', 301), 'b').message).toMatch(
       /different region/i,
     );
@@ -426,13 +411,11 @@ describe('S3Connector.listDocuments pagination edge cases', () => {
   it('handles IsTruncated=true but empty NextContinuationToken safely', async () => {
     // Defensive: some S3-compatible stores have been seen returning
     // IsTruncated:true with no NextContinuationToken. We must not loop forever.
-    s3Mock
-      .on(ListObjectsV2Command)
-      .resolvesOnce({
-        Contents: [{ Key: 'a.txt', Size: 10, ETag: '"etag-a"' }],
-        IsTruncated: true,
-        NextContinuationToken: undefined,
-      });
+    s3Mock.on(ListObjectsV2Command).resolvesOnce({
+      Contents: [{ Key: 'a.txt', Size: 10, ETag: '"etag-a"' }],
+      IsTruncated: true,
+      NextContinuationToken: undefined,
+    });
 
     const connector = new S3Connector();
     const docs = await connector.listDocuments(baseConfig, 'src-1');
@@ -478,9 +461,7 @@ describe('S3Connector LRU client cache', () => {
     // Cache must be capped at MAX_CACHED_CLIENTS (16); the oldest entry
     // (tenant 0) was evicted to make room for tenant 16.
     expect(__testing.getClientCacheSize(connector)).toBe(16);
-    expect(__testing.getClientCacheSize(connector)).toBe(
-      S3Connector.MAX_CACHED_CLIENTS,
-    );
+    expect(__testing.getClientCacheSize(connector)).toBe(S3Connector.MAX_CACHED_CLIENTS);
   });
 
   it('bumps a cached client to most-recently-used on re-access', async () => {

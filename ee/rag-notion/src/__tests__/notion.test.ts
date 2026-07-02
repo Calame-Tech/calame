@@ -241,9 +241,7 @@ describe('narrowConfig', () => {
   });
 
   it('rejects api keys without the expected prefix', () => {
-    expect(() => __testing.narrowConfig({ apiKey: 'wrong_prefix' })).toThrow(
-      /secret_.*ntn_/,
-    );
+    expect(() => __testing.narrowConfig({ apiKey: 'wrong_prefix' })).toThrow(/secret_.*ntn_/);
   });
 
   it('rejects missing / empty apiKey', () => {
@@ -260,21 +258,19 @@ describe('narrowConfig', () => {
   });
 
   it('rejects malformed rootIds', () => {
-    expect(() =>
-      __testing.narrowConfig({ apiKey: 'secret_x', rootIds: ['short'] }),
-    ).toThrow(/invalid Notion id/);
+    expect(() => __testing.narrowConfig({ apiKey: 'secret_x', rootIds: ['short'] })).toThrow(
+      /invalid Notion id/,
+    );
     expect(() => __testing.narrowConfig({ apiKey: 'secret_x', rootIds: 'not-array' })).toThrow(
       /array/,
     );
   });
 
   it('validates maxBlockDepth', () => {
-    expect(__testing.narrowConfig({ apiKey: 'secret_x', maxBlockDepth: 0 }).maxBlockDepth).toBe(
-      0,
+    expect(__testing.narrowConfig({ apiKey: 'secret_x', maxBlockDepth: 0 }).maxBlockDepth).toBe(0);
+    expect(() => __testing.narrowConfig({ apiKey: 'secret_x', maxBlockDepth: -1 })).toThrow(
+      /maxBlockDepth/,
     );
-    expect(() =>
-      __testing.narrowConfig({ apiKey: 'secret_x', maxBlockDepth: -1 }),
-    ).toThrow(/maxBlockDepth/);
   });
 });
 
@@ -304,10 +300,7 @@ describe('NotionConnector.listFolders', () => {
       // Second rootId is a page → databases.retrieve throws 404 → skipped.
       .mockRejectedValueOnce(httpErr(404));
     const c = new NotionConnector();
-    const folders = await c.listFolders(
-      { apiKey: 'secret_x', rootIds: [DB_ID, PAGE_ID] },
-      's1',
-    );
+    const folders = await c.listFolders({ apiKey: 'secret_x', rootIds: [DB_ID, PAGE_ID] }, 's1');
     expect(folders).toHaveLength(1);
     expect(folders[0]).toMatchObject({
       id: `notion:db:${DB_ID}`,
@@ -452,10 +445,7 @@ describe('NotionConnector.listDocuments', () => {
       // Second rootId resolves to a database → page retrieve fails 404 → skip.
       .mockRejectedValueOnce(httpErr(404));
     const c = new NotionConnector();
-    const docs = await c.listDocuments(
-      { apiKey: 'secret_x', rootIds: [PAGE_ID, DB_ID] },
-      's1',
-    );
+    const docs = await c.listDocuments({ apiKey: 'secret_x', rootIds: [PAGE_ID, DB_ID] }, 's1');
     expect(docs).toHaveLength(1);
     expect(docs[0]?.name).toBe('P1');
     expect(docs[0]?.folderId).toBeNull();
@@ -609,11 +599,7 @@ describe('NotionConnector.fetchDocument', () => {
       next_cursor: null,
     });
     const c = new NotionConnector();
-    await c.fetchDocument(
-      { apiKey: 'secret_x', maxBlockDepth: 1 },
-      's1',
-      `notion:${PAGE_ID}`,
-    );
+    await c.fetchDocument({ apiKey: 'secret_x', maxBlockDepth: 1 }, 's1', `notion:${PAGE_ID}`);
     expect(mockedNotion.blocks.children.list).toHaveBeenCalledTimes(1);
   });
 
@@ -651,9 +637,9 @@ describe('NotionConnector.fetchDocument', () => {
   it('throws NotionDocumentNotFoundError on 404', async () => {
     mockedNotion.blocks.children.list.mockRejectedValueOnce(httpErr(404));
     const c = new NotionConnector();
-    await expect(
-      c.fetchDocument(baseConfig, 's1', `notion:${PAGE_ID_2}`),
-    ).rejects.toBeInstanceOf(NotionDocumentNotFoundError);
+    await expect(c.fetchDocument(baseConfig, 's1', `notion:${PAGE_ID_2}`)).rejects.toBeInstanceOf(
+      NotionDocumentNotFoundError,
+    );
   });
 
   it('rejects docIds with the wrong prefix', async () => {
@@ -679,7 +665,12 @@ describe('renderBlocksToText', () => {
   it('renders paragraph with annotations', () => {
     const out = __testing.renderBlocksToText([
       block('paragraph', {
-        rich_text: [rt('plain '), rt('bold', { bold: true }), rt(' '), rt('italic', { italic: true })],
+        rich_text: [
+          rt('plain '),
+          rt('bold', { bold: true }),
+          rt(' '),
+          rt('italic', { italic: true }),
+        ],
         color: 'default',
       }) as Parameters<typeof __testing.renderBlocksToText>[0][number],
     ]);
@@ -688,9 +679,21 @@ describe('renderBlocksToText', () => {
 
   it('renders heading_1 / heading_2 / heading_3', () => {
     const out = __testing.renderBlocksToText([
-      block('heading_1', { rich_text: [rt('H1')], color: 'default', is_toggleable: false }) as never,
-      block('heading_2', { rich_text: [rt('H2')], color: 'default', is_toggleable: false }) as never,
-      block('heading_3', { rich_text: [rt('H3')], color: 'default', is_toggleable: false }) as never,
+      block('heading_1', {
+        rich_text: [rt('H1')],
+        color: 'default',
+        is_toggleable: false,
+      }) as never,
+      block('heading_2', {
+        rich_text: [rt('H2')],
+        color: 'default',
+        is_toggleable: false,
+      }) as never,
+      block('heading_3', {
+        rich_text: [rt('H3')],
+        color: 'default',
+        is_toggleable: false,
+      }) as never,
     ]);
     expect(out).toBe('# H1\n## H2\n### H3');
   });
@@ -785,9 +788,9 @@ describe('pageTitle', () => {
 
   it('scans properties for the title type regardless of key name', () => {
     // Database pages use the column name as the property key (often "Name").
-    expect(
-      __testing.pageTitle(fakePage({ title: 'Renamed col', titleProp: 'Name' })),
-    ).toBe('Renamed col');
+    expect(__testing.pageTitle(fakePage({ title: 'Renamed col', titleProp: 'Name' }))).toBe(
+      'Renamed col',
+    );
   });
 
   it('returns "Untitled" for malformed input', () => {

@@ -105,7 +105,9 @@ describe('profiles routes', () => {
           profiles: { v2: { label: 'V2', selectedTables: {}, tableOptions: {} } },
         });
 
-      const row = db.raw.prepare("SELECT data FROM profiles WHERE key = 'main'").get() as { data: string };
+      const row = db.raw.prepare("SELECT data FROM profiles WHERE key = 'main'").get() as {
+        data: string;
+      };
       const saved = JSON.parse(row.data);
       // Both profiles must be present — a partial save must not wipe unrelated profiles
       expect(saved.profiles.v2).toBeDefined();
@@ -131,7 +133,9 @@ describe('profiles routes', () => {
         .send(profilesData)
         .expect(200);
 
-      const row = db.raw.prepare("SELECT data FROM profiles WHERE key = 'main'").get() as { data: string };
+      const row = db.raw.prepare("SELECT data FROM profiles WHERE key = 'main'").get() as {
+        data: string;
+      };
       const saved = JSON.parse(row.data) as { profiles: Record<string, Record<string, unknown>> };
 
       // upgradeProfileShape should have synthesised sources from connections
@@ -168,7 +172,9 @@ describe('profiles routes', () => {
 
       expect(res.body.success).toBe(true);
 
-      const row = db.raw.prepare("SELECT data FROM profiles WHERE key = 'main'").get() as { data: string };
+      const row = db.raw.prepare("SELECT data FROM profiles WHERE key = 'main'").get() as {
+        data: string;
+      };
       const saved = JSON.parse(row.data) as { profiles: Record<string, Record<string, unknown>> };
       expect(saved.profiles['modern']['sources']).toEqual(['dw']);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -193,7 +199,9 @@ describe('profiles routes', () => {
 
       expect(res.body.success).toBe(true);
 
-      const row = db.raw.prepare("SELECT data FROM profiles WHERE key = 'main'").get() as { data: string };
+      const row = db.raw.prepare("SELECT data FROM profiles WHERE key = 'main'").get() as {
+        data: string;
+      };
       const saved = JSON.parse(row.data);
       expect(Object.keys(saved.profiles)).toHaveLength(3);
     });
@@ -201,10 +209,7 @@ describe('profiles routes', () => {
 
   describe('GET /api/profiles/load', () => {
     it('should return found: false when no profiles exist', async () => {
-      const res = await request(app)
-        .get('/api/profiles/load')
-        .set('Cookie', cookie)
-        .expect(200);
+      const res = await request(app).get('/api/profiles/load').set('Cookie', cookie).expect(200);
 
       expect(res.body.found).toBe(false);
     });
@@ -218,22 +223,18 @@ describe('profiles routes', () => {
       };
 
       // Insert directly into SQLite
-      db.raw.prepare("INSERT OR REPLACE INTO profiles (key, data) VALUES ('main', ?)").run(JSON.stringify(profilesData));
+      db.raw
+        .prepare("INSERT OR REPLACE INTO profiles (key, data) VALUES ('main', ?)")
+        .run(JSON.stringify(profilesData));
 
-      const res = await request(app)
-        .get('/api/profiles/load')
-        .set('Cookie', cookie)
-        .expect(200);
+      const res = await request(app).get('/api/profiles/load').set('Cookie', cookie).expect(200);
 
       expect(res.body.found).toBe(true);
       expect(res.body.profiles.dev.label).toBe('Dev Team');
       // Phase 5: legacy `selectedTables` is folded into `scopes[sourceId]` by
       // the migrator on read.
       const sourceId = res.body.profiles.dev.sources[0];
-      expect(res.body.profiles.dev.scopes[sourceId].selectedTables.users).toEqual([
-        'id',
-        'name',
-      ]);
+      expect(res.body.profiles.dev.scopes[sourceId].selectedTables.users).toEqual(['id', 'name']);
     });
 
     it('upgrades legacy-shape profiles to new shape on load', async () => {
@@ -246,17 +247,21 @@ describe('profiles routes', () => {
             connections: ['primary'],
             selectedTables: { users: ['id', 'email'] },
             tableOptions: {
-              users: { enabledTools: ['query'], maxLimit: 100, filterableColumns: [], groupableColumns: [] },
+              users: {
+                enabledTools: ['query'],
+                maxLimit: 100,
+                filterableColumns: [],
+                groupableColumns: [],
+              },
             },
           },
         },
       };
-      db.raw.prepare("INSERT OR REPLACE INTO profiles (key, data) VALUES ('main', ?)").run(JSON.stringify(legacyData));
+      db.raw
+        .prepare("INSERT OR REPLACE INTO profiles (key, data) VALUES ('main', ?)")
+        .run(JSON.stringify(legacyData));
 
-      const res = await request(app)
-        .get('/api/profiles/load')
-        .set('Cookie', cookie)
-        .expect(200);
+      const res = await request(app).get('/api/profiles/load').set('Cookie', cookie).expect(200);
 
       expect(res.body.found).toBe(true);
       // upgradeProfileShape must have synthesised sources from connections
@@ -284,12 +289,11 @@ describe('profiles routes', () => {
           },
         },
       };
-      db.raw.prepare("INSERT OR REPLACE INTO profiles (key, data) VALUES ('main', ?)").run(JSON.stringify(newShapeData));
+      db.raw
+        .prepare("INSERT OR REPLACE INTO profiles (key, data) VALUES ('main', ?)")
+        .run(JSON.stringify(newShapeData));
 
-      const res = await request(app)
-        .get('/api/profiles/load')
-        .set('Cookie', cookie)
-        .expect(200);
+      const res = await request(app).get('/api/profiles/load').set('Cookie', cookie).expect(200);
 
       expect(res.body.found).toBe(true);
       expect(res.body.profiles.modern.sources).toEqual(['dw']);
@@ -298,12 +302,11 @@ describe('profiles routes', () => {
 
     it('should handle malformed JSON gracefully', async () => {
       // Insert malformed JSON into SQLite
-      db.raw.prepare("INSERT OR REPLACE INTO profiles (key, data) VALUES ('main', ?)").run('{ invalid json }}}');
+      db.raw
+        .prepare("INSERT OR REPLACE INTO profiles (key, data) VALUES ('main', ?)")
+        .run('{ invalid json }}}');
 
-      const res = await request(app)
-        .get('/api/profiles/load')
-        .set('Cookie', cookie)
-        .expect(500);
+      const res = await request(app).get('/api/profiles/load').set('Cookie', cookie).expect(500);
 
       expect(res.body.found).toBe(false);
       expect(res.body.message).toBeDefined();
@@ -334,20 +337,16 @@ describe('profiles routes', () => {
         .send(profilesData)
         .expect(200);
 
-      const res = await request(app)
-        .get('/api/profiles/load')
-        .set('Cookie', cookie)
-        .expect(200);
+      const res = await request(app).get('/api/profiles/load').set('Cookie', cookie).expect(200);
 
       expect(res.body.found).toBe(true);
       expect(res.body.connection.envVar).toBe('MY_DB_URL');
       // Phase 5: legacy tableOptions live in scopes[sourceId].tableOptions.
       const sourceId = res.body.profiles.analytics.sources[0];
       expect(res.body.profiles.analytics.scopes[sourceId].tableOptions.events.maxLimit).toBe(50);
-      expect(res.body.profiles.analytics.scopes[sourceId].tableOptions.events.enabledTools).toEqual([
-        'describe',
-        'aggregate',
-      ]);
+      expect(res.body.profiles.analytics.scopes[sourceId].tableOptions.events.enabledTools).toEqual(
+        ['describe', 'aggregate'],
+      );
     });
 
     it('should return warnings when schema is available and profiles reference missing tables', async () => {
@@ -357,7 +356,12 @@ describe('profiles routes', () => {
       state.userManager = new UserManager(localDb);
       state.cachedSchema = {
         tables: [
-          { name: 'users', schema: 'public', columns: [{ name: 'id', type: 'integer', nullable: false, defaultValue: null }], primaryKeys: ['id'] },
+          {
+            name: 'users',
+            schema: 'public',
+            columns: [{ name: 'id', type: 'integer', nullable: false, defaultValue: null }],
+            primaryKeys: ['id'],
+          },
         ],
         relations: [],
       };
@@ -374,7 +378,9 @@ describe('profiles routes', () => {
       };
 
       // Insert into SQLite (not file)
-      localDb.raw.prepare("INSERT OR REPLACE INTO profiles (key, data) VALUES ('main', ?)").run(JSON.stringify(profilesData));
+      localDb.raw
+        .prepare("INSERT OR REPLACE INTO profiles (key, data) VALUES ('main', ?)")
+        .run(JSON.stringify(profilesData));
 
       const res = await request(appWithSchema)
         .get('/api/profiles/load')
@@ -421,7 +427,9 @@ describe('profiles routes', () => {
         },
       };
 
-      localDb.raw.prepare("INSERT OR REPLACE INTO profiles (key, data) VALUES ('main', ?)").run(JSON.stringify(profilesData));
+      localDb.raw
+        .prepare("INSERT OR REPLACE INTO profiles (key, data) VALUES ('main', ?)")
+        .run(JSON.stringify(profilesData));
 
       const res = await request(appWithSchema)
         .get('/api/profiles/load')
@@ -431,7 +439,9 @@ describe('profiles routes', () => {
       localDb.close();
       expect(res.body.found).toBe(true);
       expect(res.body.warnings.length).toBe(2);
-      expect(res.body.warnings.every((w: { type: string }) => w.type === 'missing_column')).toBe(true);
+      expect(res.body.warnings.every((w: { type: string }) => w.type === 'missing_column')).toBe(
+        true,
+      );
       const cols = res.body.warnings.map((w: { column: string }) => w.column);
       expect(cols).toContain('deleted_col');
       expect(cols).toContain('also_gone');
@@ -465,7 +475,9 @@ describe('profiles routes', () => {
         },
       };
 
-      localDb.raw.prepare("INSERT OR REPLACE INTO profiles (key, data) VALUES ('main', ?)").run(JSON.stringify(profilesData));
+      localDb.raw
+        .prepare("INSERT OR REPLACE INTO profiles (key, data) VALUES ('main', ?)")
+        .run(JSON.stringify(profilesData));
 
       const res = await request(appWithSchema)
         .get('/api/profiles/load')
@@ -558,9 +570,11 @@ describe('PATCH /api/profiles/:name/response-mode', () => {
   });
 
   it('should set responseMode to friendly on an existing profile', async () => {
-    db.raw
-      .prepare("INSERT OR REPLACE INTO profiles (key, data) VALUES ('main', ?)")
-      .run(JSON.stringify({ profiles: { finance: { label: 'Finance', selectedTables: { invoices: ['id'] } } } }));
+    db.raw.prepare("INSERT OR REPLACE INTO profiles (key, data) VALUES ('main', ?)").run(
+      JSON.stringify({
+        profiles: { finance: { label: 'Finance', selectedTables: { invoices: ['id'] } } },
+      }),
+    );
 
     const res = await request(app)
       .patch('/api/profiles/finance/response-mode')
@@ -571,15 +585,19 @@ describe('PATCH /api/profiles/:name/response-mode', () => {
     expect(res.body.success).toBe(true);
     expect(res.body.profile.responseMode).toBe('friendly');
 
-    const row = db.raw.prepare("SELECT data FROM profiles WHERE key = 'main'").get() as { data: string };
+    const row = db.raw.prepare("SELECT data FROM profiles WHERE key = 'main'").get() as {
+      data: string;
+    };
     const saved = JSON.parse(row.data) as { profiles: Record<string, { responseMode?: string }> };
     expect(saved.profiles.finance.responseMode).toBe('friendly');
   });
 
   it('should set responseMode to raw on an existing profile', async () => {
-    db.raw
-      .prepare("INSERT OR REPLACE INTO profiles (key, data) VALUES ('main', ?)")
-      .run(JSON.stringify({ profiles: { ops: { label: 'Ops', selectedTables: {}, responseMode: 'friendly' } } }));
+    db.raw.prepare("INSERT OR REPLACE INTO profiles (key, data) VALUES ('main', ?)").run(
+      JSON.stringify({
+        profiles: { ops: { label: 'Ops', selectedTables: {}, responseMode: 'friendly' } },
+      }),
+    );
 
     const res = await request(app)
       .patch('/api/profiles/ops/response-mode')
@@ -590,7 +608,9 @@ describe('PATCH /api/profiles/:name/response-mode', () => {
     expect(res.body.success).toBe(true);
     expect(res.body.profile.responseMode).toBe('raw');
 
-    const row = db.raw.prepare("SELECT data FROM profiles WHERE key = 'main'").get() as { data: string };
+    const row = db.raw.prepare("SELECT data FROM profiles WHERE key = 'main'").get() as {
+      data: string;
+    };
     const saved = JSON.parse(row.data) as { profiles: Record<string, { responseMode?: string }> };
     expect(saved.profiles.ops.responseMode).toBe('raw');
   });
@@ -601,7 +621,14 @@ describe('PATCH /api/profiles/:name/response-mode', () => {
         sales: {
           label: 'Sales',
           selectedTables: { orders: ['id', 'amount'] },
-          tableOptions: { orders: { enabledTools: ['query'], maxLimit: 100, filterableColumns: [], groupableColumns: [] } },
+          tableOptions: {
+            orders: {
+              enabledTools: ['query'],
+              maxLimit: 100,
+              filterableColumns: [],
+              groupableColumns: [],
+            },
+          },
         },
       },
     };
@@ -615,7 +642,9 @@ describe('PATCH /api/profiles/:name/response-mode', () => {
       .send({ mode: 'friendly' })
       .expect(200);
 
-    const row = db.raw.prepare("SELECT data FROM profiles WHERE key = 'main'").get() as { data: string };
+    const row = db.raw.prepare("SELECT data FROM profiles WHERE key = 'main'").get() as {
+      data: string;
+    };
     const saved = JSON.parse(row.data) as {
       profiles: Record<
         string,
@@ -635,19 +664,17 @@ describe('PATCH /api/profiles/:name/response-mode', () => {
   });
 
   it('should persist responseMode and survive a profile reload', async () => {
-    db.raw
-      .prepare("INSERT OR REPLACE INTO profiles (key, data) VALUES ('main', ?)")
-      .run(
-        JSON.stringify({
-          profiles: {
-            analytics: {
-              label: 'Analytics',
-              selectedTables: { events: ['id', 'type'] },
-              tableOptions: {},
-            },
+    db.raw.prepare("INSERT OR REPLACE INTO profiles (key, data) VALUES ('main', ?)").run(
+      JSON.stringify({
+        profiles: {
+          analytics: {
+            label: 'Analytics',
+            selectedTables: { events: ['id', 'type'] },
+            tableOptions: {},
           },
-        }),
-      );
+        },
+      }),
+    );
 
     // Set responseMode via PATCH
     await request(app)
@@ -664,20 +691,18 @@ describe('PATCH /api/profiles/:name/response-mode', () => {
   });
 
   it('should preserve responseMode when saving the profile via POST /api/profiles/save', async () => {
-    db.raw
-      .prepare("INSERT OR REPLACE INTO profiles (key, data) VALUES ('main', ?)")
-      .run(
-        JSON.stringify({
-          profiles: {
-            ops: {
-              label: 'Ops',
-              selectedTables: { servers: ['id', 'hostname'] },
-              tableOptions: {},
-              responseMode: 'raw',
-            },
+    db.raw.prepare("INSERT OR REPLACE INTO profiles (key, data) VALUES ('main', ?)").run(
+      JSON.stringify({
+        profiles: {
+          ops: {
+            label: 'Ops',
+            selectedTables: { servers: ['id', 'hostname'] },
+            tableOptions: {},
+            responseMode: 'raw',
           },
-        }),
-      );
+        },
+      }),
+    );
 
     // Save the profile again with an updated label but without explicitly carrying responseMode
     // (simulate a frontend that reads the profile, modifies label, and re-saves the full object)
@@ -726,9 +751,11 @@ describe('PATCH /api/profiles/:name/response-mode', () => {
     const appWithState = createApp(state);
     const localCookie = await setupAdminAndGetCookie(appWithState);
 
-    localDb.raw
-      .prepare("INSERT OR REPLACE INTO profiles (key, data) VALUES ('main', ?)")
-      .run(JSON.stringify({ profiles: { live: { label: 'Live', selectedTables: { users: ['id'] } } } }));
+    localDb.raw.prepare("INSERT OR REPLACE INTO profiles (key, data) VALUES ('main', ?)").run(
+      JSON.stringify({
+        profiles: { live: { label: 'Live', selectedTables: { users: ['id'] } } },
+      }),
+    );
 
     await request(appWithState)
       .patch('/api/profiles/live/response-mode')
@@ -792,7 +819,12 @@ describe('validateProfiles', () => {
     };
     const warnings = validateProfiles(profiles, schemaTables);
     expect(warnings.length).toBe(1);
-    expect(warnings[0]).toEqual({ profile: 'p1', type: 'missing_column', table: 'users', column: 'deleted_field' });
+    expect(warnings[0]).toEqual({
+      profile: 'p1',
+      type: 'missing_column',
+      table: 'users',
+      column: 'deleted_field',
+    });
   });
 
   it('should handle multiple profiles with mixed warnings', () => {
@@ -857,9 +889,9 @@ describe('profiles routes — Phase B tenant isolation', () => {
       })
       .expect(200);
 
-    const row = db.raw
-      .prepare("SELECT tenant_id FROM profiles WHERE key = 'main'")
-      .get() as { tenant_id: string };
+    const row = db.raw.prepare("SELECT tenant_id FROM profiles WHERE key = 'main'").get() as {
+      tenant_id: string;
+    };
     expect(row.tenant_id).toBe('acme');
   });
 
@@ -907,17 +939,14 @@ describe('profiles routes — Phase B tenant isolation', () => {
       .expect(200);
 
     // Header-less load returns the row exactly as before Phase B.
-    const res = await request(app)
-      .get('/api/profiles/load')
-      .set('Cookie', cookie)
-      .expect(200);
+    const res = await request(app).get('/api/profiles/load').set('Cookie', cookie).expect(200);
     expect(res.body.found).toBe(true);
     expect(res.body.profiles.defaultProfile).toBeDefined();
 
     // Default row sits under 'default' in storage.
-    const row = db.raw
-      .prepare("SELECT tenant_id FROM profiles WHERE key = 'main'")
-      .get() as { tenant_id: string };
+    const row = db.raw.prepare("SELECT tenant_id FROM profiles WHERE key = 'main'").get() as {
+      tenant_id: string;
+    };
     expect(row.tenant_id).toBe('default');
   });
 
@@ -961,9 +990,9 @@ describe('profiles routes — Phase B tenant isolation', () => {
       .expect(200);
 
     // Row landed under 'default' (the fallback).
-    const row = db.raw
-      .prepare("SELECT tenant_id FROM profiles WHERE key = 'main'")
-      .get() as { tenant_id: string };
+    const row = db.raw.prepare("SELECT tenant_id FROM profiles WHERE key = 'main'").get() as {
+      tenant_id: string;
+    };
     expect(row.tenant_id).toBe('default');
   });
 });

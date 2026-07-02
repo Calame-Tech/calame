@@ -151,7 +151,14 @@ export function registerChatAuthRoute(app: Express, state: AppState): void {
             name: tokenEntry.label || 'Token User',
             email: '',
             role: 'user',
-            profiles: [{ profileName: tokenEntry.profileName, allowedTables: null, allowedTools: null, accessMode: 'both' as const }],
+            profiles: [
+              {
+                profileName: tokenEntry.profileName,
+                allowedTables: null,
+                allowedTools: null,
+                accessMode: 'both' as const,
+              },
+            ],
           },
         });
         return;
@@ -177,7 +184,8 @@ export function registerChatAuthRoute(app: Express, state: AppState): void {
           // Auto-create disabled — reject unknown users
           res.status(403).json({
             success: false,
-            message: 'Your external account is valid but you do not have a Calame account. Contact your administrator.',
+            message:
+              'Your external account is valid but you do not have a Calame account. Contact your administrator.',
           });
           return;
         }

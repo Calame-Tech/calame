@@ -45,12 +45,16 @@ export function registerChatStreamRoute(app: Express, state: AppState): void {
       const sid = cookies['calame_session'] ?? req.ip ?? 'anon';
       const rl = chatLimiter.check(sid, CHAT_RPM);
       if (!rl.allowed) {
-        res.status(429).json({ success: false, message: 'Too many messages. Please wait a moment.' });
+        res
+          .status(429)
+          .json({ success: false, message: 'Too many messages. Please wait a moment.' });
         return;
       }
 
       if (!state.serveMode) {
-        res.status(503).json({ success: false, message: 'MCP server is not running. Start the server first.' });
+        res
+          .status(503)
+          .json({ success: false, message: 'MCP server is not running. Start the server first.' });
         return;
       }
 
@@ -62,7 +66,10 @@ export function registerChatStreamRoute(app: Express, state: AppState): void {
 
       let profileName: string;
       if (requestedProfileName !== undefined) {
-        if (!state.serveProfiles[requestedProfileName] || !state.activeProfileNames.has(requestedProfileName)) {
+        if (
+          !state.serveProfiles[requestedProfileName] ||
+          !state.activeProfileNames.has(requestedProfileName)
+        ) {
           res.status(404).json({
             success: false,
             message: `Profile "${requestedProfileName}" is not active.`,
@@ -108,7 +115,8 @@ export function registerChatStreamRoute(app: Express, state: AppState): void {
         if (!token) {
           res.status(503).json({
             success: false,
-            message: 'Cannot use chat without CALAME_SECRET_KEY. Set this environment variable to enable chat.',
+            message:
+              'Cannot use chat without CALAME_SECRET_KEY. Set this environment variable to enable chat.',
           });
           return;
         }
@@ -138,7 +146,11 @@ export function registerChatStreamRoute(app: Express, state: AppState): void {
       const protocol = req.secure ? 'https' : 'http';
       const mcpUrl = `${protocol}://${host}/mcp/${profileName}`;
 
-      const { tools: mcpTools, close: closeFn } = await createMcpChatTools(mcpUrl, mcpBearerToken, profileName);
+      const { tools: mcpTools, close: closeFn } = await createMcpChatTools(
+        mcpUrl,
+        mcpBearerToken,
+        profileName,
+      );
       close = closeFn;
       const tools = mcpTools;
 
@@ -146,7 +158,9 @@ export function registerChatStreamRoute(app: Express, state: AppState): void {
         const toolNames = tools.map((t: { name: string }) => t.name);
         const classifierResult = await state.llmRouter.classify(message, toolNames);
         if (state.llmRouter.shouldBlock(classifierResult)) {
-          res.status(403).json({ success: false, message: state.llmRouter.getBlockMessage(classifierResult) });
+          res
+            .status(403)
+            .json({ success: false, message: state.llmRouter.getBlockMessage(classifierResult) });
           return;
         }
       }

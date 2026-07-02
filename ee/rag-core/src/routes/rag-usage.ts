@@ -6,9 +6,9 @@ import type { Express, Request, Response } from 'express';
 import type { RagRouteDeps } from './types.js';
 import { estimateCostUsd, isKnownEmbeddingModel } from '../pricing.js';
 import {
-	getCurrentMonthTokens,
-	resolveWarningThreshold,
-	DEFAULT_CAP_WARNING_THRESHOLD,
+  getCurrentMonthTokens,
+  resolveWarningThreshold,
+  DEFAULT_CAP_WARNING_THRESHOLD,
 } from '../jobs/embedding-cap.js';
 
 /**
@@ -18,49 +18,49 @@ import {
  * cost using the pricing table in `pricing.ts`.
  */
 export interface RagUsageResponse {
-	totalTokens: number;
-	totalCostUsd: number;
-	perProvider: Array<{
-		model: string;
-		tokens: number;
-		costUsd: number;
-		/** True when the model appears in `pricing.ts`; false → costUsd will be 0. */
-		known: boolean;
-	}>;
-	perSource: Array<{
-		sourceId: string;
-		name: string;
-		tokens: number;
-		costUsd: number;
-	}>;
-	perDay: Array<{
-		/** ISO date (UTC) — `YYYY-MM-DD`. */
-		date: string;
-		tokens: number;
-	}>;
-	/** Echo of the resolved period filter so the UI can render the label. */
-	period: 'month' | 'week' | 'all';
-	/**
-	 * Monthly embedding-token cap state for the request's tenant. Always
-	 * present (never undefined) so the UI can render a unified shape.
-	 *
-	 *  - `monthlyTokenCap === 0`  → unlimited; UI hides the progress widgets.
-	 *  - `fractionUsed`           → `currentMonthTokens / monthlyTokenCap`,
-	 *                              floored at 0, NOT capped at 1 (the UI uses
-	 *                              the raw value to decide "over the cap" vs
-	 *                              "nearing the cap").
-	 *  - `nearingThreshold`       → `fractionUsed >= warningThreshold` AND
-	 *                              `< 1`. The "over the cap" case sets a
-	 *                              separate banner and shouldn't double-fire
-	 *                              the warning.
-	 */
-	cap: {
-		monthlyTokenCap: number;
-		currentMonthTokens: number;
-		fractionUsed: number;
-		nearingThreshold: boolean;
-		warningThreshold: number;
-	};
+  totalTokens: number;
+  totalCostUsd: number;
+  perProvider: Array<{
+    model: string;
+    tokens: number;
+    costUsd: number;
+    /** True when the model appears in `pricing.ts`; false → costUsd will be 0. */
+    known: boolean;
+  }>;
+  perSource: Array<{
+    sourceId: string;
+    name: string;
+    tokens: number;
+    costUsd: number;
+  }>;
+  perDay: Array<{
+    /** ISO date (UTC) — `YYYY-MM-DD`. */
+    date: string;
+    tokens: number;
+  }>;
+  /** Echo of the resolved period filter so the UI can render the label. */
+  period: 'month' | 'week' | 'all';
+  /**
+   * Monthly embedding-token cap state for the request's tenant. Always
+   * present (never undefined) so the UI can render a unified shape.
+   *
+   *  - `monthlyTokenCap === 0`  → unlimited; UI hides the progress widgets.
+   *  - `fractionUsed`           → `currentMonthTokens / monthlyTokenCap`,
+   *                              floored at 0, NOT capped at 1 (the UI uses
+   *                              the raw value to decide "over the cap" vs
+   *                              "nearing the cap").
+   *  - `nearingThreshold`       → `fractionUsed >= warningThreshold` AND
+   *                              `< 1`. The "over the cap" case sets a
+   *                              separate banner and shouldn't double-fire
+   *                              the warning.
+   */
+  cap: {
+    monthlyTokenCap: number;
+    currentMonthTokens: number;
+    fractionUsed: number;
+    nearingThreshold: boolean;
+    warningThreshold: number;
+  };
 }
 
 type Period = 'month' | 'week' | 'all';
@@ -72,10 +72,10 @@ type Period = 'month' | 'week' | 'all';
  * read-only and should never crash on bad query input.
  */
 function parsePeriod(raw: unknown): Period {
-	if (typeof raw !== 'string') return 'month';
-	const v = raw.trim().toLowerCase();
-	if (v === 'week' || v === 'all') return v;
-	return 'month';
+  if (typeof raw !== 'string') return 'month';
+  const v = raw.trim().toLowerCase();
+  if (v === 'week' || v === 'all') return v;
+  return 'month';
 }
 
 /**
@@ -84,10 +84,10 @@ function parsePeriod(raw: unknown): Period {
  * window is stable across requests within the same day.
  */
 function periodStart(period: Period, now: Date = new Date()): string | null {
-	if (period === 'all') return null;
-	const days = period === 'week' ? 7 : 30;
-	const start = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
-	return start.toISOString();
+  if (period === 'all') return null;
+  const days = period === 'week' ? 7 : 30;
+  const start = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+  return start.toISOString();
 }
 
 /**
@@ -105,74 +105,74 @@ function periodStart(period: Period, now: Date = new Date()): string | null {
  * a resolver we filter on the literal `'default'` (Phase A).
  */
 export function registerRagUsageRoutes(app: Express, deps: RagRouteDeps): void {
-	app.get('/api/rag/usage', (req: Request, res: Response) => {
-		try {
-			const period = parsePeriod(req.query['period']);
-			const tenantId = deps.getTenantId ? deps.getTenantId(req) : 'default';
-			const sinceIso = periodStart(period);
+  app.get('/api/rag/usage', (req: Request, res: Response) => {
+    try {
+      const period = parsePeriod(req.query['period']);
+      const tenantId = deps.getTenantId ? deps.getTenantId(req) : 'default';
+      const sinceIso = periodStart(period);
 
-			// Build the WHERE clause once and reuse across the three roll-ups
-			// below. We always filter on tenant + completed status; the date
-			// bound is appended only for week/month.
-			//
-			// `s.deleted_at IS NULL` excludes jobs from soft-deleted sources —
-			// they'd skew the dashboard with cost rows for sources the user
-			// can no longer see, and they're scheduled for hard-deletion by
-			// the cleanup cron anyway. The condition uses `(s.id IS NULL OR
-			// s.deleted_at IS NULL)` to tolerate the LEFT JOIN: jobs whose
-			// source row was already hard-deleted (rare race) still count.
-			const baseWhere = [
-				'j.status = ?',
-				'j.tenant_id = ?',
-				'(s.id IS NULL OR s.deleted_at IS NULL)',
-			];
-			const baseParams: unknown[] = ['completed', tenantId];
-			if (sinceIso !== null) {
-				baseWhere.push('j.started_at >= ?');
-				baseParams.push(sinceIso);
-			}
-			const whereSql = `WHERE ${baseWhere.join(' AND ')}`;
+      // Build the WHERE clause once and reuse across the three roll-ups
+      // below. We always filter on tenant + completed status; the date
+      // bound is appended only for week/month.
+      //
+      // `s.deleted_at IS NULL` excludes jobs from soft-deleted sources —
+      // they'd skew the dashboard with cost rows for sources the user
+      // can no longer see, and they're scheduled for hard-deletion by
+      // the cleanup cron anyway. The condition uses `(s.id IS NULL OR
+      // s.deleted_at IS NULL)` to tolerate the LEFT JOIN: jobs whose
+      // source row was already hard-deleted (rare race) still count.
+      const baseWhere = [
+        'j.status = ?',
+        'j.tenant_id = ?',
+        '(s.id IS NULL OR s.deleted_at IS NULL)',
+      ];
+      const baseParams: unknown[] = ['completed', tenantId];
+      if (sinceIso !== null) {
+        baseWhere.push('j.started_at >= ?');
+        baseParams.push(sinceIso);
+      }
+      const whereSql = `WHERE ${baseWhere.join(' AND ')}`;
 
-			// 1. per-provider — join rag_sources for `embedding_model_version`.
-			interface ProviderRow {
-				model: string;
-				tokens: number | null;
-			}
-			const providerRows = deps.db
-				.prepare<unknown[], ProviderRow>(
-					`SELECT
+      // 1. per-provider — join rag_sources for `embedding_model_version`.
+      interface ProviderRow {
+        model: string;
+        tokens: number | null;
+      }
+      const providerRows = deps.db
+        .prepare<unknown[], ProviderRow>(
+          `SELECT
 					   COALESCE(s.embedding_model_version, '') AS model,
 					   SUM(j.tokens_embedded) AS tokens
 					 FROM rag_jobs j
 					 LEFT JOIN rag_sources s ON s.id = j.source_id
 					 ${whereSql}
 					 GROUP BY s.embedding_model_version`,
-				)
-				.all(...baseParams);
+        )
+        .all(...baseParams);
 
-			const perProvider = providerRows
-				.map((r) => {
-					const tokens = r.tokens ?? 0;
-					return {
-						model: r.model,
-						tokens,
-						costUsd: estimateCostUsd(r.model, tokens),
-						known: isKnownEmbeddingModel(r.model),
-					};
-				})
-				.filter((p) => p.tokens > 0)
-				.sort((a, b) => b.tokens - a.tokens);
+      const perProvider = providerRows
+        .map((r) => {
+          const tokens = r.tokens ?? 0;
+          return {
+            model: r.model,
+            tokens,
+            costUsd: estimateCostUsd(r.model, tokens),
+            known: isKnownEmbeddingModel(r.model),
+          };
+        })
+        .filter((p) => p.tokens > 0)
+        .sort((a, b) => b.tokens - a.tokens);
 
-			// 2. per-source — join rag_sources for the human-readable name.
-			interface SourceRow {
-				source_id: string;
-				name: string | null;
-				model: string | null;
-				tokens: number | null;
-			}
-			const sourceRows = deps.db
-				.prepare<unknown[], SourceRow>(
-					`SELECT
+      // 2. per-source — join rag_sources for the human-readable name.
+      interface SourceRow {
+        source_id: string;
+        name: string | null;
+        model: string | null;
+        tokens: number | null;
+      }
+      const sourceRows = deps.db
+        .prepare<unknown[], SourceRow>(
+          `SELECT
 					   j.source_id AS source_id,
 					   s.name AS name,
 					   s.embedding_model_version AS model,
@@ -181,36 +181,36 @@ export function registerRagUsageRoutes(app: Express, deps: RagRouteDeps): void {
 					 LEFT JOIN rag_sources s ON s.id = j.source_id
 					 ${whereSql}
 					 GROUP BY j.source_id`,
-				)
-				.all(...baseParams);
+        )
+        .all(...baseParams);
 
-			const perSource = sourceRows
-				.map((r) => {
-					const tokens = r.tokens ?? 0;
-					return {
-						sourceId: r.source_id,
-						// Deleted source — name will be null after JOIN. Fall
-						// back to the id so the UI still has something to render.
-						name: r.name ?? r.source_id,
-						tokens,
-						costUsd: estimateCostUsd(r.model ?? '', tokens),
-					};
-				})
-				.filter((p) => p.tokens > 0)
-				.sort((a, b) => b.tokens - a.tokens);
+      const perSource = sourceRows
+        .map((r) => {
+          const tokens = r.tokens ?? 0;
+          return {
+            sourceId: r.source_id,
+            // Deleted source — name will be null after JOIN. Fall
+            // back to the id so the UI still has something to render.
+            name: r.name ?? r.source_id,
+            tokens,
+            costUsd: estimateCostUsd(r.model ?? '', tokens),
+          };
+        })
+        .filter((p) => p.tokens > 0)
+        .sort((a, b) => b.tokens - a.tokens);
 
-			// 3. per-day — bucketize on the `started_at` ISO date prefix.
-			// SUBSTR is portable across SQLite versions and avoids the
-			// platform-specific `date()` formatting quirks. The LEFT JOIN on
-			// `rag_sources` mirrors the other two roll-ups so the shared
-			// `whereSql` (which references `s.deleted_at`) resolves cleanly.
-			interface DayRow {
-				date: string;
-				tokens: number | null;
-			}
-			const dayRows = deps.db
-				.prepare<unknown[], DayRow>(
-					`SELECT
+      // 3. per-day — bucketize on the `started_at` ISO date prefix.
+      // SUBSTR is portable across SQLite versions and avoids the
+      // platform-specific `date()` formatting quirks. The LEFT JOIN on
+      // `rag_sources` mirrors the other two roll-ups so the shared
+      // `whereSql` (which references `s.deleted_at`) resolves cleanly.
+      interface DayRow {
+        date: string;
+        tokens: number | null;
+      }
+      const dayRows = deps.db
+        .prepare<unknown[], DayRow>(
+          `SELECT
 					   SUBSTR(j.started_at, 1, 10) AS date,
 					   SUM(j.tokens_embedded) AS tokens
 					 FROM rag_jobs j
@@ -218,57 +218,53 @@ export function registerRagUsageRoutes(app: Express, deps: RagRouteDeps): void {
 					 ${whereSql}
 					 GROUP BY SUBSTR(j.started_at, 1, 10)
 					 ORDER BY date ASC`,
-				)
-				.all(...baseParams);
+        )
+        .all(...baseParams);
 
-			const perDay = dayRows
-				.map((r) => ({ date: r.date, tokens: r.tokens ?? 0 }))
-				.filter((d) => d.tokens > 0);
+      const perDay = dayRows
+        .map((r) => ({ date: r.date, tokens: r.tokens ?? 0 }))
+        .filter((d) => d.tokens > 0);
 
-			// Totals are recomputed off the per-provider rollup so we never
-			// disagree with the table the UI renders next to them.
-			const totalTokens = perProvider.reduce((sum, p) => sum + p.tokens, 0);
-			const totalCostUsd = perProvider.reduce((sum, p) => sum + p.costUsd, 0);
+      // Totals are recomputed off the per-provider rollup so we never
+      // disagree with the table the UI renders next to them.
+      const totalTokens = perProvider.reduce((sum, p) => sum + p.tokens, 0);
+      const totalCostUsd = perProvider.reduce((sum, p) => sum + p.costUsd, 0);
 
-			// Cap rollup — independent of the `?period=` filter (the cap is
-			// always month-to-date by definition). When the host did not
-			// supply a `capConfig` we report `monthlyTokenCap: 0` so the UI
-			// can render a unified shape without conditional access. The
-			// current-month aggregate runs against `rag_jobs` directly via
-			// the cap helper so the rollup matches what the pipeline gate
-			// observes — no risk of UI ↔ enforcement skew.
-			const monthlyTokenCap = deps.capConfig?.monthlyTokenCap ?? 0;
-			const warningThreshold = deps.capConfig
-				? resolveWarningThreshold(deps.capConfig)
-				: DEFAULT_CAP_WARNING_THRESHOLD;
-			const currentMonthTokens =
-				monthlyTokenCap > 0 ? getCurrentMonthTokens(deps.db, tenantId) : 0;
-			const fractionUsed =
-				monthlyTokenCap > 0 ? currentMonthTokens / monthlyTokenCap : 0;
-			const nearingThreshold =
-				monthlyTokenCap > 0 &&
-				fractionUsed >= warningThreshold &&
-				fractionUsed < 1;
+      // Cap rollup — independent of the `?period=` filter (the cap is
+      // always month-to-date by definition). When the host did not
+      // supply a `capConfig` we report `monthlyTokenCap: 0` so the UI
+      // can render a unified shape without conditional access. The
+      // current-month aggregate runs against `rag_jobs` directly via
+      // the cap helper so the rollup matches what the pipeline gate
+      // observes — no risk of UI ↔ enforcement skew.
+      const monthlyTokenCap = deps.capConfig?.monthlyTokenCap ?? 0;
+      const warningThreshold = deps.capConfig
+        ? resolveWarningThreshold(deps.capConfig)
+        : DEFAULT_CAP_WARNING_THRESHOLD;
+      const currentMonthTokens = monthlyTokenCap > 0 ? getCurrentMonthTokens(deps.db, tenantId) : 0;
+      const fractionUsed = monthlyTokenCap > 0 ? currentMonthTokens / monthlyTokenCap : 0;
+      const nearingThreshold =
+        monthlyTokenCap > 0 && fractionUsed >= warningThreshold && fractionUsed < 1;
 
-			const body: RagUsageResponse = {
-				totalTokens,
-				totalCostUsd,
-				perProvider,
-				perSource,
-				perDay,
-				period,
-				cap: {
-					monthlyTokenCap,
-					currentMonthTokens,
-					fractionUsed,
-					nearingThreshold,
-					warningThreshold,
-				},
-			};
-			res.json(body);
-		} catch (error: unknown) {
-			const message = error instanceof Error ? error.message : 'Unknown error';
-			res.status(500).json({ error: message });
-		}
-	});
+      const body: RagUsageResponse = {
+        totalTokens,
+        totalCostUsd,
+        perProvider,
+        perSource,
+        perDay,
+        period,
+        cap: {
+          monthlyTokenCap,
+          currentMonthTokens,
+          fractionUsed,
+          nearingThreshold,
+          warningThreshold,
+        },
+      };
+      res.json(body);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: message });
+    }
+  });
 }

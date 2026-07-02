@@ -4,12 +4,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { RagJob, RagJobStatus } from '../types.js';
-import {
-  apiGet,
-  ApiError,
-  type RagJobListResponse,
-  type RagSourceWithCounts,
-} from './api.js';
+import { apiGet, ApiError, type RagJobListResponse, type RagSourceWithCounts } from './api.js';
 import { formatRelativeTime } from './useActiveSyncJobs.js';
 
 interface SyncHistoryPanelProps {
@@ -107,11 +102,7 @@ function hasActiveJob(jobs: RagJob[]): boolean {
  * Filter a job list by source and status. The status filter applies the same
  * synthetic `active` alias as the backend (`pending` + `running`).
  */
-function filterJobs(
-  jobs: RagJob[],
-  sourceId: string,
-  status: StatusFilter,
-): RagJob[] {
+function filterJobs(jobs: RagJob[], sourceId: string, status: StatusFilter): RagJob[] {
   return jobs.filter((j) => {
     if (sourceId !== '' && j.sourceId !== sourceId) return false;
     if (status === 'all') return true;
@@ -148,36 +139,31 @@ export default function SyncHistoryPanel({ sources, onClose }: SyncHistoryPanelP
     return map;
   }, [sources]);
 
-  const fetchHistory = useCallback(
-    async (silent: boolean): Promise<RagJob[]> => {
-      if (!silent) setRefreshing(true);
-      try {
-        const data = await apiGet<RagJobListResponse>(
-          `/api/rag/jobs?limit=${HISTORY_LIMIT}`,
-        );
-        if (cancelledRef.current) return [];
-        const list = data.jobs ?? [];
-        setJobs(list);
-        setError(null);
-        setLoading(false);
-        return list;
-      } catch (err) {
-        if (cancelledRef.current) return [];
-        const msg =
-          err instanceof ApiError
+  const fetchHistory = useCallback(async (silent: boolean): Promise<RagJob[]> => {
+    if (!silent) setRefreshing(true);
+    try {
+      const data = await apiGet<RagJobListResponse>(`/api/rag/jobs?limit=${HISTORY_LIMIT}`);
+      if (cancelledRef.current) return [];
+      const list = data.jobs ?? [];
+      setJobs(list);
+      setError(null);
+      setLoading(false);
+      return list;
+    } catch (err) {
+      if (cancelledRef.current) return [];
+      const msg =
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
             ? err.message
-            : err instanceof Error
-              ? err.message
-              : 'Erreur de chargement.';
-        setError(msg);
-        setLoading(false);
-        return [];
-      } finally {
-        if (!silent) setRefreshing(false);
-      }
-    },
-    [],
-  );
+            : 'Erreur de chargement.';
+      setError(msg);
+      setLoading(false);
+      return [];
+    } finally {
+      if (!silent) setRefreshing(false);
+    }
+  }, []);
 
   // Initial fetch + adaptive polling. Re-poll every POLL_INTERVAL_MS only
   // while there's an active job; once everything is terminal we stop, and a
@@ -327,9 +313,7 @@ export default function SyncHistoryPanel({ sources, onClose }: SyncHistoryPanelP
               </thead>
               <tbody className="divide-y divide-white/5">
                 {visibleJobs.map((job) => {
-                  const percent = Math.round(
-                    Math.min(Math.max(job.progress, 0), 1) * 100,
-                  );
+                  const percent = Math.round(Math.min(Math.max(job.progress, 0), 1) * 100);
                   const isActive = job.status === 'pending' || job.status === 'running';
                   const sourceName = sourceNameById.get(job.sourceId) ?? job.sourceId;
                   return (
@@ -379,13 +363,12 @@ export default function SyncHistoryPanel({ sources, onClose }: SyncHistoryPanelP
                               {job.processedDocuments} / {job.totalDocuments} documents
                               {job.skippedByEtag > 0 && (
                                 <span className="text-gray-500">
-                                  {' '}· {job.skippedByEtag} skipped (etag)
+                                  {' '}
+                                  · {job.skippedByEtag} skipped (etag)
                                 </span>
                               )}
                               {job.gcDeleted > 0 && (
-                                <span className="text-gray-500">
-                                  {' '}· {job.gcDeleted} GC
-                                </span>
+                                <span className="text-gray-500"> · {job.gcDeleted} GC</span>
                               )}
                             </div>
                           )}
@@ -393,10 +376,7 @@ export default function SyncHistoryPanel({ sources, onClose }: SyncHistoryPanelP
                       </td>
                       <td className="px-3 py-2 text-xs text-red-400 max-w-[260px]">
                         {job.error ? (
-                          <span
-                            className="block truncate"
-                            title={job.error}
-                          >
+                          <span className="block truncate" title={job.error}>
                             {job.error}
                           </span>
                         ) : (

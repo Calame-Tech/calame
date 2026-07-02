@@ -5,11 +5,7 @@
 import type { Express, Request, Response } from 'express';
 import crypto from 'crypto';
 import { OidcProvider, type OidcProviderConfig } from '../provider.js';
-import type {
-  OidcAppContext,
-  OidcSessionDeps,
-  OidcUserProfileAccess,
-} from '../types.js';
+import type { OidcAppContext, OidcSessionDeps, OidcUserProfileAccess } from '../types.js';
 
 /** Options for registerOidcAuthRoutes — allows tests to inject a mock OidcProvider. */
 export interface OidcAuthRouteOptions {
@@ -212,7 +208,11 @@ export function registerOidcAuthRoutes(
       return;
     }
 
-    const { code, state: stateParam, error: oidcError } = req.query as {
+    const {
+      code,
+      state: stateParam,
+      error: oidcError,
+    } = req.query as {
       code?: string;
       state?: string;
       error?: string;
@@ -255,7 +255,7 @@ export function registerOidcAuthRoutes(
           ? payload['name']
           : typeof payload['preferred_username'] === 'string'
             ? payload['preferred_username']
-            : email ?? 'SSO User';
+            : (email ?? 'SSO User');
 
       const groups = provider.getGroups(payload);
       const mappedProfiles = provider.mapGroupsToProfiles(groups);

@@ -30,11 +30,11 @@ export interface AppConfig {
   configFile: string | null;
 
   // SMTP for email invitations
-  smtpHost: string | null;   // CALAME_SMTP_HOST
-  smtpPort: number;          // CALAME_SMTP_PORT, default 587
-  smtpUser: string | null;   // CALAME_SMTP_USER
-  smtpPass: string | null;   // CALAME_SMTP_PASS
-  smtpFrom: string | null;   // CALAME_SMTP_FROM
+  smtpHost: string | null; // CALAME_SMTP_HOST
+  smtpPort: number; // CALAME_SMTP_PORT, default 587
+  smtpUser: string | null; // CALAME_SMTP_USER
+  smtpPass: string | null; // CALAME_SMTP_PASS
+  smtpFrom: string | null; // CALAME_SMTP_FROM
 
   // OIDC / SSO
   /** Whether OIDC/SSO login is enabled. Set via CALAME_OIDC_ENABLED. */

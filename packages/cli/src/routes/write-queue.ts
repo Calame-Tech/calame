@@ -58,18 +58,21 @@ export function registerWriteQueueRoute(app: Express, state: AppState): void {
 
       const connectionString = state.cachedConnectionString;
 
-      const entry = await writeQueue.approve(req.params.id, async (sql: string, params: unknown[]) => {
-        // Execute the write query using pg directly (same pattern as serve.ts)
-        const { Client } = await import('pg');
-        const client = new Client({ connectionString });
-        await client.connect();
-        try {
-          const result = await client.query(sql, params);
-          return { rows: result.rows ?? [] };
-        } finally {
-          await client.end();
-        }
-      });
+      const entry = await writeQueue.approve(
+        req.params.id,
+        async (sql: string, params: unknown[]) => {
+          // Execute the write query using pg directly (same pattern as serve.ts)
+          const { Client } = await import('pg');
+          const client = new Client({ connectionString });
+          await client.connect();
+          try {
+            const result = await client.query(sql, params);
+            return { rows: result.rows ?? [] };
+          } finally {
+            await client.end();
+          }
+        },
+      );
 
       if (!entry) {
         res.status(404).json({ success: false, message: 'Pending write query not found.' });

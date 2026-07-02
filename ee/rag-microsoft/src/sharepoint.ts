@@ -114,19 +114,13 @@ export function narrowConfig(config: DocumentSourceConfig): SharePointConfig {
 
   const includeMimeTypes = config.includeMimeTypes;
   if (includeMimeTypes !== undefined) {
-    if (
-      !Array.isArray(includeMimeTypes) ||
-      !includeMimeTypes.every((m) => typeof m === 'string')
-    ) {
+    if (!Array.isArray(includeMimeTypes) || !includeMimeTypes.every((m) => typeof m === 'string')) {
       throw new Error('SharePointConnector: `includeMimeTypes` must be an array of strings');
     }
   }
   const excludeMimeTypes = config.excludeMimeTypes;
   if (excludeMimeTypes !== undefined) {
-    if (
-      !Array.isArray(excludeMimeTypes) ||
-      !excludeMimeTypes.every((m) => typeof m === 'string')
-    ) {
+    if (!Array.isArray(excludeMimeTypes) || !excludeMimeTypes.every((m) => typeof m === 'string')) {
       throw new Error('SharePointConnector: `excludeMimeTypes` must be an array of strings');
     }
   }
@@ -136,8 +130,7 @@ export function narrowConfig(config: DocumentSourceConfig): SharePointConfig {
     clientId,
     clientSecret,
     siteUrl: normaliseSiteUrl(siteUrl),
-    driveName:
-      typeof driveName === 'string' && driveName.length > 0 ? driveName : undefined,
+    driveName: typeof driveName === 'string' && driveName.length > 0 ? driveName : undefined,
     rootFolderPath: normaliseRootPath(rootFolderPath),
     recursive: recursive === undefined ? true : recursive,
     includeMimeTypes: includeMimeTypes as string[] | undefined,
@@ -297,10 +290,7 @@ export function clientCacheKey(config: {
   clientId: string;
   clientSecret: string;
 }): string {
-  const secretSig = createHash('sha256')
-    .update(config.clientSecret)
-    .digest('hex')
-    .slice(0, 16);
+  const secretSig = createHash('sha256').update(config.clientSecret).digest('hex').slice(0, 16);
   return createHash('sha256')
     .update([config.tenantId, config.clientId, secretSig].join('|'))
     .digest('hex');
@@ -699,10 +689,7 @@ export class SharePointConnector implements DocumentSourceConnector {
       }
 
       const size = typeof item.size === 'number' ? item.size : 0;
-      const hash =
-        item.file.hashes?.sha256Hash ??
-        item.file.hashes?.quickXorHash ??
-        '';
+      const hash = item.file.hashes?.sha256Hash ?? item.file.hashes?.quickXorHash ?? '';
       const rawETag = typeof item.eTag === 'string' ? stripQuotes(item.eTag) : null;
 
       docs.push({
@@ -753,11 +740,11 @@ export class SharePointConnector implements DocumentSourceConnector {
     }
 
     const mimeType =
-      (meta.file?.mimeType && meta.file.mimeType.length > 0
+      meta.file?.mimeType && meta.file.mimeType.length > 0
         ? meta.file.mimeType
         : meta.name
           ? mime.lookup(meta.name) || 'application/octet-stream'
-          : 'application/octet-stream');
+          : 'application/octet-stream';
 
     // 2. stream the body. Graph returns a 302 to Azure Blob; the SDK follows
     //    the redirect transparently. We request a STREAM responseType so the
@@ -875,9 +862,7 @@ export class SharePointConnector implements DocumentSourceConnector {
       throw new Error(`SharePoint: site "${config.siteUrl}" has no document libraries.`);
     }
     const drive = config.driveName
-      ? driveList.find(
-          (d) => d.name === config.driveName || d.displayName === config.driveName,
-        )
+      ? driveList.find((d) => d.name === config.driveName || d.displayName === config.driveName)
       : driveList[0];
     if (!drive) {
       const available = driveList

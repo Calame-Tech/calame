@@ -119,9 +119,10 @@ export class SQLiteConnector implements DatabaseConnector {
     try {
       // 1. Enumerate user tables (exclude internal sqlite_* tables).
       const tableRows = db
-        .prepare<[], TableMasterRow>(
-          `SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'`,
-        )
+        .prepare<
+          [],
+          TableMasterRow
+        >(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'`)
         .all();
 
       const tables: TableInfo[] = [];
@@ -192,7 +193,9 @@ export class SQLiteConnector implements DatabaseConnector {
       const safeTable = escapeName(table);
       const safeColumn = escapeName(column);
       const rows = db
-        .prepare(`SELECT DISTINCT CAST("${safeColumn}" AS TEXT) AS val FROM "${safeTable}" WHERE "${safeColumn}" IS NOT NULL LIMIT ?`)
+        .prepare(
+          `SELECT DISTINCT CAST("${safeColumn}" AS TEXT) AS val FROM "${safeTable}" WHERE "${safeColumn}" IS NOT NULL LIMIT ?`,
+        )
         .all(limit) as { val: string }[];
       return rows.map((row) => row.val);
     } catch {
@@ -220,7 +223,7 @@ export class SQLiteConnector implements DatabaseConnector {
           if (Date.now() > deadline) {
             throw new Error(
               `Query timed out after ${timeoutMs}ms. ` +
-              'Try narrowing your query with filters or reducing the result set.',
+                'Try narrowing your query with filters or reducing the result set.',
             );
           }
           return 1;

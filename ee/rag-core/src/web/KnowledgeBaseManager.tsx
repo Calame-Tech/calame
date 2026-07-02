@@ -242,9 +242,7 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
    */
   const refreshDeletedSources = useCallback(async (): Promise<void> => {
     try {
-      const data = await apiGet<{ sources: RagSourcePublic[] }>(
-        '/api/rag/sources?filter=deleted',
-      );
+      const data = await apiGet<{ sources: RagSourcePublic[] }>('/api/rag/sources?filter=deleted');
       setDeletedSources(data.sources ?? []);
     } catch (err) {
       // Failure here is not fatal — the count badge just stays at the
@@ -278,11 +276,7 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
   useEffect(() => {
     void (async () => {
       setLoading(true);
-      await Promise.all([
-        refreshSources(),
-        refreshAiSettings(),
-        refreshDeletedSources(),
-      ]);
+      await Promise.all([refreshSources(), refreshAiSettings(), refreshDeletedSources()]);
       setLoading(false);
     })();
   }, [refreshSources, refreshAiSettings, refreshDeletedSources]);
@@ -439,12 +433,7 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
   // the header / source list / detail panel are all suppressed. The panel
   // provides its own "← Retour" affordance that flips `showHistory` back.
   if (showHistory) {
-    return (
-      <SyncHistoryPanel
-        sources={sources}
-        onClose={() => setShowHistory(false)}
-      />
-    );
+    return <SyncHistoryPanel sources={sources} onClose={() => setShowHistory(false)} />;
   }
 
   // §12 Q7 — "Recently deleted" view. Same full-replacement pattern as the
@@ -458,8 +447,8 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
           <div>
             <h2 className="heading-md">Corbeille</h2>
             <p className="text-sm text-gray-500 mt-1">
-              Sources supprimées au cours des {RETENTION_DAYS} derniers jours. Au-delà, elles
-              sont définitivement effacées par le cron au prochain démarrage du serveur.
+              Sources supprimées au cours des {RETENTION_DAYS} derniers jours. Au-delà, elles sont
+              définitivement effacées par le cron au prochain démarrage du serveur.
             </p>
           </div>
           <button
@@ -518,9 +507,7 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
                         Supprimée {formatDate(source.deletedAt ?? undefined)}
                       </div>
                       <div
-                        className={`text-xs mt-0.5 ${
-                          urgent ? 'text-yellow-500' : 'text-gray-500'
-                        }`}
+                        className={`text-xs mt-0.5 ${urgent ? 'text-yellow-500' : 'text-gray-500'}`}
                       >
                         {remainingLabel}
                       </div>
@@ -635,13 +622,11 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] gap-4 items-start">
         {/* Source list */}
         <div className="space-y-2">
-          {loading && (
-            <p className="text-sm text-gray-500 italic">Chargement des sources…</p>
-          )}
+          {loading && <p className="text-sm text-gray-500 italic">Chargement des sources…</p>}
           {!loading && sources.length === 0 && !showCreateForm && (
             <div className="text-sm text-gray-500 italic px-3 py-6 text-center border border-dashed border-white/5 rounded-lg">
-              Aucune source. Cliquez sur{' '}
-              <span className="text-os-400">+ Nouvelle source</span> pour en créer une.
+              Aucune source. Cliquez sur <span className="text-os-400">+ Nouvelle source</span> pour
+              en créer une.
             </div>
           )}
           {sources.map((source) => {
@@ -649,20 +634,24 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
             const jobInfo = jobMap.get(source.id);
             // Merge poll data with optimistic state.
             const mergedJobInfo: SourceJobInfo = {
-              activeJob: jobInfo?.activeJob ?? (optimisticActiveIds.has(source.id) ? ({
-                id: 'optimistic',
-                sourceId: source.id,
-                status: 'pending',
-                progress: 0,
-                totalDocuments: 0,
-                processedDocuments: 0,
-                skippedByEtag: 0,
-                gcDeleted: 0,
-                tokensEmbedded: 0,
-                error: null,
-                startedAt: new Date().toISOString(),
-                finishedAt: null,
-              } satisfies import('../types.js').RagJob) : null),
+              activeJob:
+                jobInfo?.activeJob ??
+                (optimisticActiveIds.has(source.id)
+                  ? ({
+                      id: 'optimistic',
+                      sourceId: source.id,
+                      status: 'pending',
+                      progress: 0,
+                      totalDocuments: 0,
+                      processedDocuments: 0,
+                      skippedByEtag: 0,
+                      gcDeleted: 0,
+                      tokensEmbedded: 0,
+                      error: null,
+                      startedAt: new Date().toISOString(),
+                      finishedAt: null,
+                    } satisfies import('../types.js').RagJob)
+                  : null),
               lastFailedJob: jobInfo?.lastFailedJob ?? null,
             };
             const isResyncing = resyncingIds.has(source.id);
@@ -715,8 +704,7 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
                     {/* Document / folder counts */}
                     <div className="text-xs text-gray-500 mt-0.5">
                       {source.documentCount} document
-                      {source.documentCount > 1 ? 's' : ''} ·{' '}
-                      {source.folderCount} dossier
+                      {source.documentCount > 1 ? 's' : ''} · {source.folderCount} dossier
                       {source.folderCount > 1 ? 's' : ''}
                     </div>
                   </div>
@@ -791,14 +779,11 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
                 <div>
                   <h3 className="text-sm font-semibold text-gray-200">{selectedSource.name}</h3>
                   <p className="text-xs text-gray-500 mt-0.5">
-                    {syncModeLabel(selectedSource)} ·{' '}
-                    Dernière sync : {formatDate(selectedSource.lastSyncAt)}
+                    {syncModeLabel(selectedSource)} · Dernière sync :{' '}
+                    {formatDate(selectedSource.lastSyncAt)}
                   </p>
                 </div>
-                <SyncStatusBadge
-                  source={selectedSource}
-                  jobInfo={jobMap.get(selectedSource.id)}
-                />
+                <SyncStatusBadge source={selectedSource} jobInfo={jobMap.get(selectedSource.id)} />
               </div>
 
               <FolderTreeView

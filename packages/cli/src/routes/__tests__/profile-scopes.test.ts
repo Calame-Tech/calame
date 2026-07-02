@@ -25,9 +25,9 @@ function insertProfiles(
 
 /** Read the raw profile object from SQLite. */
 function readProfiles(db: CalameDatabase): Record<string, Record<string, unknown>> {
-  const row = db.raw
-    .prepare("SELECT data FROM profiles WHERE key = 'main'")
-    .get() as { data: string } | undefined;
+  const row = db.raw.prepare("SELECT data FROM profiles WHERE key = 'main'").get() as
+    | { data: string }
+    | undefined;
   if (!row) return {};
   const data = JSON.parse(row.data) as { profiles?: Record<string, Record<string, unknown>> };
   return data.profiles ?? {};
@@ -608,10 +608,50 @@ describe('profile-scopes routes', () => {
         `INSERT INTO rag_documents (id, source_id, folder_id, path, name, mime_type, size, hash, deleted_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
-      insDoc.run('d1', 'kb', 'f-faq', 'docs/faq/intro.pdf', 'intro.pdf', 'application/pdf', 1024, 'h1', null);
-      insDoc.run('d2', 'kb', 'f-faq', 'docs/faq/faq.md', 'faq.md', 'text/markdown', 512, 'h2', null);
-      insDoc.run('d3', 'kb', 'f-guides', 'docs/guides/start.md', 'start.md', 'text/markdown', 256, 'h3', null);
-      insDoc.run('d4', 'kb', 'f-faq', 'docs/faq/old.pdf', 'old.pdf', 'application/pdf', 768, 'h4', '2026-05-01T00:00:00Z');
+      insDoc.run(
+        'd1',
+        'kb',
+        'f-faq',
+        'docs/faq/intro.pdf',
+        'intro.pdf',
+        'application/pdf',
+        1024,
+        'h1',
+        null,
+      );
+      insDoc.run(
+        'd2',
+        'kb',
+        'f-faq',
+        'docs/faq/faq.md',
+        'faq.md',
+        'text/markdown',
+        512,
+        'h2',
+        null,
+      );
+      insDoc.run(
+        'd3',
+        'kb',
+        'f-guides',
+        'docs/guides/start.md',
+        'start.md',
+        'text/markdown',
+        256,
+        'h3',
+        null,
+      );
+      insDoc.run(
+        'd4',
+        'kb',
+        'f-faq',
+        'docs/faq/old.pdf',
+        'old.pdf',
+        'application/pdf',
+        768,
+        'h4',
+        '2026-05-01T00:00:00Z',
+      );
 
       // 5 chunks total: 2 on d1, 2 on d2, 1 on d3, 0 on d4 (soft-deleted)
       const insChunk = db.raw.prepare(

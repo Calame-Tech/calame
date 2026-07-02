@@ -38,7 +38,13 @@ function buildScopesValidator(): z.ZodType<Record<string, ScopeSelection>> {
   const unionSchema: z.ZodType<ScopeSelection> =
     schemas.length === 1
       ? schemas[0]
-      : (z.union(schemas as [z.ZodType<ScopeSelection>, z.ZodType<ScopeSelection>, ...z.ZodType<ScopeSelection>[]]));
+      : z.union(
+          schemas as [
+            z.ZodType<ScopeSelection>,
+            z.ZodType<ScopeSelection>,
+            ...z.ZodType<ScopeSelection>[],
+          ],
+        );
 
   return z.record(z.string(), unionSchema);
 }
@@ -153,7 +159,10 @@ export function registerProfileScopesRoute(app: Express, state: AppState): void 
       res.json({ success: true, profile: upgraded });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown error';
-      state.logger?.error('Scopes update error', { component: `profiles/${profileName}/scopes`, error: message });
+      state.logger?.error('Scopes update error', {
+        component: `profiles/${profileName}/scopes`,
+        error: message,
+      });
       res.status(500).json({ success: false, message: 'Failed to update profile scopes' });
     }
   });
@@ -241,7 +250,13 @@ export function registerProfileScopesRoute(app: Express, state: AppState): void 
             counts: { folders: number; documents: number; chunks: number };
             live: boolean;
           }
-        | { id: string; kind: string; summary: Record<string, unknown>; counts: Record<string, unknown>; live: boolean };
+        | {
+            id: string;
+            kind: string;
+            summary: Record<string, unknown>;
+            counts: Record<string, unknown>;
+            live: boolean;
+          };
 
       const perSource: PerSourceEntry[] = sources.map((sourceId) => {
         const scope = scopes[sourceId];
@@ -295,17 +310,19 @@ export function registerProfileScopesRoute(app: Express, state: AppState): void 
           if (scope.mode === 'allowAll') {
             // Count every non-deleted document for this source.
             const docRow = ragDb
-              .prepare<[string, string], { n: number }>(
-                'SELECT COUNT(*) AS n FROM rag_documents WHERE source_id = ? AND tenant_id = ? AND deleted_at IS NULL',
-              )
+              .prepare<
+                [string, string],
+                { n: number }
+              >('SELECT COUNT(*) AS n FROM rag_documents WHERE source_id = ? AND tenant_id = ? AND deleted_at IS NULL')
               .get(sourceId, tenantId);
             liveDocCount = docRow?.n ?? 0;
 
             // Count all folders for this source.
             const folderRow = ragDb
-              .prepare<[string, string], { n: number }>(
-                'SELECT COUNT(*) AS n FROM rag_folders WHERE source_id = ? AND tenant_id = ?',
-              )
+              .prepare<
+                [string, string],
+                { n: number }
+              >('SELECT COUNT(*) AS n FROM rag_folders WHERE source_id = ? AND tenant_id = ?')
               .get(sourceId, tenantId);
             liveFolderCount = folderRow?.n ?? 0;
 
@@ -370,9 +387,10 @@ export function registerProfileScopesRoute(app: Express, state: AppState): void 
               const idList = Array.from(allDocIds);
               const placeholders = idList.map(() => '?').join(',');
               const chunkRow = ragDb
-                .prepare<string[], { n: number }>(
-                  `SELECT COUNT(*) AS n FROM rag_chunks WHERE document_id IN (${placeholders}) AND tenant_id = ?`,
-                )
+                .prepare<
+                  string[],
+                  { n: number }
+                >(`SELECT COUNT(*) AS n FROM rag_chunks WHERE document_id IN (${placeholders}) AND tenant_id = ?`)
                 .get(...idList, tenantId);
               liveChunkCount = chunkRow?.n ?? 0;
             }

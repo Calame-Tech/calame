@@ -79,9 +79,9 @@ describe('PostgreSQLConnector — query() with pooling', () => {
       .mockRejectedValueOnce(new Error('query failed')) // query fails
       .mockResolvedValueOnce(undefined); // ROLLBACK
 
-    await expect(
-      connector.query('postgresql://localhost/test', 'BAD SQL'),
-    ).rejects.toThrow('query failed');
+    await expect(connector.query('postgresql://localhost/test', 'BAD SQL')).rejects.toThrow(
+      'query failed',
+    );
 
     expect(pgMockRelease).toHaveBeenCalledOnce();
   });
@@ -96,7 +96,9 @@ describe('PostgreSQLConnector — query() with pooling', () => {
       .mockResolvedValueOnce(undefined); // ROLLBACK
 
     await expect(
-      connector.query('postgresql://localhost/test', 'SELECT * FROM huge_table', { timeoutMs: 1000 }),
+      connector.query('postgresql://localhost/test', 'SELECT * FROM huge_table', {
+        timeoutMs: 1000,
+      }),
     ).rejects.toThrow('Query timed out after 1000ms');
   });
 

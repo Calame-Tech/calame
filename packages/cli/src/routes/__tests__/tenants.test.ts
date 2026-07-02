@@ -358,9 +358,7 @@ describe('tenants routes', () => {
       // An empty :id would route to GET /api/tenants — this test just guards
       // against accidental "delete everything" shapes by confirming the
       // listing endpoint answers instead of the destructive one.
-      const res = await request(app)
-        .delete('/api/tenants/')
-        .set('Cookie', cookie);
+      const res = await request(app).delete('/api/tenants/').set('Cookie', cookie);
       // Express returns 404 for unmatched routes (or 405 method-not-allowed).
       expect([404, 405]).toContain(res.status);
     });

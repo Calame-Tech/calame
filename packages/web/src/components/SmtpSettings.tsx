@@ -227,7 +227,9 @@ export default function SmtpSettings() {
       {/* Username */}
       <div>
         <div className="flex items-center gap-1.5 mb-1">
-          <label htmlFor="smtp-username" className="text-sm text-gray-400">Username</label>
+          <label htmlFor="smtp-username" className="text-sm text-gray-400">
+            Username
+          </label>
           <HelpTip
             content="Login identifier for the SMTP server. For Gmail or Microsoft 365, this is typically your full email address. Some corporate SMTP servers use a separate identifier."
             position="right"
@@ -247,7 +249,9 @@ export default function SmtpSettings() {
       {/* Password */}
       <div>
         <div className="flex items-center gap-1.5 mb-1">
-          <label htmlFor="smtp-password" className="text-sm text-gray-400">Password</label>
+          <label htmlFor="smtp-password" className="text-sm text-gray-400">
+            Password
+          </label>
           <HelpTip
             content="SMTP password, stored encrypted on the server. For Gmail, use an App Password rather than your main account password. For Amazon SES, use the SMTP secret key generated in the AWS console."
             position="right"
@@ -259,11 +263,16 @@ export default function SmtpSettings() {
             id="smtp-password"
             type={showPassword ? 'text' : 'password'}
             value={password}
-            onChange={(e) => { setPassword(e.target.value); setPasswordRevealed(true); }}
+            onChange={(e) => {
+              setPassword(e.target.value);
+              setPasswordRevealed(true);
+            }}
             placeholder="••••••••"
             readOnly={isPasswordMasked}
             className={`input-editorial w-full text-sm pr-16 ${isPasswordMasked ? 'cursor-pointer' : ''}`}
-            onClick={() => { if (isPasswordMasked) setShowRevealPrompt(true); }}
+            onClick={() => {
+              if (isPasswordMasked) setShowRevealPrompt(true);
+            }}
           />
           <button
             type="button"
@@ -283,7 +292,9 @@ export default function SmtpSettings() {
         {/* Admin password prompt to reveal SMTP password */}
         {showRevealPrompt && (
           <div className="mt-2 p-3 rounded-lg border border-os-600/40 bg-os-900/20 space-y-2">
-            <p className="text-xs text-gray-300">Enter your admin password to reveal the SMTP password.</p>
+            <p className="text-xs text-gray-300">
+              Enter your admin password to reveal the SMTP password.
+            </p>
             <div className="flex items-center gap-2">
               <input
                 type="password"
@@ -292,7 +303,9 @@ export default function SmtpSettings() {
                 placeholder="Admin password"
                 autoFocus
                 className="input-editorial flex-1 text-sm"
-                onKeyDown={(e) => { if (e.key === 'Enter') handleRevealPassword(); }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleRevealPassword();
+                }}
               />
               <button
                 type="button"
@@ -304,21 +317,25 @@ export default function SmtpSettings() {
               </button>
               <button
                 type="button"
-                onClick={() => { setShowRevealPrompt(false); setRevealPassword(''); setRevealError(''); }}
+                onClick={() => {
+                  setShowRevealPrompt(false);
+                  setRevealPassword('');
+                  setRevealError('');
+                }}
                 className="px-2 py-1.5 text-gray-500 hover:text-gray-300 text-sm transition-all duration-200"
               >
                 Cancel
               </button>
             </div>
-            {revealStatus === 'error' && (
-              <p className="text-xs text-red-400">{revealError}</p>
-            )}
+            {revealStatus === 'error' && <p className="text-xs text-red-400">{revealError}</p>}
           </div>
         )}
 
         {!showRevealPrompt && (
           <p className="text-xs text-gray-600 mt-1">
-            {isPasswordMasked ? 'Click "Show" to reveal with admin password.' : 'If left unchanged, the existing password is kept on the server.'}
+            {isPasswordMasked
+              ? 'Click "Show" to reveal with admin password.'
+              : 'If left unchanged, the existing password is kept on the server.'}
           </p>
         )}
       </div>
@@ -326,7 +343,9 @@ export default function SmtpSettings() {
       {/* From Address */}
       <div>
         <div className="flex items-center gap-1.5 mb-1">
-          <label htmlFor="smtp-from" className="text-sm text-gray-400">From Address</label>
+          <label htmlFor="smtp-from" className="text-sm text-gray-400">
+            From Address
+          </label>
           <HelpTip
             content="Email address displayed as the sender in invitation emails. Can include a display name, e.g. Calame &lt;noreply@example.com&gt;. This address must be authorized by your SMTP provider (verified domain on Amazon SES, alias in Gmail, etc.)."
             position="right"
@@ -362,9 +381,7 @@ export default function SmtpSettings() {
           {testing ? 'Testing...' : 'Test Connection'}
         </button>
 
-        {saveResult && (
-          <span className="text-sm text-green-400">{saveResult}</span>
-        )}
+        {saveResult && <span className="text-sm text-green-400">{saveResult}</span>}
       </div>
 
       {/* Test result */}

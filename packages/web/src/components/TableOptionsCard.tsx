@@ -1,13 +1,20 @@
-import type { TableInfo, TableToolOptions, PiiDetection, ColumnMasking, PiiCategory } from '../types/schema.js';
+import type {
+  TableInfo,
+  TableToolOptions,
+  PiiDetection,
+  ColumnMasking,
+  PiiCategory,
+} from '../types/schema.js';
 import PiiBadge from './PiiBadge.js';
 import MaskingSelector from './MaskingSelector.js';
 import HelpTip from './HelpTip.js';
 
 const TOOLS = ['describe', 'aggregate', 'query', 'write'] as const;
 
-const TOOL_TOOLTIPS: Record<typeof TOOLS[number], string> = {
+const TOOL_TOOLTIPS: Record<(typeof TOOLS)[number], string> = {
   describe: 'Exposes an MCP tool that describes the table structure (columns, types, relations).',
-  aggregate: 'Exposes an MCP tool that runs aggregations (COUNT, SUM, AVG, GROUP BY) on this table.',
+  aggregate:
+    'Exposes an MCP tool that runs aggregations (COUNT, SUM, AVG, GROUP BY) on this table.',
   query: 'Exposes an MCP tool that queries raw table data with filters and pagination.',
   write: 'Exposes an MCP tool that inserts or updates data in this table (write operations).',
 };
@@ -23,20 +30,25 @@ interface TableOptionsCardProps {
   onPiiOverride?: (columnName: string, detection: PiiDetection | null) => void;
 }
 
-export default function TableOptionsCard({ tableName, table, options, onChange, piiDetections, columnMasking, onColumnMaskingChange, onPiiOverride }: TableOptionsCardProps) {
-  const toggleTool = (tool: typeof TOOLS[number]) => {
+export default function TableOptionsCard({
+  tableName,
+  table,
+  options,
+  onChange,
+  piiDetections,
+  columnMasking,
+  onColumnMaskingChange,
+  onPiiOverride,
+}: TableOptionsCardProps) {
+  const toggleTool = (tool: (typeof TOOLS)[number]) => {
     const current = options.enabledTools;
-    const next = current.includes(tool)
-      ? current.filter((t) => t !== tool)
-      : [...current, tool];
+    const next = current.includes(tool) ? current.filter((t) => t !== tool) : [...current, tool];
     onChange({ ...options, enabledTools: next });
   };
 
   const toggleColumn = (field: 'filterableColumns' | 'groupableColumns', col: string) => {
     const current = options[field];
-    const next = current.includes(col)
-      ? current.filter((c) => c !== col)
-      : [...current, col];
+    const next = current.includes(col) ? current.filter((c) => c !== col) : [...current, col];
     onChange({ ...options, [field]: next });
   };
 
@@ -58,7 +70,10 @@ export default function TableOptionsCard({ tableName, table, options, onChange, 
         </span>
         <div className="flex flex-wrap gap-3">
           {TOOLS.map((tool) => (
-            <label key={tool} className="flex items-center gap-1.5 text-sm text-gray-300 cursor-pointer">
+            <label
+              key={tool}
+              className="flex items-center gap-1.5 text-sm text-gray-300 cursor-pointer"
+            >
               <input
                 type="checkbox"
                 checked={options.enabledTools.includes(tool)}
@@ -86,7 +101,9 @@ export default function TableOptionsCard({ tableName, table, options, onChange, 
           type="number"
           min={1}
           value={options.maxLimit}
-          onChange={(e) => onChange({ ...options, maxLimit: Math.max(1, Number(e.target.value) || 1) })}
+          onChange={(e) =>
+            onChange({ ...options, maxLimit: Math.max(1, Number(e.target.value) || 1) })
+          }
           className="input-editorial w-32 text-sm font-mono"
         />
       </div>
@@ -103,7 +120,10 @@ export default function TableOptionsCard({ tableName, table, options, onChange, 
         </span>
         <div className="flex flex-wrap gap-x-3 gap-y-1.5">
           {table.columns.map((col) => (
-            <label key={col.name} className="flex items-center gap-1.5 text-sm text-gray-300 cursor-pointer">
+            <label
+              key={col.name}
+              className="flex items-center gap-1.5 text-sm text-gray-300 cursor-pointer"
+            >
               <input
                 type="checkbox"
                 checked={options.filterableColumns.includes(col.name)}
@@ -128,7 +148,10 @@ export default function TableOptionsCard({ tableName, table, options, onChange, 
         </span>
         <div className="flex flex-wrap gap-x-3 gap-y-1.5">
           {table.columns.map((col) => (
-            <label key={col.name} className="flex items-center gap-1.5 text-sm text-gray-300 cursor-pointer">
+            <label
+              key={col.name}
+              className="flex items-center gap-1.5 text-sm text-gray-300 cursor-pointer"
+            >
               <input
                 type="checkbox"
                 checked={options.groupableColumns.includes(col.name)}
@@ -155,7 +178,10 @@ export default function TableOptionsCard({ tableName, table, options, onChange, 
           <div className="space-y-2">
             {table.columns.map((col) => {
               const detection = piiDetections?.[col.name];
-              const masking: ColumnMasking = columnMasking?.[col.name] ?? { maskingMode: 'none', piiDetected: detection };
+              const masking: ColumnMasking = columnMasking?.[col.name] ?? {
+                maskingMode: 'none',
+                piiDetected: detection,
+              };
               return (
                 <div key={col.name} className="flex items-center gap-2 flex-wrap">
                   <span className="font-mono text-xs text-gray-300 w-28 shrink-0">{col.name}</span>
@@ -164,20 +190,27 @@ export default function TableOptionsCard({ tableName, table, options, onChange, 
                       detection={detection}
                       onChangeCategory={
                         onPiiOverride
-                          ? (cat: PiiCategory) => onPiiOverride(col.name, { category: cat, confidence: 'manual', matchedBy: 'manual' })
+                          ? (cat: PiiCategory) =>
+                              onPiiOverride(col.name, {
+                                category: cat,
+                                confidence: 'manual',
+                                matchedBy: 'manual',
+                              })
                           : undefined
                       }
-                      onRemove={
-                        onPiiOverride
-                          ? () => onPiiOverride(col.name, null)
-                          : undefined
-                      }
+                      onRemove={onPiiOverride ? () => onPiiOverride(col.name, null) : undefined}
                     />
                   ) : (
                     onPiiOverride && (
                       <div className="flex items-center gap-1">
                         <button
-                          onClick={() => onPiiOverride(col.name, { category: 'name', confidence: 'manual', matchedBy: 'manual' })}
+                          onClick={() =>
+                            onPiiOverride(col.name, {
+                              category: 'name',
+                              confidence: 'manual',
+                              matchedBy: 'manual',
+                            })
+                          }
                           className="text-[10px] px-1.5 py-0.5 rounded-md font-medium ring-1 bg-gray-700/30 text-gray-500 ring-gray-600/30 hover:text-indigo-400 hover:ring-indigo-500/30 hover:bg-indigo-500/10 transition-colors cursor-pointer"
                         >
                           + PII

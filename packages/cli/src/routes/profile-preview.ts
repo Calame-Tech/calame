@@ -2,7 +2,12 @@ import type { Express, Request, Response } from 'express';
 import crypto from 'crypto';
 import { getConnector } from '@calame/connectors';
 import type { AppState } from '../state.js';
-import type { TableToolOptions, ColumnMasking, ScopeSelection, ServeConfiguration } from '@calame/core';
+import type {
+  TableToolOptions,
+  ColumnMasking,
+  ScopeSelection,
+  ServeConfiguration,
+} from '@calame/core';
 import {
   getProfileSelectedTables,
   getProfileTableOptions,
@@ -146,7 +151,9 @@ export function registerProfilePreviewRoute(app: Express, state: AppState): void
           .filter(Boolean) as ServeConfiguration[];
 
         if (resolvedConfigs.length === 0) {
-          res.status(400).json({ success: false, message: 'No valid configurations found for this profile.' });
+          res
+            .status(400)
+            .json({ success: false, message: 'No valid configurations found for this profile.' });
           return;
         }
 
@@ -191,7 +198,8 @@ export function registerProfilePreviewRoute(app: Express, state: AppState): void
         const tableMasking = effectiveColumnMasking?.[tableName] ?? {};
 
         // Build column visibility info
-        const resolvedColumns = selectedColumns.length > 0 ? selectedColumns : tableColumns.map((c) => c.name);
+        const resolvedColumns =
+          selectedColumns.length > 0 ? selectedColumns : tableColumns.map((c) => c.name);
         const columns: PreviewColumnInfo[] = tableColumns
           .filter((col) => resolvedColumns.includes(col.name))
           .map((col) => {
@@ -235,9 +243,7 @@ export function registerProfilePreviewRoute(app: Express, state: AppState): void
           // Fetch sample row using only visible columns
           const visibleCols = columns.filter((c) => c.visible).map((c) => c.name);
           if (visibleCols.length > 0) {
-            const quotedCols = visibleCols
-              .map((c) => quoteColumnName(c, databaseType!))
-              .join(', ');
+            const quotedCols = visibleCols.map((c) => quoteColumnName(c, databaseType!)).join(', ');
             try {
               const sampleResult = await connector.query(
                 connectionString,

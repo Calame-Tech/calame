@@ -69,9 +69,7 @@ export function getProfileTableNames(profile: ProfileScopeShape): string[] {
  * with later scopes winning for duplicates. Mirrors the historic
  * `profile.selectedTables` shape.
  */
-export function getProfileSelectedTables(
-  profile: ProfileScopeShape,
-): Record<string, string[]> {
+export function getProfileSelectedTables(profile: ProfileScopeShape): Record<string, string[]> {
   if (profile.scopes) {
     const out: Record<string, string[]> = {};
     let hasAny = false;
@@ -206,9 +204,7 @@ export function getConfigurationTableNames(cfg: ConfigScopeShape): string[] {
  * When two scopes reference the same table, later scopes win for duplicates.
  * Mirrors the historic `cfg.selectedTables` shape.
  */
-export function getConfigurationSelectedTables(
-  cfg: ConfigScopeShape,
-): Record<string, string[]> {
+export function getConfigurationSelectedTables(cfg: ConfigScopeShape): Record<string, string[]> {
   if (cfg.scopes) {
     const out: Record<string, string[]> = {};
     let hasAny = false;

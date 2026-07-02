@@ -132,7 +132,9 @@ function makeDeps(overrides?: Partial<DocumentAdapterDeps>): DocumentAdapterDeps
 }
 
 function makeCtx(
-  overrides: Partial<McpRegistrationContext<ReturnType<typeof makeConfig>, ReturnType<typeof makeDocumentSchema>>> = {},
+  overrides: Partial<
+    McpRegistrationContext<ReturnType<typeof makeConfig>, ReturnType<typeof makeDocumentSchema>>
+  > = {},
 ): McpRegistrationContext<ReturnType<typeof makeConfig>, ReturnType<typeof makeDocumentSchema>> {
   return {
     server: makeMcpServer(),
@@ -317,11 +319,21 @@ describe('buildDocumentSourceAdapter', () => {
       const adapter = buildDocumentSourceAdapter(makeDeps({ storage }), 'local', 'Local folder');
       const result = await adapter.introspect!({ root: '/data' }, 'src-1');
 
-      expect(result.folders[0]).toEqual({ id: 'f1', name: 'guides', path: 'docs/guides', parentId: null });
+      expect(result.folders[0]).toEqual({
+        id: 'f1',
+        name: 'guides',
+        path: 'docs/guides',
+        parentId: null,
+      });
     });
 
     it('maps document fields correctly', async () => {
-      const doc = makeDocument({ id: 'd1', name: 'report.pdf', mimeType: 'application/pdf', size: 2048 });
+      const doc = makeDocument({
+        id: 'd1',
+        name: 'report.pdf',
+        mimeType: 'application/pdf',
+        size: 2048,
+      });
       const storage = makeStorage({ listDocuments: vi.fn().mockResolvedValue([doc]) });
       const adapter = buildDocumentSourceAdapter(makeDeps({ storage }), 'local', 'Local folder');
       const result = await adapter.introspect!({ root: '/data' }, 'src-1');
@@ -392,7 +404,9 @@ describe('buildDocumentSourceAdapter', () => {
       const call = calls.find((c) => c[0] === toolName);
       if (!call) throw new Error(`Tool "${toolName}" not registered`);
       // MCP server.tool(name, description, schema, handler)
-      return call[3] as (args: Record<string, unknown>) => Promise<{ content: Array<{ type: string; text: string }> }>;
+      return call[3] as (
+        args: Record<string, unknown>,
+      ) => Promise<{ content: Array<{ type: string; text: string }> }>;
     }
 
     it('returns chunks passing the allowAll scope', async () => {
@@ -459,7 +473,9 @@ describe('buildDocumentSourceAdapter', () => {
 
       const handler = getToolHandler(ctx);
       const response = await handler({ query: 'test query' });
-      const payload = JSON.parse(response.content[0].text) as { chunks: Array<{ documentId: string }> };
+      const payload = JSON.parse(response.content[0].text) as {
+        chunks: Array<{ documentId: string }>;
+      };
       expect(payload.chunks).toHaveLength(1);
       expect(payload.chunks[0].documentId).toBe('doc-1');
     });
@@ -523,7 +539,11 @@ describe('buildDocumentSourceAdapter', () => {
       const handler = getToolHandler(ctx);
       await handler({ query: 'test query' });
       expect(onAuditLog).toHaveBeenCalledOnce();
-      const entry = onAuditLog.mock.calls[0][0] as { toolName: string; profileName: string; result: string };
+      const entry = onAuditLog.mock.calls[0][0] as {
+        toolName: string;
+        profileName: string;
+        result: string;
+      };
       expect(entry.toolName).toBe('rag_search');
       expect(entry.profileName).toBe('test-profile');
       expect(entry.result).toBe('success');
@@ -538,7 +558,9 @@ describe('buildDocumentSourceAdapter', () => {
       const calls = (ctx.server.tool as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
       const call = calls.find((c) => c[0] === toolName);
       if (!call) throw new Error(`Tool "${toolName}" not registered`);
-      return call[3] as (args: Record<string, unknown>) => Promise<{ content: Array<{ type: string; text: string }> }>;
+      return call[3] as (
+        args: Record<string, unknown>,
+      ) => Promise<{ content: Array<{ type: string; text: string }> }>;
     }
 
     it('returns document content when in allowList via allowedDocuments', async () => {
@@ -546,11 +568,7 @@ describe('buildDocumentSourceAdapter', () => {
       const storage = makeStorage({
         getDocument: vi.fn().mockResolvedValue({ doc, text: 'hello world' }),
       });
-      const adapter = buildDocumentSourceAdapter(
-        makeDeps({ storage }),
-        'local',
-        'Local folder',
-      );
+      const adapter = buildDocumentSourceAdapter(makeDeps({ storage }), 'local', 'Local folder');
       const scope = makeAllowListScope([], ['doc-allowed']);
       const ctx = makeCtx({ selection: scope });
       adapter.registerMcpTools!(ctx);
@@ -571,11 +589,7 @@ describe('buildDocumentSourceAdapter', () => {
       const storage = makeStorage({
         getDocument: vi.fn().mockResolvedValue({ doc, text: 'sensitive content' }),
       });
-      const adapter = buildDocumentSourceAdapter(
-        makeDeps({ storage }),
-        'local',
-        'Local folder',
-      );
+      const adapter = buildDocumentSourceAdapter(makeDeps({ storage }), 'local', 'Local folder');
       const scope = makeAllowListScope(['docs/public'], []);
       const ctx = makeCtx({ selection: scope });
       adapter.registerMcpTools!(ctx);
@@ -588,11 +602,7 @@ describe('buildDocumentSourceAdapter', () => {
 
     it('returns not-found error for unknown documentId', async () => {
       const storage = makeStorage({ getDocument: vi.fn().mockResolvedValue(null) });
-      const adapter = buildDocumentSourceAdapter(
-        makeDeps({ storage }),
-        'local',
-        'Local folder',
-      );
+      const adapter = buildDocumentSourceAdapter(makeDeps({ storage }), 'local', 'Local folder');
       const ctx = makeCtx({ selection: makeAllowAllScope() });
       adapter.registerMcpTools!(ctx);
 
@@ -608,11 +618,7 @@ describe('buildDocumentSourceAdapter', () => {
       const storage = makeStorage({
         getDocument: vi.fn().mockResolvedValue({ doc, text: largeText }),
       });
-      const adapter = buildDocumentSourceAdapter(
-        makeDeps({ storage }),
-        'local',
-        'Local folder',
-      );
+      const adapter = buildDocumentSourceAdapter(makeDeps({ storage }), 'local', 'Local folder');
       const ctx = makeCtx({ selection: makeAllowAllScope() });
       adapter.registerMcpTools!(ctx);
 
@@ -629,11 +635,7 @@ describe('buildDocumentSourceAdapter', () => {
       const storage = makeStorage({
         getDocument: vi.fn().mockResolvedValue({ doc, text: 'content' }),
       });
-      const adapter = buildDocumentSourceAdapter(
-        makeDeps({ storage }),
-        'local',
-        'Local folder',
-      );
+      const adapter = buildDocumentSourceAdapter(makeDeps({ storage }), 'local', 'Local folder');
       const ctx = makeCtx({ selection: makeAllowAllScope(), onAuditLog });
       adapter.registerMcpTools!(ctx);
 
@@ -654,18 +656,16 @@ describe('buildDocumentSourceAdapter', () => {
       const calls = (ctx.server.tool as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
       const call = calls.find((c) => c[0] === toolName);
       if (!call) throw new Error(`Tool "${toolName}" not registered`);
-      return call[3] as (args: Record<string, unknown>) => Promise<{ content: Array<{ type: string; text: string }> }>;
+      return call[3] as (
+        args: Record<string, unknown>,
+      ) => Promise<{ content: Array<{ type: string; text: string }> }>;
     }
 
     it('returns all folders under allowAll scope', async () => {
       const f1 = makeFolder({ id: 'f1', path: 'docs/faq', name: 'faq' });
       const f2 = makeFolder({ id: 'f2', path: 'docs/internal', name: 'internal' });
       const storage = makeStorage({ listFolders: vi.fn().mockResolvedValue([f1, f2]) });
-      const adapter = buildDocumentSourceAdapter(
-        makeDeps({ storage }),
-        'local',
-        'Local folder',
-      );
+      const adapter = buildDocumentSourceAdapter(makeDeps({ storage }), 'local', 'Local folder');
       const ctx = makeCtx({ selection: makeAllowAllScope() });
       adapter.registerMcpTools!(ctx);
 
@@ -679,11 +679,7 @@ describe('buildDocumentSourceAdapter', () => {
       const f1 = makeFolder({ id: 'f1', path: 'docs/faq', name: 'faq' });
       const f2 = makeFolder({ id: 'f2', path: 'docs/internal', name: 'internal' });
       const storage = makeStorage({ listFolders: vi.fn().mockResolvedValue([f1, f2]) });
-      const adapter = buildDocumentSourceAdapter(
-        makeDeps({ storage }),
-        'local',
-        'Local folder',
-      );
+      const adapter = buildDocumentSourceAdapter(makeDeps({ storage }), 'local', 'Local folder');
       const scope = makeAllowListScope(['docs/faq'], []);
       const ctx = makeCtx({ selection: scope });
       adapter.registerMcpTools!(ctx);
@@ -717,17 +713,15 @@ describe('buildDocumentSourceAdapter', () => {
       const calls = (ctx.server.tool as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
       const call = calls.find((c) => c[0] === toolName);
       if (!call) throw new Error(`Tool "${toolName}" not registered`);
-      return call[3] as (args: Record<string, unknown>) => Promise<{ content: Array<{ type: string; text: string }> }>;
+      return call[3] as (
+        args: Record<string, unknown>,
+      ) => Promise<{ content: Array<{ type: string; text: string }> }>;
     }
 
     it('returns documents when folder is in allowList', async () => {
       const doc = makeDocument({ id: 'doc-1' });
       const storage = makeStorage({ listDocuments: vi.fn().mockResolvedValue([doc]) });
-      const adapter = buildDocumentSourceAdapter(
-        makeDeps({ storage }),
-        'local',
-        'Local folder',
-      );
+      const adapter = buildDocumentSourceAdapter(makeDeps({ storage }), 'local', 'Local folder');
       const scope = makeAllowListScope(['docs/faq'], []);
       const ctx = makeCtx({ selection: scope });
       adapter.registerMcpTools!(ctx);
@@ -770,7 +764,9 @@ describe('buildDocumentSourceAdapter', () => {
       const calls = (ctx.server.tool as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
       const call = calls.find((c) => c[0] === toolName);
       if (!call) throw new Error(`Tool "${toolName}" not registered`);
-      return call[3] as (args: Record<string, unknown>) => Promise<{ content: Array<{ type: string; text: string }> }>;
+      return call[3] as (
+        args: Record<string, unknown>,
+      ) => Promise<{ content: Array<{ type: string; text: string }> }>;
     }
 
     it('returns only the current source', async () => {
@@ -780,11 +776,7 @@ describe('buildDocumentSourceAdapter', () => {
           { id: 'src-2', name: 'Other KB', type: 'local', folderCount: 1, documentCount: 5 },
         ]),
       });
-      const adapter = buildDocumentSourceAdapter(
-        makeDeps({ storage }),
-        'local',
-        'Local folder',
-      );
+      const adapter = buildDocumentSourceAdapter(makeDeps({ storage }), 'local', 'Local folder');
       // ctx.source.id = 'src-1' (default from makeSource)
       const ctx = makeCtx();
       adapter.registerMcpTools!(ctx);

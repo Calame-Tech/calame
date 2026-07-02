@@ -206,7 +206,7 @@ describe('GDriveConnector.listFolders', () => {
     );
   });
 
-  it("scopes listFolders under `parent.id` when supplied", async () => {
+  it('scopes listFolders under `parent.id` when supplied', async () => {
     mockedFiles.list.mockResolvedValueOnce({
       data: {
         files: [{ id: 'F3', name: 'sub' }],
@@ -228,7 +228,7 @@ describe('GDriveConnector.listFolders', () => {
     expect(call?.q).toContain(`'PARENT_ID' in parents`);
   });
 
-  it("returns [] for sub-folders when recursive=false and a parent is supplied", async () => {
+  it('returns [] for sub-folders when recursive=false and a parent is supplied', async () => {
     const connector = new GDriveConnector();
     const parent: RagFolder = {
       id: 'PARENT_ID',
@@ -350,7 +350,7 @@ describe('GDriveConnector.listDocuments', () => {
     });
   });
 
-  it("prefixes document paths with the parent folder path", async () => {
+  it('prefixes document paths with the parent folder path', async () => {
     mockedFiles.list.mockResolvedValueOnce({
       data: {
         files: [{ id: 'D1', name: 'guide.pdf', mimeType: 'application/pdf', size: '1' }],
@@ -485,7 +485,7 @@ describe('doc id encode/decode', () => {
     }
   });
 
-  it("rejects ids without the gdrive: prefix", () => {
+  it('rejects ids without the gdrive: prefix', () => {
     expect(() => __testing.decodeDocId('s3:abc')).toThrow(GDriveDocumentNotFoundError);
     expect(() => __testing.decodeDocId('garbage')).toThrow(GDriveDocumentNotFoundError);
     expect(() => __testing.decodeDocId('gdrive:')).toThrow(GDriveDocumentNotFoundError);
@@ -525,34 +525,30 @@ describe('narrowConfig', () => {
   it('throws when serviceAccountKey is missing client_email', () => {
     const { client_email: _client_email, ...rest } = FAKE_KEY;
     void _client_email;
-    expect(() =>
-      __testing.narrowConfig({ ...baseConfig, serviceAccountKey: rest }),
-    ).toThrow(/client_email/);
+    expect(() => __testing.narrowConfig({ ...baseConfig, serviceAccountKey: rest })).toThrow(
+      /client_email/,
+    );
   });
 
   it('throws when rootFolderId is missing or empty', () => {
-    expect(() => __testing.narrowConfig({ serviceAccountKey: FAKE_KEY })).toThrow(
+    expect(() => __testing.narrowConfig({ serviceAccountKey: FAKE_KEY })).toThrow(/rootFolderId/);
+    expect(() => __testing.narrowConfig({ serviceAccountKey: FAKE_KEY, rootFolderId: '' })).toThrow(
       /rootFolderId/,
     );
-    expect(() =>
-      __testing.narrowConfig({ serviceAccountKey: FAKE_KEY, rootFolderId: '' }),
-    ).toThrow(/rootFolderId/);
   });
 
   it('defaults recursive to true and respects an explicit false', () => {
     expect(__testing.narrowConfig(baseConfig).recursive).toBe(true);
-    expect(
-      __testing.narrowConfig({ ...baseConfig, recursive: false }).recursive,
-    ).toBe(false);
+    expect(__testing.narrowConfig({ ...baseConfig, recursive: false }).recursive).toBe(false);
   });
 
   it('validates include/exclude mime type arrays', () => {
     expect(() =>
       __testing.narrowConfig({ ...baseConfig, includeMimeTypes: 'not-an-array' }),
     ).toThrow(/includeMimeTypes/);
-    expect(() =>
-      __testing.narrowConfig({ ...baseConfig, excludeMimeTypes: [1, 2] }),
-    ).toThrow(/excludeMimeTypes/);
+    expect(() => __testing.narrowConfig({ ...baseConfig, excludeMimeTypes: [1, 2] })).toThrow(
+      /excludeMimeTypes/,
+    );
   });
 });
 
@@ -565,9 +561,7 @@ describe('helpers', () => {
     expect(__testing.pickExportMime('application/vnd.google-apps.document')).toBe(
       'application/pdf',
     );
-    expect(__testing.pickExportMime('application/vnd.google-apps.spreadsheet')).toBe(
-      'text/csv',
-    );
+    expect(__testing.pickExportMime('application/vnd.google-apps.spreadsheet')).toBe('text/csv');
     expect(__testing.pickExportMime('application/vnd.google-apps.presentation')).toBe(
       'application/pdf',
     );
@@ -583,15 +577,11 @@ describe('helpers', () => {
 
   it('matchMimeTypes applies include/exclude semantics', () => {
     expect(__testing.matchMimeTypes('application/pdf', undefined, undefined)).toBe(true);
-    expect(__testing.matchMimeTypes('application/pdf', ['application/pdf'], undefined)).toBe(
-      true,
-    );
+    expect(__testing.matchMimeTypes('application/pdf', ['application/pdf'], undefined)).toBe(true);
     expect(__testing.matchMimeTypes('text/plain', ['application/pdf'], undefined)).toBe(false);
     expect(__testing.matchMimeTypes('text/plain', undefined, ['text/plain'])).toBe(false);
     // Exclude wins over include.
-    expect(
-      __testing.matchMimeTypes('text/plain', ['text/plain'], ['text/plain']),
-    ).toBe(false);
+    expect(__testing.matchMimeTypes('text/plain', ['text/plain'], ['text/plain'])).toBe(false);
   });
 
   it('clientCacheKey ignores prefix/folderId/filters and only keys on email+pk+impersonate', () => {
@@ -617,9 +607,7 @@ describe('helpers', () => {
     expect(__testing.mapTestConnectionError(sdkError(401), 'sa@x', 'F').message).toMatch(
       /authentication failed/i,
     );
-    expect(__testing.mapTestConnectionError(sdkError(403), 'sa@x', 'F').message).toMatch(
-      /sa@x/,
-    );
+    expect(__testing.mapTestConnectionError(sdkError(403), 'sa@x', 'F').message).toMatch(/sa@x/);
     expect(__testing.mapTestConnectionError(sdkError(404), 'sa@x', 'F').message).toMatch(
       /not found/i,
     );

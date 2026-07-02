@@ -77,9 +77,9 @@ describe('host migration v12 — tenant_id foundation', () => {
            VALUES (?, ?, ?, ?, ?)`,
         )
         .run('tok-1', 'h1', 'main', 'test', new Date().toISOString());
-      const row = db.raw
-        .prepare(`SELECT tenant_id FROM tokens WHERE id = ?`)
-        .get('tok-1') as { tenant_id: string } | undefined;
+      const row = db.raw.prepare(`SELECT tenant_id FROM tokens WHERE id = ?`).get('tok-1') as
+        | { tenant_id: string }
+        | undefined;
       expect(row?.tenant_id).toBe('default');
     } finally {
       cleanup();

@@ -44,6 +44,8 @@ import type {
   Capability,
 } from '@calame/core';
 
+import { assertResolvedHostSafe, isPrivateOrLocalHost, SsrfBlockedError } from './utils/ssrf.js';
+
 // ---------------------------------------------------------------------------
 // Config type
 // ---------------------------------------------------------------------------
@@ -161,16 +163,18 @@ function buildUrl(
 }
 
 /**
- * Returns true when `hostHeader` matches one of the entries in `allowed`.
- * Comparison is case-insensitive. Matching is exact (host:port included as
- * present in the URL) — wildcards are intentionally not supported in MVP.
+ * Returns true when `url`'s host is in the `allowed` list.
+ *
+ * Comparison is case-insensitive against `url.host` (host:port as present in
+ * the URL) — wildcards are intentionally not supported in MVP. Private/local
+ * hosts are rejected first via the bracket/port-aware `url.hostname` so an
+ * allowlist entry can never authorise an internal target. DNS rebinding is
+ * caught separately at fetch time by `assertResolvedHostSafe`.
  */
-function isHostAllowed(host: string, allowed: readonly string[]): boolean {
-  const lowered = host.toLowerCase();
-  for (const a of allowed) {
-    if (a.toLowerCase() === lowered) return true;
-  }
-  return false;
+function isHostAllowed(url: URL, allowed: readonly string[]): boolean {
+  if (isPrivateOrLocalHost(url.hostname)) return false;
+  const lowered = url.host.toLowerCase();
+  return allowed.some((a) => a.toLowerCase() === lowered);
 }
 
 /**
@@ -228,24 +232,38 @@ export function buildHttpApiSourceAdapter(): SourceAdapter<
       const timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
       const controller = new AbortController();
       const t = setTimeout(() => controller.abort(), timeoutMs);
+      let response: Response | undefined;
       try {
-        const response = await fetch(normalizeBaseUrl(config.baseUrl), {
+        const normalized = normalizeBaseUrl(config.baseUrl);
+        const target = new URL(normalized);
+        // Anti-DNS-rebinding: block private/internal targets before fetching.
+        await assertResolvedHostSafe(target.hostname);
+        response = await fetch(normalized, {
           method: 'HEAD',
           headers: config.headers,
           signal: controller.signal,
+          // Never follow redirects — a 3xx to an internal host would bypass
+          // the resolution check above.
+          redirect: 'error',
         });
-        // HEAD is sometimes 405-rejected by APIs that only declare GET — treat
-        // 405 as "endpoint reachable" so testConnection is useful in practice.
-        if (!response.ok && response.status !== 405) {
-          throw new Error(`HEAD ${config.baseUrl} → HTTP ${response.status}`);
-        }
       } catch (err: unknown) {
         if (err instanceof Error && err.name === 'AbortError') {
           throw new Error(`HEAD ${config.baseUrl} timed out after ${timeoutMs}ms`);
         }
-        throw err;
+        if (err instanceof SsrfBlockedError) {
+          throw new Error('Connection blocked: the host resolves to a disallowed address.');
+        }
+        // Mask the underlying network reason from the caller.
+        throw new Error('Network error while contacting the remote host.');
       } finally {
         clearTimeout(t);
+      }
+      // A clean HTTP status carries no sensitive network detail and is useful to
+      // the caller — surface it instead of letting the catch above mask it as a
+      // generic network error. HEAD is sometimes 405-rejected by APIs that only
+      // declare GET — treat 405 as "endpoint reachable" so testConnection stays useful.
+      if (response && !response.ok && response.status !== 405) {
+        throw new Error(`HEAD ${config.baseUrl} → HTTP ${response.status}`);
       }
     },
 
@@ -381,11 +399,9 @@ export function buildHttpApiSourceAdapter(): SourceAdapter<
               `Source is misconfigured: baseUrl is not parseable and no allowedHosts is set.`,
             );
           }
-          if (!isHostAllowed(url.host, effectiveAllowedHosts)) {
+          if (!isHostAllowed(url, effectiveAllowedHosts)) {
             audit(args, `host ${url.host} not allowlisted`, 'error', t0);
-            return errorResponse(
-              `Host "${url.host}" is not in the source's allowedHosts.`,
-            );
+            return errorResponse(`Host "${url.host}" is not in the source's allowedHosts.`);
           }
 
           // Enforce path-prefix allowlist when defined
@@ -404,10 +420,17 @@ export function buildHttpApiSourceAdapter(): SourceAdapter<
           const timer = setTimeout(() => controller.abort(), timeoutMs);
           let response: Response;
           try {
+            // Anti-DNS-rebinding: resolve the host and reject if it (or any
+            // resolved address) points at an internal range. Done after the
+            // static allowlist check and immediately before the fetch.
+            await assertResolvedHostSafe(url.hostname);
             response = await fetch(url.toString(), {
               method: 'GET',
               headers: config.headers,
               signal: controller.signal,
+              // Never follow redirects — a 3xx to an internal host would
+              // bypass the allowlist + resolution checks above.
+              redirect: 'error',
             });
           } catch (err: unknown) {
             clearTimeout(timer);
@@ -415,9 +438,11 @@ export function buildHttpApiSourceAdapter(): SourceAdapter<
               audit(args, `timeout after ${timeoutMs}ms`, 'error', t0);
               return errorResponse(`Request timed out after ${timeoutMs}ms.`);
             }
-            const message = err instanceof Error ? err.message : String(err);
-            audit(args, `network error: ${message}`, 'error', t0);
-            return errorResponse(`Network error: ${message}`);
+            // Mask the underlying reason (DNS result, blocked range, redirect
+            // target) from the LLM — only the audit log sees the detail.
+            const detail = err instanceof Error ? err.message : String(err);
+            audit(args, `network error: ${detail}`, 'error', t0);
+            return errorResponse('Network error while contacting the remote host.');
           }
           clearTimeout(timer);
 

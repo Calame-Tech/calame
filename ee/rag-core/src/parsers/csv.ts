@@ -18,35 +18,35 @@ import type { ParsedDocument } from './types.js';
  * Empty values are skipped per row to keep the embedding signal dense.
  */
 export async function parse(buffer: Buffer): Promise<ParsedDocument> {
-	const csvText = buffer.toString('utf8');
-	const result = Papa.parse<Record<string, string>>(csvText, {
-		header: true,
-		skipEmptyLines: true,
-	});
+  const csvText = buffer.toString('utf8');
+  const result = Papa.parse<Record<string, string>>(csvText, {
+    header: true,
+    skipEmptyLines: true,
+  });
 
-	const rows = result.data;
-	const columns: string[] = Array.isArray(result.meta.fields) ? result.meta.fields : [];
+  const rows = result.data;
+  const columns: string[] = Array.isArray(result.meta.fields) ? result.meta.fields : [];
 
-	const headerLine = columns.join(', ');
-	const lines: string[] = headerLine.length > 0 ? [headerLine] : [];
+  const headerLine = columns.join(', ');
+  const lines: string[] = headerLine.length > 0 ? [headerLine] : [];
 
-	for (const row of rows) {
-		if (!row || typeof row !== 'object') continue;
-		const parts: string[] = [];
-		for (const col of columns) {
-			const value = row[col];
-			if (value === undefined || value === null || value === '') continue;
-			parts.push(`${col}: ${String(value)}`);
-		}
-		if (parts.length > 0) lines.push(parts.join(', '));
-	}
+  for (const row of rows) {
+    if (!row || typeof row !== 'object') continue;
+    const parts: string[] = [];
+    for (const col of columns) {
+      const value = row[col];
+      if (value === undefined || value === null || value === '') continue;
+      parts.push(`${col}: ${String(value)}`);
+    }
+    if (parts.length > 0) lines.push(parts.join(', '));
+  }
 
-	return {
-		text: lines.join('\n'),
-		format: 'csv',
-		metadata: {
-			rowCount: rows.length,
-			columns,
-		},
-	};
+  return {
+    text: lines.join('\n'),
+    format: 'csv',
+    metadata: {
+      rowCount: rows.length,
+      columns,
+    },
+  };
 }

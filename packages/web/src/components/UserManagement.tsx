@@ -9,9 +9,10 @@ interface UserManagementProps {
 }
 
 const STATUS_TOOLTIP: Record<string, string> = {
-  active: 'Compte actif — l\'utilisateur peut se connecter et utiliser ses accès MCP.',
-  disabled: 'Compte désactivé — l\'accès est révoqué. L\'utilisateur ne peut plus s\'authentifier.',
-  invited: 'Invitation envoyée — le compte sera actif après que l\'utilisateur ait complété son inscription.',
+  active: "Compte actif — l'utilisateur peut se connecter et utiliser ses accès MCP.",
+  disabled: "Compte désactivé — l'accès est révoqué. L'utilisateur ne peut plus s'authentifier.",
+  invited:
+    "Invitation envoyée — le compte sera actif après que l'utilisateur ait complété son inscription.",
 };
 
 /** Status badge with color coding */
@@ -52,7 +53,9 @@ function CustomAttributesEditor({
   useEffect(() => {
     if (prevUserIdRef.current !== userId) {
       prevUserIdRef.current = userId;
-      setAttrs(initialAttrs ? Object.entries(initialAttrs).map(([key, value]) => ({ key, value })) : []);
+      setAttrs(
+        initialAttrs ? Object.entries(initialAttrs).map(([key, value]) => ({ key, value })) : [],
+      );
       setDirty(false);
     }
   }, [userId, initialAttrs]);
@@ -77,9 +80,10 @@ function CustomAttributesEditor({
   const save = async () => {
     setSaving(true);
     try {
-      const customAttributes = attrs.length > 0
-        ? Object.fromEntries(attrs.filter((a) => a.key).map((a) => [a.key, a.value]))
-        : null;
+      const customAttributes =
+        attrs.length > 0
+          ? Object.fromEntries(attrs.filter((a) => a.key).map((a) => [a.key, a.value]))
+          : null;
       await fetch(`/api/users/${userId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -88,7 +92,9 @@ function CustomAttributesEditor({
       });
       setDirty(false);
       onSaved();
-    } catch { /* ignore */ } finally {
+    } catch {
+      /* ignore */
+    } finally {
       setSaving(false);
     }
   };
@@ -179,7 +185,9 @@ function UserDetailPanel({
       const res = await fetch(`/api/users/${user.id}`, { credentials: 'include' });
       const data = await res.json();
       if (data.success) setUser(data.user);
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     onUpdate();
   };
 
@@ -239,13 +247,17 @@ function UserDetailPanel({
     <div className="card-primary p-4 space-y-3">
       <div className="flex items-center justify-between">
         <h3 className="heading-md">{user.name}</h3>
-        <button onClick={onClose} className="text-gray-400 hover:text-white">×</button>
+        <button onClick={onClose} className="text-gray-400 hover:text-white">
+          ×
+        </button>
       </div>
 
       {error && (
         <div className="bg-red-900/30 border border-red-700 rounded p-2 text-red-300 text-xs">
           {error}
-          <button onClick={() => setError('')} className="ml-2 text-red-400">×</button>
+          <button onClick={() => setError('')} className="ml-2 text-red-400">
+            ×
+          </button>
         </div>
       )}
 
@@ -259,8 +271,7 @@ function UserDetailPanel({
           <span className="text-gray-300">{user.role}</span>
         </div>
         <div>
-          <span className="text-gray-500">Status:</span>{' '}
-          <StatusBadge status={user.status} />
+          <span className="text-gray-500">Status:</span> <StatusBadge status={user.status} />
         </div>
         <div>
           <span className="text-gray-500">Created:</span>{' '}
@@ -275,7 +286,11 @@ function UserDetailPanel({
       </div>
 
       {/* Custom Attributes editor */}
-      <CustomAttributesEditor userId={user.id} initialAttrs={user.customAttributes ?? null} onSaved={refreshUser} />
+      <CustomAttributesEditor
+        userId={user.id}
+        initialAttrs={user.customAttributes ?? null}
+        onSaved={refreshUser}
+      />
 
       {/* Invitation link */}
       {onboardingLink && !onboardingExpired && (
@@ -327,12 +342,17 @@ function UserDetailPanel({
 
         <div className="space-y-1">
           {user.profiles.map((p) => (
-            <div key={p.profileName} className="flex items-center justify-between bg-gray-700/50 rounded px-3 py-1.5">
+            <div
+              key={p.profileName}
+              className="flex items-center justify-between bg-gray-700/50 rounded px-3 py-1.5"
+            >
               <div className="flex items-center gap-2">
                 <span className="text-os-400 font-medium text-sm">{p.profileName}</span>
                 <span className="text-xs text-gray-500">({p.accessMode})</span>
                 {p.allowedTables && (
-                  <span className="text-xs text-gray-600">tables: {p.allowedTables.join(', ')}</span>
+                  <span className="text-xs text-gray-600">
+                    tables: {p.allowedTables.join(', ')}
+                  </span>
                 )}
               </div>
               <button
@@ -356,7 +376,9 @@ function UserDetailPanel({
             >
               <option value="">Select MCP...</option>
               {profilesNotAdded.map((p) => (
-                <option key={p.name} value={p.name}>{p.label || p.name}</option>
+                <option key={p.name} value={p.name}>
+                  {p.label || p.name}
+                </option>
               ))}
             </select>
             <select
@@ -403,7 +425,9 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
   const [formName, setFormName] = useState('');
   const [formEmail, setFormEmail] = useState('');
   const [formRole, setFormRole] = useState<'admin' | 'user'>('user');
-  const [formProfiles, setFormProfiles] = useState<Array<{ profileName: string; accessMode: AccessMode }>>([]);
+  const [formProfiles, setFormProfiles] = useState<
+    Array<{ profileName: string; accessMode: AccessMode }>
+  >([]);
   const [formRateLimitRpm, setFormRateLimitRpm] = useState<number>(0);
   const [sendInvitation, setSendInvitation] = useState(false);
   const [formCustomAttrs, setFormCustomAttrs] = useState<Array<{ key: string; value: string }>>([]);
@@ -479,9 +503,12 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
             allowedTables: null,
             allowedTools: null,
           })),
-          customAttributes: formCustomAttrs.length > 0
-            ? Object.fromEntries(formCustomAttrs.filter((a) => a.key).map((a) => [a.key, a.value]))
-            : undefined,
+          customAttributes:
+            formCustomAttrs.length > 0
+              ? Object.fromEntries(
+                  formCustomAttrs.filter((a) => a.key).map((a) => [a.key, a.value]),
+                )
+              : undefined,
         }),
       });
       const data = await res.json();
@@ -610,7 +637,11 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
   const [showImport, setShowImport] = useState(false);
   const [importText, setImportText] = useState('');
   const [importProfile, setImportProfile] = useState('');
-  const [importResult, setImportResult] = useState<{ created: number; updated: number; errors: Array<{ index: number; email?: string; reason: string }> } | null>(null);
+  const [importResult, setImportResult] = useState<{
+    created: number;
+    updated: number;
+    errors: Array<{ index: number; email?: string; reason: string }>;
+  } | null>(null);
   const [importing, setImporting] = useState(false);
 
   const handleImport = async () => {
@@ -624,12 +655,18 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
       } catch {
         // Try CSV parsing: first line = headers, rest = data
         const lines = importText.trim().split('\n').filter(Boolean);
-        if (lines.length < 2) { setError('Invalid format. Use JSON array or CSV with headers.'); setImporting(false); return; }
+        if (lines.length < 2) {
+          setError('Invalid format. Use JSON array or CSV with headers.');
+          setImporting(false);
+          return;
+        }
         const headers = lines[0].split(',').map((h) => h.trim());
         parsed = lines.slice(1).map((line) => {
           const values = line.split(',').map((v) => v.trim());
           const obj: Record<string, unknown> = {};
-          headers.forEach((h, i) => { obj[h] = values[i] ?? ''; });
+          headers.forEach((h, i) => {
+            obj[h] = values[i] ?? '';
+          });
           // Auto-detect customAttributes: any column not email/name becomes a custom attribute
           const customAttributes: Record<string, string> = {};
           for (const [k, v] of Object.entries(obj)) {
@@ -641,7 +678,11 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
           return obj;
         });
       }
-      if (!Array.isArray(parsed)) { setError('Expected a JSON array of user objects.'); setImporting(false); return; }
+      if (!Array.isArray(parsed)) {
+        setError('Expected a JSON array of user objects.');
+        setImporting(false);
+        return;
+      }
 
       const res = await apiFetch('/api/users/import', {
         method: 'POST',
@@ -669,13 +710,19 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
         <h2 className="heading-md">Users</h2>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => { setShowImport(!showImport); setImportResult(null); }}
+            onClick={() => {
+              setShowImport(!showImport);
+              setImportResult(null);
+            }}
             className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm font-medium rounded-md transition-colors"
           >
             {showImport ? 'Cancel Import' : 'Import'}
           </button>
           <button
-            onClick={() => { setShowCreateForm(!showCreateForm); if (!showCreateForm && formProfiles.length === 0) addProfileToForm(); }}
+            onClick={() => {
+              setShowCreateForm(!showCreateForm);
+              if (!showCreateForm && formProfiles.length === 0) addProfileToForm();
+            }}
             className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-md transition-colors"
           >
             {showCreateForm ? 'Cancel' : '+ New User'}
@@ -695,7 +742,9 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
               {newToken}
             </code>
             <button
-              onClick={() => { navigator.clipboard.writeText(newToken); }}
+              onClick={() => {
+                navigator.clipboard.writeText(newToken);
+              }}
               className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded transition-colors"
             >
               Copy
@@ -710,7 +759,10 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
             </div>
           )}
           <button
-            onClick={() => { setNewToken(null); setOnboardingCode(null); }}
+            onClick={() => {
+              setNewToken(null);
+              setOnboardingCode(null);
+            }}
             className="mt-3 text-sm text-gray-400 hover:text-white transition-colors"
           >
             Dismiss
@@ -721,7 +773,9 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
       {error && (
         <div className="bg-red-900/30 border border-red-700 rounded-lg p-3 text-red-300 text-sm">
           {error}
-          <button onClick={() => setError('')} className="ml-2 text-red-400 hover:text-red-200">×</button>
+          <button onClick={() => setError('')} className="ml-2 text-red-400 hover:text-red-200">
+            ×
+          </button>
         </div>
       )}
 
@@ -730,7 +784,8 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
         <div className="card-primary p-4 space-y-3">
           <h3 className="eyebrow">Bulk Import Users</h3>
           <p className="text-xs text-gray-500">
-            Paste a JSON array or CSV data. CSV format: first row = headers (email required), extra columns become custom attributes.
+            Paste a JSON array or CSV data. CSV format: first row = headers (email required), extra
+            columns become custom attributes.
           </p>
           <div className="flex items-center gap-2">
             <label className="text-sm text-gray-400">Default profile:</label>
@@ -741,14 +796,18 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
             >
               <option value="">None (update only)</option>
               {profiles.map((p) => (
-                <option key={p.name} value={p.name}>{p.label || p.name}</option>
+                <option key={p.name} value={p.name}>
+                  {p.label || p.name}
+                </option>
               ))}
             </select>
           </div>
           <textarea
             value={importText}
             onChange={(e) => setImportText(e.target.value)}
-            placeholder={'email,name,client_id\ndupont@gmail.com,Dupont,CLT-00042\nmartin@yahoo.fr,Martin,CLT-00043'}
+            placeholder={
+              'email,name,client_id\ndupont@gmail.com,Dupont,CLT-00042\nmartin@yahoo.fr,Martin,CLT-00043'
+            }
             rows={8}
             className="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-sm text-gray-200 font-mono"
           />
@@ -773,7 +832,10 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
           {importResult?.errors && importResult.errors.length > 0 && (
             <div className="text-xs text-red-400 max-h-32 overflow-auto space-y-1">
               {importResult.errors.map((err, i) => (
-                <div key={i}>Line {err.index + 1}{err.email ? ` (${err.email})` : ''}: {err.reason}</div>
+                <div key={i}>
+                  Line {err.index + 1}
+                  {err.email ? ` (${err.email})` : ''}: {err.reason}
+                </div>
               ))}
             </div>
           )}
@@ -786,7 +848,9 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
           <h3 className="heading-md">Create User</h3>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm text-gray-400 mb-1" htmlFor="form-name">Name <span className="text-red-400">*</span></label>
+              <label className="block text-sm text-gray-400 mb-1" htmlFor="form-name">
+                Name <span className="text-red-400">*</span>
+              </label>
               <input
                 id="form-name"
                 type="text"
@@ -797,7 +861,9 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
               />
             </div>
             <div>
-              <label className="block text-sm text-gray-400 mb-1" htmlFor="form-email">Email <span className="text-red-400">*</span></label>
+              <label className="block text-sm text-gray-400 mb-1" htmlFor="form-email">
+                Email <span className="text-red-400">*</span>
+              </label>
               <input
                 id="form-email"
                 type="email"
@@ -808,9 +874,17 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
               />
             </div>
             <div>
-              <label className="flex items-center gap-1 text-sm text-gray-400 mb-1" htmlFor="form-role">
+              <label
+                className="flex items-center gap-1 text-sm text-gray-400 mb-1"
+                htmlFor="form-role"
+              >
                 Role
-                <HelpTip content="Admin: full access to user management, tokens, and configuration. User: limited access to authorized MCP servers only." position="top" maxWidth={300} size="xs" />
+                <HelpTip
+                  content="Admin: full access to user management, tokens, and configuration. User: limited access to authorized MCP servers only."
+                  position="top"
+                  maxWidth={300}
+                  size="xs"
+                />
               </label>
               <select
                 id="form-role"
@@ -823,16 +897,26 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
               </select>
             </div>
             <div>
-              <label className="flex items-center gap-1 text-sm text-gray-400 mb-1" htmlFor="form-rate-limit">
+              <label
+                className="flex items-center gap-1 text-sm text-gray-400 mb-1"
+                htmlFor="form-rate-limit"
+              >
                 Rate limit (req/min, 0 = unlimited)
-                <HelpTip content="Limits the number of requests per minute for this user. Enter 0 to apply no limit." position="top" maxWidth={280} size="xs" />
+                <HelpTip
+                  content="Limits the number of requests per minute for this user. Enter 0 to apply no limit."
+                  position="top"
+                  maxWidth={280}
+                  size="xs"
+                />
               </label>
               <input
                 id="form-rate-limit"
                 type="number"
                 min={0}
                 value={formRateLimitRpm}
-                onChange={(e) => setFormRateLimitRpm(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                onChange={(e) =>
+                  setFormRateLimitRpm(Math.max(0, parseInt(e.target.value, 10) || 0))
+                }
                 className="w-full px-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-white text-sm focus:outline-none focus:ring-1 focus:ring-blue-500/50"
               />
             </div>
@@ -860,7 +944,9 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
                 >
                   <option value="">Select a profile</option>
                   {profiles.map((p) => (
-                    <option key={p.name} value={p.name}>{p.label || p.name}</option>
+                    <option key={p.name} value={p.name}>
+                      {p.label || p.name}
+                    </option>
                   ))}
                 </select>
                 <select
@@ -929,8 +1015,18 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
                       onClick={() => setFormCustomAttrs(formCustomAttrs.filter((_, j) => j !== i))}
                       className="text-gray-500 hover:text-red-400 transition-colors"
                     >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      <svg
+                        className="w-4 h-4"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M6 18L18 6M6 6l12 12"
+                        />
                       </svg>
                     </button>
                   </div>
@@ -938,7 +1034,10 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
               </div>
             )}
             {formCustomAttrs.length === 0 && (
-              <p className="text-xs text-gray-500">No custom attributes. Used for data scoping when the user&apos;s email isn&apos;t the identifier in the database.</p>
+              <p className="text-xs text-gray-500">
+                No custom attributes. Used for data scoping when the user&apos;s email isn&apos;t
+                the identifier in the database.
+              </p>
             )}
           </div>
 
@@ -952,7 +1051,11 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
             />
             <span className="flex items-center gap-1 text-sm text-gray-300">
               Send invitation email
-              <HelpTip content="Automatically sends the user an email containing their registration link." position="right" size="xs" />
+              <HelpTip
+                content="Automatically sends the user an email containing their registration link."
+                position="right"
+                size="xs"
+              />
             </span>
           </label>
 
@@ -1000,7 +1103,9 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
         >
           <option value="">All profiles</option>
           {profiles.map((p) => (
-            <option key={p.name} value={p.name}>{p.label || p.name}</option>
+            <option key={p.name} value={p.name}>
+              {p.label || p.name}
+            </option>
           ))}
         </select>
       </div>
@@ -1048,7 +1153,9 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
                       ))}
                     </div>
                   </td>
-                  <td className="px-3 py-2"><StatusBadge status={user.status} /></td>
+                  <td className="px-3 py-2">
+                    <StatusBadge status={user.status} />
+                  </td>
                   <td className="px-3 py-2 text-gray-500">{formatDate(user.lastActiveAt)}</td>
                   <td className="px-3 py-2">
                     <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>

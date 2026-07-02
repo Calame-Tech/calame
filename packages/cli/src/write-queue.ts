@@ -87,7 +87,10 @@ export class WriteQueue {
     return rows.map(rowToEntry);
   }
 
-  getAll(options?: { limit?: number; offset?: number; status?: string }): { entries: PendingWriteQuery[]; total: number } {
+  getAll(options?: { limit?: number; offset?: number; status?: string }): {
+    entries: PendingWriteQuery[];
+    total: number;
+  } {
     const conditions: string[] = [];
     const params: unknown[] = [];
 
@@ -107,7 +110,9 @@ export class WriteQueue {
     const offsetClause = options?.offset != null ? `OFFSET ${options.offset}` : '';
 
     const rows = this.db
-      .prepare(`SELECT * FROM write_queue ${where} ORDER BY timestamp DESC ${limitClause} ${offsetClause}`)
+      .prepare(
+        `SELECT * FROM write_queue ${where} ORDER BY timestamp DESC ${limitClause} ${offsetClause}`,
+      )
       .all(...params) as WriteQueueRow[];
 
     return { entries: rows.map(rowToEntry), total };
@@ -131,7 +136,14 @@ export class WriteQueue {
       executionError = (err as Error).message;
     }
 
-    this.stmtUpdate.run('approved', null, approvedAt, executionResult ?? null, executionError ?? null, id);
+    this.stmtUpdate.run(
+      'approved',
+      null,
+      approvedAt,
+      executionResult ?? null,
+      executionError ?? null,
+      id,
+    );
 
     const updated = this.stmtSelectById.get(id) as WriteQueueRow;
     return rowToEntry(updated);

@@ -54,7 +54,9 @@ describe('serve response mode integration', () => {
     ]);
 
     it('should preserve snake_case keys in friendly mode (no renaming for LLM chaining)', () => {
-      const rows = [{ first_name: 'John', last_name: 'Doe', email: 'john@test.com', role: 'admin' }];
+      const rows = [
+        { first_name: 'John', last_name: 'Doe', email: 'john@test.com', role: 'admin' },
+      ];
       const result = formatResponseRows(rows, labelMap, 'friendly');
       expect(result[0]).toEqual({
         first_name: 'John',

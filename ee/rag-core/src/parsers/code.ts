@@ -9,19 +9,19 @@ import type { CodeLanguage, ParsedDocument } from './types.js';
  * understood by the code chunker. Lower-case, leading dot included.
  */
 const EXTENSION_TO_LANGUAGE: Record<string, CodeLanguage> = {
-	'.ts': 'typescript',
-	'.tsx': 'typescript',
-	'.mts': 'typescript',
-	'.cts': 'typescript',
-	'.js': 'javascript',
-	'.jsx': 'javascript',
-	'.mjs': 'javascript',
-	'.cjs': 'javascript',
-	'.py': 'python',
-	'.pyi': 'python',
-	'.go': 'go',
-	'.rs': 'rust',
-	'.java': 'java',
+  '.ts': 'typescript',
+  '.tsx': 'typescript',
+  '.mts': 'typescript',
+  '.cts': 'typescript',
+  '.js': 'javascript',
+  '.jsx': 'javascript',
+  '.mjs': 'javascript',
+  '.cjs': 'javascript',
+  '.py': 'python',
+  '.pyi': 'python',
+  '.go': 'go',
+  '.rs': 'rust',
+  '.java': 'java',
 };
 
 /**
@@ -33,14 +33,14 @@ const EXTENSION_TO_LANGUAGE: Record<string, CodeLanguage> = {
  * separators (only the trailing segment is considered).
  */
 export function detectLanguageFromFilename(filename?: string): CodeLanguage {
-	if (!filename) return 'unknown';
+  if (!filename) return 'unknown';
 
-	// Strip directory prefix (POSIX or Windows separators).
-	const base = filename.split(/[\\/]/).pop() ?? filename;
-	const dotIdx = base.lastIndexOf('.');
-	if (dotIdx <= 0) return 'unknown'; // no extension OR dotfile without ext
-	const ext = base.slice(dotIdx).toLowerCase();
-	return EXTENSION_TO_LANGUAGE[ext] ?? 'unknown';
+  // Strip directory prefix (POSIX or Windows separators).
+  const base = filename.split(/[\\/]/).pop() ?? filename;
+  const dotIdx = base.lastIndexOf('.');
+  if (dotIdx <= 0) return 'unknown'; // no extension OR dotfile without ext
+  const ext = base.slice(dotIdx).toLowerCase();
+  return EXTENSION_TO_LANGUAGE[ext] ?? 'unknown';
 }
 
 /**
@@ -53,33 +53,33 @@ export function detectLanguageFromFilename(filename?: string): CodeLanguage {
  * the plain chunker than mis-classify.
  */
 export async function parse(buffer: Buffer, filename?: string): Promise<ParsedDocument> {
-	const text = buffer.toString('utf8');
-	const language = detectLanguageFromFilename(filename);
-	const base = filename ? (filename.split(/[\\/]/).pop() ?? filename) : undefined;
-	return {
-		text,
-		format: 'code',
-		language,
-		...(base !== undefined ? { filename: base } : {}),
-	};
+  const text = buffer.toString('utf8');
+  const language = detectLanguageFromFilename(filename);
+  const base = filename ? (filename.split(/[\\/]/).pop() ?? filename) : undefined;
+  return {
+    text,
+    format: 'code',
+    language,
+    ...(base !== undefined ? { filename: base } : {}),
+  };
 }
 
 /** List of MIME types that should be routed to the code parser directly. */
 export const CODE_MIME_TYPES: ReadonlySet<string> = new Set([
-	'text/typescript',
-	'application/typescript',
-	'text/javascript',
-	'application/javascript',
-	'application/x-javascript',
-	'text/x-python',
-	'application/x-python',
-	'text/x-python-script',
-	'text/x-go',
-	'text/x-golang',
-	'text/rust',
-	'text/x-rust',
-	'text/x-java',
-	'text/x-java-source',
+  'text/typescript',
+  'application/typescript',
+  'text/javascript',
+  'application/javascript',
+  'application/x-javascript',
+  'text/x-python',
+  'application/x-python',
+  'text/x-python-script',
+  'text/x-go',
+  'text/x-golang',
+  'text/rust',
+  'text/x-rust',
+  'text/x-java',
+  'text/x-java-source',
 ]);
 
 /**
@@ -88,5 +88,5 @@ export const CODE_MIME_TYPES: ReadonlySet<string> = new Set([
  * to the code parser even when the HTTP layer didn't supply a precise type.
  */
 export function hasCodeExtension(filename?: string): boolean {
-	return detectLanguageFromFilename(filename) !== 'unknown';
+  return detectLanguageFromFilename(filename) !== 'unknown';
 }

@@ -10,7 +10,9 @@ import type { RagJob } from '../../types.js';
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeJob(overrides: Partial<RagJob> & { id: string; sourceId: string; status: RagJob['status'] }): RagJob {
+function makeJob(
+  overrides: Partial<RagJob> & { id: string; sourceId: string; status: RagJob['status'] },
+): RagJob {
   return {
     progress: 1,
     totalDocuments: 0,
@@ -46,7 +48,12 @@ describe('buildJobMap', () => {
   });
 
   it('returns lastFailedJob=null when the only terminal job is completed', () => {
-    const completedJob = makeJob({ id: 'j1', sourceId: SOURCE_A, status: 'completed', finishedAt: new Date().toISOString() });
+    const completedJob = makeJob({
+      id: 'j1',
+      sourceId: SOURCE_A,
+      status: 'completed',
+      finishedAt: new Date().toISOString(),
+    });
     const map = buildJobMap([SOURCE_A], [completedJob]);
     expect(map.get(SOURCE_A)?.lastFailedJob).toBeNull();
     expect(map.get(SOURCE_A)?.activeJob).toBeNull();
@@ -55,8 +62,18 @@ describe('buildJobMap', () => {
   it('returns lastFailedJob=null when a failed job is followed by a more recent completed job (newest-first order)', () => {
     // The API returns jobs newest-first. A completed job placed before a failed
     // job in the array means the completed job is MORE recent.
-    const newerCompleted = makeJob({ id: 'j2', sourceId: SOURCE_A, status: 'completed', finishedAt: new Date().toISOString() });
-    const olderFailed = makeJob({ id: 'j1', sourceId: SOURCE_A, status: 'failed', error: 'orphaned (server restart)' });
+    const newerCompleted = makeJob({
+      id: 'j2',
+      sourceId: SOURCE_A,
+      status: 'completed',
+      finishedAt: new Date().toISOString(),
+    });
+    const olderFailed = makeJob({
+      id: 'j1',
+      sourceId: SOURCE_A,
+      status: 'failed',
+      error: 'orphaned (server restart)',
+    });
     // newest-first: completed (j2) comes first, failed (j1) comes second
     const map = buildJobMap([SOURCE_A], [newerCompleted, olderFailed]);
     expect(map.get(SOURCE_A)?.lastFailedJob).toBeNull();
@@ -64,8 +81,18 @@ describe('buildJobMap', () => {
 
   it('returns lastFailedJob when a completed job is older than the most recent failed job (newest-first order)', () => {
     // newest-first: failed (j2) comes first, completed (j1) comes second
-    const newerFailed = makeJob({ id: 'j2', sourceId: SOURCE_A, status: 'failed', error: 'timeout' });
-    const olderCompleted = makeJob({ id: 'j1', sourceId: SOURCE_A, status: 'completed', finishedAt: new Date().toISOString() });
+    const newerFailed = makeJob({
+      id: 'j2',
+      sourceId: SOURCE_A,
+      status: 'failed',
+      error: 'timeout',
+    });
+    const olderCompleted = makeJob({
+      id: 'j1',
+      sourceId: SOURCE_A,
+      status: 'completed',
+      finishedAt: new Date().toISOString(),
+    });
     const map = buildJobMap([SOURCE_A], [newerFailed, olderCompleted]);
     expect(map.get(SOURCE_A)?.lastFailedJob?.id).toBe('j2');
   });
@@ -87,7 +114,12 @@ describe('buildJobMap', () => {
 
   it('does not bleed jobs across sources', () => {
     const failedA = makeJob({ id: 'jA', sourceId: SOURCE_A, status: 'failed', error: 'oops' });
-    const completedB = makeJob({ id: 'jB', sourceId: SOURCE_B, status: 'completed', finishedAt: new Date().toISOString() });
+    const completedB = makeJob({
+      id: 'jB',
+      sourceId: SOURCE_B,
+      status: 'completed',
+      finishedAt: new Date().toISOString(),
+    });
     const map = buildJobMap([SOURCE_A, SOURCE_B], [failedA, completedB]);
     // SOURCE_A: last terminal is failed → badge red
     expect(map.get(SOURCE_A)?.lastFailedJob?.id).toBe('jA');

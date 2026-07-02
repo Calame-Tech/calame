@@ -23,14 +23,7 @@ export { Select } from './Select.js';
 export type { SelectProps } from './Select.js';
 
 // Compositions
-export {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardContent,
-  CardFooter,
-} from './Card.js';
+export { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from './Card.js';
 export type {
   CardProps,
   CardHeaderProps,

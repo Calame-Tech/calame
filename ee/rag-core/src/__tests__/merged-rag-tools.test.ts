@@ -124,7 +124,9 @@ function makeEntry(overrides?: {
   };
 }
 
-function makeOpts(overrides?: Partial<RegisterMergedDocumentRagToolsOpts>): RegisterMergedDocumentRagToolsOpts {
+function makeOpts(
+  overrides?: Partial<RegisterMergedDocumentRagToolsOpts>,
+): RegisterMergedDocumentRagToolsOpts {
   return {
     server: makeMcpServer(),
     deps: makeDeps(),
@@ -142,7 +144,9 @@ function getToolHandler(server: McpServer, toolName: string) {
   const calls = (server.tool as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
   const call = calls.find((c) => c[0] === toolName);
   if (!call) throw new Error(`Tool "${toolName}" not found in registrations`);
-  return call[3] as (args: Record<string, unknown>) => Promise<{ content: Array<{ type: string; text: string }> }>;
+  return call[3] as (
+    args: Record<string, unknown>,
+  ) => Promise<{ content: Array<{ type: string; text: string }> }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -181,7 +185,10 @@ describe('registerMergedDocumentRagTools', () => {
       const opts = makeOpts({
         sources: [
           makeEntry({ selectionOverrides: { directFetchDisabled: true } }),
-          makeEntry({ sourceOverrides: { id: 'src-2', name: 'KB2' }, selectionOverrides: { directFetchDisabled: true } }),
+          makeEntry({
+            sourceOverrides: { id: 'src-2', name: 'KB2' },
+            selectionOverrides: { directFetchDisabled: true },
+          }),
         ],
       });
       registerMergedDocumentRagTools(opts);
@@ -196,7 +203,10 @@ describe('registerMergedDocumentRagTools', () => {
       const opts = makeOpts({
         sources: [
           makeEntry({ selectionOverrides: { directFetchDisabled: true } }),
-          makeEntry({ sourceOverrides: { id: 'src-2', name: 'KB2' }, selectionOverrides: { directFetchDisabled: false } }),
+          makeEntry({
+            sourceOverrides: { id: 'src-2', name: 'KB2' },
+            selectionOverrides: { directFetchDisabled: false },
+          }),
         ],
       });
       registerMergedDocumentRagTools(opts);
@@ -306,13 +316,23 @@ describe('registerMergedDocumentRagTools', () => {
       const searchIndex = makeSearchIndex({ search: vi.fn().mockResolvedValue({ chunks }) });
       const opts = makeOpts({
         deps: makeDeps({ searchIndex }),
-        sources: [makeEntry({ selectionOverrides: { mode: 'allowList', allowedFolders: ['docs/faq'], allowedDocuments: [] } })],
+        sources: [
+          makeEntry({
+            selectionOverrides: {
+              mode: 'allowList',
+              allowedFolders: ['docs/faq'],
+              allowedDocuments: [],
+            },
+          }),
+        ],
       });
       registerMergedDocumentRagTools(opts);
 
       const handler = getToolHandler(opts.server, 'rag_search');
       const response = await handler({ query: 'test' });
-      const payload = JSON.parse(response.content[0].text) as { chunks: Array<{ documentId: string }> };
+      const payload = JSON.parse(response.content[0].text) as {
+        chunks: Array<{ documentId: string }>;
+      };
       expect(payload.chunks).toHaveLength(1);
       expect(payload.chunks[0].documentId).toBe('doc-1');
     });
@@ -338,7 +358,9 @@ describe('registerMergedDocumentRagTools', () => {
 
       const handler = getToolHandler(opts.server, 'rag_search');
       const response = await handler({ query: 'test' });
-      const payload = JSON.parse(response.content[0].text) as { chunks: Array<{ sourceName: string }> };
+      const payload = JSON.parse(response.content[0].text) as {
+        chunks: Array<{ sourceName: string }>;
+      };
       expect(payload.chunks[0].sourceName).toBe('Primary KB');
     });
 
@@ -408,11 +430,35 @@ describe('registerMergedDocumentRagTools', () => {
     it('applies per-source scope when returning multi-source results', async () => {
       // src-1: allowAll, src-2: allowList(['docs/public'])
       const chunksFromSrc1: RagSearchResult['chunks'] = [
-        { text: 'src1-chunk', score: 0.9, sourceId: 'src-1', folder: 'docs/private', fileName: 'priv.md', position: 0, documentId: 'doc-1' },
+        {
+          text: 'src1-chunk',
+          score: 0.9,
+          sourceId: 'src-1',
+          folder: 'docs/private',
+          fileName: 'priv.md',
+          position: 0,
+          documentId: 'doc-1',
+        },
       ];
       const chunksFromSrc2: RagSearchResult['chunks'] = [
-        { text: 'src2-allowed', score: 0.85, sourceId: 'src-2', folder: 'docs/public', fileName: 'pub.md', position: 0, documentId: 'doc-2' },
-        { text: 'src2-blocked', score: 0.8, sourceId: 'src-2', folder: 'docs/hidden', fileName: 'hidden.md', position: 0, documentId: 'doc-3' },
+        {
+          text: 'src2-allowed',
+          score: 0.85,
+          sourceId: 'src-2',
+          folder: 'docs/public',
+          fileName: 'pub.md',
+          position: 0,
+          documentId: 'doc-2',
+        },
+        {
+          text: 'src2-blocked',
+          score: 0.8,
+          sourceId: 'src-2',
+          folder: 'docs/hidden',
+          fileName: 'hidden.md',
+          position: 0,
+          documentId: 'doc-3',
+        },
       ];
       // Multi-source returns merged chunks
       const searchIndex = makeSearchIndex({
@@ -421,15 +467,27 @@ describe('registerMergedDocumentRagTools', () => {
       const opts = makeOpts({
         deps: makeDeps({ searchIndex }),
         sources: [
-          makeEntry({ sourceOverrides: { id: 'src-1', name: 'KB1' }, selectionOverrides: { mode: 'allowAll', allowedFolders: [], allowedDocuments: [] } }),
-          makeEntry({ sourceOverrides: { id: 'src-2', name: 'KB2' }, selectionOverrides: { mode: 'allowList', allowedFolders: ['docs/public'], allowedDocuments: [] } }),
+          makeEntry({
+            sourceOverrides: { id: 'src-1', name: 'KB1' },
+            selectionOverrides: { mode: 'allowAll', allowedFolders: [], allowedDocuments: [] },
+          }),
+          makeEntry({
+            sourceOverrides: { id: 'src-2', name: 'KB2' },
+            selectionOverrides: {
+              mode: 'allowList',
+              allowedFolders: ['docs/public'],
+              allowedDocuments: [],
+            },
+          }),
         ],
       });
       registerMergedDocumentRagTools(opts);
 
       const handler = getToolHandler(opts.server, 'rag_search');
       const response = await handler({ query: 'test' });
-      const payload = JSON.parse(response.content[0].text) as { chunks: Array<{ documentId: string }> };
+      const payload = JSON.parse(response.content[0].text) as {
+        chunks: Array<{ documentId: string }>;
+      };
       // src-1 chunk passes (allowAll), src-2 allowed chunk passes, src-2 blocked chunk filtered.
       const ids = payload.chunks.map((c) => c.documentId);
       expect(ids).toContain('doc-1');
@@ -503,10 +561,7 @@ describe('registerMergedDocumentRagTools', () => {
       const f1 = makeFolder({ id: 'f1', sourceId: 'src-1', path: 'docs/faq', name: 'faq' });
       const f2 = makeFolder({ id: 'f2', sourceId: 'src-2', path: 'files/pub', name: 'pub' });
       const storage = makeStorage({
-        listFolders: vi
-          .fn()
-          .mockResolvedValueOnce([f1])
-          .mockResolvedValueOnce([f2]),
+        listFolders: vi.fn().mockResolvedValueOnce([f1]).mockResolvedValueOnce([f2]),
       });
       const opts = makeOpts({
         deps: makeDeps({ storage }),
@@ -519,7 +574,9 @@ describe('registerMergedDocumentRagTools', () => {
 
       const handler = getToolHandler(opts.server, 'rag_list_folders');
       const response = await handler({});
-      const payload = JSON.parse(response.content[0].text) as { folders: Array<{ id: string; sourceName: string }> };
+      const payload = JSON.parse(response.content[0].text) as {
+        folders: Array<{ id: string; sourceName: string }>;
+      };
       expect(payload.folders).toHaveLength(2);
       expect(payload.folders.find((f) => f.id === 'f1')?.sourceName).toBe('KB1');
       expect(payload.folders.find((f) => f.id === 'f2')?.sourceName).toBe('KB2');
@@ -542,7 +599,13 @@ describe('registerMergedDocumentRagTools', () => {
       const opts = makeOpts({
         deps: makeDeps({ storage }),
         sources: [
-          makeEntry({ selectionOverrides: { mode: 'allowList', allowedFolders: ['docs/faq'], allowedDocuments: [] } }),
+          makeEntry({
+            selectionOverrides: {
+              mode: 'allowList',
+              allowedFolders: ['docs/faq'],
+              allowedDocuments: [],
+            },
+          }),
         ],
       });
       registerMergedDocumentRagTools(opts);
@@ -570,9 +633,15 @@ describe('registerMergedDocumentRagTools', () => {
         deps: makeDeps({ storage }),
         sources: [
           // src-disabled: fetch disabled
-          makeEntry({ sourceOverrides: { id: 'src-disabled', name: 'Restricted KB' }, selectionOverrides: { directFetchDisabled: true } }),
+          makeEntry({
+            sourceOverrides: { id: 'src-disabled', name: 'Restricted KB' },
+            selectionOverrides: { directFetchDisabled: true },
+          }),
           // src-enabled: fetch allowed
-          makeEntry({ sourceOverrides: { id: 'src-enabled', name: 'Open KB' }, selectionOverrides: { directFetchDisabled: false } }),
+          makeEntry({
+            sourceOverrides: { id: 'src-enabled', name: 'Open KB' },
+            selectionOverrides: { directFetchDisabled: false },
+          }),
         ],
       });
       registerMergedDocumentRagTools(opts);
@@ -584,15 +653,27 @@ describe('registerMergedDocumentRagTools', () => {
     });
 
     it('succeeds when the owning source has directFetchDisabled=false', async () => {
-      const doc = makeDocument({ id: 'doc-2', sourceId: 'src-enabled', path: 'docs/pub.md', folderId: null, tenantId: 'tenant-abc' });
+      const doc = makeDocument({
+        id: 'doc-2',
+        sourceId: 'src-enabled',
+        path: 'docs/pub.md',
+        folderId: null,
+        tenantId: 'tenant-abc',
+      });
       const storage = makeStorage({
         getDocument: vi.fn().mockResolvedValue({ doc, text: 'public content' }),
       });
       const opts = makeOpts({
         deps: makeDeps({ storage }),
         sources: [
-          makeEntry({ sourceOverrides: { id: 'src-disabled', name: 'Restricted KB' }, selectionOverrides: { directFetchDisabled: true } }),
-          makeEntry({ sourceOverrides: { id: 'src-enabled', name: 'Open KB' }, selectionOverrides: { directFetchDisabled: false } }),
+          makeEntry({
+            sourceOverrides: { id: 'src-disabled', name: 'Restricted KB' },
+            selectionOverrides: { directFetchDisabled: true },
+          }),
+          makeEntry({
+            sourceOverrides: { id: 'src-enabled', name: 'Open KB' },
+            selectionOverrides: { directFetchDisabled: false },
+          }),
         ],
       });
       registerMergedDocumentRagTools(opts);
@@ -621,7 +702,13 @@ describe('registerMergedDocumentRagTools', () => {
     });
 
     it('each response carries sourceName', async () => {
-      const doc = makeDocument({ id: 'doc-4', sourceId: 'src-1', path: 'docs/x.md', folderId: null, tenantId: 'tenant-abc' });
+      const doc = makeDocument({
+        id: 'doc-4',
+        sourceId: 'src-1',
+        path: 'docs/x.md',
+        folderId: null,
+        tenantId: 'tenant-abc',
+      });
       const storage = makeStorage({
         getDocument: vi.fn().mockResolvedValue({ doc, text: 'content' }),
       });
@@ -704,7 +791,10 @@ describe('registerMergedDocumentRagTools', () => {
 
       const handler = getToolHandler(opts.server, 'rag_search');
       await handler({ query: 'hello' });
-      const callOpts = (searchIndex.search as ReturnType<typeof vi.fn>).mock.calls[0]![2] as Record<string, unknown>;
+      const callOpts = (searchIndex.search as ReturnType<typeof vi.fn>).mock.calls[0]![2] as Record<
+        string,
+        unknown
+      >;
       expect(callOpts.tenantId).toBe('acme-corp');
     });
 
@@ -715,7 +805,10 @@ describe('registerMergedDocumentRagTools', () => {
 
       const handler = getToolHandler(opts.server, 'rag_search');
       await handler({ query: 'hello' });
-      const callOpts = (searchIndex.search as ReturnType<typeof vi.fn>).mock.calls[0]![2] as Record<string, unknown>;
+      const callOpts = (searchIndex.search as ReturnType<typeof vi.fn>).mock.calls[0]![2] as Record<
+        string,
+        unknown
+      >;
       expect(callOpts.tenantId).toBe('default');
     });
   });

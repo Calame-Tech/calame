@@ -182,8 +182,12 @@ db.exec(`
 
 // ── HELPERS ──────────────────────────────────────────────────────────────────
 
-function rand(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
-function pick(arr) { return arr[rand(0, arr.length - 1)]; }
+function rand(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+function pick(arr) {
+  return arr[rand(0, arr.length - 1)];
+}
 function pickN(arr, n) {
   const shuffled = [...arr].sort(() => Math.random() - 0.5);
   return shuffled.slice(0, n);
@@ -194,19 +198,148 @@ function dateOffset(base, days) {
   return d.toISOString().split('T')[0];
 }
 
-const NOMS = ['Martin','Dupont','Leroy','Moreau','Bernard','Petit','Durand','Lambert','Fontaine','Rousseau','Simon','Michel','Lefebvre','Leroux','Girard','Bonnet','Fournier','Morel','Perrin','Dubois','Garnier','Faure','Roux','Blanc','Guerin','Muller','Henry','Colin','Mercier','Lacroix'];
-const PRENOMS_H = ['Thomas','Nicolas','Julien','Pierre','Alexandre','Mathieu','Antoine','Baptiste','Clement','Florian','Guillaume','Hugo','Maxime','Romain','Sébastien','Adrien','Arthur','Lucas','Nathan','Quentin'];
-const PRENOMS_F = ['Marie','Sophie','Julie','Laura','Sarah','Camille','Emma','Léa','Manon','Pauline','Alice','Céline','Charlotte','Elisa','Inès','Jade','Laura','Lucie','Marion','Océane'];
+const NOMS = [
+  'Martin',
+  'Dupont',
+  'Leroy',
+  'Moreau',
+  'Bernard',
+  'Petit',
+  'Durand',
+  'Lambert',
+  'Fontaine',
+  'Rousseau',
+  'Simon',
+  'Michel',
+  'Lefebvre',
+  'Leroux',
+  'Girard',
+  'Bonnet',
+  'Fournier',
+  'Morel',
+  'Perrin',
+  'Dubois',
+  'Garnier',
+  'Faure',
+  'Roux',
+  'Blanc',
+  'Guerin',
+  'Muller',
+  'Henry',
+  'Colin',
+  'Mercier',
+  'Lacroix',
+];
+const PRENOMS_H = [
+  'Thomas',
+  'Nicolas',
+  'Julien',
+  'Pierre',
+  'Alexandre',
+  'Mathieu',
+  'Antoine',
+  'Baptiste',
+  'Clement',
+  'Florian',
+  'Guillaume',
+  'Hugo',
+  'Maxime',
+  'Romain',
+  'Sébastien',
+  'Adrien',
+  'Arthur',
+  'Lucas',
+  'Nathan',
+  'Quentin',
+];
+const PRENOMS_F = [
+  'Marie',
+  'Sophie',
+  'Julie',
+  'Laura',
+  'Sarah',
+  'Camille',
+  'Emma',
+  'Léa',
+  'Manon',
+  'Pauline',
+  'Alice',
+  'Céline',
+  'Charlotte',
+  'Elisa',
+  'Inès',
+  'Jade',
+  'Laura',
+  'Lucie',
+  'Marion',
+  'Océane',
+];
 const PRENOMS = [...PRENOMS_H, ...PRENOMS_F];
-const VILLES = ['Paris','Lyon','Marseille','Bordeaux','Toulouse','Nantes','Strasbourg','Lille','Rennes','Nice','Montpellier','Grenoble','Rouen','Tours','Dijon'];
-const RUES = ['rue de la Paix','avenue Victor Hugo','boulevard Saint-Germain','rue du Faubourg','allée des Roses','impasse des Lilas','chemin du Moulin','rue des Acacias','passage du Commerce','voie Romaine'];
-const VEHICULES = ['velo','velo','scooter','scooter','scooter','camionnette','camionnette','camionnette','camion'];
-const STATUTS_COLIS = ['en_attente','en_depot','en_cours','livre','livre','livre','livre','echec','retour','perdu'];
-const PRIORITES = ['normale','normale','normale','normale','express','urgente'];
-const TYPES_CLIENT = ['particulier','particulier','particulier','professionnel','vip'];
-const TYPES_INCIDENT = ['retard','colis_endommage','adresse_introuvable','absent','vol','accident','autre'];
-const GRAVITES = ['faible','faible','faible','moyenne','haute','critique'];
-const METHODES_PAIEMENT = ['carte','carte','carte','virement','especes','credit'];
+const VILLES = [
+  'Paris',
+  'Lyon',
+  'Marseille',
+  'Bordeaux',
+  'Toulouse',
+  'Nantes',
+  'Strasbourg',
+  'Lille',
+  'Rennes',
+  'Nice',
+  'Montpellier',
+  'Grenoble',
+  'Rouen',
+  'Tours',
+  'Dijon',
+];
+const RUES = [
+  'rue de la Paix',
+  'avenue Victor Hugo',
+  'boulevard Saint-Germain',
+  'rue du Faubourg',
+  'allée des Roses',
+  'impasse des Lilas',
+  'chemin du Moulin',
+  'rue des Acacias',
+  'passage du Commerce',
+  'voie Romaine',
+];
+const VEHICULES = [
+  'velo',
+  'velo',
+  'scooter',
+  'scooter',
+  'scooter',
+  'camionnette',
+  'camionnette',
+  'camionnette',
+  'camion',
+];
+const STATUTS_COLIS = [
+  'en_attente',
+  'en_depot',
+  'en_cours',
+  'livre',
+  'livre',
+  'livre',
+  'livre',
+  'echec',
+  'retour',
+  'perdu',
+];
+const PRIORITES = ['normale', 'normale', 'normale', 'normale', 'express', 'urgente'];
+const TYPES_CLIENT = ['particulier', 'particulier', 'particulier', 'professionnel', 'vip'];
+const TYPES_INCIDENT = [
+  'retard',
+  'colis_endommage',
+  'adresse_introuvable',
+  'absent',
+  'vol',
+  'accident',
+  'autre',
+];
+const GRAVITES = ['faible', 'faible', 'faible', 'moyenne', 'haute', 'critique'];
+const METHODES_PAIEMENT = ['carte', 'carte', 'carte', 'virement', 'especes', 'credit'];
 const REGIONS = [
   { code: 'IDF', libelle: 'Île-de-France', departement: '75', region: 'Île-de-France' },
   { code: 'ARA', libelle: 'Auvergne-Rhône-Alpes', departement: '69', region: 'ARA' },
@@ -227,62 +360,82 @@ const insertMany = db.transaction((stmt, rows) => {
 });
 
 // Zones
-const stmtZone = db.prepare('INSERT INTO zone (code, libelle, departement, region) VALUES (@code, @libelle, @departement, @region)');
+const stmtZone = db.prepare(
+  'INSERT INTO zone (code, libelle, departement, region) VALUES (@code, @libelle, @departement, @region)',
+);
 insertMany(stmtZone, REGIONS);
-const zones = db.prepare('SELECT id FROM zone').all().map(r => r.id);
+const zones = db
+  .prepare('SELECT id FROM zone')
+  .all()
+  .map((r) => r.id);
 console.log(`✓ ${zones.length} zones`);
 
 // Depots (20)
-const stmtDepot = db.prepare('INSERT INTO depot (nom, adresse, ville, code_postal, id_zone, capacite_max) VALUES (@nom, @adresse, @ville, @code_postal, @id_zone, @capacite_max)');
+const stmtDepot = db.prepare(
+  'INSERT INTO depot (nom, adresse, ville, code_postal, id_zone, capacite_max) VALUES (@nom, @adresse, @ville, @code_postal, @id_zone, @capacite_max)',
+);
 const depots = [];
 for (let i = 0; i < 20; i++) {
   const ville = pick(VILLES);
-  const r = stmtDepot.run({ nom: `Dépôt ${ville} ${i+1}`, adresse: `${rand(1,200)} ${pick(RUES)}`, ville, code_postal: `${rand(10,99)}000`, id_zone: pick(zones), capacite_max: rand(500, 5000) });
+  const r = stmtDepot.run({
+    nom: `Dépôt ${ville} ${i + 1}`,
+    adresse: `${rand(1, 200)} ${pick(RUES)}`,
+    ville,
+    code_postal: `${rand(10, 99)}000`,
+    id_zone: pick(zones),
+    capacite_max: rand(500, 5000),
+  });
   depots.push(r.lastInsertRowid);
 }
 console.log(`✓ ${depots.length} dépôts`);
 
 // Clients (500, avec client_id=3 = Emma Leroy boostée à 500 colis)
-const stmtClient = db.prepare('INSERT INTO client (nom, prenom, email, telephone, adresse, ville, code_postal, id_zone, type_client, date_inscription, actif, solde_credit) VALUES (@nom, @prenom, @email, @telephone, @adresse, @ville, @code_postal, @id_zone, @type_client, @date_inscription, @actif, @solde_credit)');
+const stmtClient = db.prepare(
+  'INSERT INTO client (nom, prenom, email, telephone, adresse, ville, code_postal, id_zone, type_client, date_inscription, actif, solde_credit) VALUES (@nom, @prenom, @email, @telephone, @adresse, @ville, @code_postal, @id_zone, @type_client, @date_inscription, @actif, @solde_credit)',
+);
 const clients = [];
 for (let i = 0; i < 500; i++) {
   const nom = pick(NOMS);
   const prenom = pick(PRENOMS);
   const r = stmtClient.run({
-    nom, prenom,
+    nom,
+    prenom,
     email: `${prenom.toLowerCase()}.${nom.toLowerCase()}${i}@example.com`,
-    telephone: `0${rand(6,7)}${String(rand(10000000,99999999))}`,
-    adresse: `${rand(1,200)} ${pick(RUES)}`,
+    telephone: `0${rand(6, 7)}${String(rand(10000000, 99999999))}`,
+    adresse: `${rand(1, 200)} ${pick(RUES)}`,
     ville: pick(VILLES),
-    code_postal: `${rand(10,99)}000`,
+    code_postal: `${rand(10, 99)}000`,
     id_zone: pick(zones),
     type_client: pick(TYPES_CLIENT),
     date_inscription: dateOffset('2023-01-01', rand(0, 730)),
-    actif: rand(0,10) > 0 ? 1 : 0,
-    solde_credit: rand(0,1) === 1 ? rand(0, 100) : 0,
+    actif: rand(0, 10) > 0 ? 1 : 0,
+    solde_credit: rand(0, 1) === 1 ? rand(0, 100) : 0,
   });
   clients.push(r.lastInsertRowid);
 }
 console.log(`✓ ${clients.length} clients`);
 
 // Livreurs (50)
-const stmtLivreur = db.prepare('INSERT INTO livreur (nom, prenom, email, telephone, id_depot, id_zone, vehicule, permis, note_moyenne, nb_livraisons_total, actif, date_embauche) VALUES (@nom, @prenom, @email, @telephone, @id_depot, @id_zone, @vehicule, @permis, @note_moyenne, @nb_livraisons_total, @actif, @date_embauche)');
+const stmtLivreur = db.prepare(
+  'INSERT INTO livreur (nom, prenom, email, telephone, id_depot, id_zone, vehicule, permis, note_moyenne, nb_livraisons_total, actif, date_embauche) VALUES (@nom, @prenom, @email, @telephone, @id_depot, @id_zone, @vehicule, @permis, @note_moyenne, @nb_livraisons_total, @actif, @date_embauche)',
+);
 const livreurs = [];
 for (let i = 0; i < 50; i++) {
   const nom = pick(NOMS);
   const prenom = pick(PRENOMS);
   const vehicule = pick(VEHICULES);
   const r = stmtLivreur.run({
-    nom, prenom,
+    nom,
+    prenom,
     email: `livreur.${prenom.toLowerCase()}${i}@calame.com`,
-    telephone: `0${rand(6,7)}${String(rand(10000000,99999999))}`,
+    telephone: `0${rand(6, 7)}${String(rand(10000000, 99999999))}`,
     id_depot: pick(depots),
     id_zone: pick(zones),
     vehicule,
     permis: vehicule === 'camion' ? 'C' : vehicule === 'camionnette' ? 'B' : null,
     note_moyenne: Math.round((3.5 + Math.random() * 1.5) * 10) / 10,
     nb_livraisons_total: rand(50, 3000),
-    actif: rand(0,10) > 1 ? 1 : 0,
+    actif: rand(0, 10) > 1 ? 1 : 0,
     date_embauche: dateOffset('2020-01-01', rand(0, 1500)),
   });
   livreurs.push(r.lastInsertRowid);
@@ -290,7 +443,8 @@ for (let i = 0; i < 50; i++) {
 console.log(`✓ ${livreurs.length} livreurs`);
 
 // Colis (20000 dont ~500 pour Emma client_id=3)
-const stmtColis = db.prepare(`INSERT INTO colis (reference, id_client, id_livreur, id_depot, poids_kg, longueur_cm, largeur_cm, hauteur_cm, statut, priorite, fragile, valeur_declaree, adresse_livraison, ville_livraison, code_postal_livraison, date_creation, date_expedition, date_livraison_prevue, date_livraison_reelle, tentatives_livraison, commentaire, signature_requise)
+const stmtColis =
+  db.prepare(`INSERT INTO colis (reference, id_client, id_livreur, id_depot, poids_kg, longueur_cm, largeur_cm, hauteur_cm, statut, priorite, fragile, valeur_declaree, adresse_livraison, ville_livraison, code_postal_livraison, date_creation, date_expedition, date_livraison_prevue, date_livraison_reelle, tentatives_livraison, commentaire, signature_requise)
 VALUES (@reference, @id_client, @id_livreur, @id_depot, @poids_kg, @longueur_cm, @largeur_cm, @hauteur_cm, @statut, @priorite, @fragile, @valeur_declaree, @adresse_livraison, @ville_livraison, @code_postal_livraison, @date_creation, @date_expedition, @date_livraison_prevue, @date_livraison_reelle, @tentatives_livraison, @commentaire, @signature_requise)`);
 
 // Emma est client_id=3 (3ème client inséré)
@@ -314,24 +468,28 @@ for (let i = 0; i < TOTAL_COLIS; i++) {
   // - en_cours/en_depot : créés il y a 1-20 jours (en transit récent)
   // - en_attente : créés il y a 0-7 jours (très récent)
   let dateCreation;
-  if (['livre','echec','retour','perdu'].includes(statut)) {
+  if (['livre', 'echec', 'retour', 'perdu'].includes(statut)) {
     dateCreation = dateOffset(TODAY, -rand(10, 400));
-  } else if (['en_cours','en_depot'].includes(statut)) {
+  } else if (['en_cours', 'en_depot'].includes(statut)) {
     dateCreation = dateOffset(TODAY, -rand(1, 20));
   } else {
     dateCreation = dateOffset(TODAY, -rand(0, 7));
   }
 
   // FIX 1 : date_livraison_prevue TOUJOURS dans le futur pour les colis encore actifs
-  const dateLivraisonPrevue = ['en_cours','en_depot','en_attente'].includes(statut)
+  const dateLivraisonPrevue = ['en_cours', 'en_depot', 'en_attente'].includes(statut)
     ? dateOffset(TODAY, rand(1, 5))
     : dateOffset(dateCreation, rand(2, 7));
 
   const livre = statut === 'livre';
   const r = stmtColis.run({
-    reference: `COL-${2024 + Math.floor(i/8000)}-${String(i+1).padStart(5,'0')}`,
+    reference: `COL-${2024 + Math.floor(i / 8000)}-${String(i + 1).padStart(5, '0')}`,
     id_client: clientId,
-    id_livreur: ['livre','echec','retour'].includes(statut) ? pick(livreurs) : (rand(0,1) ? pick(livreurs) : null),
+    id_livreur: ['livre', 'echec', 'retour'].includes(statut)
+      ? pick(livreurs)
+      : rand(0, 1)
+        ? pick(livreurs)
+        : null,
     id_depot: pick(depots),
     poids_kg: Math.round((0.1 + Math.random() * 29.9) * 10) / 10,
     longueur_cm: rand(5, 120),
@@ -340,17 +498,17 @@ for (let i = 0; i < TOTAL_COLIS; i++) {
     statut,
     priorite: pick(PRIORITES),
     fragile: rand(0, 5) === 0 ? 1 : 0,
-    valeur_declaree: rand(0,3) === 0 ? rand(10, 2000) : null,
-    adresse_livraison: `${rand(1,200)} ${pick(RUES)}`,
+    valeur_declaree: rand(0, 3) === 0 ? rand(10, 2000) : null,
+    adresse_livraison: `${rand(1, 200)} ${pick(RUES)}`,
     ville_livraison: pick(VILLES),
-    code_postal_livraison: `${rand(10,99)}000`,
+    code_postal_livraison: `${rand(10, 99)}000`,
     date_creation: dateCreation,
-    date_expedition: statut === 'en_attente' ? null : dateOffset(dateCreation, rand(1,3)),
+    date_expedition: statut === 'en_attente' ? null : dateOffset(dateCreation, rand(1, 3)),
     date_livraison_prevue: dateLivraisonPrevue,
-    date_livraison_reelle: livre ? dateOffset(dateCreation, rand(2,10)) : null,
-    tentatives_livraison: statut === 'livre' ? 1 : statut === 'echec' ? rand(2,3) : rand(0,1),
-    commentaire: rand(0,5) === 0 ? 'Laisser chez le voisin si absent' : null,
-    signature_requise: rand(0,4) === 0 ? 1 : 0,
+    date_livraison_reelle: livre ? dateOffset(dateCreation, rand(2, 10)) : null,
+    tentatives_livraison: statut === 'livre' ? 1 : statut === 'echec' ? rand(2, 3) : rand(0, 1),
+    commentaire: rand(0, 5) === 0 ? 'Laisser chez le voisin si absent' : null,
+    signature_requise: rand(0, 4) === 0 ? 1 : 0,
   });
   colisIds.push(r.lastInsertRowid);
   colisMetaMap.set(r.lastInsertRowid, { dateCreation, statut });
@@ -361,14 +519,28 @@ console.log(`✓ ${colisIds.length} colis`);
 const emmaColisIds = colisIds.slice(0, EMMA_COLIS);
 
 // Tournées (300) + tournee_colis (liées aux vrais colis des livreurs)
-const stmtTournee = db.prepare('INSERT INTO tournee (id_livreur, id_depot, date_tournee, heure_debut, heure_fin, statut, nb_colis_prevu, nb_colis_livre, nb_colis_echec, km_parcourus, note_livreur) VALUES (@id_livreur, @id_depot, @date_tournee, @heure_debut, @heure_fin, @statut, @nb_colis_prevu, @nb_colis_livre, @nb_colis_echec, @km_parcourus, @note_livreur)');
-const stmtTourneeColis = db.prepare('INSERT OR IGNORE INTO tournee_colis (id_tournee, id_colis, ordre, statut) VALUES (@id_tournee, @id_colis, @ordre, @statut)');
+const stmtTournee = db.prepare(
+  'INSERT INTO tournee (id_livreur, id_depot, date_tournee, heure_debut, heure_fin, statut, nb_colis_prevu, nb_colis_livre, nb_colis_echec, km_parcourus, note_livreur) VALUES (@id_livreur, @id_depot, @date_tournee, @heure_debut, @heure_fin, @statut, @nb_colis_prevu, @nb_colis_livre, @nb_colis_echec, @km_parcourus, @note_livreur)',
+);
+const stmtTourneeColis = db.prepare(
+  'INSERT OR IGNORE INTO tournee_colis (id_tournee, id_colis, ordre, statut) VALUES (@id_tournee, @id_colis, @ordre, @statut)',
+);
 const tourneeIds = [];
-const STATUTS_TOURNEE = ['planifiee','planifiee','en_cours','terminee','terminee','terminee','annulee'];
+const STATUTS_TOURNEE = [
+  'planifiee',
+  'planifiee',
+  'en_cours',
+  'terminee',
+  'terminee',
+  'terminee',
+  'annulee',
+];
 
 // Index colis par livreur pour peupler tournee_colis avec de vrais colis
 const colisByLivreur = new Map();
-const colisLivreurRows = db.prepare('SELECT id, id_livreur, statut FROM colis WHERE id_livreur IS NOT NULL').all();
+const colisLivreurRows = db
+  .prepare('SELECT id, id_livreur, statut FROM colis WHERE id_livreur IS NOT NULL')
+  .all();
 for (const c of colisLivreurRows) {
   if (!colisByLivreur.has(c.id_livreur)) colisByLivreur.set(c.id_livreur, []);
   colisByLivreur.get(c.id_livreur).push({ id: c.id, statut: c.statut });
@@ -386,8 +558,8 @@ for (let i = 0; i < 300; i++) {
     id_livreur: livreurId,
     id_depot: pick(depots),
     date_tournee: dateOffset(TODAY, -rand(0, 365)),
-    heure_debut: statut !== 'planifiee' ? `0${rand(7,9)}:${rand(0,5)}0` : null,
-    heure_fin: statut === 'terminee' ? `${rand(15,19)}:${rand(0,5)}0` : null,
+    heure_debut: statut !== 'planifiee' ? `0${rand(7, 9)}:${rand(0, 5)}0` : null,
+    heure_fin: statut === 'terminee' ? `${rand(15, 19)}:${rand(0, 5)}0` : null,
     statut,
     nb_colis_prevu: prevus,
     nb_colis_livre: 0,
@@ -400,28 +572,39 @@ for (let i = 0; i < 300; i++) {
 
   // Peupler tournee_colis avec de vrais colis de ce livreur, jamais déjà assignés
   if (statut !== 'planifiee' && statut !== 'annulee') {
-    const disponibles = (colisByLivreur.get(livreurId) ?? []).filter(c => !colisInTournee.has(c.id));
+    const disponibles = (colisByLivreur.get(livreurId) ?? []).filter(
+      (c) => !colisInTournee.has(c.id),
+    );
     const selection = pickN(disponibles, Math.min(prevus, disponibles.length));
     let ordre = 1;
-    let nbLivre = 0, nbEchec = 0;
+    let nbLivre = 0,
+      nbEchec = 0;
     for (const c of selection) {
       colisInTournee.add(c.id);
       const tcStatut = c.statut === 'livre' ? 'livre' : c.statut === 'echec' ? 'echec' : 'prevu';
-      stmtTourneeColis.run({ id_tournee: tourneeId, id_colis: c.id, ordre: ordre++, statut: tcStatut });
+      stmtTourneeColis.run({
+        id_tournee: tourneeId,
+        id_colis: c.id,
+        ordre: ordre++,
+        statut: tcStatut,
+      });
       if (tcStatut === 'livre') nbLivre++;
       if (tcStatut === 'echec') nbEchec++;
     }
-    db.prepare('UPDATE tournee SET nb_colis_prevu=?, nb_colis_livre=?, nb_colis_echec=? WHERE id=?')
-      .run(selection.length, nbLivre, nbEchec, tourneeId);
+    db.prepare(
+      'UPDATE tournee SET nb_colis_prevu=?, nb_colis_livre=?, nb_colis_echec=? WHERE id=?',
+    ).run(selection.length, nbLivre, nbEchec, tourneeId);
   }
 }
 console.log(`✓ ${tourneeIds.length} tournées`);
 
 // Incidents (400)
-const stmtIncident = db.prepare('INSERT INTO incident (id_colis, id_livreur, id_tournee, type, gravite, description, date_incident, resolu, date_resolution, commentaire_resolution, cout_estime) VALUES (@id_colis, @id_livreur, @id_tournee, @type, @gravite, @description, @date_incident, @resolu, @date_resolution, @commentaire_resolution, @cout_estime)');
+const stmtIncident = db.prepare(
+  'INSERT INTO incident (id_colis, id_livreur, id_tournee, type, gravite, description, date_incident, resolu, date_resolution, commentaire_resolution, cout_estime) VALUES (@id_colis, @id_livreur, @id_tournee, @type, @gravite, @description, @date_incident, @resolu, @date_resolution, @commentaire_resolution, @cout_estime)',
+);
 const DESCRIPTIONS = {
   retard: 'Livraison retardée suite à un encombrement routier.',
-  colis_endommage: 'Colis reçu avec des dommages visibles sur l\'emballage.',
+  colis_endommage: "Colis reçu avec des dommages visibles sur l'emballage.",
   adresse_introuvable: 'Adresse non trouvée malgré plusieurs tentatives.',
   absent: 'Destinataire absent lors des 3 tentatives de livraison.',
   vol: 'Colis signalé manquant lors du chargement en dépôt.',
@@ -431,15 +614,15 @@ const DESCRIPTIONS = {
 // FIX 3 : date_incident toujours >= date_creation du colis associé
 for (let i = 0; i < 400; i++) {
   const type = pick(TYPES_INCIDENT);
-  const resolu = rand(0,2) > 0 ? 1 : 0;
-  const idColis = rand(0,3) > 0 ? pick(colisIds) : null;
+  const resolu = rand(0, 2) > 0 ? 1 : 0;
+  const idColis = rand(0, 3) > 0 ? pick(colisIds) : null;
   const colisDateCreation = idColis ? colisMetaMap.get(idColis)?.dateCreation : null;
   const minDate = colisDateCreation ?? '2025-01-01';
   const dateIncident = dateOffset(minDate, rand(1, 30));
   stmtIncident.run({
     id_colis: idColis,
     id_livreur: pick(livreurs),
-    id_tournee: rand(0,1) ? pick(tourneeIds) : null,
+    id_tournee: rand(0, 1) ? pick(tourneeIds) : null,
     type,
     gravite: pick(GRAVITES),
     description: DESCRIPTIONS[type],
@@ -447,30 +630,35 @@ for (let i = 0; i < 400; i++) {
     resolu,
     date_resolution: resolu ? dateOffset(dateIncident, rand(1, 14)) : null,
     commentaire_resolution: resolu ? 'Problème résolu après intervention du responsable.' : null,
-    cout_estime: ['colis_endommage','vol','accident'].includes(type) ? rand(20, 2000) : null,
+    cout_estime: ['colis_endommage', 'vol', 'accident'].includes(type) ? rand(20, 2000) : null,
   });
 }
 console.log(`✓ 400 incidents`);
 
 // Paiements (10000 dont ~500 pour Emma)
-const stmtPaiement = db.prepare('INSERT INTO paiement (id_client, id_colis, montant, methode, statut, reference_transaction, date_paiement, date_validation) VALUES (@id_client, @id_colis, @montant, @methode, @statut, @reference_transaction, @date_paiement, @date_validation)');
+const stmtPaiement = db.prepare(
+  'INSERT INTO paiement (id_client, id_colis, montant, methode, statut, reference_transaction, date_paiement, date_validation) VALUES (@id_client, @id_colis, @montant, @methode, @statut, @reference_transaction, @date_paiement, @date_validation)',
+);
 const TOTAL_PAIEMENTS = 10000;
 const EMMA_PAIEMENTS = 500;
 
 // FIX 4 : statut paiement cohérent avec statut du colis associé
 function statutPaiementPourColis(colisStatut) {
-  if (colisStatut === 'livre') return pick(['valide','valide','valide','rembourse']);
-  if (colisStatut === 'echec' || colisStatut === 'retour') return pick(['rembourse','echec','valide']);
-  if (colisStatut === 'perdu') return pick(['rembourse','echec']);
+  if (colisStatut === 'livre') return pick(['valide', 'valide', 'valide', 'rembourse']);
+  if (colisStatut === 'echec' || colisStatut === 'retour')
+    return pick(['rembourse', 'echec', 'valide']);
+  if (colisStatut === 'perdu') return pick(['rembourse', 'echec']);
   if (colisStatut === 'en_attente') return 'en_attente';
-  return pick(['en_attente','valide']); // en_cours, en_depot
+  return pick(['en_attente', 'valide']); // en_cours, en_depot
 }
 
 for (let i = 0; i < TOTAL_PAIEMENTS; i++) {
   const isEmma = i < EMMA_PAIEMENTS;
-  const idColis = rand(0,3) > 0 ? (isEmma ? pick(emmaColisIds) : pick(colisIds)) : null;
+  const idColis = rand(0, 3) > 0 ? (isEmma ? pick(emmaColisIds) : pick(colisIds)) : null;
   const colisStatut = idColis ? colisMetaMap.get(idColis)?.statut : null;
-  const statut = colisStatut ? statutPaiementPourColis(colisStatut) : pick(['valide','rembourse','echec']);
+  const statut = colisStatut
+    ? statutPaiementPourColis(colisStatut)
+    : pick(['valide', 'rembourse', 'echec']);
   const datePaiement = dateOffset('2025-01-01', rand(0, 466));
   stmtPaiement.run({
     id_client: isEmma ? emmaClientId : pick(clients),
@@ -480,23 +668,55 @@ for (let i = 0; i < TOTAL_PAIEMENTS; i++) {
     statut,
     reference_transaction: `TXN-${Date.now()}-${i}`,
     date_paiement: datePaiement,
-    date_validation: ['valide','rembourse'].includes(statut) ? dateOffset(datePaiement, rand(0, 3)) : null,
+    date_validation: ['valide', 'rembourse'].includes(statut)
+      ? dateOffset(datePaiement, rand(0, 3))
+      : null,
   });
 }
 console.log(`✓ ${TOTAL_PAIEMENTS} paiements (dont ${EMMA_PAIEMENTS} pour Emma)`);
 
 // FIX 5 : historique_statut avec transitions qui se terminent sur le vrai statut du colis
-const stmtHistorique = db.prepare('INSERT INTO historique_statut (id_colis, statut_precedent, statut_nouveau, date_changement, id_livreur, commentaire) VALUES (@id_colis, @statut_precedent, @statut_nouveau, @date_changement, @id_livreur, @commentaire)');
+const stmtHistorique = db.prepare(
+  'INSERT INTO historique_statut (id_colis, statut_precedent, statut_nouveau, date_changement, id_livreur, commentaire) VALUES (@id_colis, @statut_precedent, @statut_nouveau, @date_changement, @id_livreur, @commentaire)',
+);
 
 // Chaîne complète jusqu'à chaque statut final
 const CHAINS_PAR_STATUT = {
   en_attente: [[null, 'en_attente']],
-  en_depot:   [[null, 'en_attente'], ['en_attente', 'en_depot']],
-  en_cours:   [[null, 'en_attente'], ['en_attente', 'en_depot'], ['en_depot', 'en_cours']],
-  livre:      [[null, 'en_attente'], ['en_attente', 'en_depot'], ['en_depot', 'en_cours'], ['en_cours', 'livre']],
-  echec:      [[null, 'en_attente'], ['en_attente', 'en_depot'], ['en_depot', 'en_cours'], ['en_cours', 'echec']],
-  retour:     [[null, 'en_attente'], ['en_attente', 'en_depot'], ['en_depot', 'en_cours'], ['en_cours', 'echec'], ['echec', 'retour']],
-  perdu:      [[null, 'en_attente'], ['en_attente', 'en_depot'], ['en_depot', 'en_cours'], ['en_cours', 'perdu']],
+  en_depot: [
+    [null, 'en_attente'],
+    ['en_attente', 'en_depot'],
+  ],
+  en_cours: [
+    [null, 'en_attente'],
+    ['en_attente', 'en_depot'],
+    ['en_depot', 'en_cours'],
+  ],
+  livre: [
+    [null, 'en_attente'],
+    ['en_attente', 'en_depot'],
+    ['en_depot', 'en_cours'],
+    ['en_cours', 'livre'],
+  ],
+  echec: [
+    [null, 'en_attente'],
+    ['en_attente', 'en_depot'],
+    ['en_depot', 'en_cours'],
+    ['en_cours', 'echec'],
+  ],
+  retour: [
+    [null, 'en_attente'],
+    ['en_attente', 'en_depot'],
+    ['en_depot', 'en_cours'],
+    ['en_cours', 'echec'],
+    ['echec', 'retour'],
+  ],
+  perdu: [
+    [null, 'en_attente'],
+    ['en_attente', 'en_depot'],
+    ['en_depot', 'en_cours'],
+    ['en_cours', 'perdu'],
+  ],
 };
 
 // Tous les colis d'Emma (500) + 5000 autres
@@ -515,8 +735,8 @@ for (const idColis of colisIdsSample) {
       statut_precedent: prev,
       statut_nouveau: next,
       date_changement: date,
-      id_livreur: rand(0,1) ? pick(livreurs) : null,
-      commentaire: rand(0,4) === 0 ? 'Mise à jour automatique du statut' : null,
+      id_livreur: rand(0, 1) ? pick(livreurs) : null,
+      commentaire: rand(0, 4) === 0 ? 'Mise à jour automatique du statut' : null,
     });
     totalHistorique++;
   }
@@ -524,18 +744,26 @@ for (const idColis of colisIdsSample) {
 console.log(`✓ ${totalHistorique} entrées historique`);
 
 // Notifications (6000 dont ~500 pour Emma)
-const stmtNotif = db.prepare('INSERT INTO notification (id_client, id_colis, type, sujet, message, date_envoi, lu, date_lecture) VALUES (@id_client, @id_colis, @type, @sujet, @message, @date_envoi, @lu, @date_lecture)');
-const TYPES_NOTIF = ['sms','email','email','push'];
-const SUJETS = ['Votre colis est en route', 'Livraison effectuée', 'Tentative de livraison échouée', 'Votre colis est disponible en dépôt', 'Confirmation de commande'];
+const stmtNotif = db.prepare(
+  'INSERT INTO notification (id_client, id_colis, type, sujet, message, date_envoi, lu, date_lecture) VALUES (@id_client, @id_colis, @type, @sujet, @message, @date_envoi, @lu, @date_lecture)',
+);
+const TYPES_NOTIF = ['sms', 'email', 'email', 'push'];
+const SUJETS = [
+  'Votre colis est en route',
+  'Livraison effectuée',
+  'Tentative de livraison échouée',
+  'Votre colis est disponible en dépôt',
+  'Confirmation de commande',
+];
 const TOTAL_NOTIFS = 6000;
 const EMMA_NOTIFS = 500;
 for (let i = 0; i < TOTAL_NOTIFS; i++) {
   const isEmma = i < EMMA_NOTIFS;
-  const lu = rand(0,2) > 0 ? 1 : 0;
+  const lu = rand(0, 2) > 0 ? 1 : 0;
   const dateEnvoi = dateOffset('2025-01-01', rand(0, 466));
   stmtNotif.run({
     id_client: isEmma ? emmaClientId : pick(clients),
-    id_colis: rand(0,1) ? (isEmma ? pick(emmaColisIds) : pick(colisIds)) : null,
+    id_colis: rand(0, 1) ? (isEmma ? pick(emmaColisIds) : pick(colisIds)) : null,
     type: pick(TYPES_NOTIF),
     sujet: pick(SUJETS),
     message: 'Bonjour, nous vous informons que votre colis est en cours de traitement.',
@@ -547,15 +775,21 @@ for (let i = 0; i < TOTAL_NOTIFS; i++) {
 console.log(`✓ ${TOTAL_NOTIFS} notifications (dont ${EMMA_NOTIFS} pour Emma)`);
 
 // Recalculer nb_livraisons_total depuis les vrais colis livrés
-db.prepare(`
+db.prepare(
+  `
   UPDATE livreur SET nb_livraisons_total = (
     SELECT COUNT(*) FROM colis WHERE id_livreur = livreur.id AND statut = 'livre'
   )
-`).run();
+`,
+).run();
 console.log('✓ nb_livraisons_total recalculé');
 
 // Stats finales
-const total = db.prepare("SELECT SUM(cnt) as total FROM (SELECT COUNT(*) as cnt FROM client UNION ALL SELECT COUNT(*) FROM livreur UNION ALL SELECT COUNT(*) FROM colis UNION ALL SELECT COUNT(*) FROM tournee UNION ALL SELECT COUNT(*) FROM incident UNION ALL SELECT COUNT(*) FROM paiement UNION ALL SELECT COUNT(*) FROM historique_statut UNION ALL SELECT COUNT(*) FROM notification)").get();
+const total = db
+  .prepare(
+    'SELECT SUM(cnt) as total FROM (SELECT COUNT(*) as cnt FROM client UNION ALL SELECT COUNT(*) FROM livreur UNION ALL SELECT COUNT(*) FROM colis UNION ALL SELECT COUNT(*) FROM tournee UNION ALL SELECT COUNT(*) FROM incident UNION ALL SELECT COUNT(*) FROM paiement UNION ALL SELECT COUNT(*) FROM historique_statut UNION ALL SELECT COUNT(*) FROM notification)',
+  )
+  .get();
 console.log(`\n✅ DB générée : ${total.total} lignes au total`);
 console.log(`📁 ${DB_PATH}`);
 

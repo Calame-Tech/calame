@@ -15,10 +15,10 @@
  */
 
 import {
-	applyPiiMasking,
-	DEFAULT_TEXT_PII_CATEGORIES,
-	type PiiCategory,
-	type TextMaskingMode,
+  applyPiiMasking,
+  DEFAULT_TEXT_PII_CATEGORIES,
+  type PiiCategory,
+  type TextMaskingMode,
 } from '@calame/core';
 import type { RagSearchResult } from './types.js';
 
@@ -27,10 +27,10 @@ import type { RagSearchResult } from './types.js';
 // ---------------------------------------------------------------------------
 
 export interface RagPiiMaskingConfig {
-	enabled: boolean;
-	mode: TextMaskingMode;
-	/** Categories to mask. */
-	categories: PiiCategory[];
+  enabled: boolean;
+  mode: TextMaskingMode;
+  /** Categories to mask. */
+  categories: PiiCategory[];
 }
 
 const ALLOWED_MODES = new Set<TextMaskingMode>(['replace', 'hash', 'truncate', 'none']);
@@ -40,15 +40,15 @@ const ALLOWED_MODES = new Set<TextMaskingMode>(['replace', 'hash', 'truncate', '
 const ALLOWED_CATEGORIES = new Set<PiiCategory>([...DEFAULT_TEXT_PII_CATEGORIES]);
 
 function defaultConfig(): RagPiiMaskingConfig {
-	return {
-		enabled: true,
-		mode: 'replace',
-		categories: [...DEFAULT_TEXT_PII_CATEGORIES],
-	};
+  return {
+    enabled: true,
+    mode: 'replace',
+    categories: [...DEFAULT_TEXT_PII_CATEGORIES],
+  };
 }
 
 function disabledConfig(): RagPiiMaskingConfig {
-	return { enabled: false, mode: 'none', categories: [] };
+  return { enabled: false, mode: 'none', categories: [] };
 }
 
 /**
@@ -69,43 +69,43 @@ function disabledConfig(): RagPiiMaskingConfig {
  * silently disable PII masking.
  */
 export function parseRagPiiConfig(envValue: string | undefined): RagPiiMaskingConfig {
-	if (envValue === undefined) return defaultConfig();
-	const raw = envValue.trim();
-	if (raw === '' || raw.toLowerCase() === 'on') return defaultConfig();
-	if (raw.toLowerCase() === 'off') return disabledConfig();
+  if (envValue === undefined) return defaultConfig();
+  const raw = envValue.trim();
+  if (raw === '' || raw.toLowerCase() === 'on') return defaultConfig();
+  if (raw.toLowerCase() === 'off') return disabledConfig();
 
-	const [modePart, catsPart] = raw.split(':', 2);
-	const mode = modePart.trim().toLowerCase() as TextMaskingMode;
-	if (!ALLOWED_MODES.has(mode)) {
-		// Unknown mode → safe default. We still respect the operator's INTENT
-		// to configure something (vs. leaving it undefined) by logging would
-		// be ideal; the caller can warn after seeing `.enabled` differs from
-		// what they wrote.
-		return defaultConfig();
-	}
+  const [modePart, catsPart] = raw.split(':', 2);
+  const mode = modePart.trim().toLowerCase() as TextMaskingMode;
+  if (!ALLOWED_MODES.has(mode)) {
+    // Unknown mode → safe default. We still respect the operator's INTENT
+    // to configure something (vs. leaving it undefined) by logging would
+    // be ideal; the caller can warn after seeing `.enabled` differs from
+    // what they wrote.
+    return defaultConfig();
+  }
 
-	let categories: PiiCategory[];
-	if (catsPart === undefined || catsPart.trim() === '' || catsPart.trim().toLowerCase() === 'all') {
-		categories = [...DEFAULT_TEXT_PII_CATEGORIES];
-	} else {
-		const parsed = catsPart
-			.split(',')
-			.map((s) => s.trim().toLowerCase())
-			.filter((s) => s.length > 0)
-			.filter((s): s is PiiCategory => ALLOWED_CATEGORIES.has(s as PiiCategory));
-		if (parsed.length === 0) {
-			// All tokens invalid → fall back to defaults (safe).
-			categories = [...DEFAULT_TEXT_PII_CATEGORIES];
-		} else {
-			categories = parsed;
-		}
-	}
+  let categories: PiiCategory[];
+  if (catsPart === undefined || catsPart.trim() === '' || catsPart.trim().toLowerCase() === 'all') {
+    categories = [...DEFAULT_TEXT_PII_CATEGORIES];
+  } else {
+    const parsed = catsPart
+      .split(',')
+      .map((s) => s.trim().toLowerCase())
+      .filter((s) => s.length > 0)
+      .filter((s): s is PiiCategory => ALLOWED_CATEGORIES.has(s as PiiCategory));
+    if (parsed.length === 0) {
+      // All tokens invalid → fall back to defaults (safe).
+      categories = [...DEFAULT_TEXT_PII_CATEGORIES];
+    } else {
+      categories = parsed;
+    }
+  }
 
-	return {
-		enabled: mode !== 'none',
-		mode,
-		categories,
-	};
+  return {
+    enabled: mode !== 'none',
+    mode,
+    categories,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -125,30 +125,26 @@ export function parseRagPiiConfig(envValue: string | undefined): RagPiiMaskingCo
  * deliberately disabled the feature).
  */
 export function maskSearchResult(
-	result: RagSearchResult,
-	config: RagPiiMaskingConfig,
+  result: RagSearchResult,
+  config: RagPiiMaskingConfig,
 ): {
-	result: RagSearchResult;
-	redactionCounts: Partial<Record<PiiCategory, number>>;
+  result: RagSearchResult;
+  redactionCounts: Partial<Record<PiiCategory, number>>;
 } {
-	if (!config.enabled || result.chunks.length === 0) {
-		return { result, redactionCounts: {} };
-	}
+  if (!config.enabled || result.chunks.length === 0) {
+    return { result, redactionCounts: {} };
+  }
 
-	const aggregate: Partial<Record<PiiCategory, number>> = {};
-	const maskedChunks = result.chunks.map((chunk) => {
-		const { text, redactionCounts } = applyPiiMasking(
-			chunk.text,
-			config.mode,
-			config.categories,
-		);
-		for (const [cat, count] of Object.entries(redactionCounts)) {
-			if (count === undefined) continue;
-			const key = cat as PiiCategory;
-			aggregate[key] = (aggregate[key] ?? 0) + count;
-		}
-		return { ...chunk, text };
-	});
+  const aggregate: Partial<Record<PiiCategory, number>> = {};
+  const maskedChunks = result.chunks.map((chunk) => {
+    const { text, redactionCounts } = applyPiiMasking(chunk.text, config.mode, config.categories);
+    for (const [cat, count] of Object.entries(redactionCounts)) {
+      if (count === undefined) continue;
+      const key = cat as PiiCategory;
+      aggregate[key] = (aggregate[key] ?? 0) + count;
+    }
+    return { ...chunk, text };
+  });
 
-	return { result: { ...result, chunks: maskedChunks }, redactionCounts: aggregate };
+  return { result: { ...result, chunks: maskedChunks }, redactionCounts: aggregate };
 }

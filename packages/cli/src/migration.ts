@@ -159,13 +159,7 @@ export function runMigrations(db: CalameDatabase): void {
     //
     // The companion RAG-side migration (`ee/rag-core/src/storage/schema.ts`
     // v5→v6) covers the `rag_*` tables.
-    const hostTables = [
-      'profiles',
-      'configurations',
-      'ai_settings',
-      'tokens',
-      'users',
-    ] as const;
+    const hostTables = ['profiles', 'configurations', 'ai_settings', 'tokens', 'users'] as const;
     const tenantType = `TEXT NOT NULL DEFAULT '${DEFAULT_TENANT_ID}'`;
     for (const table of hostTables) {
       if (hasTable(db, table)) {
@@ -181,9 +175,7 @@ export function runMigrations(db: CalameDatabase): void {
     // promote this index to UNIQUE — at which point names will be allowed to
     // collide across tenant boundaries.
     if (hasTable(db, 'profiles')) {
-      db.raw.exec(
-        `CREATE INDEX IF NOT EXISTS idx_profiles_tenant_key ON profiles(tenant_id, key)`,
-      );
+      db.raw.exec(`CREATE INDEX IF NOT EXISTS idx_profiles_tenant_key ON profiles(tenant_id, key)`);
     }
     if (hasTable(db, 'configurations')) {
       db.raw.exec(
@@ -191,19 +183,13 @@ export function runMigrations(db: CalameDatabase): void {
       );
     }
     if (hasTable(db, 'ai_settings')) {
-      db.raw.exec(
-        `CREATE INDEX IF NOT EXISTS idx_ai_settings_tenant ON ai_settings(tenant_id)`,
-      );
+      db.raw.exec(`CREATE INDEX IF NOT EXISTS idx_ai_settings_tenant ON ai_settings(tenant_id)`);
     }
     if (hasTable(db, 'tokens')) {
-      db.raw.exec(
-        `CREATE INDEX IF NOT EXISTS idx_tokens_tenant ON tokens(tenant_id)`,
-      );
+      db.raw.exec(`CREATE INDEX IF NOT EXISTS idx_tokens_tenant ON tokens(tenant_id)`);
     }
     if (hasTable(db, 'users')) {
-      db.raw.exec(
-        `CREATE INDEX IF NOT EXISTS idx_users_tenant ON users(tenant_id)`,
-      );
+      db.raw.exec(`CREATE INDEX IF NOT EXISTS idx_users_tenant ON users(tenant_id)`);
     }
 
     db.setSchemaVersion(12);

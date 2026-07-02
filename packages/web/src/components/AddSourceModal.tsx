@@ -77,7 +77,8 @@ export default function AddSourceModal({
 
   if (!isOpen) return null;
 
-  const kbDisabledTitle = ragDisabledReason ?? 'Knowledge base features are unavailable on this instance';
+  const kbDisabledTitle =
+    ragDisabledReason ?? 'Knowledge base features are unavailable on this instance';
 
   return (
     /* Overlay */
@@ -98,10 +99,7 @@ export default function AddSourceModal({
       >
         {/* Header */}
         <div className="flex items-center justify-between mb-5">
-          <h2
-            id="add-source-modal-title"
-            className="text-base font-semibold text-gray-100"
-          >
+          <h2 id="add-source-modal-title" className="text-base font-semibold text-gray-100">
             Add a source
           </h2>
           <button
@@ -175,10 +173,7 @@ export default function AddSourceModal({
                 <p className="text-sm font-medium text-gray-500">Knowledge base</p>
                 <p className="text-xs text-gray-600 mt-0.5">Documents &amp; RAG</p>
               </div>
-              <span
-                className="text-[10px] text-gray-600 select-none"
-                aria-hidden="true"
-              >
+              <span className="text-[10px] text-gray-600 select-none" aria-hidden="true">
                 Not available
               </span>
             </div>

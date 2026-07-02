@@ -5,6 +5,17 @@ every commit. Newest first.
 
 ---
 
+## 2026-07-02 (later) — PR #17 merged, #24 file-size budget, branding revived, repo cleaned
+
+- **PR #17 merged into `main`** (`a4fdaa8`) — Phases 1-3 of the refactor plan are in.
+- **PR #18 merged — refactor plan #24**: ESLint `max-lines` budget (800 effective lines, blanks/comments skipped) on `packages/*/src` + `ee/*/src`, tests exempt. The 8 legacy files still over budget are grandfathered in an explicit **ratchet list** in `.eslintrc.cjs` that must only ever shrink: SourceForm (1885), McpDetailPage (1255), UserManagement (1152), ConnectionManager (1114), RagAccessSelector (1023), oauth.ts (964), AiSettings (916), MetricsDashboard (896).
+- **PR #19 merged — branding revived**: the per-tenant logo/favicon feature (`019ba0a`, old PR #11, had never reached `main`) cherry-picked and adapted to the post-refactor codebase — `BrandingProvider` mounted in `main.tsx` around `SessionProvider`, Branding tab in `pages/SettingsPage.tsx`, DB migration renumbered **v13** (`branding` table). Verified live (migration applied, `GET /api/branding` serving).
+- **Branch cleanup**: deleted all 15 stale remote branches across the session (12 fully-merged ones incl. `feature/rag`/`fix/security-pr8`, then `chore/file-size-budget`, `feat/branding-revival`, `feature/branding` after their merges). **Only `main` remains.**
+- Release path reminder: prod = tag `vX.Y.Z` on `main` → `publish-docker.yml` pushes the GHCR image.
+- Remaining plan: Phase 4 (#17 SchemaProvider, #18 BaseDocumentSourceConnector, #19 narrowConfig + error hierarchy, #20 encrypted-config ADR) and Phase 5 (#22 changesets, #23 incremental CI build) — small PRs off `main`. Coverage climb (≈39% → 70%) continues as its own track.
+
+---
+
 ## 2026-07-02 — Manual test session: 2 pre-existing bugs fixed, PR #17 ready to merge
 
 Manual smoke test of the refactored UI (`pnpm dev`, full click-through). The Phase 3 refactor itself surfaced no regressions; the session caught two **pre-existing** bugs and cleared the last pre-merge blocker.

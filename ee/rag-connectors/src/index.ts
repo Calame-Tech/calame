@@ -11,6 +11,23 @@ export type {
   WebhookHandle,
 } from './types.js';
 
+export {
+  ConnectorError,
+  ConnectorAuthError,
+  ConnectorPermissionError,
+  ConnectorRateLimitError,
+  // The shared base is exported under an alias because the local-folder
+  // connector historically exports its own error class named
+  // `DocumentNotFoundError` (kept below for backwards compatibility).
+  DocumentNotFoundError as ConnectorDocumentNotFoundError,
+} from './errors.js';
+
+export { makeDocIdCodec, stripDocIdPrefix } from './doc-id.js';
+export type { DocIdCodec } from './doc-id.js';
+
+export { collectAllPages } from './pagination.js';
+export type { Page } from './pagination.js';
+
 export { LocalFolderConnector, DocumentNotFoundError } from './local-folder.js';
 export type { LocalFolderConfig } from './local-folder.js';
 

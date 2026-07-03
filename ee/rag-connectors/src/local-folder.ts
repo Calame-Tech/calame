@@ -17,6 +17,8 @@ import type {
   Unsubscribe,
   WatchEvent,
 } from './types.js';
+import { makeDocIdCodec } from './doc-id.js';
+import { DocumentNotFoundError as ConnectorDocumentNotFoundError } from './errors.js';
 import { deterministicId, matchGlobs, safeResolveUnderRoot, streamSha256 } from './utils.js';
 
 /**
@@ -65,14 +67,18 @@ function narrowConfig(config: DocumentSourceConfig): LocalFolderConfig {
  * real path. Phase 1 limitation: ids are encoded as `path:<relPath>`, so the
  * caller should always have a valid id straight from `listDocuments`.
  */
-export class DocumentNotFoundError extends Error {
+export class DocumentNotFoundError extends ConnectorDocumentNotFoundError {
   constructor(docId: string) {
-    super(`Document "${docId}" not found in local folder source`);
+    super('local', `Document "${docId}" not found in local folder source`);
     this.name = 'DocumentNotFoundError';
   }
 }
 
 const DOC_ID_PREFIX = 'path:';
+
+const docIdCodec = makeDocIdCodec(DOC_ID_PREFIX, (docId) => new DocumentNotFoundError(docId), {
+  encoding: 'base64url',
+});
 
 /**
  * Encode a relative path into a stable, opaque-looking document id. We keep
@@ -83,20 +89,11 @@ const DOC_ID_PREFIX = 'path:';
  * specific to the local connector and documented on the class.
  */
 function encodeDocId(relPath: string): string {
-  const normalized = relPath.split(sep).join('/');
-  return `${DOC_ID_PREFIX}${Buffer.from(normalized, 'utf8').toString('base64url')}`;
+  return docIdCodec.encode(relPath.split(sep).join('/'));
 }
 
 function decodeDocId(docId: string): string {
-  if (!docId.startsWith(DOC_ID_PREFIX)) {
-    throw new DocumentNotFoundError(docId);
-  }
-  const encoded = docId.slice(DOC_ID_PREFIX.length);
-  try {
-    return Buffer.from(encoded, 'base64url').toString('utf8');
-  } catch {
-    throw new DocumentNotFoundError(docId);
-  }
+  return docIdCodec.decode(docId);
 }
 
 /**

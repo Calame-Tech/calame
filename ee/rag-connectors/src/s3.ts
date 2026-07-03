@@ -17,6 +17,9 @@ import {
 import type { RagDocument, RagFolder, RagSourceType } from '@calame-ee/rag-core';
 
 import type { DocumentSourceConfig, DocumentSourceConnector, RateLimiterLike } from './types.js';
+import { makeDocIdCodec } from './doc-id.js';
+import { DocumentNotFoundError } from './errors.js';
+import { collectAllPages } from './pagination.js';
 import { deterministicId, matchGlobs } from './utils.js';
 
 /**
@@ -117,9 +120,9 @@ function normalizePrefix(prefix: string | undefined): string {
  * Raised by `fetchDocument` when the supplied `docId` cannot be resolved to a
  * real S3 object (404 / NoSuchKey).
  */
-export class S3DocumentNotFoundError extends Error {
+export class S3DocumentNotFoundError extends DocumentNotFoundError {
   constructor(docId: string) {
-    super(`Document "${docId}" not found in S3 source`);
+    super('s3', `Document "${docId}" not found in S3 source`);
     this.name = 'S3DocumentNotFoundError';
   }
 }
@@ -127,24 +130,21 @@ export class S3DocumentNotFoundError extends Error {
 const DOC_ID_PREFIX = 's3:';
 
 /**
- * Encode an S3 key (full key including any source-prefix) into a stable,
- * opaque-looking document id. Uses a different prefix than the local connector
- * (`path:`) to avoid collisions if the host ever cross-checks ids.
+ * Doc id codec: `s3:<base64url(key)>`. Encodes the full S3 key (including any
+ * source-prefix) into a stable, opaque-looking document id. Uses a different
+ * prefix than the local connector (`path:`) to avoid collisions if the host
+ * ever cross-checks ids.
  */
+const docIdCodec = makeDocIdCodec(DOC_ID_PREFIX, (docId) => new S3DocumentNotFoundError(docId), {
+  encoding: 'base64url',
+});
+
 function encodeDocId(key: string): string {
-  return `${DOC_ID_PREFIX}${Buffer.from(key, 'utf8').toString('base64url')}`;
+  return docIdCodec.encode(key);
 }
 
 function decodeDocId(docId: string): string {
-  if (!docId.startsWith(DOC_ID_PREFIX)) {
-    throw new S3DocumentNotFoundError(docId);
-  }
-  const encoded = docId.slice(DOC_ID_PREFIX.length);
-  try {
-    return Buffer.from(encoded, 'base64url').toString('utf8');
-  } catch {
-    throw new S3DocumentNotFoundError(docId);
-  }
+  return docIdCodec.decode(docId);
 }
 
 /**
@@ -312,46 +312,49 @@ export class S3Connector implements DocumentSourceConnector {
     const client = this.#getClient(config);
     const queryPrefix = buildQueryPrefix(config.prefix, parent);
 
+    const commonPrefixes = await collectAllPages<{ Prefix?: string }, string>(
+      async (continuationToken) => {
+        await this.#rateLimiter?.acquire('s3', clientCacheKey(config));
+        const out = await client.send(
+          new ListObjectsV2Command({
+            Bucket: config.bucket,
+            Prefix: queryPrefix,
+            Delimiter: '/',
+            ContinuationToken: continuationToken,
+          }),
+        );
+        return {
+          items: out.CommonPrefixes ?? [],
+          nextCursor: out.IsTruncated ? out.NextContinuationToken || undefined : undefined,
+        };
+      },
+    );
+
     const folders: RagFolder[] = [];
-    let continuationToken: string | undefined;
-    do {
-      await this.#rateLimiter?.acquire('s3', clientCacheKey(config));
-      const out = await client.send(
-        new ListObjectsV2Command({
-          Bucket: config.bucket,
-          Prefix: queryPrefix,
-          Delimiter: '/',
-          ContinuationToken: continuationToken,
-        }),
-      );
+    for (const cp of commonPrefixes) {
+      const fullPrefix = cp.Prefix;
+      if (typeof fullPrefix !== 'string') continue;
+      // CommonPrefixes always end with the delimiter — strip it for `path`.
+      const trimmed = fullPrefix.endsWith('/') ? fullPrefix.slice(0, -1) : fullPrefix;
+      // `path` is RELATIVE to the configured prefix root (mirrors local-folder).
+      const relPath = relativeToPrefix(trimmed, config.prefix);
+      if (relPath.length === 0) continue;
 
-      for (const cp of out.CommonPrefixes ?? []) {
-        const fullPrefix = cp.Prefix;
-        if (typeof fullPrefix !== 'string') continue;
-        // CommonPrefixes always end with the delimiter — strip it for `path`.
-        const trimmed = fullPrefix.endsWith('/') ? fullPrefix.slice(0, -1) : fullPrefix;
-        // `path` is RELATIVE to the configured prefix root (mirrors local-folder).
-        const relPath = relativeToPrefix(trimmed, config.prefix);
-        if (relPath.length === 0) continue;
+      if (!matchGlobs(relPath, undefined, config.excludeGlobs)) continue;
 
-        if (!matchGlobs(relPath, undefined, config.excludeGlobs)) continue;
-
-        const name = relPath.split('/').pop() ?? relPath;
-        folders.push({
-          id: deterministicId(sourceId, relPath),
-          sourceId,
-          parentId: parent?.id ?? null,
-          path: relPath,
-          name,
-          // S3 has no inherent folder mtime — use empty string; the host will
-          // overwrite with `now` at persist time, mirroring local-folder when
-          // stat fails.
-          createdAt: '',
-        });
-      }
-
-      continuationToken = out.IsTruncated ? out.NextContinuationToken : undefined;
-    } while (continuationToken);
+      const name = relPath.split('/').pop() ?? relPath;
+      folders.push({
+        id: deterministicId(sourceId, relPath),
+        sourceId,
+        parentId: parent?.id ?? null,
+        path: relPath,
+        name,
+        // S3 has no inherent folder mtime — use empty string; the host will
+        // overwrite with `now` at persist time, mirroring local-folder when
+        // stat fails.
+        createdAt: '',
+      });
+    }
 
     return folders;
   }
@@ -365,60 +368,63 @@ export class S3Connector implements DocumentSourceConnector {
     const client = this.#getClient(config);
     const queryPrefix = buildQueryPrefix(config.prefix, folder);
 
+    const objects = await collectAllPages<{ Key?: string; Size?: number; ETag?: string }, string>(
+      async (continuationToken) => {
+        await this.#rateLimiter?.acquire('s3', clientCacheKey(config));
+        const out = await client.send(
+          new ListObjectsV2Command({
+            Bucket: config.bucket,
+            Prefix: queryPrefix,
+            Delimiter: '/',
+            ContinuationToken: continuationToken,
+          }),
+        );
+        return {
+          items: out.Contents ?? [],
+          nextCursor: out.IsTruncated ? out.NextContinuationToken || undefined : undefined,
+        };
+      },
+    );
+
     const documents: RagDocument[] = [];
-    let continuationToken: string | undefined;
-    do {
-      await this.#rateLimiter?.acquire('s3', clientCacheKey(config));
-      const out = await client.send(
-        new ListObjectsV2Command({
-          Bucket: config.bucket,
-          Prefix: queryPrefix,
-          Delimiter: '/',
-          ContinuationToken: continuationToken,
-        }),
-      );
+    for (const obj of objects) {
+      const key = obj.Key;
+      if (typeof key !== 'string' || key.length === 0) continue;
+      // Skip pseudo-directory markers (zero-byte objects whose key ends with `/`).
+      if (key.endsWith('/')) continue;
 
-      for (const obj of out.Contents ?? []) {
-        const key = obj.Key;
-        if (typeof key !== 'string' || key.length === 0) continue;
-        // Skip pseudo-directory markers (zero-byte objects whose key ends with `/`).
-        if (key.endsWith('/')) continue;
+      const relPath = relativeToPrefix(key, config.prefix);
+      if (relPath.length === 0) continue;
 
-        const relPath = relativeToPrefix(key, config.prefix);
-        if (relPath.length === 0) continue;
+      if (!matchGlobs(relPath, config.includeGlobs, config.excludeGlobs)) continue;
 
-        if (!matchGlobs(relPath, config.includeGlobs, config.excludeGlobs)) continue;
+      const cleanedEtag = cleanEtag(obj.ETag);
+      const lookup = mime.lookup(key);
+      const mimeType = typeof lookup === 'string' ? lookup : 'application/octet-stream';
 
-        const cleanedEtag = cleanEtag(obj.ETag);
-        const lookup = mime.lookup(key);
-        const mimeType = typeof lookup === 'string' ? lookup : 'application/octet-stream';
+      // Hash strategy: see class jsdoc. The pipeline re-streams when needed.
+      // For single-part objects we can opportunistically expose the MD5 hex
+      // (cleanedEtag) as a stable change-detection fingerprint via `etag`.
+      // We do NOT put MD5 into `hash` because the host pipeline assumes
+      // SHA-256 there.
+      const hash = '';
 
-        // Hash strategy: see class jsdoc. The pipeline re-streams when needed.
-        // For single-part objects we can opportunistically expose the MD5 hex
-        // (cleanedEtag) as a stable change-detection fingerprint via `etag`.
-        // We do NOT put MD5 into `hash` because the host pipeline assumes
-        // SHA-256 there.
-        const hash = '';
-
-        const name = relPath.split('/').pop() ?? relPath;
-        documents.push({
-          id: encodeDocId(key),
-          sourceId,
-          folderId: folder?.id ?? null,
-          path: relPath,
-          name,
-          mimeType,
-          size: typeof obj.Size === 'number' ? obj.Size : 0,
-          hash,
-          etag: cleanedEtag,
-          lastIndexedAt: '',
-          deletedAt: null,
-          ingestError: null,
-        });
-      }
-
-      continuationToken = out.IsTruncated ? out.NextContinuationToken : undefined;
-    } while (continuationToken);
+      const name = relPath.split('/').pop() ?? relPath;
+      documents.push({
+        id: encodeDocId(key),
+        sourceId,
+        folderId: folder?.id ?? null,
+        path: relPath,
+        name,
+        mimeType,
+        size: typeof obj.Size === 'number' ? obj.Size : 0,
+        hash,
+        etag: cleanedEtag,
+        lastIndexedAt: '',
+        deletedAt: null,
+        ingestError: null,
+      });
+    }
 
     return documents;
   }
@@ -524,7 +530,7 @@ function clientCacheKey(config: S3Config): string {
         config.secretAccessKey,
         config.endpoint ?? '',
         config.forcePathStyle ? '1' : '0',
-      ].join(' '),
+      ].join('\0'),
     )
     .digest('hex');
 }

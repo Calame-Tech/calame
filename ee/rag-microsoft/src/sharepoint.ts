@@ -19,6 +19,13 @@ import type {
   DocumentSourceConnector,
   RateLimiterLike,
 } from '@calame-ee/rag-connectors';
+import {
+  collectAllPages,
+  ConnectorAuthError,
+  ConnectorDocumentNotFoundError,
+  ConnectorPermissionError,
+  makeDocIdCodec,
+} from '@calame-ee/rag-connectors';
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -193,25 +200,25 @@ function normaliseRootPath(p: string | undefined): string | undefined {
 // ---------------------------------------------------------------------------
 
 /** Raised by `fetchDocument` when the supplied `docId` cannot be resolved. */
-export class SharePointDocumentNotFoundError extends Error {
+export class SharePointDocumentNotFoundError extends ConnectorDocumentNotFoundError {
   constructor(docId: string) {
-    super(`Document "${docId}" not found in SharePoint source`);
+    super('sharepoint', `Document "${docId}" not found in SharePoint source`);
     this.name = 'SharePointDocumentNotFoundError';
   }
 }
 
 /** Raised on HTTP 401 (invalid credentials / expired token). */
-export class SharePointAuthError extends Error {
+export class SharePointAuthError extends ConnectorAuthError {
   constructor(message = 'Invalid SharePoint credentials') {
-    super(message);
+    super('sharepoint', message);
     this.name = 'SharePointAuthError';
   }
 }
 
 /** Raised on HTTP 403 (app has no permission to access the site). */
-export class SharePointPermissionError extends Error {
+export class SharePointPermissionError extends ConnectorPermissionError {
   constructor(message = 'SharePoint app lacks required permissions') {
-    super(message);
+    super('sharepoint', message);
     this.name = 'SharePointPermissionError';
   }
 }
@@ -226,19 +233,17 @@ export class SharePointPermissionError extends Error {
 
 const DOC_ID_PREFIX = 'sharepoint:';
 
+const docIdCodec = makeDocIdCodec(
+  DOC_ID_PREFIX,
+  (docId) => new SharePointDocumentNotFoundError(docId),
+);
+
 export function encodeDocId(itemId: string): string {
-  return `${DOC_ID_PREFIX}${itemId}`;
+  return docIdCodec.encode(itemId);
 }
 
 export function decodeDocId(docId: string): string {
-  if (!docId.startsWith(DOC_ID_PREFIX)) {
-    throw new SharePointDocumentNotFoundError(docId);
-  }
-  const id = docId.slice(DOC_ID_PREFIX.length);
-  if (id.length === 0) {
-    throw new SharePointDocumentNotFoundError(docId);
-  }
-  return id;
+  return docIdCodec.decode(docId);
 }
 
 // ---------------------------------------------------------------------------
@@ -940,16 +945,13 @@ export class SharePointConnector implements DocumentSourceConnector {
     parentItemId: string,
     config: SharePointConfig,
   ): Promise<GraphDriveItem[]> {
-    const items: GraphDriveItem[] = [];
-    let nextLink: string | undefined;
-    let firstCall = true;
     // Graph paginates at $top up to 200 per page; we explicitly request that
-    // ceiling to minimise round-trips.
+    // ceiling to minimise round-trips. Subsequent pages follow the
+    // `@odata.nextLink` cursor verbatim.
     const initialPath = `/sites/${resolved.siteId}/drives/${resolved.driveId}/items/${parentItemId}/children?$top=200`;
 
-    do {
-      const path = firstCall ? initialPath : (nextLink as string);
-      firstCall = false;
+    return collectAllPages<GraphDriveItem, string>(async (nextLink) => {
+      const path = nextLink ?? initialPath;
       let resp: GraphCollection<GraphDriveItem>;
       try {
         await this.#acquireToken(config);
@@ -960,14 +962,13 @@ export class SharePointConnector implements DocumentSourceConnector {
         if (readErrorStatus(e) === 403) throw new SharePointPermissionError();
         throw err;
       }
-      if (Array.isArray(resp?.value)) {
-        for (const v of resp.value) items.push(v);
-      }
-      nextLink =
-        typeof resp?.['@odata.nextLink'] === 'string' ? resp['@odata.nextLink'] : undefined;
-    } while (nextLink);
-
-    return items;
+      const link = resp?.['@odata.nextLink'];
+      return {
+        items: Array.isArray(resp?.value) ? resp.value : [],
+        // An empty-string link means "no more pages", same as a missing one.
+        nextCursor: typeof link === 'string' ? link || undefined : undefined,
+      };
+    });
   }
 }
 

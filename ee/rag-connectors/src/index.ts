@@ -16,6 +16,7 @@ export {
   ConnectorAuthError,
   ConnectorPermissionError,
   ConnectorRateLimitError,
+  ConnectorConfigError,
   // The shared base is exported under an alias because the local-folder
   // connector historically exports its own error class named
   // `DocumentNotFoundError` (kept below for backwards compatibility).

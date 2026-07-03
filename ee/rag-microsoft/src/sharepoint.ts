@@ -25,6 +25,7 @@ import {
   ConnectorDocumentNotFoundError,
   ConnectorPermissionError,
   makeDocIdCodec,
+  ConnectorConfigError,
 } from '@calame-ee/rag-connectors';
 
 // ---------------------------------------------------------------------------
@@ -89,46 +90,73 @@ export interface SharePointConfig {
 export function narrowConfig(config: DocumentSourceConfig): SharePointConfig {
   const tenantId = config.tenantId;
   if (typeof tenantId !== 'string' || tenantId.length === 0) {
-    throw new Error('SharePointConnector requires a non-empty `tenantId` string in config');
+    throw new ConnectorConfigError(
+      'sharepoint',
+      'SharePointConnector requires a non-empty `tenantId` string in config',
+    );
   }
   const clientId = config.clientId;
   if (typeof clientId !== 'string' || clientId.length === 0) {
-    throw new Error('SharePointConnector requires a non-empty `clientId` string in config');
+    throw new ConnectorConfigError(
+      'sharepoint',
+      'SharePointConnector requires a non-empty `clientId` string in config',
+    );
   }
   const clientSecret = config.clientSecret;
   if (typeof clientSecret !== 'string' || clientSecret.length === 0) {
-    throw new Error('SharePointConnector requires a non-empty `clientSecret` string in config');
+    throw new ConnectorConfigError(
+      'sharepoint',
+      'SharePointConnector requires a non-empty `clientSecret` string in config',
+    );
   }
   const siteUrl = config.siteUrl;
   if (typeof siteUrl !== 'string' || siteUrl.length === 0) {
-    throw new Error('SharePointConnector requires a non-empty `siteUrl` string in config');
+    throw new ConnectorConfigError(
+      'sharepoint',
+      'SharePointConnector requires a non-empty `siteUrl` string in config',
+    );
   }
 
   const driveName = config.driveName;
   if (driveName !== undefined && typeof driveName !== 'string') {
-    throw new Error('SharePointConnector: `driveName` must be a string when provided');
+    throw new ConnectorConfigError(
+      'sharepoint',
+      'SharePointConnector: `driveName` must be a string when provided',
+    );
   }
 
   const rootFolderPath = config.rootFolderPath;
   if (rootFolderPath !== undefined && typeof rootFolderPath !== 'string') {
-    throw new Error('SharePointConnector: `rootFolderPath` must be a string when provided');
+    throw new ConnectorConfigError(
+      'sharepoint',
+      'SharePointConnector: `rootFolderPath` must be a string when provided',
+    );
   }
 
   const recursive = config.recursive;
   if (recursive !== undefined && typeof recursive !== 'boolean') {
-    throw new Error('SharePointConnector: `recursive` must be a boolean when provided');
+    throw new ConnectorConfigError(
+      'sharepoint',
+      'SharePointConnector: `recursive` must be a boolean when provided',
+    );
   }
 
   const includeMimeTypes = config.includeMimeTypes;
   if (includeMimeTypes !== undefined) {
     if (!Array.isArray(includeMimeTypes) || !includeMimeTypes.every((m) => typeof m === 'string')) {
-      throw new Error('SharePointConnector: `includeMimeTypes` must be an array of strings');
+      throw new ConnectorConfigError(
+        'sharepoint',
+        'SharePointConnector: `includeMimeTypes` must be an array of strings',
+      );
     }
   }
   const excludeMimeTypes = config.excludeMimeTypes;
   if (excludeMimeTypes !== undefined) {
     if (!Array.isArray(excludeMimeTypes) || !excludeMimeTypes.every((m) => typeof m === 'string')) {
-      throw new Error('SharePointConnector: `excludeMimeTypes` must be an array of strings');
+      throw new ConnectorConfigError(
+        'sharepoint',
+        'SharePointConnector: `excludeMimeTypes` must be an array of strings',
+      );
     }
   }
 

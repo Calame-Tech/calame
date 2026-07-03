@@ -18,7 +18,7 @@ import type { RagDocument, RagFolder, RagSourceType } from '@calame-ee/rag-core'
 
 import type { DocumentSourceConfig, DocumentSourceConnector, RateLimiterLike } from './types.js';
 import { makeDocIdCodec } from './doc-id.js';
-import { DocumentNotFoundError } from './errors.js';
+import { DocumentNotFoundError, ConnectorConfigError } from './errors.js';
 import { collectAllPages } from './pagination.js';
 import { deterministicId, matchGlobs } from './utils.js';
 
@@ -60,35 +60,47 @@ export interface S3Config {
 function narrowConfig(config: DocumentSourceConfig): S3Config {
   const bucket = config.bucket;
   if (typeof bucket !== 'string' || bucket.length === 0) {
-    throw new Error('S3Connector requires a non-empty `bucket` string in config');
+    throw new ConnectorConfigError(
+      's3',
+      'S3Connector requires a non-empty `bucket` string in config',
+    );
   }
   const region = config.region;
   if (typeof region !== 'string' || region.length === 0) {
-    throw new Error('S3Connector requires a non-empty `region` string in config');
+    throw new ConnectorConfigError(
+      's3',
+      'S3Connector requires a non-empty `region` string in config',
+    );
   }
   const accessKeyId = config.accessKeyId;
   if (typeof accessKeyId !== 'string' || accessKeyId.length === 0) {
-    throw new Error('S3Connector requires a non-empty `accessKeyId` string in config');
+    throw new ConnectorConfigError(
+      's3',
+      'S3Connector requires a non-empty `accessKeyId` string in config',
+    );
   }
   const secretAccessKey = config.secretAccessKey;
   if (typeof secretAccessKey !== 'string' || secretAccessKey.length === 0) {
-    throw new Error('S3Connector requires a non-empty `secretAccessKey` string in config');
+    throw new ConnectorConfigError(
+      's3',
+      'S3Connector requires a non-empty `secretAccessKey` string in config',
+    );
   }
   const prefix = config.prefix;
   if (prefix !== undefined && typeof prefix !== 'string') {
-    throw new Error('S3Connector: `prefix` must be a string when provided');
+    throw new ConnectorConfigError('s3', 'S3Connector: `prefix` must be a string when provided');
   }
   const endpoint = config.endpoint;
   if (endpoint !== undefined && typeof endpoint !== 'string') {
-    throw new Error('S3Connector: `endpoint` must be a string when provided');
+    throw new ConnectorConfigError('s3', 'S3Connector: `endpoint` must be a string when provided');
   }
   const includeGlobs = config.includeGlobs;
   const excludeGlobs = config.excludeGlobs;
   if (includeGlobs !== undefined && !Array.isArray(includeGlobs)) {
-    throw new Error('S3Connector: `includeGlobs` must be an array of strings');
+    throw new ConnectorConfigError('s3', 'S3Connector: `includeGlobs` must be an array of strings');
   }
   if (excludeGlobs !== undefined && !Array.isArray(excludeGlobs)) {
-    throw new Error('S3Connector: `excludeGlobs` must be an array of strings');
+    throw new ConnectorConfigError('s3', 'S3Connector: `excludeGlobs` must be an array of strings');
   }
   return {
     bucket,

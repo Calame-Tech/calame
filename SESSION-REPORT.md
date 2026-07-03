@@ -19,6 +19,14 @@ Not factored: **folder-tree traversal** — connectors only ever list direct chi
 
 Verified: `pnpm format` / `build` / `typecheck` / `lint` / `pnpm test` all green — **115 files / 1805 tests, zero test modifications**.
 
+### #19 completed (`8464d37`) — typed config errors
+- Every connector already had a `narrowConfig()` validator; they now throw the new `ConnectorConfigError` (59 sites, messages byte-identical) instead of bare `Error`, so hosts can map malformed config to a 400 by type. New `errors.test.ts` (5 tests, suite → **1810**). **Zod deliberately skipped**: validators already cover the shapes; a zod swap would churn messages for no safety gain and add the dep to 5 EE packages.
+
+### #17 completed (branch `refactor/schema-provider`, `478c847`)
+- The plan's `SchemaProvider` already exists as `DatabaseConnector.introspect()` in `@calame/connectors` (pg/mysql/sqlite, shared `DatabaseSchema` types from core, SQLite introspection covered by tests). Removed the remaining debt: `core/introspect/postgres.ts#introspectDatabase`, a dead 114-line pg-only duplicate (core is private, nothing imported it) + its 3 tests. The types stay in core (connectors depends on core — no cycle).
+
+**Phase 4 (#17–#20): COMPLETE** across two branches/PRs: `refactor/rag-connector-base` (#18+#19+#20) and `refactor/schema-provider` (#17). Remaining plan: Phase 5 #22 changesets + #23 incremental CI build; coverage track.
+
 ---
 
 ## 2026-07-02 (later) — PR #17 merged, #24 file-size budget, branding revived, repo cleaned

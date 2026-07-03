@@ -5,6 +5,22 @@ every commit. Newest first.
 
 ---
 
+## 2026-07-03 — Refactor plan #18 + #19 (error hierarchy) + #20 ADR (branch `refactor/rag-connector-base`)
+
+**Commits `6a77e62` (#20 ADR `docs/adr/0001-encrypted-source-config.md`) and `ab36fc1` (#18).**
+
+Behavior-preserving refactor factoring the machinery duplicated across the 7 RAG document-source connectors into three shared modules in `ee/rag-connectors/src/`, exported from its `index.ts`:
+
+- **`errors.ts`** — `ConnectorError` (carries `connectorType`) + `DocumentNotFoundError` / `ConnectorAuthError` / `ConnectorPermissionError` / `ConnectorRateLimitError`. Every per-connector error class (`GDriveDocumentNotFoundError`, `NotionAuthError`, `NotionRateLimitError`, `SharePointAuthError`, `SharePointPermissionError`, …) now subclasses the matching shared flavor, keeping its exact name / message / `name` field. Name collision resolved via alias: the shared base is exported from the package as `ConnectorDocumentNotFoundError` because local-folder's legacy `DocumentNotFoundError` export keeps its name. `HttpFetchError`/`HttpStatusError` (transport) and `PathEscapeError` (path guard) intentionally left out of the hierarchy.
+- **`doc-id.ts`** — `makeDocIdCodec(prefix, makeError, { encoding: 'raw' | 'base64url' })` + `stripDocIdPrefix()`. All 6 simple-pattern connectors migrated (`raw` for gdrive/notion/sharepoint with non-empty check; `base64url` for local/s3/http, exact legacy semantics). gsheets keeps its composite `gsheets:tab:<ssId>:<sheetId>` parse but reuses `stripDocIdPrefix` for the prefix check.
+- **`pagination.ts`** — `collectAllPages<T, C>(fetchPage)`. Replaced all 8 do/while drain loops across 4 cursor styles (Drive/Sheets `nextPageToken`, Notion `start_cursor`/`has_more` ×4, Graph `@odata.nextLink`, S3 `ContinuationToken`). Notion's `#fetchBlockTree` keeps child recursion *inside* the page closure so API call order is unchanged (tests use order-sensitive `mockResolvedValueOnce` chains).
+
+Not factored: **folder-tree traversal** — connectors only ever list direct children; recursion is driven by the host (`rag-core/src/routes/rag-index.ts`), so there is no duplication to lift. Bonus: `s3.ts` contained a literal NUL byte inside `clientCacheKey`'s `.join()` separator (made grep/file treat it as binary) — normalized to the `'\0'` escape (identical runtime value); file is now clean UTF-8.
+
+Verified: `pnpm format` / `build` / `typecheck` / `lint` / `pnpm test` all green — **115 files / 1805 tests, zero test modifications**.
+
+---
+
 ## 2026-07-02 (later) — PR #17 merged, #24 file-size budget, branding revived, repo cleaned
 
 - **PR #17 merged into `main`** (`a4fdaa8`) — Phases 1-3 of the refactor plan are in.

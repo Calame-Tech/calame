@@ -1,5 +1,7 @@
-// Introspection
-export { introspectDatabase } from './introspect/postgres.js';
+// Introspection — the schema TYPES are the shared contract; the actual
+// per-dialect introspection lives behind `DatabaseConnector.introspect()` in
+// `@calame/connectors` (postgresql / mysql / sqlite), which depends on these
+// types. Keeping implementations there avoids a core ↔ connectors cycle.
 export type {
   DatabaseSchema,
   TableInfo,

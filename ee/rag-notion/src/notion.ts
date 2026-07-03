@@ -13,6 +13,13 @@ import type {
   DocumentSourceConnector,
   RateLimiterLike,
 } from '@calame-ee/rag-connectors';
+import {
+  collectAllPages,
+  ConnectorAuthError,
+  ConnectorDocumentNotFoundError,
+  ConnectorRateLimitError,
+  makeDocIdCodec,
+} from '@calame-ee/rag-connectors';
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -154,25 +161,25 @@ export function narrowConfig(config: DocumentSourceConfig): NotionConfig {
 // ---------------------------------------------------------------------------
 
 /** Raised by `fetchDocument` when the supplied `docId` cannot be resolved. */
-export class NotionDocumentNotFoundError extends Error {
+export class NotionDocumentNotFoundError extends ConnectorDocumentNotFoundError {
   constructor(docId: string) {
-    super(`Document "${docId}" not found in Notion source`);
+    super('notion', `Document "${docId}" not found in Notion source`);
     this.name = 'NotionDocumentNotFoundError';
   }
 }
 
 /** Raised by `testConnection` (and other methods) on HTTP 401. */
-export class NotionAuthError extends Error {
+export class NotionAuthError extends ConnectorAuthError {
   constructor(message = 'Invalid Notion API key') {
-    super(message);
+    super('notion', message);
     this.name = 'NotionAuthError';
   }
 }
 
 /** Raised when Notion returns HTTP 429. Notion's published cap is ~3 req/sec. */
-export class NotionRateLimitError extends Error {
+export class NotionRateLimitError extends ConnectorRateLimitError {
   constructor(message = 'Notion API rate limit exceeded (3 req/sec)') {
-    super(message);
+    super('notion', message);
     this.name = 'NotionRateLimitError';
   }
 }
@@ -186,20 +193,15 @@ export class NotionRateLimitError extends Error {
 
 const DOC_ID_PREFIX = 'notion:';
 
+const docIdCodec = makeDocIdCodec(DOC_ID_PREFIX, (docId) => new NotionDocumentNotFoundError(docId));
+
 export function encodeDocId(pageId: string): string {
   const normalized = normalizeId(pageId);
-  return `${DOC_ID_PREFIX}${normalized || pageId}`;
+  return docIdCodec.encode(normalized || pageId);
 }
 
 export function decodeDocId(docId: string): string {
-  if (!docId.startsWith(DOC_ID_PREFIX)) {
-    throw new NotionDocumentNotFoundError(docId);
-  }
-  const id = docId.slice(DOC_ID_PREFIX.length);
-  if (id.length === 0) {
-    throw new NotionDocumentNotFoundError(docId);
-  }
-  return id;
+  return docIdCodec.decode(docId);
 }
 
 // Folder IDs (which represent Notion databases in our mapping) use a
@@ -627,14 +629,12 @@ export class NotionConnector implements DocumentSourceConnector {
     }
 
     // No rootIds → enumerate every database the integration can see.
-    const folders: RagFolder[] = [];
-    let startCursor: string | undefined;
-    do {
-      type SearchArgs = {
-        filter: { property: 'object'; value: 'database' };
-        page_size: number;
-        start_cursor?: string;
-      };
+    type SearchArgs = {
+      filter: { property: 'object'; value: 'database' };
+      page_size: number;
+      start_cursor?: string;
+    };
+    const results = await collectAllPages(async (startCursor: string | undefined) => {
       const args: SearchArgs = {
         filter: { property: 'object', value: 'database' },
         page_size: 100,
@@ -647,14 +647,18 @@ export class NotionConnector implements DocumentSourceConnector {
       } catch (err: unknown) {
         throw mapNotionError(err);
       }
-      for (const result of resp.results) {
-        if ('object' in result && result.object === 'database' && 'title' in result) {
-          folders.push(this.#dbToFolder(result, sourceId));
-        }
-      }
-      startCursor = resp.has_more ? (resp.next_cursor ?? undefined) : undefined;
-    } while (startCursor);
+      return {
+        items: resp.results,
+        nextCursor: resp.has_more ? (resp.next_cursor ?? undefined) : undefined,
+      };
+    });
 
+    const folders: RagFolder[] = [];
+    for (const result of results) {
+      if ('object' in result && result.object === 'database' && 'title' in result) {
+        folders.push(this.#dbToFolder(result, sourceId));
+      }
+    }
     return folders;
   }
 
@@ -670,15 +674,13 @@ export class NotionConnector implements DocumentSourceConnector {
     if (folder) {
       const dbId = decodeFolderId(folder.id);
       if (!dbId) return [];
-      const docs: RagDocument[] = [];
-      let startCursor: string | undefined;
-      do {
-        type QueryArgs = {
-          database_id: string;
-          page_size: number;
-          archived?: boolean;
-          start_cursor?: string;
-        };
+      type QueryArgs = {
+        database_id: string;
+        page_size: number;
+        archived?: boolean;
+        start_cursor?: string;
+      };
+      const rows = await collectAllPages(async (startCursor: string | undefined) => {
         const args: QueryArgs = {
           database_id: denormalizeId(dbId),
           page_size: 100,
@@ -696,13 +698,18 @@ export class NotionConnector implements DocumentSourceConnector {
         } catch (err: unknown) {
           throw mapNotionError(err);
         }
-        for (const row of resp.results) {
-          if (!isPageResult(row)) continue;
-          if (row.archived && !config.includeArchived) continue;
-          docs.push(this.#pageToDocument(row, sourceId, folder));
-        }
-        startCursor = resp.has_more ? (resp.next_cursor ?? undefined) : undefined;
-      } while (startCursor);
+        return {
+          items: resp.results,
+          nextCursor: resp.has_more ? (resp.next_cursor ?? undefined) : undefined,
+        };
+      });
+
+      const docs: RagDocument[] = [];
+      for (const row of rows) {
+        if (!isPageResult(row)) continue;
+        if (row.archived && !config.includeArchived) continue;
+        docs.push(this.#pageToDocument(row, sourceId, folder));
+      }
       return docs;
     }
 
@@ -732,14 +739,12 @@ export class NotionConnector implements DocumentSourceConnector {
     }
 
     // --- Branch 3: no folder, no rootIds → search all visible pages ---
-    const docs: RagDocument[] = [];
-    let startCursor: string | undefined;
-    do {
-      type SearchArgs = {
-        filter: { property: 'object'; value: 'page' };
-        page_size: number;
-        start_cursor?: string;
-      };
+    type SearchArgs = {
+      filter: { property: 'object'; value: 'page' };
+      page_size: number;
+      start_cursor?: string;
+    };
+    const results = await collectAllPages(async (startCursor: string | undefined) => {
       const args: SearchArgs = {
         filter: { property: 'object', value: 'page' },
         page_size: 100,
@@ -752,18 +757,22 @@ export class NotionConnector implements DocumentSourceConnector {
       } catch (err: unknown) {
         throw mapNotionError(err);
       }
-      for (const result of resp.results) {
-        if (!isPageResult(result)) continue;
-        if (result.archived && !config.includeArchived) continue;
-        // Pages that live inside a database show up here too; we still
-        // index them, but their `folderId` resolution lives with the
-        // host (we don't have the database's RagFolder.id reachable
-        // from search results, so we list them at the source root).
-        docs.push(this.#pageToDocument(result, sourceId, undefined));
-      }
-      startCursor = resp.has_more ? (resp.next_cursor ?? undefined) : undefined;
-    } while (startCursor);
+      return {
+        items: resp.results,
+        nextCursor: resp.has_more ? (resp.next_cursor ?? undefined) : undefined,
+      };
+    });
 
+    const docs: RagDocument[] = [];
+    for (const result of results) {
+      if (!isPageResult(result)) continue;
+      if (result.archived && !config.includeArchived) continue;
+      // Pages that live inside a database show up here too; we still
+      // index them, but their `folderId` resolution lives with the
+      // host (we don't have the database's RagFolder.id reachable
+      // from search results, so we list them at the source root).
+      docs.push(this.#pageToDocument(result, sourceId, undefined));
+    }
     return docs;
   }
 
@@ -809,14 +818,16 @@ export class NotionConnector implements DocumentSourceConnector {
     maxDepth: number,
     apiKey: string,
   ): Promise<BlockWithChildren[]> {
-    const collected: BlockWithChildren[] = [];
-    let startCursor: string | undefined;
-    do {
-      type ListArgs = { block_id: string; page_size: number; start_cursor?: string };
+    type ListArgs = { block_id: string; page_size: number; start_cursor?: string };
+    // NOTE: children are fetched inside the page closure (not after draining
+    // all pages) so the API call order — page N, its blocks' children, page
+    // N+1 — is preserved exactly as before the collectAllPages refactor.
+    return collectAllPages(async (startCursor: string | undefined) => {
       const args: ListArgs = { block_id: blockId, page_size: 100 };
       if (startCursor !== undefined) args.start_cursor = startCursor;
       await this.#acquireToken(apiKey);
       const resp = await notion.blocks.children.list(args);
+      const items: BlockWithChildren[] = [];
       for (const raw of resp.results) {
         // PartialBlockObjectResponse only has `id` / `object` — skip those:
         // we have no way to render them. The full responses carry `type`.
@@ -828,7 +839,7 @@ export class NotionConnector implements DocumentSourceConnector {
           // tree under them), but they're separate RagDocuments / RagFolders —
           // recursing here would double-index. Skip explicitly.
           if (block.type === 'child_page' || block.type === 'child_database') {
-            collected.push(block);
+            items.push(block);
             continue;
           }
           block._children = await this.#fetchBlockTree(
@@ -839,11 +850,13 @@ export class NotionConnector implements DocumentSourceConnector {
             apiKey,
           );
         }
-        collected.push(block);
+        items.push(block);
       }
-      startCursor = resp.has_more ? (resp.next_cursor ?? undefined) : undefined;
-    } while (startCursor);
-    return collected;
+      return {
+        items,
+        nextCursor: resp.has_more ? (resp.next_cursor ?? undefined) : undefined,
+      };
+    });
   }
 
   #dbToFolder(db: unknown, sourceId: string): RagFolder {

@@ -14,6 +14,11 @@ import type {
   DocumentSourceConnector,
   RateLimiterLike,
 } from '@calame-ee/rag-connectors';
+import {
+  collectAllPages,
+  ConnectorDocumentNotFoundError,
+  stripDocIdPrefix,
+} from '@calame-ee/rag-connectors';
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -176,9 +181,9 @@ export function narrowConfig(config: DocumentSourceConfig): GSheetsConfig {
  * Raised by `fetchDocument` when the supplied `docId` cannot be resolved
  * (wrong prefix, missing spreadsheet, or sheetId not found in the workbook).
  */
-export class GSheetsDocumentNotFoundError extends Error {
+export class GSheetsDocumentNotFoundError extends ConnectorDocumentNotFoundError {
   constructor(docId: string) {
-    super(`Document "${docId}" not found in Google Sheets source`);
+    super('gsheets', `Document "${docId}" not found in Google Sheets source`);
     this.name = 'GSheetsDocumentNotFoundError';
   }
 }
@@ -203,10 +208,9 @@ export function encodeDocId(spreadsheetId: string, sheetId: number): string {
 }
 
 export function decodeDocId(docId: string): { spreadsheetId: string; sheetId: number } {
-  if (!docId.startsWith(DOC_ID_PREFIX)) {
-    throw new GSheetsDocumentNotFoundError(docId);
-  }
-  const rest = docId.slice(DOC_ID_PREFIX.length);
+  // Composite payload (`<spreadsheetId>:<sheetId>`) — only the prefix
+  // validation is shared; the tuple parsing below stays connector-specific.
+  const rest = stripDocIdPrefix(docId, DOC_ID_PREFIX, (id) => new GSheetsDocumentNotFoundError(id));
   // The sheetId is the last `:`-delimited segment (spreadsheet ids never
   // contain a colon — they are URL-safe base64 — so the split is unambiguous).
   const lastColon = rest.lastIndexOf(':');
@@ -361,13 +365,11 @@ async function listSpreadsheetsInFolder(
   folderId: string,
   beforeCall?: () => Promise<void>,
 ): Promise<drive_v3.Schema$File[]> {
-  const all: drive_v3.Schema$File[] = [];
-  let pageToken: string | undefined;
   const q =
     `'${folderId}' in parents and ` +
     `mimeType = 'application/vnd.google-apps.spreadsheet' and ` +
     `trashed = false`;
-  do {
+  return collectAllPages<drive_v3.Schema$File, string>(async (pageToken) => {
     if (beforeCall) await beforeCall();
     const resp = await drive.files.list({
       q,
@@ -378,12 +380,13 @@ async function listSpreadsheetsInFolder(
       includeItemsFromAllDrives: true,
     });
     const data = resp.data ?? {};
-    if (Array.isArray(data.files)) {
-      for (const f of data.files) all.push(f);
-    }
-    pageToken = typeof data.nextPageToken === 'string' ? data.nextPageToken : undefined;
-  } while (pageToken);
-  return all;
+    return {
+      items: Array.isArray(data.files) ? data.files : [],
+      // An empty-string token means "no more pages", same as a missing one.
+      nextCursor:
+        typeof data.nextPageToken === 'string' ? data.nextPageToken || undefined : undefined,
+    };
+  });
 }
 
 // ---------------------------------------------------------------------------

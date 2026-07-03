@@ -14,6 +14,11 @@ import type {
   DocumentSourceConnector,
   RateLimiterLike,
 } from '@calame-ee/rag-connectors';
+import {
+  collectAllPages,
+  ConnectorDocumentNotFoundError,
+  makeDocIdCodec,
+} from '@calame-ee/rag-connectors';
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -146,9 +151,9 @@ export function narrowConfig(config: DocumentSourceConfig): GDriveConfig {
 /**
  * Raised by `fetchDocument` when the supplied `docId` cannot be resolved.
  */
-export class GDriveDocumentNotFoundError extends Error {
+export class GDriveDocumentNotFoundError extends ConnectorDocumentNotFoundError {
   constructor(docId: string) {
-    super(`Document "${docId}" not found in Google Drive source`);
+    super('gdrive', `Document "${docId}" not found in Google Drive source`);
     this.name = 'GDriveDocumentNotFoundError';
   }
 }
@@ -176,19 +181,14 @@ export class UnsupportedGDriveMimeTypeError extends Error {
 
 const DOC_ID_PREFIX = 'gdrive:';
 
+const docIdCodec = makeDocIdCodec(DOC_ID_PREFIX, (docId) => new GDriveDocumentNotFoundError(docId));
+
 export function encodeDocId(fileId: string): string {
-  return `${DOC_ID_PREFIX}${fileId}`;
+  return docIdCodec.encode(fileId);
 }
 
 export function decodeDocId(docId: string): string {
-  if (!docId.startsWith(DOC_ID_PREFIX)) {
-    throw new GDriveDocumentNotFoundError(docId);
-  }
-  const id = docId.slice(DOC_ID_PREFIX.length);
-  if (id.length === 0) {
-    throw new GDriveDocumentNotFoundError(docId);
-  }
-  return id;
+  return docIdCodec.decode(docId);
 }
 
 // ---------------------------------------------------------------------------
@@ -276,18 +276,17 @@ async function listAllFiles(
   params: drive_v3.Params$Resource$Files$List,
   beforeCall?: () => Promise<void>,
 ): Promise<drive_v3.Schema$File[]> {
-  const all: drive_v3.Schema$File[] = [];
-  let pageToken: string | undefined;
-  do {
+  return collectAllPages<drive_v3.Schema$File, string>(async (pageToken) => {
     if (beforeCall) await beforeCall();
     const resp = await drive.files.list({ ...params, pageToken });
     const data = resp.data ?? {};
-    if (Array.isArray(data.files)) {
-      for (const f of data.files) all.push(f);
-    }
-    pageToken = typeof data.nextPageToken === 'string' ? data.nextPageToken : undefined;
-  } while (pageToken);
-  return all;
+    return {
+      items: Array.isArray(data.files) ? data.files : [],
+      // An empty-string token means "no more pages", same as a missing one.
+      nextCursor:
+        typeof data.nextPageToken === 'string' ? data.nextPageToken || undefined : undefined,
+    };
+  });
 }
 
 // ---------------------------------------------------------------------------

@@ -10,6 +10,8 @@ import { assertResolvedHostSafe, SsrfBlockedError } from '@calame/connectors/ssr
 import type { RagDocument, RagFolder, RagSourceType } from '@calame-ee/rag-core';
 
 import type { DocumentSourceConfig, DocumentSourceConnector, RateLimiterLike } from './types.js';
+import { makeDocIdCodec } from './doc-id.js';
+import { DocumentNotFoundError } from './errors.js';
 import { deterministicId } from './utils.js';
 
 /**
@@ -79,9 +81,9 @@ export class HttpStatusError extends Error {
  * Raised by `fetchDocument` when the supplied `docId` cannot be resolved (404
  * or decode failure).
  */
-export class HttpDocumentNotFoundError extends Error {
+export class HttpDocumentNotFoundError extends DocumentNotFoundError {
   constructor(docId: string) {
-    super(`Document "${docId}" not found in HTTP source`);
+    super('http', `Document "${docId}" not found in HTTP source`);
     this.name = 'HttpDocumentNotFoundError';
   }
 }
@@ -93,23 +95,19 @@ export class HttpDocumentNotFoundError extends Error {
 const DOC_ID_PREFIX = 'http:';
 
 /**
- * Encode a full URL into a stable opaque-looking document id. The URL is kept
- * inside the id so `fetchDocument` is stateless across processes.
+ * Doc id codec: `http:<base64url(url)>`. The full URL is kept inside the id
+ * so `fetchDocument` is stateless across processes.
  */
+const docIdCodec = makeDocIdCodec(DOC_ID_PREFIX, (docId) => new HttpDocumentNotFoundError(docId), {
+  encoding: 'base64url',
+});
+
 function encodeDocId(url: string): string {
-  return `${DOC_ID_PREFIX}${Buffer.from(url, 'utf8').toString('base64url')}`;
+  return docIdCodec.encode(url);
 }
 
 function decodeDocId(docId: string): string {
-  if (!docId.startsWith(DOC_ID_PREFIX)) {
-    throw new HttpDocumentNotFoundError(docId);
-  }
-  const encoded = docId.slice(DOC_ID_PREFIX.length);
-  try {
-    return Buffer.from(encoded, 'base64url').toString('utf8');
-  } catch {
-    throw new HttpDocumentNotFoundError(docId);
-  }
+  return docIdCodec.decode(docId);
 }
 
 // ---------------------------------------------------------------------------

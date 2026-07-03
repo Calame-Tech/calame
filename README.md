@@ -29,7 +29,7 @@ language. No code generation, no lock-in — Calame is the control plane.
 ## Quick start
 
 ```bash
-git clone https://github.com/mgasnier95/calame.git
+git clone https://github.com/Calame-Tech/calame.git
 cd calame
 pnpm install
 pnpm dev

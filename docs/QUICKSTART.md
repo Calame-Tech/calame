@@ -27,7 +27,7 @@ You also need:
 ### Option A — Docker (recommended)
 
 ```bash
-git clone https://github.com/mgasnier95/calame.git
+git clone https://github.com/Calame-Tech/calame.git
 cd calame
 docker compose up
 ```
@@ -44,7 +44,7 @@ A persistent volume `calame-data` is created — your admin account, profiles, t
 ### Option B — Node.js (development mode)
 
 ```bash
-git clone https://github.com/mgasnier95/calame.git
+git clone https://github.com/Calame-Tech/calame.git
 cd calame
 pnpm install
 pnpm dev
@@ -271,4 +271,4 @@ docker compose up        # fresh state
 
 ---
 
-Found a bug or missing piece? **[Open an issue](https://github.com/mgasnier95/calame/issues/new)** or start a discussion.
+Found a bug or missing piece? **[Open an issue](https://github.com/Calame-Tech/calame/issues/new)** or start a discussion.

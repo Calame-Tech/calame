@@ -27,6 +27,24 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Incremental TypeScript builds (refactor plan #23). Every package is a
+      # `composite` project, so tsc validates the restored dist/.tsbuildinfo
+      # itself and recompiles only what changed since the cached commit — a
+      # stale cache is safe by construction. Key on the exact commit, restore
+      # from the most recent previous build on any branch.
+      - name: Restore incremental build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            packages/*/dist
+            packages/*/tsconfig.tsbuildinfo
+            ee/*/dist
+            ee/*/tsconfig.tsbuildinfo
+            tsconfig.tsbuildinfo
+          key: ts-build-${{ runner.os }}-node${{ matrix.node-version }}-${{ github.sha }}
+          restore-keys: |
+            ts-build-${{ runner.os }}-node${{ matrix.node-version }}-
+
       - name: Build
         run: pnpm build
 

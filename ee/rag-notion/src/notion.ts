@@ -19,6 +19,7 @@ import {
   ConnectorDocumentNotFoundError,
   ConnectorRateLimitError,
   makeDocIdCodec,
+  ConnectorConfigError,
 } from '@calame-ee/rag-connectors';
 
 // ---------------------------------------------------------------------------
@@ -108,10 +109,14 @@ export function denormalizeId(id: string): string {
 export function narrowConfig(config: DocumentSourceConfig): NotionConfig {
   const apiKey = config.apiKey;
   if (typeof apiKey !== 'string' || apiKey.length === 0) {
-    throw new Error('NotionConnector requires a non-empty `apiKey` string in config');
+    throw new ConnectorConfigError(
+      'notion',
+      'NotionConnector requires a non-empty `apiKey` string in config',
+    );
   }
   if (!apiKey.startsWith('secret_') && !apiKey.startsWith('ntn_')) {
-    throw new Error(
+    throw new ConnectorConfigError(
+      'notion',
       'NotionConnector: `apiKey` must start with `secret_` or `ntn_` (Notion internal integration token).',
     );
   }
@@ -119,16 +124,23 @@ export function narrowConfig(config: DocumentSourceConfig): NotionConfig {
   let rootIds: string[] | undefined;
   if (config.rootIds !== undefined) {
     if (!Array.isArray(config.rootIds)) {
-      throw new Error('NotionConnector: `rootIds` must be an array of strings when provided');
+      throw new ConnectorConfigError(
+        'notion',
+        'NotionConnector: `rootIds` must be an array of strings when provided',
+      );
     }
     rootIds = [];
     for (const raw of config.rootIds) {
       if (typeof raw !== 'string') {
-        throw new Error('NotionConnector: `rootIds` must contain only strings');
+        throw new ConnectorConfigError(
+          'notion',
+          'NotionConnector: `rootIds` must contain only strings',
+        );
       }
       const normalized = normalizeId(raw);
       if (!normalized) {
-        throw new Error(
+        throw new ConnectorConfigError(
+          'notion',
           `NotionConnector: invalid Notion id in rootIds: "${raw}" (expected 32 hex chars, with or without hyphens)`,
         );
       }
@@ -138,13 +150,19 @@ export function narrowConfig(config: DocumentSourceConfig): NotionConfig {
 
   const includeArchived = config.includeArchived;
   if (includeArchived !== undefined && typeof includeArchived !== 'boolean') {
-    throw new Error('NotionConnector: `includeArchived` must be a boolean when provided');
+    throw new ConnectorConfigError(
+      'notion',
+      'NotionConnector: `includeArchived` must be a boolean when provided',
+    );
   }
 
   const maxBlockDepth = config.maxBlockDepth;
   if (maxBlockDepth !== undefined) {
     if (typeof maxBlockDepth !== 'number' || !Number.isFinite(maxBlockDepth) || maxBlockDepth < 0) {
-      throw new Error('NotionConnector: `maxBlockDepth` must be a non-negative number');
+      throw new ConnectorConfigError(
+        'notion',
+        'NotionConnector: `maxBlockDepth` must be a non-negative number',
+      );
     }
   }
 

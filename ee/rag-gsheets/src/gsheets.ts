@@ -18,6 +18,7 @@ import {
   collectAllPages,
   ConnectorDocumentNotFoundError,
   stripDocIdPrefix,
+  ConnectorConfigError,
 } from '@calame-ee/rag-connectors';
 
 // ---------------------------------------------------------------------------
@@ -88,35 +89,48 @@ const ARCHIVE_TITLE_RE = /^(archive_|_old)/i;
 export function narrowConfig(config: DocumentSourceConfig): GSheetsConfig {
   const rawKey = config.serviceAccountKey;
   if (rawKey === undefined || rawKey === null) {
-    throw new Error(
+    throw new ConnectorConfigError(
+      'gsheets',
       'GSheetsConnector requires a `serviceAccountKey` (object or JSON string) in config',
     );
   }
   let key: Record<string, unknown>;
   if (typeof rawKey === 'string') {
     if (rawKey.length === 0) {
-      throw new Error('GSheetsConnector: `serviceAccountKey` string is empty');
+      throw new ConnectorConfigError(
+        'gsheets',
+        'GSheetsConnector: `serviceAccountKey` string is empty',
+      );
     }
     try {
       const parsed = JSON.parse(rawKey) as unknown;
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        throw new Error('not an object');
+        throw new ConnectorConfigError('gsheets', 'not an object');
       }
       key = parsed as Record<string, unknown>;
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
-      throw new Error(`GSheetsConnector: \`serviceAccountKey\` is not valid JSON (${reason})`);
+      throw new ConnectorConfigError(
+        'gsheets',
+        `GSheetsConnector: \`serviceAccountKey\` is not valid JSON (${reason})`,
+      );
     }
   } else if (typeof rawKey === 'object' && !Array.isArray(rawKey)) {
     key = rawKey as Record<string, unknown>;
   } else {
-    throw new Error('GSheetsConnector: `serviceAccountKey` must be an object or a JSON string');
+    throw new ConnectorConfigError(
+      'gsheets',
+      'GSheetsConnector: `serviceAccountKey` must be an object or a JSON string',
+    );
   }
 
   for (const field of ['client_email', 'private_key', 'token_uri'] as const) {
     const v = key[field];
     if (typeof v !== 'string' || v.length === 0) {
-      throw new Error(`GSheetsConnector: serviceAccountKey is missing required field "${field}"`);
+      throw new ConnectorConfigError(
+        'gsheets',
+        `GSheetsConnector: serviceAccountKey is missing required field "${field}"`,
+      );
     }
   }
 
@@ -124,7 +138,10 @@ export function narrowConfig(config: DocumentSourceConfig): GSheetsConfig {
   let spreadsheetIds: string[] | undefined;
   if (rawIds !== undefined) {
     if (!Array.isArray(rawIds) || !rawIds.every((id) => typeof id === 'string')) {
-      throw new Error('GSheetsConnector: `spreadsheetIds` must be an array of strings');
+      throw new ConnectorConfigError(
+        'gsheets',
+        'GSheetsConnector: `spreadsheetIds` must be an array of strings',
+      );
     }
     const cleaned = (rawIds as string[]).map((s) => s.trim()).filter((s) => s.length > 0);
     spreadsheetIds = cleaned.length > 0 ? cleaned : undefined;
@@ -134,31 +151,44 @@ export function narrowConfig(config: DocumentSourceConfig): GSheetsConfig {
   let driveFolderId: string | undefined;
   if (rawFolderId !== undefined) {
     if (typeof rawFolderId !== 'string') {
-      throw new Error('GSheetsConnector: `driveFolderId` must be a string when provided');
+      throw new ConnectorConfigError(
+        'gsheets',
+        'GSheetsConnector: `driveFolderId` must be a string when provided',
+      );
     }
     const trimmed = rawFolderId.trim();
     driveFolderId = trimmed.length > 0 ? trimmed : undefined;
   }
 
   if (!spreadsheetIds && !driveFolderId) {
-    throw new Error(
+    throw new ConnectorConfigError(
+      'gsheets',
       'GSheetsConnector: at least one of `spreadsheetIds` or `driveFolderId` must be set',
     );
   }
 
   const impersonateAs = config.impersonateAs;
   if (impersonateAs !== undefined && typeof impersonateAs !== 'string') {
-    throw new Error('GSheetsConnector: `impersonateAs` must be a string when provided');
+    throw new ConnectorConfigError(
+      'gsheets',
+      'GSheetsConnector: `impersonateAs` must be a string when provided',
+    );
   }
 
   const defaultRange = config.defaultRange;
   if (defaultRange !== undefined && typeof defaultRange !== 'string') {
-    throw new Error('GSheetsConnector: `defaultRange` must be a string when provided');
+    throw new ConnectorConfigError(
+      'gsheets',
+      'GSheetsConnector: `defaultRange` must be a string when provided',
+    );
   }
 
   const includeArchived = config.includeArchived;
   if (includeArchived !== undefined && typeof includeArchived !== 'boolean') {
-    throw new Error('GSheetsConnector: `includeArchived` must be a boolean when provided');
+    throw new ConnectorConfigError(
+      'gsheets',
+      'GSheetsConnector: `includeArchived` must be a boolean when provided',
+    );
   }
 
   return {

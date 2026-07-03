@@ -11,7 +11,7 @@ import type { RagDocument, RagFolder, RagSourceType } from '@calame-ee/rag-core'
 
 import type { DocumentSourceConfig, DocumentSourceConnector, RateLimiterLike } from './types.js';
 import { makeDocIdCodec } from './doc-id.js';
-import { DocumentNotFoundError } from './errors.js';
+import { DocumentNotFoundError, ConnectorConfigError } from './errors.js';
 import { deterministicId } from './utils.js';
 
 /**
@@ -123,10 +123,16 @@ function narrowConfig(config: DocumentSourceConfig): HttpConfig {
   const sitemapUrl = config.sitemapUrl;
 
   if (rawUrls !== undefined && !Array.isArray(rawUrls)) {
-    throw new Error('HttpConnector: `urls` must be an array of strings when provided');
+    throw new ConnectorConfigError(
+      'http',
+      'HttpConnector: `urls` must be an array of strings when provided',
+    );
   }
   if (sitemapUrl !== undefined && typeof sitemapUrl !== 'string') {
-    throw new Error('HttpConnector: `sitemapUrl` must be a string when provided');
+    throw new ConnectorConfigError(
+      'http',
+      'HttpConnector: `sitemapUrl` must be a string when provided',
+    );
   }
 
   const urls = rawUrls as string[] | undefined;
@@ -134,7 +140,8 @@ function narrowConfig(config: DocumentSourceConfig): HttpConfig {
   const hasSitemap = typeof sitemapUrl === 'string' && sitemapUrl.length > 0;
 
   if (!hasUrls && !hasSitemap) {
-    throw new Error(
+    throw new ConnectorConfigError(
+      'http',
       'HttpConnector requires at least one of `urls` (non-empty) or `sitemapUrl` in config',
     );
   }
@@ -142,7 +149,10 @@ function narrowConfig(config: DocumentSourceConfig): HttpConfig {
   if (hasUrls) {
     for (const u of urls!) {
       if (typeof u !== 'string' || u.length === 0) {
-        throw new Error('HttpConnector: every entry in `urls` must be a non-empty string');
+        throw new ConnectorConfigError(
+          'http',
+          'HttpConnector: every entry in `urls` must be a non-empty string',
+        );
       }
       assertHttpUrl(u, '`urls`');
     }
@@ -154,26 +164,41 @@ function narrowConfig(config: DocumentSourceConfig): HttpConfig {
   const allowedHosts = config.allowedHosts;
   if (allowedHosts !== undefined) {
     if (!Array.isArray(allowedHosts) || !allowedHosts.every((h) => typeof h === 'string')) {
-      throw new Error('HttpConnector: `allowedHosts` must be an array of strings when provided');
+      throw new ConnectorConfigError(
+        'http',
+        'HttpConnector: `allowedHosts` must be an array of strings when provided',
+      );
     }
   }
 
   const includeGlobs = config.includeGlobs;
   const excludeGlobs = config.excludeGlobs;
   if (includeGlobs !== undefined && !Array.isArray(includeGlobs)) {
-    throw new Error('HttpConnector: `includeGlobs` must be an array of strings');
+    throw new ConnectorConfigError(
+      'http',
+      'HttpConnector: `includeGlobs` must be an array of strings',
+    );
   }
   if (excludeGlobs !== undefined && !Array.isArray(excludeGlobs)) {
-    throw new Error('HttpConnector: `excludeGlobs` must be an array of strings');
+    throw new ConnectorConfigError(
+      'http',
+      'HttpConnector: `excludeGlobs` must be an array of strings',
+    );
   }
 
   const userAgent = config.userAgent;
   if (userAgent !== undefined && typeof userAgent !== 'string') {
-    throw new Error('HttpConnector: `userAgent` must be a string when provided');
+    throw new ConnectorConfigError(
+      'http',
+      'HttpConnector: `userAgent` must be a string when provided',
+    );
   }
   const timeoutMs = config.timeoutMs;
   if (timeoutMs !== undefined && (typeof timeoutMs !== 'number' || timeoutMs <= 0)) {
-    throw new Error('HttpConnector: `timeoutMs` must be a positive number when provided');
+    throw new ConnectorConfigError(
+      'http',
+      'HttpConnector: `timeoutMs` must be a positive number when provided',
+    );
   }
 
   return {

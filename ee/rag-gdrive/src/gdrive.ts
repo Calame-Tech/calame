@@ -18,6 +18,7 @@ import {
   collectAllPages,
   ConnectorDocumentNotFoundError,
   makeDocIdCodec,
+  ConnectorConfigError,
 } from '@calame-ee/rag-connectors';
 
 // ---------------------------------------------------------------------------
@@ -73,64 +74,92 @@ export interface GDriveConfig {
 export function narrowConfig(config: DocumentSourceConfig): GDriveConfig {
   const rawKey = config.serviceAccountKey;
   if (rawKey === undefined || rawKey === null) {
-    throw new Error(
+    throw new ConnectorConfigError(
+      'gdrive',
       'GDriveConnector requires a `serviceAccountKey` (object or JSON string) in config',
     );
   }
   let key: Record<string, unknown>;
   if (typeof rawKey === 'string') {
     if (rawKey.length === 0) {
-      throw new Error('GDriveConnector: `serviceAccountKey` string is empty');
+      throw new ConnectorConfigError(
+        'gdrive',
+        'GDriveConnector: `serviceAccountKey` string is empty',
+      );
     }
     try {
       const parsed = JSON.parse(rawKey) as unknown;
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        throw new Error('not an object');
+        throw new ConnectorConfigError('gdrive', 'not an object');
       }
       key = parsed as Record<string, unknown>;
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
-      throw new Error(`GDriveConnector: \`serviceAccountKey\` is not valid JSON (${reason})`);
+      throw new ConnectorConfigError(
+        'gdrive',
+        `GDriveConnector: \`serviceAccountKey\` is not valid JSON (${reason})`,
+      );
     }
   } else if (typeof rawKey === 'object' && !Array.isArray(rawKey)) {
     key = rawKey as Record<string, unknown>;
   } else {
-    throw new Error('GDriveConnector: `serviceAccountKey` must be an object or a JSON string');
+    throw new ConnectorConfigError(
+      'gdrive',
+      'GDriveConnector: `serviceAccountKey` must be an object or a JSON string',
+    );
   }
 
   for (const field of ['client_email', 'private_key', 'token_uri'] as const) {
     const v = key[field];
     if (typeof v !== 'string' || v.length === 0) {
-      throw new Error(`GDriveConnector: serviceAccountKey is missing required field "${field}"`);
+      throw new ConnectorConfigError(
+        'gdrive',
+        `GDriveConnector: serviceAccountKey is missing required field "${field}"`,
+      );
     }
   }
 
   const rootFolderId = config.rootFolderId;
   if (typeof rootFolderId !== 'string' || rootFolderId.length === 0) {
-    throw new Error('GDriveConnector requires a non-empty `rootFolderId` string in config');
+    throw new ConnectorConfigError(
+      'gdrive',
+      'GDriveConnector requires a non-empty `rootFolderId` string in config',
+    );
   }
 
   const impersonateAs = config.impersonateAs;
   if (impersonateAs !== undefined && typeof impersonateAs !== 'string') {
-    throw new Error('GDriveConnector: `impersonateAs` must be a string when provided');
+    throw new ConnectorConfigError(
+      'gdrive',
+      'GDriveConnector: `impersonateAs` must be a string when provided',
+    );
   }
 
   const includeMimeTypes = config.includeMimeTypes;
   if (includeMimeTypes !== undefined) {
     if (!Array.isArray(includeMimeTypes) || !includeMimeTypes.every((m) => typeof m === 'string')) {
-      throw new Error('GDriveConnector: `includeMimeTypes` must be an array of strings');
+      throw new ConnectorConfigError(
+        'gdrive',
+        'GDriveConnector: `includeMimeTypes` must be an array of strings',
+      );
     }
   }
   const excludeMimeTypes = config.excludeMimeTypes;
   if (excludeMimeTypes !== undefined) {
     if (!Array.isArray(excludeMimeTypes) || !excludeMimeTypes.every((m) => typeof m === 'string')) {
-      throw new Error('GDriveConnector: `excludeMimeTypes` must be an array of strings');
+      throw new ConnectorConfigError(
+        'gdrive',
+        'GDriveConnector: `excludeMimeTypes` must be an array of strings',
+      );
     }
   }
 
   const recursive = config.recursive;
   if (recursive !== undefined && typeof recursive !== 'boolean') {
-    throw new Error('GDriveConnector: `recursive` must be a boolean when provided');
+    throw new ConnectorConfigError(
+      'gdrive',
+      'GDriveConnector: `recursive` must be a boolean when provided',
+    );
   }
 
   return {

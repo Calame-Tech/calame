@@ -72,3 +72,15 @@ export class ConnectorRateLimitError extends ConnectorError {
     this.name = 'ConnectorRateLimitError';
   }
 }
+
+/**
+ * The supplied `DocumentSourceConfig` does not match the connector's expected
+ * shape (missing/mistyped field). Thrown by each connector's `narrowConfig`
+ * so hosts can map malformed configuration to a 400 without string-matching.
+ */
+export class ConnectorConfigError extends ConnectorError {
+  constructor(connectorType: string, message: string, options?: { cause?: unknown }) {
+    super(connectorType, message, options);
+    this.name = 'ConnectorConfigError';
+  }
+}

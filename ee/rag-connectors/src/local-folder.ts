@@ -18,7 +18,10 @@ import type {
   WatchEvent,
 } from './types.js';
 import { makeDocIdCodec } from './doc-id.js';
-import { DocumentNotFoundError as ConnectorDocumentNotFoundError } from './errors.js';
+import {
+  DocumentNotFoundError as ConnectorDocumentNotFoundError,
+  ConnectorConfigError,
+} from './errors.js';
 import { deterministicId, matchGlobs, safeResolveUnderRoot, streamSha256 } from './utils.js';
 
 /**
@@ -44,15 +47,24 @@ export interface LocalFolderConfig {
 function narrowConfig(config: DocumentSourceConfig): LocalFolderConfig {
   const rootPath = config.rootPath;
   if (typeof rootPath !== 'string' || rootPath.length === 0) {
-    throw new Error('LocalFolderConnector requires a non-empty `rootPath` string in config');
+    throw new ConnectorConfigError(
+      'local',
+      'LocalFolderConnector requires a non-empty `rootPath` string in config',
+    );
   }
   const includeGlobs = config.includeGlobs;
   const excludeGlobs = config.excludeGlobs;
   if (includeGlobs !== undefined && !Array.isArray(includeGlobs)) {
-    throw new Error('LocalFolderConnector: `includeGlobs` must be an array of strings');
+    throw new ConnectorConfigError(
+      'local',
+      'LocalFolderConnector: `includeGlobs` must be an array of strings',
+    );
   }
   if (excludeGlobs !== undefined && !Array.isArray(excludeGlobs)) {
-    throw new Error('LocalFolderConnector: `excludeGlobs` must be an array of strings');
+    throw new ConnectorConfigError(
+      'local',
+      'LocalFolderConnector: `excludeGlobs` must be an array of strings',
+    );
   }
   return {
     rootPath,

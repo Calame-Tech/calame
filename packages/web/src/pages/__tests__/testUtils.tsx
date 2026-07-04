@@ -67,6 +67,20 @@ export function installFetchMock() {
     if (url.includes('/api/tenants')) return jsonResponse({ success: true, tenants: [] });
     if (url.includes('/api/ai-settings')) return jsonResponse({ success: true, settings: [] });
     if (url.includes('/api/smtp-settings')) return jsonResponse({ success: true, config: null });
+    if (url.includes('/api/notification-settings')) {
+      return jsonResponse({
+        success: true,
+        settings: {
+          webhookEnabled: false,
+          webhookFormat: 'json',
+          emailEnabled: false,
+          emailRecipients: [],
+        },
+      });
+    }
+    if (url.includes('/api/notifications')) {
+      return jsonResponse({ success: true, notifications: [], unreadCount: 0 });
+    }
     if (url.includes('/api/rag/sources')) return jsonResponse({ sources: [] });
     if (url.includes('/api/connections')) return jsonResponse({ success: true, connections: {} });
     if (url.includes('/api/tokens')) return jsonResponse({ success: true, tokens: [] });

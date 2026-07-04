@@ -65,4 +65,28 @@ describe('SettingsPage', () => {
     expect(oidc.length).toBeGreaterThanOrEqual(1);
     await flushEffects();
   });
+
+  it('renders the Notifications tab with webhook and email sections', async () => {
+    renderPage();
+    fireEvent.click(screen.getAllByRole('button', { name: /Notifications/ })[0]);
+    await flushEffects();
+
+    expect(screen.getAllByText('Webhook').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('Email').length).toBeGreaterThanOrEqual(1);
+    expect(
+      screen.getAllByRole('button', { name: /Send test notification/ }).length,
+    ).toBeGreaterThanOrEqual(1);
+  });
+
+  it('toggles the webhook checkbox in the Notifications tab', async () => {
+    renderPage();
+    fireEvent.click(screen.getAllByRole('button', { name: /Notifications/ })[0]);
+    await flushEffects();
+
+    const checkboxes = screen.getAllByRole('checkbox');
+    const webhookCheckbox = checkboxes[0] as HTMLInputElement;
+    expect(webhookCheckbox.checked).toBe(false);
+    fireEvent.click(webhookCheckbox);
+    expect(webhookCheckbox.checked).toBe(true);
+  });
 });

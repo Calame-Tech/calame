@@ -18,6 +18,7 @@ import {
 } from '@calame/core';
 import { DEFAULT_TENANT_ID } from '../../tenancy.js';
 import { distinctValuesCache, distinctValuesCacheKey, getQueryTimeoutMs } from './routing.js';
+import { createOnWriteRequest } from './write-wiring.js';
 
 // ---------------------------------------------------------------------------
 // Phase 3c — adapter-driven tool registration
@@ -612,6 +613,7 @@ export async function registerToolsViaAdapters(opts: RegisterAdaptersOptions): P
       wrapResponse,
       maxOffset: 10000,
       scopeGuard,
+      onWriteRequest: createOnWriteRequest(state, tenantId),
     });
   }
 }

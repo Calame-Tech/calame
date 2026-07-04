@@ -51,6 +51,16 @@ export class EmailService {
     });
   }
 
+  /** Send a simple plain-text notification email (approval-queue alerts, etc.). */
+  async sendNotification(options: { to: string; subject: string; text: string }): Promise<void> {
+    await this.transporter.sendMail({
+      from: this.from,
+      to: options.to,
+      subject: options.subject,
+      text: options.text,
+    });
+  }
+
   async testConnection(): Promise<boolean> {
     try {
       await this.transporter.verify();

@@ -206,4 +206,32 @@ export function runMigrations(db: CalameDatabase): void {
     )`);
     db.setSchemaVersion(13);
   }
+
+  if (currentVersion < 14) {
+    // Version 14: Approval notifications (in-app + webhook + email) for the
+    // write-queue. `notifications` stores one row per delivered in-app
+    // notification; `notification_settings` mirrors the `branding` (v13)
+    // pattern — one key/value row PER TENANT, key = tenant id, value = JSON
+    // blob of webhook/email settings.
+    db.raw.exec(`CREATE TABLE IF NOT EXISTS notifications (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL DEFAULT '${DEFAULT_TENANT_ID}',
+      type TEXT NOT NULL,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      payload TEXT,
+      created_at TEXT NOT NULL,
+      read_at TEXT
+    )`);
+    db.raw.exec(
+      `CREATE INDEX IF NOT EXISTS idx_notifications_tenant_read ON notifications(tenant_id, read_at)`,
+    );
+
+    db.raw.exec(`CREATE TABLE IF NOT EXISTS notification_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    )`);
+
+    db.setSchemaVersion(14);
+  }
 }

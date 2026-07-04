@@ -36,6 +36,8 @@ import { registerServeRoute } from './routes/serve.js';
 import { registerServeStatusRoute } from './routes/serve-status.js';
 import { WriteQueue } from './write-queue.js';
 import { registerWriteQueueRoute } from './routes/write-queue.js';
+import { NotificationDispatcher } from './notifications.js';
+import { registerNotificationsRoute } from './routes/notifications.js';
 import { registerOAuthRoutes } from './routes/oauth.js';
 import { registerProfileOAuthRoutes } from './routes/profile-oauth.js';
 import { OAUTH_PROVIDERS } from './oauth-providers.js';
@@ -114,6 +116,12 @@ export function createApp(
   }
   if (!appState.smtpConfigManager) {
     appState.smtpConfigManager = new SmtpConfigManager(appState.db);
+  }
+  if (!appState.notifications) {
+    appState.notifications = new NotificationDispatcher(
+      appState.db,
+      () => appState.smtpConfigManager?.getConfig() ?? null,
+    );
   }
   // OidcConfigManager is instantiated only when the EE SSO runtime is loaded.
   // When @calame-ee/sso is absent, oidcConfigManager stays undefined and OIDC
@@ -275,6 +283,7 @@ export function createApp(
   registerServeRoute(app, appState);
   registerServeStatusRoute(app, appState);
   registerWriteQueueRoute(app, appState);
+  registerNotificationsRoute(app, appState);
   registerUsersRoute(app, appState);
   registerAiSettingsRoute(app, appState);
   registerSmtpSettingsRoute(app, appState);

@@ -6,6 +6,7 @@ import { Card, PageHeader } from '../components/ui/index.js';
 import AiSettings from '../components/AiSettings.js';
 import SmtpSettings from '../components/SmtpSettings.js';
 import BrandingSettings from '../components/BrandingSettings.js';
+import NotificationSettings from '../components/NotificationSettings.js';
 import type { View } from '../router/index.js';
 
 /**
@@ -31,7 +32,7 @@ const OidcSettings = lazy(() =>
 // SettingsPage — tabbed layout wrapping AiSettings / SmtpSettings / OidcSettings
 // ---------------------------------------------------------------------------
 
-type SettingsTab = 'ai' | 'email' | 'sso' | 'branding';
+type SettingsTab = 'ai' | 'email' | 'sso' | 'branding' | 'notifications';
 
 interface SettingsTabItem {
   id: SettingsTab;
@@ -44,6 +45,11 @@ const SETTINGS_TABS: SettingsTabItem[] = [
   { id: 'email', label: 'Email (SMTP)', description: 'Outgoing mail server' },
   { id: 'sso', label: 'Single Sign-On (OIDC)', description: 'SSO identity provider' },
   { id: 'branding', label: 'Branding', description: 'Logo, colors, and favicon' },
+  {
+    id: 'notifications',
+    label: 'Notifications',
+    description: 'In-app, webhook, and email alerts',
+  },
 ];
 
 interface SettingsPageProps {
@@ -155,6 +161,7 @@ export default function SettingsPage({
             </Suspense>
           )}
           {activeTab === 'branding' && <BrandingSettings />}
+          {activeTab === 'notifications' && <NotificationSettings />}
         </Card>
       </div>
 

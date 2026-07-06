@@ -113,6 +113,23 @@ export default function NotificationSettings() {
     setTestResults(null);
     setTestError(null);
     try {
+      // The test endpoint dispatches with the SAVED settings — persist the
+      // current form first so "Send test" always tests what the user sees.
+      const saveRes = await apiFetch('/api/notification-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(buildPayload()),
+      });
+      const saveData = await saveRes.json();
+      if (!saveData.success) {
+        setTestError(saveData.message || 'Could not save settings before testing.');
+        return;
+      }
+      if (saveData.settings) {
+        setWebhookSecret((saveData.settings as NotificationSettingsData).webhookSecret ?? '');
+      }
+
       const res = await apiFetch('/api/notification-settings/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

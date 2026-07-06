@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { apiFetch } from '../lib/api.js';
 
 interface NotificationItem {
@@ -35,7 +36,12 @@ export default function NotificationsBell() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [open, setOpen] = useState(false);
+  // Panel anchor, computed from the bell's screen position when opening. The
+  // panel is rendered in a body portal with `position: fixed` — an absolute
+  // dropdown inside the sidebar gets clipped by the <aside>'s overflow-y-auto.
+  const [anchor, setAnchor] = useState<{ left: number; bottom: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   const fetchUnread = useCallback(async () => {
     try {
@@ -58,20 +64,39 @@ export default function NotificationsBell() {
     return () => clearInterval(interval);
   }, [fetchUnread]);
 
-  // Close the dropdown on outside click.
+  // Close the dropdown on outside click (the panel lives in a body portal,
+  // so "outside" means outside BOTH the bell container and the panel) and on
+  // window resize (the fixed anchor would drift).
   useEffect(() => {
     if (!open) return;
     const handleClick = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
+      const target = e.target as Node;
+      if (containerRef.current?.contains(target)) return;
+      if (panelRef.current?.contains(target)) return;
+      setOpen(false);
     };
+    const handleResize = () => setOpen(false);
     document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
+    window.addEventListener('resize', handleResize);
+    return () => {
+      document.removeEventListener('mousedown', handleClick);
+      window.removeEventListener('resize', handleResize);
+    };
   }, [open]);
 
   const handleToggle = () => {
-    setOpen((prev) => !prev);
+    setOpen((prev) => {
+      if (!prev && containerRef.current) {
+        const rect = containerRef.current.getBoundingClientRect();
+        // Open to the right of the bell, bottom-aligned with it; clamp so a
+        // short viewport never pushes the panel off-screen at the top.
+        setAnchor({
+          left: rect.right + 8,
+          bottom: Math.max(8, window.innerHeight - rect.bottom),
+        });
+      }
+      return !prev;
+    });
   };
 
   const handleMarkAllRead = async () => {
@@ -116,35 +141,42 @@ export default function NotificationsBell() {
         )}
       </button>
 
-      {open && (
-        <div className="absolute bottom-full left-0 mb-2 w-72 max-h-96 overflow-y-auto rounded-lg border border-gray-800 bg-gray-900 shadow-xl z-50">
-          <div className="flex items-center justify-between px-3 py-2 border-b border-gray-800">
-            <span className="text-sm font-medium text-gray-200">Notifications</span>
-            <button
-              type="button"
-              onClick={handleMarkAllRead}
-              className="text-xs text-os-400 hover:text-os-300"
-            >
-              Tout marquer lu
-            </button>
-          </div>
-          {notifications.length === 0 ? (
-            <div className="p-4 text-sm text-gray-500 text-center">No new notifications.</div>
-          ) : (
-            <ul>
-              {notifications.map((n) => (
-                <li key={n.id} className="px-3 py-2 border-b border-gray-800/60 last:border-b-0">
-                  <p className="text-sm text-gray-200">{n.title}</p>
-                  <p className="text-xs text-gray-400 mt-0.5">{n.body}</p>
-                  <p className="text-[10px] text-gray-600 mt-1">
-                    {formatRelativeTime(n.createdAt)}
-                  </p>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
+      {open &&
+        anchor &&
+        createPortal(
+          <div
+            ref={panelRef}
+            style={{ position: 'fixed', left: anchor.left, bottom: anchor.bottom }}
+            className="w-72 max-h-96 overflow-y-auto rounded-lg border border-gray-800 bg-gray-900 shadow-xl z-50"
+          >
+            <div className="flex items-center justify-between px-3 py-2 border-b border-gray-800">
+              <span className="text-sm font-medium text-gray-200">Notifications</span>
+              <button
+                type="button"
+                onClick={handleMarkAllRead}
+                className="text-xs text-os-400 hover:text-os-300"
+              >
+                Tout marquer lu
+              </button>
+            </div>
+            {notifications.length === 0 ? (
+              <div className="p-4 text-sm text-gray-500 text-center">No new notifications.</div>
+            ) : (
+              <ul>
+                {notifications.map((n) => (
+                  <li key={n.id} className="px-3 py-2 border-b border-gray-800/60 last:border-b-0">
+                    <p className="text-sm text-gray-200">{n.title}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">{n.body}</p>
+                    <p className="text-[10px] text-gray-600 mt-1">
+                      {formatRelativeTime(n.createdAt)}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

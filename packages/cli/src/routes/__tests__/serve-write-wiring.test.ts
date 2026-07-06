@@ -16,7 +16,8 @@ import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
 import { registerDynamicTools } from '@calame/core';
-import type { TableInfo } from '@calame/core';
+import type { McpRegistrationContext, TableInfo } from '@calame/core';
+import { buildDatabaseSourceAdapter } from '@calame/connectors';
 import { AppState } from '../../state.js';
 import { CalameDatabase } from '../../database.js';
 import { NotificationDispatcher } from '../../notifications.js';
@@ -143,6 +144,54 @@ describe('write tool wiring — MCP write tool -> write_queue -> in-app notifica
     expect(notifRow!.type).toBe('write_queue.pending');
     expect(notifRow!.tenant_id).toBe('default');
     expect(notifRow!.read_at).toBeNull();
+  });
+
+  it('registers the write tool through the ADAPTER path (db-adapter registerMcpTools)', async () => {
+    // Regression: the modern adapter path (used by every profile that has a
+    // Data Configuration) forwards ctx.onWriteRequest to registerDynamicTools.
+    // It used to drop it entirely — write tools only worked on the fallback
+    // and legacy paths, and this test would have caught it.
+    const server = createMockServer();
+    const adapter = buildDatabaseSourceAdapter('sqlite', 'SQLite');
+
+    adapter.registerMcpTools!({
+      server: server as unknown as McpRegistrationContext['server'],
+      source: { id: 'src', name: 'src', type: 'sqlite' },
+      config: { connectionString: ':memory:' },
+      schema: { kind: 'relational', tables: [usersTable], relations: [] },
+      selection: {
+        kind: 'relational',
+        selectedTables: { users: ['id', 'email'] },
+        tableOptions: {
+          users: {
+            enabledTools: ['describe', 'query', 'write'],
+            maxLimit: 100,
+            filterableColumns: [],
+            groupableColumns: [],
+          },
+        },
+      },
+      profileName: 'test',
+      toolNamespace: '',
+      responseMode: 'raw',
+      onAuditLog: () => {},
+      executeQuery: vi.fn().mockResolvedValue({ rows: [], fields: [] }),
+      onWriteRequest: createOnWriteRequest(state, 'default'),
+    } as unknown as Parameters<NonNullable<typeof adapter.registerMcpTools>>[0]);
+
+    const writeTool = server.getTool('write');
+    expect(writeTool).toBeDefined();
+
+    await writeTool!.handler({
+      table: 'users',
+      operation: 'insert',
+      description: 'New user',
+      values: { email: 'new@example.com' },
+    });
+    const wqRow = db.raw.prepare('SELECT status FROM write_queue').get() as
+      | { status: string }
+      | undefined;
+    expect(wqRow?.status).toBe('pending');
   });
 
   it('creates a fresh WriteQueue on state lazily, mirroring serve-status.ts', async () => {

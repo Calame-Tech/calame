@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { Source } from './types.js';
 import type { SourceSchema, ScopeSelection } from './types.js';
-import type { AuditLogEntry } from '../serve/types.js';
+import type { AuditLogEntry, PendingWriteQuery } from '../serve/types.js';
 import type { ScopeGuard } from '../serve/scoped-executor.js';
 
 export interface McpRegistrationContext<
@@ -29,6 +29,12 @@ export interface McpRegistrationContext<
   // Capability-specific extras supplied by host when relevant for the adapter.
   scopeGuard?: ScopeGuard;
   executeQuery?: (sql: string, params?: ReadonlyArray<unknown>) => Promise<unknown>;
+  /**
+   * Queue a write proposed by the LLM for human approval and return the queue
+   * entry id. When absent, write tools are not registered — even for tables
+   * whose `enabledTools` includes 'write' (fail-closed).
+   */
+  onWriteRequest?: (query: Omit<PendingWriteQuery, 'id' | 'timestamp' | 'status'>) => string;
   /** For 'search' adapters — loosely typed; Phase 3 will tighten once the RAG adapter ships. */
   searchIndex?: { search(query: string, opts?: unknown): Promise<unknown> };
 }

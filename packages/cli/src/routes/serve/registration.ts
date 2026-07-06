@@ -436,6 +436,7 @@ export async function registerToolsViaAdapters(opts: RegisterAdaptersOptions): P
       toolNamespace,
       responseMode,
       onAuditLog,
+      onWriteRequest: createOnWriteRequest(state, tenantId),
       scopeGuard,
       executeQuery: connector
         ? async (sql: string, params?: ReadonlyArray<unknown>) => {

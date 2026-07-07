@@ -200,6 +200,35 @@ export function useAppData(isUserPage: boolean) {
     return () => clearInterval(interval);
   }, [authenticated, fetchServeStatus]);
 
+  // Pending write-queue count — powers the Govern sidebar badge, the
+  // notification bell's deep link and the dashboard "pending approvals"
+  // tile. Polled independently from the notification bell's own unread
+  // count so the badge always reflects the write queue, not just what has
+  // been surfaced as a notification (fixes the old chicken-and-egg: the
+  // badge no longer depends on the bell being opened first).
+  const [pendingWriteCount, setPendingWriteCount] = useState(0);
+
+  const refreshPendingWriteCount = useCallback(async () => {
+    try {
+      const res = await apiFetch('/api/write-queue/count', { credentials: 'include' });
+      const data = await res.json();
+      if (data.success !== false) {
+        setPendingWriteCount(data.pending ?? 0);
+      }
+    } catch {
+      // Endpoint may not be available yet
+    }
+  }, []);
+
+  // Poll the pending write-queue count (15s interval, same cadence as the
+  // recent-activity poller below).
+  useEffect(() => {
+    if (!authenticated || isUserPage) return;
+    refreshPendingWriteCount();
+    const interval = setInterval(refreshPendingWriteCount, 15_000);
+    return () => clearInterval(interval);
+  }, [authenticated, refreshPendingWriteCount]);
+
   // Recent activity for dashboard
   const [recentActivity, setRecentActivity] = useState<AuditLogEntry[]>([]);
 
@@ -474,6 +503,9 @@ export function useAppData(isUserPage: boolean) {
     // Serve status
     serveStatus,
     fetchServeStatus,
+    // Pending write-queue count (Govern nav badge)
+    pendingWriteCount,
+    refreshPendingWriteCount,
     // Recent activity
     recentActivity,
     // PII & Masking

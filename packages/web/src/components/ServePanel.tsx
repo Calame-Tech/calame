@@ -13,7 +13,6 @@ import { slugifyProfileName } from '../lib/profiles.js';
 import ChatPanel from './ChatPanel.js';
 import TokenManager from './TokenManager.js';
 import AuditLogViewer from './AuditLogViewer.js';
-import PendingQueries from './PendingQueries.js';
 import HelpTip from './HelpTip.js';
 
 const AUTH_MODE_STYLES: Record<AuthMode, string> = {
@@ -58,8 +57,6 @@ interface ServePanelProps {
   onPreviewProfile?: (name: string) => void;
 }
 
-type DashboardTab = 'chat' | 'pending';
-
 export default function ServePanel({
   config,
   selectedTables,
@@ -72,12 +69,10 @@ export default function ServePanel({
   onPreviewProfile,
 }: ServePanelProps) {
   const [selectedProfile, setSelectedProfile] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<DashboardTab>('chat');
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newLabel, setNewLabel] = useState('');
   const [newName, setNewName] = useState('');
   const [confirmDeleteProfile, setConfirmDeleteProfile] = useState<string | null>(null);
-  const [pendingCount, setPendingCount] = useState(0);
   const [togglingProfile, setTogglingProfile] = useState<string | null>(null);
   const [stoppingAll, setStoppingAll] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -184,12 +179,6 @@ export default function ServePanel({
     if (!selectedProfile) return null;
     return allProfiles.find((p) => p.name === selectedProfile) ?? null;
   }, [selectedProfile, allProfiles]);
-
-  // Dashboard tabs
-  const dashboardTabs: { id: DashboardTab; label: string; badge?: number }[] = [
-    { id: 'chat', label: 'Chat' },
-    { id: 'pending', label: 'Pending', badge: pendingCount > 0 ? pendingCount : undefined },
-  ];
 
   // --- DETAIL VIEW ---
   if (selectedProfile && detailProfile) {
@@ -777,41 +766,15 @@ export default function ServePanel({
         })}
       </div>
 
-      {/* Dashboard tabs: Chat + Pending */}
-      <div className="border-b border-white/5">
-        <div className="flex gap-0">
-          {dashboardTabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`px-5 py-3 text-sm font-medium border-b-2 transition-all duration-200 flex items-center gap-2 ${
-                activeTab === tab.id
-                  ? 'border-os-500 text-os-400'
-                  : 'border-transparent text-gray-500 hover:text-gray-300 hover:border-gray-600'
-              }`}
-            >
-              {tab.label}
-              {tab.badge !== undefined && (
-                <span className="px-1.5 py-0.5 rounded-full text-xs font-medium bg-yellow-600/20 text-yellow-400 min-w-[1.25rem] text-center">
-                  {tab.badge}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Tab content */}
+      {/* Chat — the write-approval queue previously tabbed alongside this has
+          been promoted to its own top-level page (sidebar "Govern" section). */}
       <div>
-        {activeTab === 'chat' && (
-          <ChatPanel
-            selectedTables={selectedTables}
-            activeProfiles={Object.entries(serveStatus.profileStatuses ?? {})
-              .filter(([, s]) => s.active)
-              .map(([name]) => name)}
-          />
-        )}
-        {activeTab === 'pending' && <PendingQueries onPendingCountChange={setPendingCount} />}
+        <ChatPanel
+          selectedTables={selectedTables}
+          activeProfiles={Object.entries(serveStatus.profileStatuses ?? {})
+            .filter(([, s]) => s.active)
+            .map(([name]) => name)}
+        />
       </div>
     </div>
   );

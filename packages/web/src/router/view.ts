@@ -33,7 +33,15 @@ export type View =
    * Legacy alias for `{ page: 'sources', tab: 'knowledge' }`.
    * Kept for backwards-compat.
    */
-  | { page: 'knowledge' };
+  | { page: 'knowledge' }
+  /**
+   * Write-approval queue — top-level governance page (Lot C). Promoted out
+   * of the ServePanel "Pending" tab so the approval loop has a real, linkable
+   * entry point (sidebar nav item + badge, notification bell, dashboard tile).
+   */
+  | { page: 'pending-writes' }
+  /** Full audit log of every tool call served by the MCP servers. */
+  | { page: 'audit-log' };
 
 /** The set of top-level page identifiers (the `page` discriminant of {@link View}). */
 export type Page = View['page'];

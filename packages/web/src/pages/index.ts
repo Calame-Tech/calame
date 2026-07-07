@@ -13,3 +13,5 @@ export { default as UsersPage } from './UsersPage.js';
 export { default as MetricsPage } from './MetricsPage.js';
 export { default as TenantsPage } from './TenantsPage.js';
 export { default as KnowledgePage } from './KnowledgePage.js';
+export { default as PendingWritesPage } from './PendingWritesPage.js';
+export { default as AuditLogPage } from './AuditLogPage.js';

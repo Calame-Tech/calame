@@ -5,6 +5,67 @@ every commit. Newest first.
 
 ---
 
+## 2026-07-07 — Lot C: promote the write-approval loop to top-level (branch `feat/ux-overhaul`, uncommitted)
+
+Closes the UX note left at the bottom of the 2026-07-04→07 session: the
+approval queue had no real entry point (bell not clickable, badge
+chicken-and-egg since it only counted notifications the bell itself had
+fetched, queue buried in a ServePanel tab, dashboard silent about it).
+
+- **Two new top-level views**: `{ page: 'pending-writes' }` and
+  `{ page: 'audit-log' }` added to `router/view.ts`, serialized as
+  `/pending-writes` and `/audit-log` in `router/urlSync.ts` (exhaustiveness
+  `never` guard caught both the serialize and parse switches, as expected).
+- **New independent poller in `hooks/useAppData.ts`**: `pendingWriteCount` +
+  `refreshPendingWriteCount()`, hitting `/api/write-queue/count` every 15s
+  (same shape as the existing 5s serve-status / 15s audit pollers). This is
+  the actual chicken-and-egg fix — the sidebar badge no longer depends on the
+  notification bell ever having been opened.
+- **New pages** `pages/PendingWritesPage.tsx` (wraps the existing
+  `PendingQueries`, wires `onCountChange` back to
+  `refreshPendingWriteCount`) and `pages/AuditLogPage.tsx` (wraps the
+  existing `AuditLogViewer` with **all** profiles, so the profile filter
+  dropdown is meaningful). Both follow the `TenantsPage`/`MetricsPage`
+  pattern: `PageHeader` + breadcrumb back to Dashboard.
+- **`components/Sidebar.tsx`**: new "Govern" section between Workspace and
+  Admin (Pending Writes + Audit Log), with a red-circle badge on Pending
+  Writes (same visual language as the bell's badge, `9+` cap) driven by the
+  new `pendingWriteCount` prop. Added a separate `onNavigateView?: (view:
+  View) => void` prop (wired to `setView` in `App.tsx`) alongside the
+  existing `onNavigate(page)` so the bell can jump to a full `View` without
+  touching the existing page-nav contract.
+- **`components/NotificationsBell.tsx`**: each notification is now a
+  full-width `<button>` — fires `POST /api/notifications/:id/read`
+  (fire-and-forget), navigates to `{ page: 'pending-writes' }` when
+  `type === 'write_queue.pending'`, then closes the panel and refreshes its
+  own unread count.
+- **`pages/DashboardPage.tsx`**: amber "pending approvals" banner (same tone
+  as the amber error banner already used in `MetricsDashboard`) above the
+  status ribbon, shown only when `pendingWriteCount > 0`, with a "Review →"
+  button to `setView({ page: 'pending-writes' })`.
+- **`components/ServePanel.tsx`**: removed the now-redundant "Pending" tab
+  (`DashboardTab` type, `pendingCount` state, the tab bar, the
+  `PendingQueries` import) — Chat is now the only thing rendered on the
+  dashboard view. `PendingQueries.tsx` itself untouched (still used by the
+  new page).
+- No existing `Sidebar`/`ServePanel` test files existed to adapt (none were
+  present in `components/__tests__` before this session).
+
+Tests added/extended: `router/__tests__/urlSync.test.ts` (+4: serialize,
+parse, round-trip ×2), `pages/__tests__/PendingWritesPage.test.tsx` (3, new),
+`pages/__tests__/AuditLogPage.test.tsx` (2, new),
+`components/__tests__/NotificationsBell.test.tsx` (+2: click →
+`onNavigate({page:'pending-writes'})` + mark-read POST asserted on the fetch
+stub; non-write-queue item marks read without navigating),
+`pages/__tests__/DashboardPage.test.tsx` (+2: banner shown/hidden on
+`pendingWriteCount`).
+
+Verified: `pnpm format` / `build` / `typecheck` / `lint` all green;
+`pnpm test` — **125 files / 1916 tests** (1903 baseline + 13 new), zero
+regressions. Not committed per instructions.
+
+---
+
 ## 2026-07-07 — Admin nav URL sync (branch `feat/ux-overhaul`, uncommitted)
 
 Admin navigation (`packages/web/src/router/useNavigation.ts`) was a bare

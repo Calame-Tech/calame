@@ -24,6 +24,8 @@ import {
   MetricsPage,
   TenantsPage,
   KnowledgePage,
+  PendingWritesPage,
+  AuditLogPage,
 } from './pages/index.js';
 
 export default function App() {
@@ -68,6 +70,8 @@ export default function App() {
     activeProfile,
     serveStatus,
     fetchServeStatus,
+    pendingWriteCount,
+    refreshPendingWriteCount,
     recentActivity,
     piiDetections,
     scanning,
@@ -181,6 +185,8 @@ export default function App() {
       <Sidebar
         currentPage={view.page}
         onNavigate={(page) => setView({ page } as View)}
+        onNavigateView={setView}
+        pendingWriteCount={pendingWriteCount}
         user={currentUser ?? undefined}
         onLogout={logout}
       />
@@ -208,6 +214,7 @@ export default function App() {
                 connectedCount={connectedCount}
                 totalConnCount={totalConnCount}
                 hasConnections={hasConnections}
+                pendingWriteCount={pendingWriteCount}
               />
             )}
 
@@ -330,6 +337,12 @@ export default function App() {
                 handleSchemaLoaded={handleSchemaLoaded}
               />
             )}
+
+            {view.page === 'pending-writes' && (
+              <PendingWritesPage setView={setView} onCountChange={refreshPendingWriteCount} />
+            )}
+
+            {view.page === 'audit-log' && <AuditLogPage setView={setView} profiles={profiles} />}
           </div>
         </main>
 

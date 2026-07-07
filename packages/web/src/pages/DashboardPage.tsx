@@ -30,6 +30,7 @@ interface DashboardPageProps {
   connectedCount: number;
   totalConnCount: number;
   hasConnections: boolean;
+  pendingWriteCount: number;
 }
 
 export default function DashboardPage({
@@ -46,6 +47,7 @@ export default function DashboardPage({
   connectedCount,
   totalConnCount,
   hasConnections,
+  pendingWriteCount,
 }: DashboardPageProps) {
   const { setShowOnboarding } = useSession();
 
@@ -73,6 +75,23 @@ export default function DashboardPage({
           </div>
         }
       />
+
+      {/* Pending approvals banner — only shown when writes are awaiting review.
+          Surfaces the governance queue right at the top so it can't be missed. */}
+      {pendingWriteCount > 0 && (
+        <div
+          className="rounded-xl border border-amber-700/30 bg-amber-900/10 p-4 flex items-center justify-between gap-3 animate-fade-in-up"
+          style={{ animationDelay: '0ms' }}
+        >
+          <p className="text-sm text-amber-300">
+            {pendingWriteCount} write request{pendingWriteCount !== 1 ? 's' : ''} awaiting your
+            approval
+          </p>
+          <Button variant="secondary" onClick={() => setView({ page: 'pending-writes' })}>
+            Review &rarr;
+          </Button>
+        </div>
+      )}
 
       {/* Status ribbon */}
       <div

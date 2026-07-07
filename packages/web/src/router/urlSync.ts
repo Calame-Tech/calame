@@ -48,6 +48,10 @@ export function serializeView(view: View): string {
       return '/metrics';
     case 'tenants':
       return '/workspaces';
+    case 'pending-writes':
+      return '/pending-writes';
+    case 'audit-log':
+      return '/audit-log';
     default: {
       // Exhaustiveness guard: a compile error here means a `View` variant
       // was added without a matching serialize case.
@@ -126,6 +130,10 @@ export function parseHash(hash: string): View {
       return rest.length === 0 ? { page: 'metrics' } : DASHBOARD;
     case 'workspaces':
       return rest.length === 0 ? { page: 'tenants' } : DASHBOARD;
+    case 'pending-writes':
+      return rest.length === 0 ? { page: 'pending-writes' } : DASHBOARD;
+    case 'audit-log':
+      return rest.length === 0 ? { page: 'audit-log' } : DASHBOARD;
     default:
       return DASHBOARD;
   }

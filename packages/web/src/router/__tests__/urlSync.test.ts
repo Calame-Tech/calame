@@ -91,6 +91,11 @@ describe('serializeView', () => {
     expect(serializeView({ page: 'metrics' })).toBe('/metrics');
     expect(serializeView({ page: 'tenants' })).toBe('/workspaces');
   });
+
+  it('serializes pending-writes and audit-log', () => {
+    expect(serializeView({ page: 'pending-writes' })).toBe('/pending-writes');
+    expect(serializeView({ page: 'audit-log' })).toBe('/audit-log');
+  });
 });
 
 describe('parseHash', () => {
@@ -133,6 +138,11 @@ describe('parseHash', () => {
 
   it('normalizes /workspaces to the tenants page', () => {
     expect(parseHash('#/workspaces')).toEqual({ page: 'tenants' });
+  });
+
+  it('parses /pending-writes and /audit-log', () => {
+    expect(parseHash('#/pending-writes')).toEqual({ page: 'pending-writes' });
+    expect(parseHash('#/audit-log')).toEqual({ page: 'audit-log' });
   });
 });
 
@@ -251,6 +261,12 @@ describe('round-trip: parseHash(serializeView(v)) for every View variant', () =>
     },
     { name: 'metrics', view: { page: 'metrics' }, expected: { page: 'metrics' } },
     { name: 'tenants', view: { page: 'tenants' }, expected: { page: 'tenants' } },
+    {
+      name: 'pending-writes',
+      view: { page: 'pending-writes' },
+      expected: { page: 'pending-writes' },
+    },
+    { name: 'audit-log', view: { page: 'audit-log' }, expected: { page: 'audit-log' } },
   ];
 
   for (const { name, view, expected } of cases) {

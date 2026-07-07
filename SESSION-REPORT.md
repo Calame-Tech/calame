@@ -5,6 +5,47 @@ every commit. Newest first.
 
 ---
 
+## 2026-07-07 — Admin nav URL sync (branch `feat/ux-overhaul`, uncommitted)
+
+Admin navigation (`packages/web/src/router/useNavigation.ts`) was a bare
+`useState<View>` — F5 reset to Dashboard, no deep links, Back/Forward did
+nothing. Added hash-based routing without touching the public
+`{ view, setView }` shape or any call site in `App.tsx`/pages.
+
+- **New `router/urlSync.ts`**: pure `serializeView(view): string` /
+  `parseHash(hash): View`. Admin views hash-route (`#/mcp/foo`); the
+  existing pathname-driven special pages (`/welcome/:code`, `/chat/:name`,
+  `/login`, `/account` — `router/locationRoutes.ts`) are untouched. Legacy
+  page aliases (`connections`, `knowledge`) serialize to their canonical
+  `sources/*` URL and normalize away on parse. Ephemeral fields (`backTo`,
+  `editConnectionName`) are never serialized. Malformed/unknown hashes fall
+  back to the dashboard, except a few spots with a safer partial fallback
+  (e.g. unknown `/settings/:tab` keeps the settings page, just drops the
+  tab) — matches the spec's "dashboard or safe fallback" allowance.
+- **Rewrote `useNavigation.ts`**: init parses `window.location.hash` if
+  non-empty, else `initial`. `setView` is the raw `useState` dispatch (no
+  wrapper) — a `useEffect` on `view` pushes the serialized hash, skipped
+  when it hasn't actually changed (avoids duplicate history entries when
+  only `backTo` differs). A second effect owns the `hashchange` listener
+  (added once, cleaned up on unmount) with an anti-loop guard: skips
+  `setView` when the incoming hash already matches what the held view would
+  serialize to. Verified safe under React 18 StrictMode's double-mount.
+- Exported `serializeView`/`parseHash` from `router/index.ts`.
+- Grepped `packages/web/src` and `ee/` for existing `location.hash` usage:
+  none found, no conflicts.
+- Tests: `router/__tests__/urlSync.test.ts` (43, round-trip per `View`
+  variant incl. spaces/slashes/accents in names, malformed-hash fallbacks,
+  legacy-alias normalization) + `router/__tests__/useNavigation.test.ts` (9,
+  via `renderHook` — init-from-hash, `setView` → hash, `hashchange` → view,
+  no-op `backTo`-only change leaves the hash untouched, listener cleanup,
+  StrictMode).
+
+Verified: `pnpm format` / `build` / `typecheck` / `lint` all green;
+`pnpm test` — **123 files / 1903 tests** (1851 baseline + 52 new), zero
+regressions. Not committed per instructions.
+
+---
+
 ## 2026-07-04 → 07-07 — Approval notifications + write-path fixes (branch `feat/approval-notifications`)
 
 End-to-end validated live: a local LLM (Mac + LiteLLM over Tailscale, `custom` provider) proposed an INSERT → webhook + in-app notification → admin approval → row landed in the sqlite demo DB.

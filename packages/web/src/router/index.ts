@@ -8,3 +8,4 @@ export type { LocationRoutes } from './locationRoutes.js';
 export { Redirect } from './Redirect.js';
 export { useNavigation } from './useNavigation.js';
 export type { Navigation } from './useNavigation.js';
+export { serializeView, parseHash } from './urlSync.js';

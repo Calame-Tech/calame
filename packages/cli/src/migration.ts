@@ -234,4 +234,28 @@ export function runMigrations(db: CalameDatabase): void {
 
     db.setSchemaVersion(14);
   }
+
+  if (currentVersion < 15) {
+    // Version 15: Multi-tenancy + multi-connection hardening for write_queue.
+    // The table predates both features: entries carried no tenant (any admin
+    // could list/approve every tenant's pending writes) and no target
+    // connection (approval executed against the LAST cached connection, via a
+    // hardcoded pg client). Existing rows migrate under the default tenant
+    // with a NULL connection — the approve route falls back to the legacy
+    // cached-connection path for those.
+    if (hasTable(db, 'write_queue')) {
+      addColumnIfMissing(
+        db,
+        'write_queue',
+        'tenant_id',
+        `TEXT NOT NULL DEFAULT '${DEFAULT_TENANT_ID}'`,
+      );
+      addColumnIfMissing(db, 'write_queue', 'connection_name', 'TEXT');
+      addColumnIfMissing(db, 'write_queue', 'database_type', 'TEXT');
+      db.raw.exec(
+        `CREATE INDEX IF NOT EXISTS idx_wq_tenant_status ON write_queue(tenant_id, status)`,
+      );
+    }
+    db.setSchemaVersion(15);
+  }
 }

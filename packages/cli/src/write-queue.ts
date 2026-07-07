@@ -14,6 +14,9 @@ interface WriteQueueRow {
   operation: 'insert' | 'update' | 'delete';
   description: string;
   status: 'pending' | 'approved' | 'rejected';
+  tenant_id: string | null;
+  connection_name: string | null;
+  database_type: string | null;
   approved_by: string | null;
   approved_at: string | null;
   execution_result: string | null;
@@ -31,6 +34,9 @@ function rowToEntry(row: WriteQueueRow): PendingWriteQuery {
     operation: row.operation,
     description: row.description,
     status: row.status,
+    tenantId: row.tenant_id ?? undefined,
+    connectionName: row.connection_name ?? undefined,
+    databaseType: row.database_type ?? undefined,
     approvedBy: row.approved_by ?? undefined,
     approvedAt: row.approved_at ?? undefined,
     executionResult: row.execution_result ?? undefined,
@@ -50,8 +56,8 @@ export class WriteQueue {
     this.db = database.raw;
 
     this.stmtInsert = this.db.prepare(
-      `INSERT INTO write_queue (id, timestamp, profile_name, sql_text, params, table_name, operation, description, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+      `INSERT INTO write_queue (id, timestamp, profile_name, sql_text, params, table_name, operation, description, tenant_id, connection_name, database_type, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
     );
     this.stmtSelectPending = this.db.prepare(`SELECT * FROM write_queue WHERE status = 'pending'`);
     this.stmtSelectById = this.db.prepare(`SELECT * FROM write_queue WHERE id = ?`);
@@ -78,16 +84,32 @@ export class WriteQueue {
       request.tableName,
       request.operation,
       request.description,
+      request.tenantId ?? 'default',
+      request.connectionName ?? null,
+      request.databaseType ?? null,
     );
     return id;
   }
 
-  getPending(): PendingWriteQuery[] {
-    const rows = this.stmtSelectPending.all() as WriteQueueRow[];
+  /** When `tenantId` is provided, only that tenant's pending entries are returned. */
+  getPending(tenantId?: string): PendingWriteQuery[] {
+    const rows = (
+      tenantId !== undefined
+        ? this.db
+            .prepare(`SELECT * FROM write_queue WHERE status = 'pending' AND tenant_id = ?`)
+            .all(tenantId)
+        : this.stmtSelectPending.all()
+    ) as WriteQueueRow[];
     return rows.map(rowToEntry);
   }
 
-  getAll(options?: { limit?: number; offset?: number; status?: string }): {
+  /** Fetch a single entry without side effects — used for route-level tenant checks. */
+  getById(id: string): PendingWriteQuery | null {
+    const row = this.stmtSelectById.get(id) as WriteQueueRow | undefined;
+    return row ? rowToEntry(row) : null;
+  }
+
+  getAll(options?: { limit?: number; offset?: number; status?: string; tenantId?: string }): {
     entries: PendingWriteQuery[];
     total: number;
   } {
@@ -97,6 +119,10 @@ export class WriteQueue {
     if (options?.status) {
       conditions.push('status = ?');
       params.push(options.status);
+    }
+    if (options?.tenantId !== undefined) {
+      conditions.push('tenant_id = ?');
+      params.push(options.tenantId);
     }
 
     const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';

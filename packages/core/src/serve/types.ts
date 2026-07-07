@@ -235,6 +235,12 @@ export interface PendingWriteQuery {
   operation: 'insert' | 'update' | 'delete';
   description: string;
   status: 'pending' | 'approved' | 'rejected';
+  /** Tenant that owns this entry — admin routes must scope on it. */
+  tenantId?: string;
+  /** Named connection the write targets; approval resolves and executes against it. */
+  connectionName?: string;
+  /** Dialect of the target connection (postgresql | mysql | sqlite). */
+  databaseType?: string;
   approvedBy?: string;
   approvedAt?: string;
   executionResult?: string;

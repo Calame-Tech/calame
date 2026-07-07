@@ -436,7 +436,16 @@ export async function registerToolsViaAdapters(opts: RegisterAdaptersOptions): P
       toolNamespace,
       responseMode,
       onAuditLog,
-      onWriteRequest: createOnWriteRequest(state, tenantId),
+      onWriteRequest: createOnWriteRequest(
+        state,
+        tenantId,
+        connState
+          ? {
+              connectionName: connState.connection.name,
+              databaseType: connState.connection.databaseType,
+            }
+          : undefined,
+      ),
       scopeGuard,
       executeQuery: connector
         ? async (sql: string, params?: ReadonlyArray<unknown>) => {
@@ -614,7 +623,10 @@ export async function registerToolsViaAdapters(opts: RegisterAdaptersOptions): P
       wrapResponse,
       maxOffset: 10000,
       scopeGuard,
-      onWriteRequest: createOnWriteRequest(state, tenantId),
+      onWriteRequest: createOnWriteRequest(state, tenantId, {
+        connectionName: fallbackConn.connection.name,
+        databaseType: fallbackConn.connection.databaseType,
+      }),
     });
   }
 }

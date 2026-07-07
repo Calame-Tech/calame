@@ -561,7 +561,10 @@ export function registerServeRoute(app: Express, state: AppState): void {
             wrapResponse,
             maxOffset: 10000,
             scopeGuard,
-            onWriteRequest: createOnWriteRequest(state, tenantId),
+            onWriteRequest: createOnWriteRequest(state, tenantId, {
+              connectionName: fallbackConn.connection.name,
+              databaseType: fallbackConn.connection.databaseType,
+            }),
           });
         } else {
           for (const [connState, group] of tablesByConnection) {
@@ -633,7 +636,10 @@ export function registerServeRoute(app: Express, state: AppState): void {
               wrapResponse,
               maxOffset: 10000,
               scopeGuard,
-              onWriteRequest: createOnWriteRequest(state, tenantId),
+              onWriteRequest: createOnWriteRequest(state, tenantId, {
+                connectionName: connState.connection.name,
+                databaseType: connState.connection.databaseType,
+              }),
             });
           }
         }

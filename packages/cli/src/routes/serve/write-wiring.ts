@@ -19,6 +19,7 @@ import { WriteQueue } from '../../write-queue.js';
 export function createOnWriteRequest(
   state: AppState,
   tenantId: string,
+  target?: { connectionName: string; databaseType: string },
 ): (query: Omit<PendingWriteQuery, 'id' | 'timestamp' | 'status'>) => string {
   return (query) => {
     if (!state.writeQueue) {
@@ -28,7 +29,15 @@ export function createOnWriteRequest(
       state.writeQueue = new WriteQueue(state.db);
     }
 
-    const id = state.writeQueue.addRequest(query);
+    // Stamp tenancy + target connection: the admin routes scope on tenantId,
+    // and approval resolves connectionName to execute against the SAME
+    // database the write was proposed for (never a cached/last connection).
+    const id = state.writeQueue.addRequest({
+      ...query,
+      tenantId,
+      connectionName: target?.connectionName,
+      databaseType: target?.databaseType,
+    });
 
     // Fire-and-forget: notification dispatch must never block or fail the MCP
     // tool call that queued the write. NotificationDispatcher already swallows

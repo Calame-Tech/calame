@@ -77,7 +77,7 @@ export default function ChatPanel({ selectedTables, activeProfiles }: ChatPanelP
       await Promise.all(
         activeProfiles.map(async (name) => {
           try {
-            const res = await fetch(`/api/chat-profile/${encodeURIComponent(name)}`, {
+            const res = await apiFetch(`/api/chat-profile/${encodeURIComponent(name)}`, {
               credentials: 'include',
             });
             const data = await res.json();

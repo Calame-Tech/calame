@@ -630,7 +630,7 @@ export default function ChatEntryPage({ profileName }: ChatEntryPageProps) {
       // 1. Fetch the public profile info
       let profile: ChatProfile;
       try {
-        const res = await fetch(`/api/chat-profile/${encodeURIComponent(profileName)}`);
+        const res = await apiFetch(`/api/chat-profile/${encodeURIComponent(profileName)}`);
         const data = await res.json();
 
         if (!res.ok || !data.success || !data.profile) {
@@ -696,7 +696,7 @@ export default function ChatEntryPage({ profileName }: ChatEntryPageProps) {
 
         if (statusData.success && statusData.authenticated) {
           // Verify access to this specific profile
-          const accessRes = await fetch(
+          const accessRes = await apiFetch(
             `/api/auth/user-profile-access?profileName=${encodeURIComponent(profileName)}`,
             { credentials: 'include' },
           );

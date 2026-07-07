@@ -90,7 +90,7 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
   const handleReveal = async (tokenId: string) => {
     setRevealError('');
     try {
-      const res = await fetch(`/api/tokens/${encodeURIComponent(tokenId)}/reveal`, {
+      const res = await apiFetch(`/api/tokens/${encodeURIComponent(tokenId)}/reveal`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -117,7 +117,7 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
     setConfirmRevoke(null);
     setError(null);
     try {
-      const res = await fetch(`/api/tokens/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/tokens/${encodeURIComponent(id)}`, { method: 'DELETE' });
       const data = await res.json();
       if (data.success !== false) {
         setTokens((prev) => prev.filter((t) => t.id !== id));
@@ -208,7 +208,7 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                 const tenant = getCurrentTenant();
                 const mcpPath = buildMcpPath(newlyGenerated.profileName, tenant);
                 const mcpUrl = `${window.location.origin}${mcpPath}?token=${newlyGenerated.token}`;
-                const mcpServerUrl = `http://localhost:${port}${mcpPath}`;
+                const mcpServerUrl = `${window.location.origin}${mcpPath}`;
                 return (
                   <>
                     <div className="mt-3">
@@ -226,11 +226,13 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                           {copied === 'mcp-url' ? 'Copied!' : 'Copy URL'}
                         </button>
                       </div>
-                      <p className="text-xs text-gray-600 mt-1">
-                        For remote access, expose via ngrok:{' '}
-                        <code className="text-gray-500">ngrok http {port}</code> then replace the
-                        origin.
-                      </p>
+                      {window.location.hostname === 'localhost' && (
+                        <p className="text-xs text-gray-600 mt-1">
+                          For remote access, expose via ngrok:{' '}
+                          <code className="text-gray-500">ngrok http {port}</code> then replace the
+                          origin.
+                        </p>
+                      )}
                     </div>
 
                     {/* MCP client config for Claude Desktop */}
@@ -239,7 +241,7 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                       <div className="relative">
                         <pre className="p-3 rounded bg-gray-900 border border-gray-700 text-xs text-gray-300 font-mono overflow-x-auto whitespace-pre">{`{
   "mcpServers": {
-    "forge-${newlyGenerated.profileName}": {
+    "calame-${newlyGenerated.profileName}": {
       "url": "${mcpServerUrl}",
       "headers": {
         "Authorization": "Bearer ${newlyGenerated.token}"
@@ -253,7 +255,7 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                               JSON.stringify(
                                 {
                                   mcpServers: {
-                                    [`forge-${newlyGenerated.profileName}`]: {
+                                    [`calame-${newlyGenerated.profileName}`]: {
                                       url: mcpServerUrl,
                                       headers: { Authorization: `Bearer ${newlyGenerated.token}` },
                                     },
@@ -539,7 +541,7 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
         <div className="space-y-1">
           {profiles.map((profile) => {
             const path = buildMcpPath(profile.name, getCurrentTenant());
-            const url = `http://localhost:${port}${path}`;
+            const url = `${window.location.origin}${path}`;
             return (
               <div key={profile.name} className="flex items-center gap-2">
                 <code className="text-xs text-os-400 font-mono">{url}</code>

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { apiFetch } from '../lib/api.js';
 import { Eyebrow } from './ui/Eyebrow.js';
 
 interface WelcomePageProps {
@@ -84,7 +85,7 @@ export default function WelcomePage({ code }: WelcomePageProps) {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch(`/api/onboarding/${code}`);
+        const res = await apiFetch(`/api/onboarding/${code}`);
         const result = await res.json();
         if (result.success) {
           setData(result);
@@ -110,7 +111,7 @@ export default function WelcomePage({ code }: WelcomePageProps) {
       return;
     }
     try {
-      const res = await fetch(`/api/onboarding/${code}/activate`, {
+      const res = await apiFetch(`/api/onboarding/${code}/activate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password }),

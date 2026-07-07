@@ -69,7 +69,7 @@ export default function McpUsers({ profileName, onNavigateToUser }: McpUsersProp
   const handleRemoveFromProfile = async (userId: string) => {
     if (!confirm('Remove this user from this MCP server?')) return;
     try {
-      const res = await fetch(`/api/users/${userId}/profiles/${profileName}`, {
+      const res = await apiFetch(`/api/users/${userId}/profiles/${profileName}`, {
         method: 'DELETE',
         credentials: 'include',
       });
@@ -83,7 +83,7 @@ export default function McpUsers({ profileName, onNavigateToUser }: McpUsersProp
 
   const handleAddExistingUser = async (userId: string) => {
     try {
-      const res = await fetch(`/api/users/${userId}/profiles`, {
+      const res = await apiFetch(`/api/users/${userId}/profiles`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',

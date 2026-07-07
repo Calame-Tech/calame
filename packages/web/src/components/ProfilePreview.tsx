@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { apiFetch } from '../lib/api.js';
 
 interface PreviewColumn {
   name: string;
@@ -34,7 +35,7 @@ export default function ProfilePreview({ profileName, onClose }: ProfilePreviewP
 
     (async () => {
       try {
-        const res = await fetch(`/api/profiles/${encodeURIComponent(profileName)}/preview`, {
+        const res = await apiFetch(`/api/profiles/${encodeURIComponent(profileName)}/preview`, {
           method: 'POST',
           credentials: 'include',
           signal: controller.signal,

@@ -195,7 +195,7 @@ function McpDetailView({
   const [togglingProfile, setTogglingProfile] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [copiedEndpoint, setCopiedEndpoint] = useState(false);
+  const [copied, setCopied] = useState<'endpoint' | 'chat' | null>(null);
   const [activeSection, setActiveSection] = useState<
     'tables' | 'config' | 'tokens' | 'audit' | 'users' | 'scoping'
   >(
@@ -287,10 +287,32 @@ function McpDetailView({
     }
   }, [profileIndex, activeProfileIndex, onActiveProfileIndexChange]);
 
+  // Count effective tables from configurations — computed unconditionally
+  // (with the profile-not-found early return happening *after* this hook) so
+  // the hook always runs in the same order across renders, per the Rules of
+  // Hooks.
+  const profileConfigurations = profile?.configurations ?? [];
+  const effectiveTableCount = useMemo(() => {
+    const tables = new Set<string>();
+    for (const cfgName of profileConfigurations) {
+      const cfg = configurations.find((c) => c.name === cfgName);
+      if (cfg) {
+        for (const t of getConfigurationTableNames(cfg)) tables.add(t);
+      }
+    }
+    return tables.size;
+  }, [profileConfigurations, configurations]);
+
   if (!profile) {
     return (
       <div className="text-center text-gray-500 py-12">
         <p>Profile &quot;{profileName}&quot; not found.</p>
+        <button
+          onClick={onNavigateBack}
+          className="mt-4 px-4 py-2 rounded-lg bg-os-700 hover:bg-os-600 text-white text-sm font-medium transition-all duration-200"
+        >
+          ← Back to MCP Servers
+        </button>
       </div>
     );
   }
@@ -306,19 +328,6 @@ function McpDetailView({
       ? (profileStatus?.endpoint ?? `/mcp/${profile.name}`)
       : buildMcpPath(profile.name, _tenant);
   const endpoint = `${window.location.origin}${basePath}`;
-
-  // Count effective tables from configurations
-  const profileConfigurations = profile.configurations ?? [];
-  const effectiveTableCount = useMemo(() => {
-    const tables = new Set<string>();
-    for (const cfgName of profileConfigurations) {
-      const cfg = configurations.find((c) => c.name === cfgName);
-      if (cfg) {
-        for (const t of getConfigurationTableNames(cfg)) tables.add(t);
-      }
-    }
-    return tables.size;
-  }, [profileConfigurations, configurations]);
 
   /** Save all profiles to backend before starting, so new profiles are known */
   const saveProfiles = async () => {
@@ -373,8 +382,8 @@ function McpDetailView({
 
   const handleCopyEndpoint = () => {
     navigator.clipboard.writeText(endpoint).then(() => {
-      setCopiedEndpoint(true);
-      setTimeout(() => setCopiedEndpoint(false), 2000);
+      setCopied('endpoint');
+      setTimeout(() => setCopied(null), 2000);
     });
   };
 
@@ -500,6 +509,9 @@ function McpDetailView({
                             ...updated[profileIndex],
                             label: editLabel.trim(),
                           };
+                          persistProfiles(buildProfilesData(updated)).catch(() => {
+                            setError('Failed to save the new label.');
+                          });
                           return updated;
                         });
                         setEditingLabel(false);
@@ -518,6 +530,9 @@ function McpDetailView({
                             ...updated[profileIndex],
                             label: editLabel.trim(),
                           };
+                          persistProfiles(buildProfilesData(updated)).catch(() => {
+                            setError('Failed to save the new label.');
+                          });
                           return updated;
                         });
                       }
@@ -711,7 +726,7 @@ function McpDetailView({
             >
               <code className="text-sm text-os-400 font-mono">{endpoint}</code>
               <span className="text-xs text-gray-500 group-hover:text-os-400 transition-all duration-200">
-                {copiedEndpoint ? 'Copied!' : 'Copy'}
+                {copied === 'endpoint' ? 'Copied!' : 'Copy'}
               </span>
             </button>
           </div>
@@ -728,8 +743,8 @@ function McpDetailView({
               onClick={() => {
                 const chatUrl = `${window.location.origin}/chat/${encodeURIComponent(profile.name)}`;
                 navigator.clipboard.writeText(chatUrl).then(() => {
-                  setCopiedEndpoint(true);
-                  setTimeout(() => setCopiedEndpoint(false), 2000);
+                  setCopied('chat');
+                  setTimeout(() => setCopied(null), 2000);
                 });
               }}
               className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-900/60 border border-gray-700 hover:border-os-600 transition-all duration-200 group"
@@ -738,7 +753,7 @@ function McpDetailView({
                 {window.location.origin}/chat/{encodeURIComponent(profile.name)}
               </code>
               <span className="text-xs text-gray-500 group-hover:text-os-400 transition-all duration-200">
-                Copy
+                {copied === 'chat' ? 'Copied!' : 'Copy'}
               </span>
             </button>
           </div>

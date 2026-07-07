@@ -84,7 +84,7 @@ function CustomAttributesEditor({
         attrs.length > 0
           ? Object.fromEntries(attrs.filter((a) => a.key).map((a) => [a.key, a.value]))
           : null;
-      await fetch(`/api/users/${userId}`, {
+      await apiFetch(`/api/users/${userId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -182,7 +182,7 @@ function UserDetailPanel({
   // Re-fetch user data from API to get fresh state
   const refreshUser = async () => {
     try {
-      const res = await fetch(`/api/users/${user.id}`, { credentials: 'include' });
+      const res = await apiFetch(`/api/users/${user.id}`, { credentials: 'include' });
       const data = await res.json();
       if (data.success) setUser(data.user);
     } catch {
@@ -199,7 +199,7 @@ function UserDetailPanel({
     if (!newProfileName) return;
     setError('');
     try {
-      const res = await fetch(`/api/users/${user.id}/profiles`, {
+      const res = await apiFetch(`/api/users/${user.id}/profiles`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -224,7 +224,7 @@ function UserDetailPanel({
       return;
     }
     try {
-      const res = await fetch(`/api/users/${user.id}/profiles/${profileName}`, {
+      const res = await apiFetch(`/api/users/${user.id}/profiles/${profileName}`, {
         method: 'DELETE',
         credentials: 'include',
       });
@@ -439,7 +439,7 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
       if (filterProfile) params.set('profileName', filterProfile);
       if (searchQuery) params.set('search', searchQuery);
 
-      const res = await fetch(`/api/users?${params}`, { credentials: 'include' });
+      const res = await apiFetch(`/api/users?${params}`, { credentials: 'include' });
       const data = await res.json();
       if (data.success) {
         setUsers(data.users);
@@ -535,7 +535,7 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
   const handleDisable = async (userId: string) => {
     const reason = prompt('Reason for disabling (optional):');
     try {
-      const res = await fetch(`/api/users/${userId}/disable`, {
+      const res = await apiFetch(`/api/users/${userId}/disable`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -551,7 +551,7 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
 
   const handleEnable = async (userId: string) => {
     try {
-      const res = await fetch(`/api/users/${userId}/enable`, {
+      const res = await apiFetch(`/api/users/${userId}/enable`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -571,7 +571,7 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
   const handleRegenerateToken = async (userId: string) => {
     if (!confirm('Regenerate token? The old token will stop working immediately.')) return;
     try {
-      const res = await fetch(`/api/users/${userId}/regenerate-token`, {
+      const res = await apiFetch(`/api/users/${userId}/regenerate-token`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -590,7 +590,7 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
   const handleDelete = async (userId: string) => {
     if (!confirm('Permanently delete this user? This action cannot be undone.')) return;
     try {
-      const res = await fetch(`/api/users/${userId}`, {
+      const res = await apiFetch(`/api/users/${userId}`, {
         method: 'DELETE',
         credentials: 'include',
       });
@@ -608,7 +608,7 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
 
   const handleResendInvitation = async (userId: string) => {
     try {
-      const res = await fetch(`/api/users/${userId}/resend-invitation`, {
+      const res = await apiFetch(`/api/users/${userId}/resend-invitation`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',

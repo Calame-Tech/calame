@@ -29,7 +29,7 @@ export default function SmtpSettings() {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
-  const [saveResult, setSaveResult] = useState<string | null>(null);
+  const [saveResult, setSaveResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [configured, setConfigured] = useState(false);
 
   useEffect(() => {
@@ -106,13 +106,13 @@ export default function SmtpSettings() {
       });
       const data = await res.json();
       if (data.success) {
-        setSaveResult('Saved successfully.');
+        setSaveResult({ ok: true, message: 'Saved successfully.' });
         setConfigured(true);
       } else {
-        setSaveResult(data.message || 'Failed to save.');
+        setSaveResult({ ok: false, message: data.message || 'Failed to save.' });
       }
     } catch {
-      setSaveResult('Connection error.');
+      setSaveResult({ ok: false, message: 'Connection error.' });
     } finally {
       setSaving(false);
       setTimeout(() => setSaveResult(null), 3000);
@@ -381,7 +381,11 @@ export default function SmtpSettings() {
           {testing ? 'Testing...' : 'Test Connection'}
         </button>
 
-        {saveResult && <span className="text-sm text-green-400">{saveResult}</span>}
+        {saveResult && (
+          <span className={`text-sm ${saveResult.ok ? 'text-green-400' : 'text-red-400'}`}>
+            {saveResult.message}
+          </span>
+        )}
       </div>
 
       {/* Test result */}

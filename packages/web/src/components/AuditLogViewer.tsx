@@ -1,4 +1,5 @@
 import { Fragment, useState, useEffect, useCallback, useRef } from 'react';
+import { apiFetch } from '../lib/api.js';
 import type { Profile, AuditLogEntry } from '../types/schema.js';
 import HelpTip from './HelpTip.js';
 
@@ -15,7 +16,11 @@ export default function AuditLogViewer({ profiles }: AuditLogViewerProps) {
   const [totalCount, setTotalCount] = useState(0);
 
   // Filters
-  const [filterProfile, setFilterProfile] = useState<string>('');
+  // When the viewer is scoped to a single MCP server, default the filter to
+  // that profile so the log doesn't show entries from every other server.
+  const [filterProfile, setFilterProfile] = useState<string>(
+    profiles.length === 1 ? profiles[0].name : '',
+  );
   const [filterDateFrom, setFilterDateFrom] = useState('');
   const [filterDateTo, setFilterDateTo] = useState('');
 
@@ -41,7 +46,7 @@ export default function AuditLogViewer({ profiles }: AuditLogViewerProps) {
         if (filterDateFrom) params.set('dateFrom', filterDateFrom);
         if (filterDateTo) params.set('dateTo', filterDateTo);
 
-        const res = await fetch(`/api/audit?${params.toString()}`);
+        const res = await apiFetch(`/api/audit?${params.toString()}`);
         const data = await res.json();
         if (data.success !== false) {
           setEntries(data.entries ?? []);
@@ -115,30 +120,33 @@ export default function AuditLogViewer({ profiles }: AuditLogViewerProps) {
     <div className="space-y-4">
       {/* Filters bar */}
       <div className="flex flex-wrap items-end gap-3">
-        {/* Profile filter */}
-        <div>
-          <label className="flex items-center gap-1 text-xs text-gray-400 mb-1">
-            Profile
-            <HelpTip content="Filter entries by MCP server." position="top" size="xs" />
-          </label>
-          <select
-            value={filterProfile}
-            onChange={(e) => setFilterProfile(e.target.value)}
-            className="input-editorial text-sm appearance-none pr-8"
-            style={{
-              backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
-              backgroundRepeat: 'no-repeat',
-              backgroundPosition: 'right 8px center',
-            }}
-          >
-            <option value="">All profiles</option>
-            {profiles.map((p) => (
-              <option key={p.name} value={p.name}>
-                {p.label}
-              </option>
-            ))}
-          </select>
-        </div>
+        {/* Profile filter — hidden when scoped to a single MCP server, since
+            there is nothing meaningful to filter between. */}
+        {profiles.length > 1 && (
+          <div>
+            <label className="flex items-center gap-1 text-xs text-gray-400 mb-1">
+              Profile
+              <HelpTip content="Filter entries by MCP server." position="top" size="xs" />
+            </label>
+            <select
+              value={filterProfile}
+              onChange={(e) => setFilterProfile(e.target.value)}
+              className="input-editorial text-sm appearance-none pr-8"
+              style={{
+                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
+                backgroundRepeat: 'no-repeat',
+                backgroundPosition: 'right 8px center',
+              }}
+            >
+              <option value="">All profiles</option>
+              {profiles.map((p) => (
+                <option key={p.name} value={p.name}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {/* Date from */}
         <div>

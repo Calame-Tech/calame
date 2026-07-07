@@ -175,6 +175,7 @@ export default function SettingsPage({
           </Suspense>
         )}
         {activeTab === 'branding' && <BrandingSettings />}
+        {activeTab === 'notifications' && <NotificationSettings />}
       </Card>
     </div>
   );

@@ -24,7 +24,7 @@ export default function PendingQueries({ onPendingCountChange }: PendingQueriesP
       params.set('limit', '50');
       params.set('offset', '0');
 
-      const res = await fetch(`/api/write-queue?${params}`);
+      const res = await apiFetch(`/api/write-queue?${params}`);
       const data = await res.json();
       if (data.success !== false) {
         setEntries(data.entries ?? []);
@@ -66,7 +66,7 @@ export default function PendingQueries({ onPendingCountChange }: PendingQueriesP
   const handleApprove = async (id: string) => {
     setActionLoading(id);
     try {
-      const res = await fetch(`/api/write-queue/${id}/approve`, { method: 'POST' });
+      const res = await apiFetch(`/api/write-queue/${id}/approve`, { method: 'POST' });
       const data = await res.json();
       if (data.success !== false) {
         await fetchEntries();
@@ -82,7 +82,7 @@ export default function PendingQueries({ onPendingCountChange }: PendingQueriesP
   const handleReject = async (id: string) => {
     setActionLoading(id);
     try {
-      const res = await fetch(`/api/write-queue/${id}/reject`, { method: 'POST' });
+      const res = await apiFetch(`/api/write-queue/${id}/reject`, { method: 'POST' });
       const data = await res.json();
       if (data.success !== false) {
         await fetchEntries();

@@ -202,12 +202,15 @@ export default function ConnectionManager({
     setRevealStatus('loading');
     setRevealError('');
     try {
-      const res = await fetch(`/api/connections/${encodeURIComponent(editingConnection)}/reveal`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ password: revealPassword }),
-      });
+      const res = await apiFetch(
+        `/api/connections/${encodeURIComponent(editingConnection)}/reveal`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ password: revealPassword }),
+        },
+      );
       const data = await res.json();
       if (data.success) {
         setFormConnStr(data.connectionString);
@@ -326,7 +329,7 @@ export default function ConnectionManager({
     setFormStatus('testing');
     setFormMessage('');
     try {
-      const res = await fetch(`/api/connections/${encodeURIComponent(formName)}/test`, {
+      const res = await apiFetch(`/api/connections/${encodeURIComponent(formName)}/test`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -370,7 +373,7 @@ export default function ConnectionManager({
     try {
       // If editing, delete the old connection first then recreate
       if (editingConnection) {
-        await fetch(`/api/connections/${encodeURIComponent(editingConnection)}`, {
+        await apiFetch(`/api/connections/${encodeURIComponent(editingConnection)}`, {
           method: 'DELETE',
         });
       }
@@ -414,7 +417,7 @@ export default function ConnectionManager({
 
       // Fetch schema for the new connection
       try {
-        const schemaRes = await fetch(`/api/schema/${encodeURIComponent(formName)}`);
+        const schemaRes = await apiFetch(`/api/schema/${encodeURIComponent(formName)}`);
         const schemaRaw = await schemaRes.json();
         const schemaData: DatabaseSchema = schemaRaw.schema ?? schemaRaw;
         if (schemaData.tables) {
@@ -432,7 +435,7 @@ export default function ConnectionManager({
         ][]) {
           if (n !== formName && info.connected && (info.tableCount as number) > 0) {
             try {
-              const sRes = await fetch(`/api/schema/${encodeURIComponent(n)}`);
+              const sRes = await apiFetch(`/api/schema/${encodeURIComponent(n)}`);
               const sData = await sRes.json();
               const sSchema = sData.schema ?? sData;
               if (sSchema.tables) {
@@ -456,7 +459,7 @@ export default function ConnectionManager({
   // ── Delete connection ────────────────────────────────────────────
   const handleDelete = async (name: string) => {
     try {
-      const res = await fetch(`/api/connections/${encodeURIComponent(name)}`, {
+      const res = await apiFetch(`/api/connections/${encodeURIComponent(name)}`, {
         method: 'DELETE',
       });
       const data = await res.json();

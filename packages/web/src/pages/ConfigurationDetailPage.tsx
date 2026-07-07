@@ -4,6 +4,7 @@
 
 import { useState, useMemo, lazy, Suspense } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
+import { apiFetch } from '../lib/api.js';
 import { Button, EmptyState, Eyebrow, Breadcrumb } from '../components/ui/index.js';
 import HelpTip from '../components/HelpTip.js';
 import SchemaExplorer from '../components/SchemaExplorer.js';
@@ -240,7 +241,7 @@ function ConfigurationDetailView({
       if (!connectionSchemas[connName]) {
         setLoadingSchemas(true);
         try {
-          const res = await fetch(`/api/schema/${encodeURIComponent(connName)}`);
+          const res = await apiFetch(`/api/schema/${encodeURIComponent(connName)}`);
           const data = await res.json();
           const schema = data.schema ?? data;
           if (schema.tables) {
@@ -414,7 +415,7 @@ function ConfigurationDetailView({
   const handleDelete = async () => {
     setDeleting(true);
     try {
-      const res = await fetch(`/api/configurations/${encodeURIComponent(configName)}`, {
+      const res = await apiFetch(`/api/configurations/${encodeURIComponent(configName)}`, {
         method: 'DELETE',
         credentials: 'include',
       });

@@ -89,4 +89,18 @@ describe('SettingsPage', () => {
     fireEvent.click(webhookCheckbox);
     expect(webhookCheckbox.checked).toBe(true);
   });
+
+  it('renders NotificationSettings in both the desktop and mobile content panes', async () => {
+    // Regression test: the mobile content pane used to be missing the
+    // `{activeTab === 'notifications' && <NotificationSettings />}` branch
+    // present on desktop, leaving the Notifications tab blank on mobile.
+    // Both panes are always mounted in jsdom (CSS `hidden`/`md:hidden` isn't
+    // applied), so a fixed render only shows up once; with the mobile pane
+    // wired up it renders twice.
+    renderPage();
+    fireEvent.click(screen.getAllByRole('button', { name: /Notifications/ })[0]);
+    await flushEffects();
+
+    expect(screen.getAllByText('Webhook').length).toBeGreaterThanOrEqual(2);
+  });
 });

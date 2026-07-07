@@ -1,8 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
 import type { AccessMode } from '../types/schema.js';
+import { apiFetch } from '../lib/api.js';
 import { useChatStream } from '../hooks/useChatStream.js';
 import type { UsageInfo } from '../hooks/useChatStream.js';
 import MarkdownMessage from './MarkdownMessage.js';
+import DarkSelect from './ui/DarkSelect.js';
 
 interface ChatMessage {
   role: 'user' | 'assistant';
@@ -26,6 +28,8 @@ export default function UserChatPanel({ profiles }: UserChatPanelProps) {
   const [selectedProfile, setSelectedProfile] = useState(chatProfiles[0]?.profileName ?? '');
   const [chatInput, setChatInput] = useState('');
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [aiSettings, setAiSettings] = useState<Array<{ name: string; label: string }>>([]);
+  const [selectedAi, setSelectedAi] = useState<string | undefined>(undefined);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
 
   const { isStreaming, currentText, toolStatus, error: streamError, send, abort } = useChatStream();
@@ -37,9 +41,32 @@ export default function UserChatPanel({ profiles }: UserChatPanelProps) {
     }
   }, [chatMessages, currentText]);
 
-  // Reset messages when profile changes
+  // Reset messages and load the profile's allowed AI settings when the
+  // profile changes — same source as the public chat entry page
+  // (/api/chat-profile returns {name,label} only, never keys/providers).
   useEffect(() => {
     setChatMessages([]);
+    setAiSettings([]);
+    setSelectedAi(undefined);
+    if (!selectedProfile) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiFetch(`/api/chat-profile/${encodeURIComponent(selectedProfile)}`, {
+          credentials: 'include',
+        });
+        const data = await res.json();
+        if (!cancelled && data.success && data.profile?.aiSettings) {
+          setAiSettings(data.profile.aiSettings);
+          setSelectedAi(data.profile.aiSettings[0]?.name);
+        }
+      } catch {
+        // Selector simply stays hidden — the server falls back to the first setting.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [selectedProfile]);
 
   const handleChatSend = async () => {
@@ -59,6 +86,7 @@ export default function UserChatPanel({ profiles }: UserChatPanelProps) {
       message: userMessage,
       history: chatMessages,
       profileName: selectedProfile,
+      ...(selectedAi ? { aiSettingName: selectedAi } : {}),
     };
 
     await send(
@@ -91,19 +119,35 @@ export default function UserChatPanel({ profiles }: UserChatPanelProps) {
     <div className="flex-1 flex flex-col min-h-0">
       <div className="flex items-center justify-between mb-3 flex-shrink-0">
         <h2 className="heading-md">Chat with your database</h2>
-        {chatProfiles.length > 1 && (
-          <select
-            value={selectedProfile}
-            onChange={(e) => setSelectedProfile(e.target.value)}
-            className="input-editorial text-sm"
-          >
-            {chatProfiles.map((p) => (
-              <option key={p.profileName} value={p.profileName}>
-                {p.profileName}
-              </option>
-            ))}
-          </select>
-        )}
+        <div className="flex items-center gap-2">
+          {/* Always visible when known — the user should never wonder which
+              model is answering; a picker when there is an actual choice. */}
+          {aiSettings.length > 1 ? (
+            <DarkSelect
+              ariaLabel="AI provider"
+              size="xs"
+              value={selectedAi ?? ''}
+              options={aiSettings.map((s) => ({ value: s.name, label: s.label }))}
+              onChange={(v: string) => setSelectedAi(v || undefined)}
+              disabled={isStreaming}
+            />
+          ) : aiSettings.length === 1 ? (
+            <span className="text-xs text-gray-500">AI: {aiSettings[0].label}</span>
+          ) : null}
+          {chatProfiles.length > 1 && (
+            <select
+              value={selectedProfile}
+              onChange={(e) => setSelectedProfile(e.target.value)}
+              className="input-editorial text-sm"
+            >
+              {chatProfiles.map((p) => (
+                <option key={p.profileName} value={p.profileName}>
+                  {p.profileName}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
       </div>
 
       <div className="card-primary flex flex-col flex-1 min-h-0">

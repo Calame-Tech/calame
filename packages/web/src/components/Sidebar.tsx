@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useBranding, DEFAULT_LOGO_SRC } from '../lib/branding.js';
 import { Button } from './ui/index.js';
 import WorkspaceSwitcher from './WorkspaceSwitcher.js';
+import NotificationsBell from './NotificationsBell.js';
 
 type NavigablePage =
   | 'dashboard'
@@ -450,6 +451,9 @@ export default function Sidebar({ currentPage, onNavigate, user, onLogout }: Sid
                 </p>
                 <p className="font-mono-plex text-[10px] text-gray-500">{displayRole}</p>
               </div>
+
+              {/* Notifications bell */}
+              <NotificationsBell />
 
               {/* Logout button */}
               {onLogout !== undefined && (

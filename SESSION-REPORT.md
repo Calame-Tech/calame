@@ -5,6 +5,21 @@ every commit. Newest first.
 
 ---
 
+## 2026-07-04 → 07-07 — Approval notifications + write-path fixes (branch `feat/approval-notifications`)
+
+End-to-end validated live: a local LLM (Mac + LiteLLM over Tailscale, `custom` provider) proposed an INSERT → webhook + in-app notification → admin approval → row landed in the sqlite demo DB.
+
+- **`557d070` notifications feature**: NotificationDispatcher (in-app always-on; webhook with HMAC-SHA256 `X-Calame-Signature`, generic JSON or Slack format, retries 1s/5s/25s; email via client SMTP — nothing transits third parties). Migration v14, per-tenant settings (secret AES-encrypted), Settings→Notifications tab + sidebar bell. **Also restored the `onWriteRequest` wiring** — no `registerDynamicTools` caller ever passed it, so the MCP write tool never registered anywhere.
+- **`616110b` UI fixes** from manual testing: bell dropdown was clipped by the sidebar's `overflow-y-auto` (now a `document.body` portal, fixed-position); "Send test" tested the SAVED settings, silently ignoring unsaved form changes (now saves first).
+- **`6781e79` adapter-path wiring**: the modern adapter path (every profile using a Data Configuration) dropped `onWriteRequest` — found live when the LLM correctly reported having no write tool despite "Write" being checked. `McpRegistrationContext.onWriteRequest` (fail-closed) + regression test through the ADAPTER path.
+- **`5bbbaa2` write-queue security** (user-requested audit: multi-tenant + no-raw-SQL invariants): migration v15 — entries carry `tenant_id` + target connection; routes tenant-scoped (cross-tenant ids → same 404 as unknown); approval executes on the entry's target connection with the matching driver (pg/mysql2/better-sqlite3 + boolean→0/1 coercion) instead of a hardcoded pg client against the cached connection. Audit also confirmed: LLM never writes SQL (whitelisted identifiers, bound params, scope-guard forcing identity on INSERT).
+- **`b9ac451` multi-provider chat**: /account chat now shows/picks the AI setting (server-side allowlist already existed); "act, don't announce" prompt rule (mid-size local models replied "je procède à l'ajout" without emitting the tool call — three confirmations needed before an actual call).
+- Ops note: a full C: drive (Docker's ext4.vhdx at 178 GB) caused misleading test failures; pruned 171 GB of dead images + compacted → 159 GB free. Volumes preserved.
+
+Suite: **1850 tests green**. Remaining UX note for later: notifications should deep-link to the Pending tab (it is hard to find), and profiles created without a Data Configuration have no UI path to enable write.
+
+---
+
 ## 2026-07-03 — Refactor plan #18 + #19 (error hierarchy) + #20 ADR (branch `refactor/rag-connector-base`)
 
 **Commits `6a77e62` (#20 ADR `docs/adr/0001-encrypted-source-config.md`) and `ab36fc1` (#18).**

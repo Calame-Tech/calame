@@ -30,6 +30,7 @@ import {
 import { mergeConfigurations } from './serve/tool-merger.js';
 import { verifyBearerToken } from './serve/bearer-auth.js';
 import { registerToolsViaAdapters } from './serve/registration.js';
+import { createOnWriteRequest } from './serve/write-wiring.js';
 
 // Re-exports preserving the public API of this module. Other route files and
 // tests import these symbols from './serve.js'; they now live in the serve/*
@@ -560,6 +561,10 @@ export function registerServeRoute(app: Express, state: AppState): void {
             wrapResponse,
             maxOffset: 10000,
             scopeGuard,
+            onWriteRequest: createOnWriteRequest(state, tenantId, {
+              connectionName: fallbackConn.connection.name,
+              databaseType: fallbackConn.connection.databaseType,
+            }),
           });
         } else {
           for (const [connState, group] of tablesByConnection) {
@@ -631,6 +636,10 @@ export function registerServeRoute(app: Express, state: AppState): void {
               wrapResponse,
               maxOffset: 10000,
               scopeGuard,
+              onWriteRequest: createOnWriteRequest(state, tenantId, {
+                connectionName: connState.connection.name,
+                databaseType: connState.connection.databaseType,
+              }),
             });
           }
         }

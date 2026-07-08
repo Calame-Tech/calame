@@ -5,6 +5,7 @@ import type { TokenManager } from './token.js';
 import type { UserManager } from './user.js';
 import type { AuditLog } from './audit.js';
 import type { WriteQueue } from './write-queue.js';
+import type { NotificationDispatcher } from './notifications.js';
 import type { AiSettingsManager } from './ai-config.js';
 import type { SmtpConfigManager } from './smtp-config.js';
 import type { OidcConfigManager } from '@calame-ee/sso';
@@ -30,6 +31,7 @@ export class AppState {
   private _userManager: UserManager | null = null;
   private _auditLog: AuditLog | null = null;
   private _writeQueue: WriteQueue | null = null;
+  private _notifications: NotificationDispatcher | null = null;
   private _aiSettingsManager: AiSettingsManager | null = null;
   private _smtpConfigManager: SmtpConfigManager | null = null;
   private _oidcConfigManager: OidcConfigManager | null = null;
@@ -210,6 +212,14 @@ export class AppState {
 
   set writeQueue(value: WriteQueue | null) {
     this._writeQueue = value;
+  }
+
+  get notifications(): NotificationDispatcher | null {
+    return this._notifications;
+  }
+
+  set notifications(value: NotificationDispatcher | null) {
+    this._notifications = value;
   }
 
   get aiSettingsManager(): AiSettingsManager | null {

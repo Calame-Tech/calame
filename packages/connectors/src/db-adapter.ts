@@ -195,6 +195,7 @@ export function buildDatabaseSourceAdapter(
         scopeGuard: ctx.scopeGuard,
         profileName: ctx.profileName,
         onAuditLog,
+        onWriteRequest: ctx.onWriteRequest,
         responseMode: ctx.responseMode,
         databaseType: type,
         toolNamespace: ctx.toolNamespace,

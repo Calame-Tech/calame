@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import {
   getCurrentTenant,
   setCurrentTenant,
@@ -88,8 +89,13 @@ export default function WorkspaceSwitcher({
   const [history, setHistory] = useState<string[]>([]);
   const [newInput, setNewInput] = useState('');
   const [inputError, setInputError] = useState<string | null>(null);
+  // Screen-space anchor for the dropdown. It renders in a body portal with
+  // position:fixed — an absolute dropdown inside the sidebar gets clipped by
+  // the <aside>'s overflow-y-auto (same reason as NotificationsBell).
+  const [anchor, setAnchor] = useState<{ left: number; top: number } | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Load tenant history from localStorage on mount.
@@ -106,16 +112,23 @@ export default function WorkspaceSwitcher({
     };
 
     const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
+      const target = e.target as Node;
+      // The panel lives in a body portal, so "outside" means outside BOTH the
+      // trigger container and the portalled panel.
+      if (containerRef.current?.contains(target)) return;
+      if (panelRef.current?.contains(target)) return;
+      setOpen(false);
     };
+
+    const handleResize = () => setOpen(false);
 
     document.addEventListener('keydown', handleKeyDown);
     document.addEventListener('mousedown', handleClickOutside);
+    window.addEventListener('resize', handleResize);
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
       document.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('resize', handleResize);
     };
   }, [open]);
 
@@ -158,7 +171,15 @@ export default function WorkspaceSwitcher({
       {/* Trigger button */}
       <button
         type="button"
-        onClick={() => setOpen((prev) => !prev)}
+        onClick={() =>
+          setOpen((prev) => {
+            if (!prev && containerRef.current) {
+              const rect = containerRef.current.getBoundingClientRect();
+              setAnchor({ left: rect.left, top: rect.bottom + 6 });
+            }
+            return !prev;
+          })
+        }
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={`Current workspace: ${toggleLabel}. Click to change.`}
@@ -201,112 +222,118 @@ export default function WorkspaceSwitcher({
         />
       )}
 
-      {/* Dropdown */}
-      {open && (
-        <div
-          role="dialog"
-          aria-label="Workspace switcher"
-          className="absolute left-0 top-full mt-1.5 w-56 rounded-xl border border-white/10 bg-gray-900/95 backdrop-blur-xl shadow-xl shadow-black/40 z-50 overflow-hidden"
-        >
-          {/* Header */}
-          <div className="px-3 py-2 border-b border-white/8">
-            <p className="font-mono-plex text-[10px] uppercase tracking-widest text-gray-500 select-none">
-              Workspace
-            </p>
-          </div>
-
-          {/* Known workspace list */}
-          <ul role="listbox" aria-label="Available workspaces" className="py-1">
-            {allTenants.map((t) => {
-              const isActive = tenant === t;
-              return (
-                <li key={t} role="option" aria-selected={isActive}>
-                  <button
-                    type="button"
-                    onClick={() => handleSelect(t)}
-                    className={[
-                      'w-full flex items-center gap-2 px-3 py-1.5 text-xs transition-colors',
-                      isActive
-                        ? 'text-os-300 bg-os-500/10'
-                        : 'text-gray-300 hover:bg-white/5 hover:text-gray-100',
-                    ].join(' ')}
-                  >
-                    <span className="flex-1 text-left truncate font-medium">{t}</span>
-                    {isActive && <span className="text-os-400">{IconCheck}</span>}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-
-          {/* Separator */}
-          <div className="border-t border-white/8 mx-3" />
-
-          {/* New workspace input */}
-          <div className="px-3 py-2.5">
-            <p className="font-mono-plex text-[10px] uppercase tracking-widest text-gray-600 mb-2 select-none">
-              New workspace
-            </p>
-            <div className="flex gap-1.5">
-              <input
-                ref={inputRef}
-                type="text"
-                value={newInput}
-                onChange={(e) => {
-                  setNewInput(e.target.value);
-                  setInputError(null);
-                }}
-                onKeyDown={handleInputKeyDown}
-                placeholder="my-workspace"
-                maxLength={64}
-                aria-label="New workspace name"
-                aria-describedby={inputError ? 'ws-input-error' : undefined}
-                className={[
-                  'flex-1 min-w-0 bg-white/5 border rounded-lg px-2 py-1 text-xs text-gray-200',
-                  'placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-os-500/60',
-                  inputError ? 'border-red-500/60' : 'border-white/10',
-                ].join(' ')}
-              />
-              <button
-                type="button"
-                onClick={handleCreate}
-                disabled={!newInput.trim()}
-                className="px-2.5 py-1 rounded-lg bg-os-500/20 text-os-300 text-xs font-medium hover:bg-os-500/30 disabled:opacity-40 disabled:cursor-not-allowed transition-colors focus:outline-none focus:ring-2 focus:ring-os-500/60"
-              >
-                OK
-              </button>
-            </div>
-            {inputError && (
-              <p
-                id="ws-input-error"
-                role="alert"
-                className="mt-1.5 text-[10px] text-red-400 leading-tight"
-              >
-                {inputError}
+      {/* Dropdown — rendered in a body portal (fixed) so the sidebar's
+          overflow-y-auto cannot clip it. */}
+      {open &&
+        anchor &&
+        createPortal(
+          <div
+            ref={panelRef}
+            role="dialog"
+            aria-label="Workspace switcher"
+            style={{ position: 'fixed', left: anchor.left, top: anchor.top }}
+            className="w-56 rounded-xl border border-white/10 bg-gray-900/95 backdrop-blur-xl shadow-xl shadow-black/40 z-50 overflow-hidden"
+          >
+            {/* Header */}
+            <div className="px-3 py-2 border-b border-white/8">
+              <p className="font-mono-plex text-[10px] uppercase tracking-widest text-gray-500 select-none">
+                Workspace
               </p>
-            )}
-          </div>
+            </div>
 
-          {/* Manage workspaces — admin entry point for the tenant CRUD page */}
-          {onManageWorkspaces && (
-            <>
-              <div className="border-t border-white/8 mx-3" />
-              <div className="px-3 py-2">
+            {/* Known workspace list */}
+            <ul role="listbox" aria-label="Available workspaces" className="py-1">
+              {allTenants.map((t) => {
+                const isActive = tenant === t;
+                return (
+                  <li key={t} role="option" aria-selected={isActive}>
+                    <button
+                      type="button"
+                      onClick={() => handleSelect(t)}
+                      className={[
+                        'w-full flex items-center gap-2 px-3 py-1.5 text-xs transition-colors',
+                        isActive
+                          ? 'text-os-300 bg-os-500/10'
+                          : 'text-gray-300 hover:bg-white/5 hover:text-gray-100',
+                      ].join(' ')}
+                    >
+                      <span className="flex-1 text-left truncate font-medium">{t}</span>
+                      {isActive && <span className="text-os-400">{IconCheck}</span>}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+
+            {/* Separator */}
+            <div className="border-t border-white/8 mx-3" />
+
+            {/* New workspace input */}
+            <div className="px-3 py-2.5">
+              <p className="font-mono-plex text-[10px] uppercase tracking-widest text-gray-600 mb-2 select-none">
+                New workspace
+              </p>
+              <div className="flex gap-1.5">
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={newInput}
+                  onChange={(e) => {
+                    setNewInput(e.target.value);
+                    setInputError(null);
+                  }}
+                  onKeyDown={handleInputKeyDown}
+                  placeholder="my-workspace"
+                  maxLength={64}
+                  aria-label="New workspace name"
+                  aria-describedby={inputError ? 'ws-input-error' : undefined}
+                  className={[
+                    'flex-1 min-w-0 bg-white/5 border rounded-lg px-2 py-1 text-xs text-gray-200',
+                    'placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-os-500/60',
+                    inputError ? 'border-red-500/60' : 'border-white/10',
+                  ].join(' ')}
+                />
                 <button
                   type="button"
-                  onClick={() => {
-                    setOpen(false);
-                    onManageWorkspaces();
-                  }}
-                  className="w-full text-left text-xs text-gray-400 hover:text-gray-100 focus:outline-none focus:text-gray-100"
+                  onClick={handleCreate}
+                  disabled={!newInput.trim()}
+                  className="px-2.5 py-1 rounded-lg bg-os-500/20 text-os-300 text-xs font-medium hover:bg-os-500/30 disabled:opacity-40 disabled:cursor-not-allowed transition-colors focus:outline-none focus:ring-2 focus:ring-os-500/60"
                 >
-                  Manage workspaces &rarr;
+                  OK
                 </button>
               </div>
-            </>
-          )}
-        </div>
-      )}
+              {inputError && (
+                <p
+                  id="ws-input-error"
+                  role="alert"
+                  className="mt-1.5 text-[10px] text-red-400 leading-tight"
+                >
+                  {inputError}
+                </p>
+              )}
+            </div>
+
+            {/* Manage workspaces — admin entry point for the tenant CRUD page */}
+            {onManageWorkspaces && (
+              <>
+                <div className="border-t border-white/8 mx-3" />
+                <div className="px-3 py-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOpen(false);
+                      onManageWorkspaces();
+                    }}
+                    className="w-full text-left text-xs text-gray-400 hover:text-gray-100 focus:outline-none focus:text-gray-100"
+                  >
+                    Manage workspaces &rarr;
+                  </button>
+                </div>
+              </>
+            )}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

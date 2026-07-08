@@ -4,106 +4,18 @@ Dated log of dev sessions so other devs can catch up quickly without reading
 every commit. Newest first.
 
 ---
+## 2026-07-07/08 — Full UX overhaul (branch `feat/ux-overhaul`, 6 lots)
 
-## 2026-07-07 — Lot C: promote the write-approval loop to top-level (branch `feat/ux-overhaul`, uncommitted)
+Triggered by a UX audit (3 parallel agents + architecture pass, ~50 code-verified findings, 6 root causes) after three real frictions in user testing: approval queue unfindable, write tool inconfigurable, AI provider opaque. Six lots, each verified (build/typecheck/lint/tests) and committed:
 
-Closes the UX note left at the bottom of the 2026-07-04→07 session: the
-approval queue had no real entry point (bell not clickable, badge
-chicken-and-egg since it only counted notifications the bell itself had
-fetched, queue buried in a ServePanel tab, dashboard silent about it).
+- **`db14f34` lot A — 8 bugs**: raw `fetch()` bypassed workspace scoping at ~35 sites (create/update/delete hit the `default` tenant regardless of active workspace) -> all through `apiFetch` now; MCP-server rename never persisted; `useMemo` after a conditional return (hooks violation); Notifications tab empty on mobile; save failures shown in green; localhost hardcoded in copyable snippets; audit tab unfiltered by default; cross-button "Copied!".
+- **`d2e5c65` lot B — URL routing**: hash-based sync (`#/mcp/foo/pending`) with pure `serializeView`/`parseHash`, same `{view,setView}` shape (zero call-site change), StrictMode-safe listener. F5/Back/deep-links work. +52 tests.
+- **`ebc72c9` lot C — approval loop promoted**: new GOVERN sidebar section (Pending Writes + Audit Log as top-level pages); global 15s pending-count poller feeding a sidebar badge (fixes the chicken-and-egg — badge shows without opening anything); notification bell items clickable -> Pending Writes; amber dashboard banner; ServePanel's hidden Pending tab removed.
+- **`f59a10b` lot D**: onboarding wizard now creates a real Data Configuration then a profile referencing it (wizard-made servers become editable — write/masking reachable); R/W tool badges surfaced in SchemaExplorer, McpDetail Effective Tables, config cards; tools/masking section opens by default; dirty-state guard on ConfigurationDetailPage.
+- **`8d3d026` lot E**: removed dead code (ProfileManager, ConnectionForm, ServePanel's unreachable detail view — 925 lines) + 9 quick wins (two-step confirm before approving delete/update, pedagogical empty state, clickable profileName, honest one-time-token copy, duplicate-name validation, activate loading state).
+- **`80fc308` lot F**: unified vocabulary (MCP Server / Data Configuration / Source / Workspace / API key) and translated the whole UI to English; cosmetic strings only, all within packages/web/src, no backend/route/enum touched.
 
-- **Two new top-level views**: `{ page: 'pending-writes' }` and
-  `{ page: 'audit-log' }` added to `router/view.ts`, serialized as
-  `/pending-writes` and `/audit-log` in `router/urlSync.ts` (exhaustiveness
-  `never` guard caught both the serialize and parse switches, as expected).
-- **New independent poller in `hooks/useAppData.ts`**: `pendingWriteCount` +
-  `refreshPendingWriteCount()`, hitting `/api/write-queue/count` every 15s
-  (same shape as the existing 5s serve-status / 15s audit pollers). This is
-  the actual chicken-and-egg fix — the sidebar badge no longer depends on the
-  notification bell ever having been opened.
-- **New pages** `pages/PendingWritesPage.tsx` (wraps the existing
-  `PendingQueries`, wires `onCountChange` back to
-  `refreshPendingWriteCount`) and `pages/AuditLogPage.tsx` (wraps the
-  existing `AuditLogViewer` with **all** profiles, so the profile filter
-  dropdown is meaningful). Both follow the `TenantsPage`/`MetricsPage`
-  pattern: `PageHeader` + breadcrumb back to Dashboard.
-- **`components/Sidebar.tsx`**: new "Govern" section between Workspace and
-  Admin (Pending Writes + Audit Log), with a red-circle badge on Pending
-  Writes (same visual language as the bell's badge, `9+` cap) driven by the
-  new `pendingWriteCount` prop. Added a separate `onNavigateView?: (view:
-  View) => void` prop (wired to `setView` in `App.tsx`) alongside the
-  existing `onNavigate(page)` so the bell can jump to a full `View` without
-  touching the existing page-nav contract.
-- **`components/NotificationsBell.tsx`**: each notification is now a
-  full-width `<button>` — fires `POST /api/notifications/:id/read`
-  (fire-and-forget), navigates to `{ page: 'pending-writes' }` when
-  `type === 'write_queue.pending'`, then closes the panel and refreshes its
-  own unread count.
-- **`pages/DashboardPage.tsx`**: amber "pending approvals" banner (same tone
-  as the amber error banner already used in `MetricsDashboard`) above the
-  status ribbon, shown only when `pendingWriteCount > 0`, with a "Review →"
-  button to `setView({ page: 'pending-writes' })`.
-- **`components/ServePanel.tsx`**: removed the now-redundant "Pending" tab
-  (`DashboardTab` type, `pendingCount` state, the tab bar, the
-  `PendingQueries` import) — Chat is now the only thing rendered on the
-  dashboard view. `PendingQueries.tsx` itself untouched (still used by the
-  new page).
-- No existing `Sidebar`/`ServePanel` test files existed to adapt (none were
-  present in `components/__tests__` before this session).
-
-Tests added/extended: `router/__tests__/urlSync.test.ts` (+4: serialize,
-parse, round-trip ×2), `pages/__tests__/PendingWritesPage.test.tsx` (3, new),
-`pages/__tests__/AuditLogPage.test.tsx` (2, new),
-`components/__tests__/NotificationsBell.test.tsx` (+2: click →
-`onNavigate({page:'pending-writes'})` + mark-read POST asserted on the fetch
-stub; non-write-queue item marks read without navigating),
-`pages/__tests__/DashboardPage.test.tsx` (+2: banner shown/hidden on
-`pendingWriteCount`).
-
-Verified: `pnpm format` / `build` / `typecheck` / `lint` all green;
-`pnpm test` — **125 files / 1916 tests** (1903 baseline + 13 new), zero
-regressions. Not committed per instructions.
-
----
-
-## 2026-07-07 — Admin nav URL sync (branch `feat/ux-overhaul`, uncommitted)
-
-Admin navigation (`packages/web/src/router/useNavigation.ts`) was a bare
-`useState<View>` — F5 reset to Dashboard, no deep links, Back/Forward did
-nothing. Added hash-based routing without touching the public
-`{ view, setView }` shape or any call site in `App.tsx`/pages.
-
-- **New `router/urlSync.ts`**: pure `serializeView(view): string` /
-  `parseHash(hash): View`. Admin views hash-route (`#/mcp/foo`); the
-  existing pathname-driven special pages (`/welcome/:code`, `/chat/:name`,
-  `/login`, `/account` — `router/locationRoutes.ts`) are untouched. Legacy
-  page aliases (`connections`, `knowledge`) serialize to their canonical
-  `sources/*` URL and normalize away on parse. Ephemeral fields (`backTo`,
-  `editConnectionName`) are never serialized. Malformed/unknown hashes fall
-  back to the dashboard, except a few spots with a safer partial fallback
-  (e.g. unknown `/settings/:tab` keeps the settings page, just drops the
-  tab) — matches the spec's "dashboard or safe fallback" allowance.
-- **Rewrote `useNavigation.ts`**: init parses `window.location.hash` if
-  non-empty, else `initial`. `setView` is the raw `useState` dispatch (no
-  wrapper) — a `useEffect` on `view` pushes the serialized hash, skipped
-  when it hasn't actually changed (avoids duplicate history entries when
-  only `backTo` differs). A second effect owns the `hashchange` listener
-  (added once, cleaned up on unmount) with an anti-loop guard: skips
-  `setView` when the incoming hash already matches what the held view would
-  serialize to. Verified safe under React 18 StrictMode's double-mount.
-- Exported `serializeView`/`parseHash` from `router/index.ts`.
-- Grepped `packages/web/src` and `ee/` for existing `location.hash` usage:
-  none found, no conflicts.
-- Tests: `router/__tests__/urlSync.test.ts` (43, round-trip per `View`
-  variant incl. spaces/slashes/accents in names, malformed-hash fallbacks,
-  legacy-alias normalization) + `router/__tests__/useNavigation.test.ts` (9,
-  via `renderHook` — init-from-hash, `setView` → hash, `hashchange` → view,
-  no-op `backTo`-only change leaves the hash untouched, listener cleanup,
-  StrictMode).
-
-Verified: `pnpm format` / `build` / `typecheck` / `lint` all green;
-`pnpm test` — **123 files / 1903 tests** (1851 baseline + 52 new), zero
-regressions. Not committed per instructions.
+Suite: **1936 tests** (baseline 1850 -> +86). Branch stacked on `feat/approval-notifications`. Next: live manual test of the whole overhaul before merging.
 
 ---
 

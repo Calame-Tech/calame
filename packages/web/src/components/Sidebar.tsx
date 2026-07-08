@@ -421,8 +421,11 @@ export default function Sidebar({
       <nav
         aria-label="Main navigation"
         className={[
-          // Base styles shared by mobile and desktop
-          'bg-gray-950/60 backdrop-blur-xl flex flex-col overflow-y-auto',
+          // Base styles shared by mobile and desktop. No backdrop-blur: the
+          // sidebar is a full-height sticky surface always on screen, so its
+          // backdrop-filter re-rasterized on every scroll frame. Opaque
+          // background instead (it sits over page content on mobile anyway).
+          'bg-gray-950/95 flex flex-col overflow-y-auto',
           // Mobile: fixed slide-in drawer from the left
           'fixed inset-y-0 left-0 z-40 w-64',
           'transform transition-transform duration-300 ease-in-out',

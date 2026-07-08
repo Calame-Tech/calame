@@ -231,7 +231,7 @@ export default function AuditLogViewer({ profiles }: AuditLogViewerProps) {
       )}
 
       {/* Table */}
-      <div className="card-primary overflow-hidden">
+      <div className="card-solid overflow-hidden">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-gray-400 border-b border-white/5">

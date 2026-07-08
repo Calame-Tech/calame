@@ -54,15 +54,24 @@
   .hairline { @apply border-t border-white/5; }
   .hairline-b { @apply border-b border-white/5; }
 
-  /* --- Cards --- */
+  /* --- Cards ---
+     No backdrop-blur on purpose. A backdrop-filter re-rasterizes its blur on
+     every scroll frame for as long as the element is on screen — with many
+     cards per page this was the dominant cause of scroll jank across the app.
+     The slightly higher background opacity keeps the frosted look on the dark
+     background without the per-frame cost. `card-solid` is kept as an alias
+     for call sites that want to be explicit about the no-blur intent. */
   .card-primary {
-    @apply bg-gray-900/40 backdrop-blur-xl border border-white/5 rounded-2xl;
+    @apply bg-gray-900/80 border border-white/5 rounded-2xl;
+  }
+  .card-solid {
+    @apply bg-gray-900/80 border border-white/5 rounded-2xl;
   }
   .card-nested {
     @apply bg-gray-900/60 border border-white/[0.03] rounded-xl;
   }
   .card-interactive {
-    @apply bg-gray-900/40 backdrop-blur-xl border border-white/5 rounded-2xl transition-all duration-300;
+    @apply bg-gray-900/80 border border-white/5 rounded-2xl transition-all duration-300;
   }
   .card-interactive:hover {
     @apply ring-1 ring-os-500/20 bg-gray-900/60;

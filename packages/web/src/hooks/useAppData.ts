@@ -32,6 +32,31 @@ import type {
 import { useSession } from '../context/SessionContext.js';
 
 /**
+ * Cheap equality for two ServeStatus snapshots so the 5s poller only triggers
+ * a re-render when something changed. `profiles`/`profileStatuses` are compared
+ * by JSON — they are small (a handful of profile names/flags).
+ */
+function shallowServeStatusEqual(a: ServeStatus, b: ServeStatus): boolean {
+  return (
+    a.active === b.active &&
+    a.port === b.port &&
+    a.startedAt === b.startedAt &&
+    a.totalRequests === b.totalRequests &&
+    JSON.stringify(a.profiles) === JSON.stringify(b.profiles) &&
+    JSON.stringify(a.profileStatuses) === JSON.stringify(b.profileStatuses)
+  );
+}
+
+/** Same idea for the recent-activity list (compared by id sequence). */
+function auditListEqual(a: AuditLogEntry[], b: AuditLogEntry[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i].id !== b[i].id) return false;
+  }
+  return true;
+}
+
+/**
  * Owns the shared admin data (connections, configurations, profiles, serve
  * status, audit activity, PII/masking) plus the polling/loading effects and
  * CRUD handlers. `isUserPage` disables the admin data loading on the
@@ -178,14 +203,19 @@ export function useAppData(isUserPage: boolean) {
       const res = await apiFetch('/api/serve/status', { credentials: 'include' });
       const data = await res.json();
       if (data.success !== false) {
-        setServeStatus({
+        const next: ServeStatus = {
           active: data.serving ?? data.active ?? false,
           port: data.port ?? 0,
           profiles: data.profiles ?? [],
           profileStatuses: data.profileStatuses,
           startedAt: data.startedAt,
           totalRequests: data.totalRequests ?? 0,
-        });
+        };
+        // Only re-render when something actually changed. The 5s poll used to
+        // set a fresh object every tick, re-rendering the whole App tree
+        // (and every page) even when idle — a needless main-thread tax that
+        // showed up as scroll jank.
+        setServeStatus((prev) => (shallowServeStatusEqual(prev, next) ? prev : next));
       }
     } catch {
       // Status endpoint may not exist yet
@@ -240,7 +270,8 @@ export function useAppData(isUserPage: boolean) {
         const res = await apiFetch('/api/audit?limit=10&offset=0', { credentials: 'include' });
         const data = await res.json();
         if (data.success !== false && data.entries) {
-          setRecentActivity(data.entries);
+          const entries = data.entries as AuditLogEntry[];
+          setRecentActivity((prev) => (auditListEqual(prev, entries) ? prev : entries));
         }
       } catch {
         // Audit endpoint may not be available

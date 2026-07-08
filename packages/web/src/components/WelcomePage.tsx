@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { apiFetch } from '../lib/api.js';
 import { Eyebrow } from './ui/Eyebrow.js';
 
 interface WelcomePageProps {
@@ -80,11 +81,12 @@ export default function WelcomePage({ code }: WelcomePageProps) {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordError, setPasswordError] = useState('');
+  const [activating, setActivating] = useState(false);
 
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch(`/api/onboarding/${code}`);
+        const res = await apiFetch(`/api/onboarding/${code}`);
         const result = await res.json();
         if (result.success) {
           setData(result);
@@ -109,8 +111,9 @@ export default function WelcomePage({ code }: WelcomePageProps) {
       setPasswordError('Passwords do not match.');
       return;
     }
+    setActivating(true);
     try {
-      const res = await fetch(`/api/onboarding/${code}/activate`, {
+      const res = await apiFetch(`/api/onboarding/${code}/activate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password }),
@@ -124,6 +127,8 @@ export default function WelcomePage({ code }: WelcomePageProps) {
       }
     } catch {
       setError('Connection error.');
+    } finally {
+      setActivating(false);
     }
   };
 
@@ -199,7 +204,7 @@ export default function WelcomePage({ code }: WelcomePageProps) {
   const steps = [
     { n: 1, label: 'Verify access' },
     { n: 2, label: 'Set password' },
-    { n: 3, label: 'Get your token' },
+    { n: 3, label: 'Get your access token' },
   ];
 
   return (
@@ -415,23 +420,29 @@ export default function WelcomePage({ code }: WelcomePageProps) {
 
                 <button
                   onClick={handleActivate}
-                  disabled={!password || !confirmPassword}
+                  disabled={!password || !confirmPassword || activating}
                   className="flex items-center justify-center gap-2 w-full py-3 px-6 bg-gradient-to-r from-os-600 to-os-500 hover:from-os-500 hover:to-os-400 disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-os-600/20 text-white font-medium tracking-wide rounded-lg transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-os-500/50"
                   aria-label="Activate my account"
                 >
-                  Activate My Account
-                  <svg
-                    className="w-4 h-4"
-                    viewBox="0 0 16 16"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
-                  >
-                    <path d="M3 8h10M9 4l4 4-4 4" />
-                  </svg>
+                  {activating ? (
+                    'Activating…'
+                  ) : (
+                    <>
+                      Activate My Account
+                      <svg
+                        className="w-4 h-4"
+                        viewBox="0 0 16 16"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M3 8h10M9 4l4 4-4 4" />
+                      </svg>
+                    </>
+                  )}
                 </button>
 
                 <p className="font-mono-plex text-[10px] text-gray-600 text-center tracking-wide">
@@ -492,7 +503,7 @@ export default function WelcomePage({ code }: WelcomePageProps) {
                         />
                       </svg>
                       <span className="font-mono-plex text-[10px] uppercase tracking-[0.2em] text-amber-400/80">
-                        One-time display — copy now
+                        Copy it now — you can reveal it later from your account with your password
                       </span>
                     </div>
 

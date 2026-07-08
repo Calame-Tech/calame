@@ -22,7 +22,7 @@ export default function UsersPage({ view, setView, profiles }: UsersPageProps) {
           { label: 'Users' },
         ]}
         title="Users & Access"
-        description="Manage administrator accounts and end-user access to your MCP profiles."
+        description="Manage administrator accounts and end-user access to your MCP servers."
       />
       <UserManagement profiles={profiles} initialSelectedUserId={view.selectedUserId} />
     </div>

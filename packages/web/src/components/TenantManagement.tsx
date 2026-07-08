@@ -12,7 +12,7 @@ import { Button, Card, EmptyState } from './ui/index.js';
  * but the UI surface makes it visually obvious so the admin doesn't try.
  *
  * The destructive flow is two-step:
- *   1. Click "Supprimer" → modal opens with a typed-confirmation input.
+ *   1. Click "Delete" → modal opens with a typed-confirmation input.
  *   2. The admin types the exact tenant id → the DELETE call fires.
  * The API additionally requires an `X-Confirm-Destructive` header parameterised
  * by the tenant id (anti-fat-finger defense in depth — even a Postman tab
@@ -34,10 +34,10 @@ interface TenantsListResponse {
 /** Resource columns shown in the table. Keys must align with the camelCase
  *  count names emitted by GET /api/tenants. */
 const RESOURCE_COLUMNS: Array<{ key: string; label: string }> = [
-  { key: 'profiles', label: 'Profiles' },
-  { key: 'configurations', label: 'Configurations' },
+  { key: 'profiles', label: 'MCP Servers' },
+  { key: 'configurations', label: 'Data Configurations' },
   { key: 'aiSettings', label: 'AI Settings' },
-  { key: 'tokens', label: 'Tokens' },
+  { key: 'tokens', label: 'API Keys' },
   { key: 'users', label: 'Users' },
   { key: 'ragSources', label: 'RAG Sources' },
 ];
@@ -131,9 +131,7 @@ export default function TenantManagement() {
   const performDelete = async () => {
     if (!pendingDelete) return;
     if (confirmInput !== pendingDelete.id) {
-      setDeleteError(
-        `Veuillez saisir exactement "${pendingDelete.id}" pour confirmer la suppression.`,
-      );
+      setDeleteError(`Please type exactly "${pendingDelete.id}" to confirm deletion.`);
       return;
     }
 
@@ -169,7 +167,7 @@ export default function TenantManagement() {
   if (loading) {
     return (
       <Card className="p-6">
-        <p className="text-sm text-gray-400">Chargement des workspaces…</p>
+        <p className="text-sm text-gray-400">Loading workspaces…</p>
       </Card>
     );
   }
@@ -177,9 +175,9 @@ export default function TenantManagement() {
   if (error) {
     return (
       <Card className="p-6 border border-red-500/30 bg-red-500/5">
-        <p className="text-sm text-red-300">Erreur : {error}</p>
+        <p className="text-sm text-red-300">Error: {error}</p>
         <Button variant="secondary" size="sm" onClick={handleRefresh} className="mt-3">
-          Réessayer
+          Retry
         </Button>
       </Card>
     );
@@ -188,8 +186,8 @@ export default function TenantManagement() {
   if (tenants.length === 0) {
     return (
       <EmptyState
-        title="Aucun workspace trouvé"
-        description="Les workspaces sont créés implicitement par le premier INSERT. Utilisez le workspace switcher dans la sidebar pour basculer vers un nouveau contexte."
+        title="No workspace found"
+        description="Workspaces are created implicitly by the first INSERT. Use the workspace switcher in the sidebar to switch to a new context."
       />
     );
   }
@@ -199,8 +197,7 @@ export default function TenantManagement() {
       {/* Action bar */}
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm text-gray-400">
-          {tenants.length} workspace{tenants.length > 1 ? 's' : ''} actif
-          {tenants.length > 1 ? 's' : ''} sur cette instance.
+          {tenants.length} active workspace{tenants.length > 1 ? 's' : ''} on this instance.
         </p>
         <Button
           variant="secondary"
@@ -209,7 +206,7 @@ export default function TenantManagement() {
           disabled={refreshing}
           aria-busy={refreshing}
         >
-          {refreshing ? 'Actualisation…' : 'Actualiser'}
+          {refreshing ? 'Refreshing…' : 'Refresh'}
         </Button>
       </div>
 
@@ -247,7 +244,7 @@ export default function TenantManagement() {
                         <span className="font-medium text-gray-200">{tenant.id}</span>
                         {isDefault && (
                           <span
-                            title="Le tenant par défaut ne peut pas être supprimé — c'est le contexte implicite des installations mono-tenant."
+                            title="The default workspace cannot be deleted — it's the implicit context for single-workspace installations."
                             className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-gray-700/50 text-gray-400 text-[10px] font-mono-plex"
                           >
                             {LockIcon}
@@ -256,11 +253,11 @@ export default function TenantManagement() {
                         )}
                         {isCurrent && !isDefault && (
                           <span
-                            title="Workspace actif — bascule vers un autre workspace avant de pouvoir supprimer celui-ci."
+                            title="Active workspace — switch to another workspace before you can delete this one."
                             className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-violet-500/15 text-violet-300 text-[10px] font-mono-plex border border-violet-500/30"
                           >
                             {CheckIcon}
-                            ACTIF
+                            ACTIVE
                           </span>
                         )}
                       </div>
@@ -284,10 +281,10 @@ export default function TenantManagement() {
                         onClick={() => openDeleteModal(tenant)}
                         title={
                           isDefault
-                            ? 'Le tenant par défaut ne peut pas être supprimé.'
+                            ? 'The default workspace cannot be deleted.'
                             : isCurrent
-                              ? 'Bascule vers un autre workspace pour pouvoir supprimer celui-ci.'
-                              : `Supprimer définitivement "${tenant.id}"`
+                              ? 'Switch to another workspace before you can delete this one.'
+                              : `Permanently delete "${tenant.id}"`
                         }
                         className={
                           isProtected
@@ -295,7 +292,7 @@ export default function TenantManagement() {
                             : 'text-red-400 hover:bg-red-500/10 hover:text-red-300'
                         }
                       >
-                        Supprimer
+                        Delete
                       </Button>
                     </td>
                   </tr>
@@ -308,9 +305,9 @@ export default function TenantManagement() {
 
       {/* Hint footer */}
       <p className="text-xs text-gray-500 leading-relaxed">
-        Les workspaces sont créés implicitement : la première écriture avec un{' '}
-        <code className="font-mono-plex text-gray-400">tenant_id</code> donné suffit à matérialiser
-        un nouveau workspace. Pour en créer un, utilisez le sélecteur de workspace dans la sidebar.
+        Workspaces are created implicitly: the first write with a given{' '}
+        <code className="font-mono-plex text-gray-400">tenant_id</code> is enough to materialize a
+        new workspace. To create one, use the workspace switcher in the sidebar.
       </p>
 
       {/* Confirm modal */}
@@ -327,22 +324,22 @@ export default function TenantManagement() {
         >
           <Card className="max-w-lg w-full p-6 border border-red-500/30 bg-gray-950">
             <h2 id="tenant-delete-modal-title" className="text-lg font-semibold text-red-300 mb-3">
-              Supprimer définitivement le workspace ?
+              Permanently delete this workspace?
             </h2>
             <p className="text-sm text-gray-300 leading-relaxed">
-              Vous êtes sur le point de supprimer le workspace{' '}
+              You are about to delete the workspace{' '}
               <code className="font-mono-plex text-red-300 bg-red-500/10 px-1.5 py-0.5 rounded">
                 {pendingDelete.id}
               </code>
-              . Cette action est <strong className="text-red-300">irréversible</strong> et
-              supprimera tous les profiles, configurations, sources RAG, tokens, utilisateurs et
-              données associées à ce workspace.
+              . This action is <strong className="text-red-300">irreversible</strong> and will
+              delete all MCP Servers, Data Configurations, RAG sources, API keys, users, and data
+              associated with this workspace.
             </p>
 
             {/* Resource summary */}
             <div className="mt-4 p-3 rounded-lg bg-white/5 border border-white/10">
               <p className="text-xs text-gray-500 font-mono-plex uppercase tracking-wider mb-2">
-                Données qui seront supprimées
+                Data that will be deleted
               </p>
               <ul className="space-y-1">
                 {RESOURCE_COLUMNS.map((col) => {
@@ -357,7 +354,7 @@ export default function TenantManagement() {
                 })}
                 {pendingDelete.totalResources === 0 && (
                   <li className="text-xs text-gray-500 italic">
-                    Aucune ressource — suppression idempotente.
+                    No resources — deletion is idempotent.
                   </li>
                 )}
               </ul>
@@ -366,8 +363,8 @@ export default function TenantManagement() {
             {/* Typed confirmation input */}
             <div className="mt-5">
               <label htmlFor="tenant-confirm-input" className="block text-xs text-gray-400 mb-1.5">
-                Saisissez <code className="font-mono-plex text-red-300">{pendingDelete.id}</code>{' '}
-                pour confirmer :
+                Type <code className="font-mono-plex text-red-300">{pendingDelete.id}</code> to
+                confirm:
               </label>
               <input
                 id="tenant-confirm-input"
@@ -392,7 +389,7 @@ export default function TenantManagement() {
             {/* Action buttons */}
             <div className="mt-6 flex items-center justify-end gap-2">
               <Button variant="secondary" size="md" onClick={closeDeleteModal} disabled={deleting}>
-                Annuler
+                Cancel
               </Button>
               <Button
                 variant="danger"
@@ -401,7 +398,7 @@ export default function TenantManagement() {
                 disabled={deleting || confirmInput !== pendingDelete.id}
                 loading={deleting}
               >
-                {deleting ? 'Suppression…' : 'Supprimer définitivement'}
+                {deleting ? 'Deleting…' : 'Permanently delete'}
               </Button>
             </div>
           </Card>

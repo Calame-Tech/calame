@@ -27,8 +27,8 @@ function renderPage({
 describe('ConfigurationsPage', () => {
   it('renders an empty state when there are no data profiles', () => {
     renderPage();
-    expect(screen.getAllByText('Data Profiles').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText('No data profiles')).toBeTruthy();
+    expect(screen.getAllByText('Data Configurations').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('No Data Configurations')).toBeTruthy();
   });
 
   it('renders a card per configuration', () => {
@@ -50,11 +50,45 @@ describe('ConfigurationsPage', () => {
     expect(setView).toHaveBeenCalledWith({ page: 'config-detail', configName: 'sales' });
   });
 
+  it('shows write and masking badges when the configuration has them, hides them otherwise', () => {
+    const withToolsAndMasking: Configuration = {
+      name: 'sales',
+      label: 'Sales',
+      sources: ['db1'],
+      scopes: {
+        db1: {
+          kind: 'relational',
+          selectedTables: { orders: ['id', 'total', 'email'] },
+          tableOptions: {
+            orders: {
+              enabledTools: ['describe', 'query', 'write'],
+              maxLimit: 100,
+              filterableColumns: [],
+              groupableColumns: [],
+            },
+          },
+          columnMasking: {
+            orders: {
+              email: { maskingMode: 'hash' },
+              total: { maskingMode: 'none' },
+            },
+          },
+        },
+      },
+    };
+    const plain: Configuration = { name: 'hr', label: 'Human Resources' };
+
+    renderPage({ configurations: [withToolsAndMasking, plain] });
+
+    expect(screen.getByText(/write on 1 table/)).toBeTruthy();
+    expect(screen.getByText(/1 masked column/)).toBeTruthy();
+  });
+
   it('creates a new data profile and navigates to its detail view', () => {
     const { setView, setConfigurations, handleConfigurationSave } = renderPage();
-    fireEvent.click(screen.getByText('+ New Data Profile'));
+    fireEvent.click(screen.getByText('+ New Data Configuration'));
 
-    fireEvent.change(screen.getByPlaceholderText('Profile name'), {
+    fireEvent.change(screen.getByPlaceholderText('Configuration name'), {
       target: { value: 'My Profile' },
     });
     fireEvent.change(screen.getByPlaceholderText('Display name'), {

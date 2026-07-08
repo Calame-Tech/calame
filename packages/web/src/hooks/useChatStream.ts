@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
+import { apiFetch } from '../lib/api.js';
 
 export interface UsageInfo {
   input: number;
@@ -37,7 +38,7 @@ export function useChatStream(opts?: ChatStreamOptions) {
       setError(null);
 
       try {
-        const res = await fetch(opts?.url ?? '/api/chat/stream', {
+        const res = await apiFetch(opts?.url ?? '/api/chat/stream', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...(opts?.headers ?? {}) },
           credentials: 'include',

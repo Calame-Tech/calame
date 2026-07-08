@@ -45,7 +45,7 @@ export default function McpListPage({
           { label: 'MCP Servers' },
         ]}
         title="MCP Servers"
-        description="Manage your MCP server profiles. Start, stop, and configure access for each profile."
+        description="Manage your MCP servers. Start, stop, and configure access for each MCP server."
       />
       <div className="mt-4">
         <ServePanel
@@ -55,7 +55,6 @@ export default function McpListPage({
           serveStatus={serveStatus}
           onServeAction={fetchServeStatus}
           onSelectProfile={handleSelectProfile}
-          onBack={() => setView({ page: 'dashboard' })}
           onCreateProfile={(name, label) => {
             handleProfileCreate(name, label);
             setView({ page: 'mcp-detail', profileName: name });

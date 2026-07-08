@@ -71,7 +71,7 @@ export default function SetupPage({ onSetupComplete }: SetupPageProps) {
             />
             <h1 className="heading-lg">Calame</h1>
           </div>
-          <p className="text-gray-400 mt-2">Bienvenue — Cr&eacute;ez votre compte administrateur</p>
+          <p className="text-gray-400 mt-2">Welcome — Create your administrator account</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">

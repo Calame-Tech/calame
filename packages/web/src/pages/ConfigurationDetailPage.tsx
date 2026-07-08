@@ -2,8 +2,9 @@
 // the `view.page === 'config-detail'` branch of App.tsx and the
 // ConfigurationDetailView component below was moved verbatim from App.tsx.
 
-import { useState, useMemo, lazy, Suspense } from 'react';
+import { useState, useMemo, useEffect, lazy, Suspense } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
+import { apiFetch } from '../lib/api.js';
 import { Button, EmptyState, Eyebrow, Breadcrumb } from '../components/ui/index.js';
 import HelpTip from '../components/HelpTip.js';
 import SchemaExplorer from '../components/SchemaExplorer.js';
@@ -14,6 +15,8 @@ import {
   getConfigurationTableOptions,
   getConfigurationColumnMasking,
 } from '../lib/configuration-accessors.js';
+import { isConfigurationDirty } from '../lib/configuration-dirty.js';
+import { guardedNavigate } from '../lib/guarded-navigate.js';
 import type {
   DatabaseSchema,
   Config,
@@ -38,7 +41,7 @@ const RagAccessSelector = lazy(() =>
       default: function RagAccessSelectorUnavailable() {
         return (
           <div className="p-6 text-sm text-gray-400 text-center">
-            Les fonctionnalités RAG ne sont pas disponibles sur cette instance.
+            RAG features are not available on this instance.
           </div>
         );
       },
@@ -83,22 +86,35 @@ export default function ConfigurationDetailPage({
   handleGlobalMaskingRulesChange,
 }: ConfigurationDetailPageProps) {
   const { ragEnabled } = useSession();
+  // Reported up from ConfigurationDetailView (Lot D3) so the breadcrumb and
+  // "manage connections" links can warn before discarding unsaved edits.
+  const [isDirty, setIsDirty] = useState(false);
 
   return (
     <div className="max-w-7xl mx-auto">
       <Breadcrumb
         className="mb-4"
         items={[
-          { label: 'Dashboard', onClick: () => setView({ page: 'dashboard' }) },
+          {
+            label: 'Dashboard',
+            onClick: () => guardedNavigate(isDirty, () => setView({ page: 'dashboard' })),
+          },
           ...(view.backTo?.page === 'mcp-detail'
             ? [
-                { label: 'MCP Servers', onClick: () => setView({ page: 'mcp-list' }) },
-                { label: 'Server', onClick: () => setView(view.backTo!) },
+                {
+                  label: 'MCP Servers',
+                  onClick: () => guardedNavigate(isDirty, () => setView({ page: 'mcp-list' })),
+                },
+                {
+                  label: 'Server',
+                  onClick: () => guardedNavigate(isDirty, () => setView(view.backTo!)),
+                },
               ]
             : [
                 {
-                  label: 'Data Profiles',
-                  onClick: () => setView({ page: 'configurations' }),
+                  label: 'Data Configurations',
+                  onClick: () =>
+                    guardedNavigate(isDirty, () => setView({ page: 'configurations' })),
                 },
               ]),
           {
@@ -121,10 +137,15 @@ export default function ConfigurationDetailPage({
         onSchemaLoaded={handleSchemaLoaded}
         onPiiOverride={handlePiiOverride}
         onGlobalMaskingRulesChange={handleGlobalMaskingRulesChange}
-        onNavigateToConnections={() => setView({ page: 'connections', backTo: view })}
-        onNavigateToEditConnection={(c: string) =>
-          setView({ page: 'connections', backTo: view, editConnectionName: c })
+        onNavigateToConnections={() =>
+          guardedNavigate(isDirty, () => setView({ page: 'connections', backTo: view }))
         }
+        onNavigateToEditConnection={(c: string) =>
+          guardedNavigate(isDirty, () =>
+            setView({ page: 'connections', backTo: view, editConnectionName: c }),
+          )
+        }
+        onDirtyChange={setIsDirty}
         ragEnabled={ragEnabled}
       />
     </div>
@@ -154,6 +175,8 @@ interface ConfigurationDetailViewProps {
   onNavigateToEditConnection?: (connName: string) => void;
   /** Whether the RAG runtime is available on this instance. Controls visibility of the Knowledge tab. */
   ragEnabled?: boolean;
+  /** Reports the current dirty state up to the wrapper (Lot D3) so it can guard the breadcrumb. */
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
 function ConfigurationDetailView({
@@ -174,6 +197,7 @@ function ConfigurationDetailView({
   onNavigateToConnections,
   onNavigateToEditConnection,
   ragEnabled = false,
+  onDirtyChange,
 }: ConfigurationDetailViewProps) {
   const config = configurations.find((c) => c.name === configName);
 
@@ -197,6 +221,44 @@ function ConfigurationDetailView({
 
   // Tab switcher: 'databases' mirrors the existing UI, 'knowledge' mounts RagAccessSelector.
   const [activeConfigTab, setActiveConfigTab] = useState<'databases' | 'knowledge'>('databases');
+
+  // Dirty-state tracking (Lot D3) — compares the local edit state above
+  // against the last-saved `config` prop so navigation away can warn before
+  // silently discarding unsaved changes.
+  const isDirty = useMemo(
+    () =>
+      isConfigurationDirty(config, configName, {
+        label,
+        selectedConns,
+        selectedTables: localSelectedTables,
+        tableOptions: localTableOptions,
+        columnMasking: localColumnMasking,
+      }),
+    [
+      config,
+      configName,
+      label,
+      selectedConns,
+      localSelectedTables,
+      localTableOptions,
+      localColumnMasking,
+    ],
+  );
+
+  useEffect(() => {
+    onDirtyChange?.(isDirty);
+  }, [isDirty, onDirtyChange]);
+
+  // Warn on tab close / refresh while there are unsaved changes.
+  useEffect(() => {
+    if (!isDirty) return;
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isDirty]);
 
   const availableConnectionNames = connections.map((c) => c.name);
 
@@ -240,7 +302,7 @@ function ConfigurationDetailView({
       if (!connectionSchemas[connName]) {
         setLoadingSchemas(true);
         try {
-          const res = await fetch(`/api/schema/${encodeURIComponent(connName)}`);
+          const res = await apiFetch(`/api/schema/${encodeURIComponent(connName)}`);
           const data = await res.json();
           const schema = data.schema ?? data;
           if (schema.tables) {
@@ -414,7 +476,7 @@ function ConfigurationDetailView({
   const handleDelete = async () => {
     setDeleting(true);
     try {
-      const res = await fetch(`/api/configurations/${encodeURIComponent(configName)}`, {
+      const res = await apiFetch(`/api/configurations/${encodeURIComponent(configName)}`, {
         method: 'DELETE',
         credentials: 'include',
       });
@@ -484,11 +546,15 @@ function ConfigurationDetailView({
                     {configName}
                   </span>
                 )}
-                <HelpTip content="Click to rename this data profile" position="right" size="xs" />
+                <HelpTip
+                  content="Click to rename this Data Configuration"
+                  position="right"
+                  size="xs"
+                />
               </h2>
             )}
             <p className="text-sm text-gray-500 mt-1">
-              {[...selectedConns].length} connection{[...selectedConns].length !== 1 ? 's' : ''}{' '}
+              {[...selectedConns].length} source{[...selectedConns].length !== 1 ? 's' : ''}{' '}
               &middot; {tableCount} table{tableCount !== 1 ? 's' : ''}
             </p>
           </div>
@@ -496,6 +562,8 @@ function ConfigurationDetailView({
             {saveError && <span className="text-sm text-rose-400">{saveError}</span>}
             <Button
               onClick={handleSave}
+              disabled={!isDirty}
+              title={!isDirty ? 'No changes' : undefined}
               variant={saved ? 'ghost' : saveError ? 'ghost' : 'primary'}
               className={
                 saved
@@ -505,7 +573,21 @@ function ConfigurationDetailView({
                     : ''
               }
             >
-              {saved ? 'Saved!' : saveError ? 'Error' : 'Save'}
+              {saved ? (
+                'Saved!'
+              ) : saveError ? (
+                'Error'
+              ) : (
+                <>
+                  Save changes
+                  {isDirty && (
+                    <span
+                      aria-hidden="true"
+                      className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 ml-1.5 align-middle"
+                    />
+                  )}
+                </>
+              )}
             </Button>
             {confirmDelete ? (
               <div className="flex items-center gap-1">
@@ -519,8 +601,8 @@ function ConfigurationDetailView({
               </div>
             ) : (
               <button
-                onClick={() => setConfirmDelete(true)}
-                title="Supprimer ce profil de données"
+                onClick={() => guardedNavigate(isDirty, () => setConfirmDelete(true))}
+                title="Delete this Data Configuration"
                 className="p-2 text-gray-500 hover:text-rose-400 transition-all duration-200 rounded-lg hover:bg-rose-500/10"
               >
                 <svg
@@ -559,7 +641,7 @@ function ConfigurationDetailView({
                   type="button"
                   disabled
                   aria-disabled="true"
-                  title="Les bases de connaissance RAG ne sont pas disponibles sur cette instance."
+                  title="RAG knowledge bases are not available on this instance."
                   className="px-5 py-3 text-sm font-medium border-b-2 border-transparent text-gray-600 cursor-not-allowed opacity-50"
                 >
                   {tab.label}
@@ -637,7 +719,7 @@ function ConfigurationDetailView({
                               e.stopPropagation();
                               onNavigateToEditConnection(connName);
                             }}
-                            title="Modifier les paramètres de cette connexion"
+                            title="Edit this source's settings"
                             className="p-0.5 text-gray-500 hover:text-os-400 transition-colors"
                           >
                             <svg
@@ -689,6 +771,7 @@ function ConfigurationDetailView({
                 connectionLabels={Object.fromEntries(
                   connections.map((c) => [c.name, c.label || c.name]),
                 )}
+                tableOptions={localTableOptions}
               />
             </div>
           )}
@@ -754,7 +837,7 @@ function ConfigurationDetailView({
                     d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                   />
                 </svg>
-                Chargement…
+                Loading…
               </div>
             }
           >

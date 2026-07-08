@@ -72,7 +72,7 @@ export default function AiSettings() {
   const [testing, setTesting] = useState(false);
   const [testingName, setTestingName] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
-  const [saveResult, setSaveResult] = useState<string | null>(null);
+  const [saveResult, setSaveResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
 
   // Capabilities form state (per-setting form — not global)
@@ -222,11 +222,11 @@ export default function AiSettings() {
       return;
     }
     if (!capChat && !capEmbeddings) {
-      setFormError('Au moins une capacité doit être sélectionnée (Chat ou Embeddings).');
+      setFormError('At least one capability must be selected (Chat or Embeddings).');
       return;
     }
     if (capEmbeddings && !embeddingModel.trim()) {
-      setFormError("Le modèle d'embeddings est requis lorsque la capacité Embeddings est activée.");
+      setFormError('The embeddings model is required when the Embeddings capability is enabled.');
       return;
     }
     if (capRerank && !rerankModel.trim()) {
@@ -261,7 +261,7 @@ export default function AiSettings() {
         ? '/api/ai-settings'
         : `/api/ai-settings/${encodeURIComponent(editingName!)}`;
       const method = isCreating ? 'POST' : 'PUT';
-      const res = await fetch(url, {
+      const res = await apiFetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -269,7 +269,7 @@ export default function AiSettings() {
       });
       const data = await res.json();
       if (data.success) {
-        setSaveResult('Saved.');
+        setSaveResult({ ok: true, message: 'Saved.' });
         await refresh();
         setEditingName(null);
       } else {
@@ -289,7 +289,7 @@ export default function AiSettings() {
     try {
       // For an existing setting, save first so the test uses the latest values.
       if (!isCreating && editingName) {
-        await fetch(`/api/ai-settings/${encodeURIComponent(editingName)}`, {
+        await apiFetch(`/api/ai-settings/${encodeURIComponent(editingName)}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
@@ -301,7 +301,7 @@ export default function AiSettings() {
             baseUrl: baseUrl || undefined,
           }),
         });
-        const res = await fetch(`/api/ai-settings/${encodeURIComponent(editingName)}/test`, {
+        const res = await apiFetch(`/api/ai-settings/${encodeURIComponent(editingName)}/test`, {
           method: 'POST',
           credentials: 'include',
         });
@@ -348,7 +348,7 @@ export default function AiSettings() {
     setTestingName(s.name);
     setTestResult(null);
     try {
-      const res = await fetch(`/api/ai-settings/${encodeURIComponent(s.name)}/test`, {
+      const res = await apiFetch(`/api/ai-settings/${encodeURIComponent(s.name)}/test`, {
         method: 'POST',
         credentials: 'include',
       });
@@ -368,7 +368,7 @@ export default function AiSettings() {
   const handleDelete = async (s: MaskedAiSetting) => {
     if (!window.confirm(`Delete AI setting "${s.label}"?`)) return;
     try {
-      await fetch(`/api/ai-settings/${encodeURIComponent(s.name)}`, {
+      await apiFetch(`/api/ai-settings/${encodeURIComponent(s.name)}`, {
         method: 'DELETE',
         credentials: 'include',
       });
@@ -400,9 +400,9 @@ export default function AiSettings() {
           injectionThreshold: routerEnabled ? injectionThreshold / 100 : undefined,
         }),
       });
-      setSaveResult('Router settings saved.');
+      setSaveResult({ ok: true, message: 'Router settings saved.' });
     } catch {
-      setSaveResult('Failed to save router.');
+      setSaveResult({ ok: false, message: 'Failed to save router.' });
     } finally {
       setSaving(false);
       setTimeout(() => setSaveResult(null), 3000);
@@ -495,9 +495,9 @@ export default function AiSettings() {
       {/* Capabilities section */}
       <div>
         <div className="flex items-center gap-1.5 mb-2">
-          <label className="text-sm text-gray-400">Capacités</label>
+          <label className="text-sm text-gray-400">Capabilities</label>
           <HelpTip
-            content="Chat : ce setting peut être utilisé pour les conversations avec le LLM. Embeddings : ce setting peut générer des vecteurs pour le RAG (OpenAI/Ollama uniquement)."
+            content="Chat: this setting can be used for conversations with the LLM. Embeddings: this setting can generate vectors for RAG (OpenAI/Ollama only)."
             position="right"
             maxWidth={320}
           />
@@ -518,7 +518,7 @@ export default function AiSettings() {
               </label>
               {capChat && (
                 <div className="mt-1">
-                  <label className="text-xs text-gray-400">Modèle (Chat)</label>
+                  <label className="text-xs text-gray-400">Model (Chat)</label>
                   <input
                     type="text"
                     value={model}
@@ -563,16 +563,16 @@ export default function AiSettings() {
                 {provider === 'anthropic' && (
                   <span
                     className="text-xs text-amber-400 cursor-default"
-                    title="Anthropic ne propose pas de modèles d'embeddings — utilisez OpenAI, Ollama ou un endpoint custom"
+                    title="Anthropic does not offer embeddings models — use OpenAI, Ollama, or a custom endpoint"
                   >
-                    Non disponible
+                    Not available
                   </span>
                 )}
               </div>
               {capEmbeddings && provider !== 'anthropic' && (
                 <div className="mt-1">
                   <label className="text-xs text-gray-400">
-                    Modèle d'embeddings <span className="text-red-400">*</span>
+                    Embeddings model <span className="text-red-400">*</span>
                   </label>
                   <input
                     type="text"
@@ -711,7 +711,11 @@ export default function AiSettings() {
         >
           {testing ? 'Testing...' : 'Test connection'}
         </button>
-        {saveResult && <span className="text-sm text-green-400">{saveResult}</span>}
+        {saveResult && (
+          <span className={`text-sm ${saveResult.ok ? 'text-green-400' : 'text-red-400'}`}>
+            {saveResult.message}
+          </span>
+        )}
       </div>
 
       {testResult && (
@@ -741,8 +745,8 @@ export default function AiSettings() {
             />
           </div>
           <p className="text-sm text-gray-500 mt-1">
-            Define the AI providers your MCP servers can use. Associate them per-MCP in the profile
-            editor.
+            Define the AI providers your MCP servers can use. Associate them per-MCP server in the
+            MCP Server editor.
           </p>
         </div>
         <button

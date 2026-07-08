@@ -29,7 +29,7 @@ export default function SmtpSettings() {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
-  const [saveResult, setSaveResult] = useState<string | null>(null);
+  const [saveResult, setSaveResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [configured, setConfigured] = useState(false);
 
   useEffect(() => {
@@ -106,13 +106,13 @@ export default function SmtpSettings() {
       });
       const data = await res.json();
       if (data.success) {
-        setSaveResult('Saved successfully.');
+        setSaveResult({ ok: true, message: 'Saved successfully.' });
         setConfigured(true);
       } else {
-        setSaveResult(data.message || 'Failed to save.');
+        setSaveResult({ ok: false, message: data.message || 'Failed to save.' });
       }
     } catch {
-      setSaveResult('Connection error.');
+      setSaveResult({ ok: false, message: 'Connection error.' });
     } finally {
       setSaving(false);
       setTimeout(() => setSaveResult(null), 3000);
@@ -367,7 +367,7 @@ export default function SmtpSettings() {
         <button
           onClick={handleSave}
           disabled={saving}
-          title="Enregistre la configuration SMTP sur le serveur. Les e-mails d'invitation utiliseront ces paramètres dès la prochaine invitation."
+          title="Saves the SMTP configuration on the server. Invitation emails will use these settings starting with the next invitation."
           className="px-4 py-2 rounded-lg bg-os-700 hover:bg-os-600 text-white text-sm font-medium transition-all duration-200 disabled:opacity-50 shadow-md shadow-os-900/20"
         >
           {saving ? 'Saving...' : 'Save'}
@@ -375,13 +375,17 @@ export default function SmtpSettings() {
         <button
           onClick={handleTest}
           disabled={testing}
-          title="Envoie un e-mail de test à l'adresse « From » pour vérifier que la connexion SMTP fonctionne correctement avant d'enregistrer."
+          title='Sends a test email to the "From" address to verify the SMTP connection works correctly before saving.'
           className="px-4 py-2 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-300 text-sm font-medium transition-all duration-200 disabled:opacity-50"
         >
           {testing ? 'Testing...' : 'Test Connection'}
         </button>
 
-        {saveResult && <span className="text-sm text-green-400">{saveResult}</span>}
+        {saveResult && (
+          <span className={`text-sm ${saveResult.ok ? 'text-green-400' : 'text-red-400'}`}>
+            {saveResult.message}
+          </span>
+        )}
       </div>
 
       {/* Test result */}

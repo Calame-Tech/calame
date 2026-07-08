@@ -6,6 +6,13 @@ import { buildMcpUrl } from '../lib/mcp-url.js';
 interface OnboardingWizardProps {
   onComplete: () => void;
   onSkip: () => void;
+  /**
+   * Optional deep link from the final step to the newly created configuration's
+   * detail page (Table Tools & Masking / Advanced settings). When omitted, the
+   * "Fine-tune..." link is not rendered — callers that don't wire navigation
+   * still get a fully working wizard.
+   */
+  onNavigateToConfig?: (configName: string) => void;
 }
 
 type DbType = 'postgresql' | 'mysql' | 'sqlite';
@@ -33,10 +40,15 @@ interface Step3ProfileState {
 
 const TOTAL_STEPS = 4;
 
-export default function OnboardingWizard({ onComplete, onSkip }: OnboardingWizardProps) {
+export default function OnboardingWizard({
+  onComplete,
+  onSkip,
+  onNavigateToConfig,
+}: OnboardingWizardProps) {
   const [step, setStep] = useState(1);
   const [createdConnectionName, setCreatedConnectionName] = useState('');
   const [createdProfileName, setCreatedProfileName] = useState('');
+  const [createdConfigName, setCreatedConfigName] = useState('');
 
   const [step1, setStep1] = useState<Step1State>({
     connectionName: '',
@@ -54,7 +66,7 @@ export default function OnboardingWizard({ onComplete, onSkip }: OnboardingWizar
   });
 
   const [step3Profile, setStep3Profile] = useState<Step3ProfileState>({
-    profileName: 'My first profile',
+    profileName: 'My first MCP server',
     loading: false,
     error: '',
   });
@@ -178,14 +190,18 @@ export default function OnboardingWizard({ onComplete, onSkip }: OnboardingWizar
     // The backend chat/auth routes only accept [a-zA-Z0-9_-]+ profile names —
     // the typed text becomes the display label, the slug becomes the name.
     const name = slugifyProfileName(label);
+    // The configuration lives in its own namespace (the `configurations` table)
+    // but sharing the profile's slug would be confusing in the "Data Profiles"
+    // list, so it always gets a distinct `-config` suffix.
+    const configName = `${name}-config`;
     if (!label) {
-      setStep3Profile((s) => ({ ...s, error: 'Profile name is required.' }));
+      setStep3Profile((s) => ({ ...s, error: 'MCP server name is required.' }));
       return;
     }
     if (!name) {
       setStep3Profile((s) => ({
         ...s,
-        error: 'Profile name must contain at least one letter or number.',
+        error: 'MCP server name must contain at least one letter or number.',
       }));
       return;
     }
@@ -207,7 +223,38 @@ export default function OnboardingWizard({ onComplete, onSkip }: OnboardingWizar
         }
       }
 
-      // 1. Save profile with real scopes
+      // 1. Create the Data Configuration first — this is what makes the
+      // profile show up under "Data Profiles" and gives the user a place to
+      // enable the write tool / column masking afterwards (TableOptionsCard
+      // only mounts on the configuration detail page).
+      const configRes = await apiFetch('/api/configurations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          name: configName,
+          label,
+          sources: [createdConnectionName],
+          scopes: {
+            [createdConnectionName]: {
+              kind: 'relational',
+              selectedTables,
+            },
+          },
+        }),
+      });
+      const configData = (await configRes.json()) as { success: boolean; message?: string };
+      if (!configData.success) {
+        setStep3Profile((s) => ({
+          ...s,
+          loading: false,
+          error: configData.message ?? 'Failed to create the data configuration.',
+        }));
+        return; // Don't create a profile with no backing configuration.
+      }
+
+      // 2. Save the profile referencing the configuration by name (the shape
+      // every configuration-backed profile in the app uses).
       const saveRes = await apiFetch('/api/profiles/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -216,13 +263,7 @@ export default function OnboardingWizard({ onComplete, onSkip }: OnboardingWizar
           profiles: {
             [name]: {
               label,
-              sources: [createdConnectionName],
-              scopes: {
-                [createdConnectionName]: {
-                  kind: 'relational',
-                  selectedTables,
-                },
-              },
+              configurations: [configName],
             },
           },
         }),
@@ -232,12 +273,12 @@ export default function OnboardingWizard({ onComplete, onSkip }: OnboardingWizar
         setStep3Profile((s) => ({
           ...s,
           loading: false,
-          error: saveData.message ?? 'Failed to create profile.',
+          error: saveData.message ?? 'Failed to create MCP server.',
         }));
         return;
       }
 
-      // 2. Activate profile — non-blocking: absorb errors, profile is already saved
+      // 3. Activate profile — non-blocking: absorb errors, profile is already saved
       try {
         await apiFetch('/api/serve/start', {
           method: 'POST',
@@ -252,6 +293,7 @@ export default function OnboardingWizard({ onComplete, onSkip }: OnboardingWizar
         );
       }
 
+      setCreatedConfigName(configName);
       setCreatedProfileName(name);
       setStep3Profile((s) => ({ ...s, loading: false }));
       setStep(4);
@@ -348,9 +390,11 @@ export default function OnboardingWizard({ onComplete, onSkip }: OnboardingWizar
             <StepDone
               mcpUrl={mcpUrl}
               profileName={createdProfileName}
+              configName={createdConfigName}
               copied={copied}
               onCopy={copyUrl}
               onComplete={onComplete}
+              onNavigateToConfig={onNavigateToConfig}
             />
           )}
         </div>
@@ -393,7 +437,7 @@ function StepConnect({ state, setState, onDemo, onCustom }: StepConnectProps) {
         <p className="text-xs font-semibold tracking-widest text-os-400 uppercase mb-2">Step 1</p>
         <h1 className="heading-lg mb-2">Connect your first database</h1>
         <p className="text-sm text-gray-400">
-          Connect to a database to start exploring your data and building MCP profiles.
+          Connect to a database to start exploring your data and building MCP servers.
         </p>
       </div>
 
@@ -527,7 +571,7 @@ function StepTables({ state, connectionName, onToggle, onToggleAll, onNext }: St
         <h1 className="heading-lg mb-2">Select tables to expose</h1>
         <p className="text-sm text-gray-400">
           Choose which tables from <span className="text-gray-200 font-mono">{connectionName}</span>{' '}
-          will be accessible through your MCP profile. All columns are included by default.
+          will be accessible through your MCP server. All columns are included by default.
         </p>
       </div>
 
@@ -626,9 +670,9 @@ function StepProfile({
     <div className="space-y-6">
       <div>
         <p className="text-xs font-semibold tracking-widest text-os-400 uppercase mb-2">Step 3</p>
-        <h1 className="heading-lg mb-2">Name your MCP profile</h1>
+        <h1 className="heading-lg mb-2">Name your MCP server</h1>
         <p className="text-sm text-gray-400">
-          Your profile will expose {tableCount} table{tableCount !== 1 ? 's' : ''} from{' '}
+          Your MCP server will expose {tableCount} table{tableCount !== 1 ? 's' : ''} from{' '}
           <span className="text-gray-200 font-mono">{connectionName}</span>.
         </p>
       </div>
@@ -636,7 +680,7 @@ function StepProfile({
       <form onSubmit={onSubmit} className="card-primary p-4 space-y-4" noValidate>
         <div>
           <label htmlFor="profile-name" className="block text-sm font-medium text-gray-300 mb-1">
-            Profile name{' '}
+            MCP server name{' '}
             <span className="text-red-400" aria-hidden="true">
               *
             </span>
@@ -647,7 +691,7 @@ function StepProfile({
             value={state.profileName}
             onChange={(e) => onChange(e.target.value)}
             className="input-editorial w-full"
-            placeholder="My first profile"
+            placeholder="My first MCP server"
             autoFocus
           />
           {slugifyProfileName(state.profileName) && (
@@ -679,7 +723,7 @@ function StepProfile({
             disabled={state.loading || !state.profileName.trim()}
             className="flex-1 py-2 px-4 bg-os-700 hover:bg-os-600 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-os-500"
           >
-            {state.loading ? 'Creating...' : 'Create profile & activate'}
+            {state.loading ? 'Creating...' : 'Create MCP server & activate'}
           </button>
         </div>
       </form>
@@ -692,12 +736,22 @@ function StepProfile({
 interface StepDoneProps {
   mcpUrl: string;
   profileName: string;
+  configName: string;
   copied: boolean;
   onCopy: () => void;
   onComplete: () => void;
+  onNavigateToConfig?: (configName: string) => void;
 }
 
-function StepDone({ mcpUrl, profileName, copied, onCopy, onComplete }: StepDoneProps) {
+function StepDone({
+  mcpUrl,
+  profileName,
+  configName,
+  copied,
+  onCopy,
+  onComplete,
+  onNavigateToConfig,
+}: StepDoneProps) {
   return (
     <div className="space-y-6">
       <div className="flex flex-col items-center text-center space-y-3">
@@ -724,7 +778,7 @@ function StepDone({ mcpUrl, profileName, copied, onCopy, onComplete }: StepDoneP
             Your MCP server is ready.{' '}
             {profileName && (
               <>
-                Profile <span className="text-gray-200 font-medium">{profileName}</span> has been
+                MCP server <span className="text-gray-200 font-medium">{profileName}</span> has been
                 created.
               </>
             )}
@@ -792,6 +846,16 @@ function StepDone({ mcpUrl, profileName, copied, onCopy, onComplete }: StepDoneP
       >
         Go to dashboard
       </button>
+
+      {onNavigateToConfig && configName && (
+        <button
+          type="button"
+          onClick={() => onNavigateToConfig(configName)}
+          className="w-full text-center text-sm text-os-400 hover:text-os-300 transition-colors focus:outline-none focus:ring-2 focus:ring-os-700 rounded px-2 py-1"
+        >
+          Fine-tune tables, tools &amp; masking &rarr;
+        </button>
+      )}
     </div>
   );
 }

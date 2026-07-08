@@ -16,7 +16,7 @@ const ChatSsoLogin = lazy(() =>
       default: function ChatSsoLoginUnavailable() {
         return (
           <div className="p-6 text-sm text-gray-400 text-center">
-            Les fonctionnalités SSO ne sont pas disponibles sur cette instance.
+            SSO features are not available on this instance.
           </div>
         );
       },
@@ -257,7 +257,7 @@ function TokenLoginForm({ profile, onSuccess }: { profile: ChatProfile; onSucces
       if (data.success) {
         onSuccess();
       } else {
-        setError(data.message || 'Invalid token. Please try again.');
+        setError(data.message || 'Invalid API key. Please try again.');
       }
     } catch {
       setError('Connection error. Please try again.');
@@ -630,7 +630,7 @@ export default function ChatEntryPage({ profileName }: ChatEntryPageProps) {
       // 1. Fetch the public profile info
       let profile: ChatProfile;
       try {
-        const res = await fetch(`/api/chat-profile/${encodeURIComponent(profileName)}`);
+        const res = await apiFetch(`/api/chat-profile/${encodeURIComponent(profileName)}`);
         const data = await res.json();
 
         if (!res.ok || !data.success || !data.profile) {
@@ -653,7 +653,7 @@ export default function ChatEntryPage({ profileName }: ChatEntryPageProps) {
         }
       } catch {
         if (!cancelled) {
-          setPageState({ step: 'error', message: 'Could not load the chat profile.' });
+          setPageState({ step: 'error', message: 'Could not load the MCP server.' });
         }
         return;
       }
@@ -696,7 +696,7 @@ export default function ChatEntryPage({ profileName }: ChatEntryPageProps) {
 
         if (statusData.success && statusData.authenticated) {
           // Verify access to this specific profile
-          const accessRes = await fetch(
+          const accessRes = await apiFetch(
             `/api/auth/user-profile-access?profileName=${encodeURIComponent(profileName)}`,
             { credentials: 'include' },
           );
@@ -878,7 +878,7 @@ export default function ChatEntryPage({ profileName }: ChatEntryPageProps) {
 
     case 'sso':
       return (
-        <Suspense fallback={<div className="p-6 text-sm text-gray-500 italic">Chargement…</div>}>
+        <Suspense fallback={<div className="p-6 text-sm text-gray-500 italic">Loading…</div>}>
           <ChatSsoLogin profile={profile} />
         </Suspense>
       );

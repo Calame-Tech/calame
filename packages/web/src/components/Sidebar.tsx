@@ -3,6 +3,7 @@ import { useBranding, DEFAULT_LOGO_SRC } from '../lib/branding.js';
 import { Button } from './ui/index.js';
 import WorkspaceSwitcher from './WorkspaceSwitcher.js';
 import NotificationsBell from './NotificationsBell.js';
+import type { View } from '../router/index.js';
 
 type NavigablePage =
   | 'dashboard'
@@ -14,7 +15,9 @@ type NavigablePage =
   | 'metrics'
   | 'settings'
   | 'knowledge'
-  | 'tenants';
+  | 'tenants'
+  | 'pending-writes'
+  | 'audit-log';
 
 interface SidebarUser {
   email?: string;
@@ -24,6 +27,14 @@ interface SidebarUser {
 interface SidebarProps {
   currentPage: string;
   onNavigate: (page: NavigablePage) => void;
+  /** Full `View` navigation, used by the notification bell to jump straight
+   * to the pending-writes page (with no ephemeral fields to preserve, unlike
+   * `onNavigate` which only carries a bare page id). */
+  onNavigateView?: (view: View) => void;
+  /** Pending write-queue count — powers the Govern section's badge. Sourced
+   * from useAppData's independent poller, not the notification bell, so the
+   * badge is populated even if the bell has never been opened. */
+  pendingWriteCount?: number;
   user?: SidebarUser;
   onLogout?: () => void;
 }
@@ -169,6 +180,44 @@ const IconBuildingOffice = (
   </svg>
 );
 
+// Check-badge icon — pending write approvals
+const IconCheckBadge = (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    fill="none"
+    viewBox="0 0 24 24"
+    strokeWidth={1.5}
+    stroke="currentColor"
+    className="w-4 h-4"
+    aria-hidden="true"
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      d="M9 12.75 11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 0 1-1.043 3.296 3.745 3.745 0 0 1-3.296 1.043A3.745 3.745 0 0 1 12 21c-1.268 0-2.39-.63-3.068-1.593a3.746 3.746 0 0 1-3.296-1.043 3.745 3.745 0 0 1-1.043-3.296A3.745 3.745 0 0 1 3 12c0-1.268.63-2.39 1.593-3.068a3.745 3.745 0 0 1 1.043-3.296 3.746 3.746 0 0 1 3.296-1.043A3.746 3.746 0 0 1 12 3c1.268 0 2.39.63 3.068 1.593a3.746 3.746 0 0 1 3.296 1.043 3.746 3.746 0 0 1 1.043 3.296A3.745 3.745 0 0 1 21 12Z"
+    />
+  </svg>
+);
+
+// List-bullet icon — audit log
+const IconListBullet = (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    fill="none"
+    viewBox="0 0 24 24"
+    strokeWidth={1.5}
+    stroke="currentColor"
+    className="w-4 h-4"
+    aria-hidden="true"
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      d="M8.25 6.75h12M8.25 12h12m-12 5.25h12M3.75 6.75h.007v.008H3.75V6.75Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0ZM3.75 12h.007v.008H3.75V12Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm-.375 5.25h.007v.008H3.75v-.008Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z"
+    />
+  </svg>
+);
+
 const IconCog = (
   <svg
     xmlns="http://www.w3.org/2000/svg"
@@ -235,7 +284,7 @@ const NAV_SECTIONS: NavSection[] = [
       },
       {
         page: 'configurations',
-        label: 'Data Profiles',
+        label: 'Data Configurations',
         activeWhen: ['config-detail'],
         icon: IconRectangleStack,
       },
@@ -245,6 +294,21 @@ const NAV_SECTIONS: NavSection[] = [
         // Highlight this entry when on the legacy 'connections' or 'knowledge' pages too
         activeWhen: ['connections', 'knowledge'],
         icon: IconCircleStack,
+      },
+    ],
+  },
+  {
+    label: 'Govern',
+    items: [
+      {
+        page: 'pending-writes',
+        label: 'Pending Writes',
+        icon: IconCheckBadge,
+      },
+      {
+        page: 'audit-log',
+        label: 'Audit Log',
+        icon: IconListBullet,
       },
     ],
   },
@@ -273,7 +337,14 @@ function getInitials(email?: string): string {
   return (parts[0][0] + parts[1][0]).toUpperCase();
 }
 
-export default function Sidebar({ currentPage, onNavigate, user, onLogout }: SidebarProps) {
+export default function Sidebar({
+  currentPage,
+  onNavigate,
+  onNavigateView,
+  pendingWriteCount,
+  user,
+  onLogout,
+}: SidebarProps) {
   const branding = useBranding();
   const [isOpen, setIsOpen] = useState(false);
 
@@ -350,8 +421,11 @@ export default function Sidebar({ currentPage, onNavigate, user, onLogout }: Sid
       <nav
         aria-label="Main navigation"
         className={[
-          // Base styles shared by mobile and desktop
-          'bg-gray-950/60 backdrop-blur-xl flex flex-col overflow-y-auto',
+          // Base styles shared by mobile and desktop. No backdrop-blur: the
+          // sidebar is a full-height sticky surface always on screen, so its
+          // backdrop-filter re-rasterized on every scroll frame. Opaque
+          // background instead (it sits over page content on mobile anyway).
+          'bg-gray-950/95 flex flex-col overflow-y-auto',
           // Mobile: fixed slide-in drawer from the left
           'fixed inset-y-0 left-0 z-40 w-64',
           'transform transition-transform duration-300 ease-in-out',
@@ -401,6 +475,7 @@ export default function Sidebar({ currentPage, onNavigate, user, onLogout }: Sid
                 {section.items.map(({ page, label, activeWhen, icon }) => {
                   const isActive =
                     currentPage === page || (activeWhen?.includes(currentPage) ?? false);
+                  const badgeCount = page === 'pending-writes' ? (pendingWriteCount ?? 0) : 0;
 
                   return (
                     <li key={page} className="w-full flex-shrink-0">
@@ -421,6 +496,16 @@ export default function Sidebar({ currentPage, onNavigate, user, onLogout }: Sid
                         {/* Icon: accent color when active, muted gray otherwise */}
                         <span className={isActive ? 'text-os-400' : 'text-gray-500'}>{icon}</span>
                         <span>{label}</span>
+                        {/* Pending-writes badge — same visual language as the
+                            notification bell's badge (red circle, '9+' cap). */}
+                        {badgeCount > 0 && (
+                          <span
+                            aria-label={`${badgeCount} pending write${badgeCount === 1 ? '' : 's'}`}
+                            className="ml-auto flex items-center justify-center min-w-[1rem] h-4 px-1 rounded-full bg-red-500 text-[10px] font-semibold text-white"
+                          >
+                            {badgeCount > 9 ? '9+' : badgeCount}
+                          </span>
+                        )}
                         {/* Chevron indicates the active item */}
                         {isActive && IconChevronRight}
                       </button>
@@ -453,7 +538,7 @@ export default function Sidebar({ currentPage, onNavigate, user, onLogout }: Sid
               </div>
 
               {/* Notifications bell */}
-              <NotificationsBell />
+              <NotificationsBell onNavigate={onNavigateView} />
 
               {/* Logout button */}
               {onLogout !== undefined && (

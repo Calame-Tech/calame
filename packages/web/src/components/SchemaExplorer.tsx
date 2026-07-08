@@ -1,5 +1,11 @@
 import React, { useState, useMemo } from 'react';
-import type { DatabaseSchema, TableInfo, Relation, PiiDetection } from '../types/schema.js';
+import type {
+  DatabaseSchema,
+  TableInfo,
+  Relation,
+  PiiDetection,
+  TableToolOptions,
+} from '../types/schema.js';
 import PiiBadge from './PiiBadge.js';
 
 interface SchemaExplorerProps {
@@ -13,6 +19,13 @@ interface SchemaExplorerProps {
   connectionSchemas?: Record<string, DatabaseSchema>;
   /** Labels for connection names (keyed by connection name) */
   connectionLabels?: Record<string, string>;
+  /**
+   * Effective tool options per table (Lot D2). When provided, selected tables
+   * show a small R/W badge next to the column count so it's visible at a
+   * glance which tables have the write tool enabled — without opening
+   * "Advanced" / ConfigPanel.
+   */
+  tableOptions?: Record<string, TableToolOptions>;
 }
 
 /** Map common PG type keywords to badge colors */
@@ -56,6 +69,7 @@ export default function SchemaExplorer({
   scanning,
   connectionSchemas,
   connectionLabels,
+  tableOptions,
 }: SchemaExplorerProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedTables, setExpandedTables] = useState<Set<string>>(new Set());
@@ -202,6 +216,28 @@ export default function SchemaExplorer({
     return DB_COLORS[idx % DB_COLORS.length];
   };
 
+  // Tiny R/W tool badge for a selected table — amber "W" when the write tool
+  // is enabled, gray "R" otherwise. Only rendered when `tableOptions` is
+  // supplied so callers that don't pass it see no behavior change.
+  const renderToolBadge = (tableName: string) => {
+    const enabledTools = tableOptions?.[tableName]?.enabledTools ?? [
+      'describe',
+      'aggregate',
+      'query',
+    ];
+    const hasWrite = enabledTools.includes('write');
+    return (
+      <span
+        title={`Tools: ${enabledTools.join(', ')}`}
+        className={`flex-shrink-0 text-[9px] px-1 py-0.5 rounded font-bold ${
+          hasWrite ? 'bg-amber-500/20 text-amber-400' : 'bg-gray-700/60 text-gray-500'
+        }`}
+      >
+        {hasWrite ? 'W' : 'R'}
+      </span>
+    );
+  };
+
   // Render a table button
   const renderTableButton = (table: TableInfo, connName?: string) => {
     const selectedCols = selectedTables[table.name] ?? new Set<string>();
@@ -232,7 +268,7 @@ export default function SchemaExplorer({
         {/* DB badge when showing flat (single db or search) */}
         {!connName && tableToConnection && connectionNames.length > 1 && (
           <span
-            title={`Base de données : ${connectionLabels?.[tableToConnection[table.name]] ?? tableToConnection[table.name]}`}
+            title={`Database: ${connectionLabels?.[tableToConnection[table.name]] ?? tableToConnection[table.name]}`}
             className={`flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded border font-medium ${getConnColor(tableToConnection[table.name]).badge}`}
           >
             {connectionLabels?.[tableToConnection[table.name]] ?? tableToConnection[table.name]}
@@ -242,6 +278,8 @@ export default function SchemaExplorer({
         <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-gray-700/80 text-gray-400 font-medium">
           {selectedCols.size}/{table.columns.length}
         </span>
+        {/* Effective tool badge (R/W) — only when hasSelection and tableOptions is provided */}
+        {tableOptions && hasSelection && renderToolBadge(table.name)}
       </button>
     );
   };
@@ -290,8 +328,8 @@ export default function SchemaExplorer({
             {tableRelations.map((r, i) => {
               const isFrom = r.fromTable === table.name;
               const tooltipText = isFrom
-                ? `Clé étrangère : ${r.fromColumn} référence ${r.toTable}.${r.toColumn}`
-                : `Clé étrangère : ${r.fromTable}.${r.fromColumn} référence ${r.toColumn} dans cette table`;
+                ? `Foreign key: ${r.fromColumn} references ${r.toTable}.${r.toColumn}`
+                : `Foreign key: ${r.fromTable}.${r.fromColumn} references ${r.toColumn} in this table`;
               return (
                 <span
                   key={i}
@@ -330,14 +368,14 @@ export default function SchemaExplorer({
                 />
                 <span className="font-mono text-gray-200 text-xs truncate">{col.name}</span>
                 <span
-                  title={`Type SQL : ${col.type}${col.nullable ? ' — accepte les valeurs NULL' : ' — NOT NULL'}`}
+                  title={`SQL type: ${col.type}${col.nullable ? ' — accepts NULL values' : ' — NOT NULL'}`}
                   className={`flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded-md font-medium ring-1 ${getTypeBadgeClasses(col.type)}`}
                 >
                   {col.type}
                 </span>
                 {table.primaryKeys.includes(col.name) && (
                   <span
-                    title="Clé primaire — identifiant unique de chaque ligne de cette table."
+                    title="Primary key — unique identifier for each row in this table."
                     className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded-md font-bold bg-yellow-500/15 text-yellow-400 ring-1 ring-yellow-500/25"
                   >
                     PK
@@ -345,7 +383,7 @@ export default function SchemaExplorer({
                 )}
                 {isFk && (
                   <span
-                    title="Clé étrangère — référence une ligne dans une autre table. Cliquez sur la table pour voir les relations."
+                    title="Foreign key — references a row in another table. Click the table to see relations."
                     className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded-md font-bold bg-blue-500/15 text-blue-400 ring-1 ring-blue-500/25"
                   >
                     FK
@@ -383,7 +421,7 @@ export default function SchemaExplorer({
             <button
               onClick={onScanPii}
               disabled={scanning}
-              title="Analyser toutes les colonnes sélectionnées pour détecter automatiquement les données personnelles (IIP) telles que e-mails, téléphones, noms, etc."
+              title="Analyze all selected columns to automatically detect personal data (PII) such as emails, phone numbers, names, etc."
               className="px-3 py-1.5 text-xs font-medium rounded-md border border-amber-600/50 text-amber-400 hover:bg-amber-900/20 hover:border-amber-500/50 transition-all duration-200 disabled:opacity-50"
             >
               {scanning ? 'Scanning...' : 'Scan for PII'}
@@ -393,8 +431,8 @@ export default function SchemaExplorer({
             onClick={allSelected ? deselectAllTables : selectAllTables}
             title={
               allSelected
-                ? 'Désélectionner toutes les tables et colonnes de ce schéma.'
-                : 'Sélectionner toutes les tables et colonnes de ce schéma pour les inclure dans le serveur MCP.'
+                ? 'Deselect all tables and columns in this schema.'
+                : 'Select all tables and columns in this schema to include them in the MCP server.'
             }
             className="px-3 py-1.5 text-xs font-medium rounded-md border border-gray-700 text-gray-300 hover:bg-gray-800 hover:border-gray-600 transition-all duration-200"
           >

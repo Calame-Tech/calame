@@ -16,7 +16,7 @@ export const KnowledgeBaseManager = lazy(() =>
       default: function RagUnavailable() {
         return (
           <div className="p-6 text-sm text-gray-400 text-center">
-            Les fonctionnalités RAG ne sont pas disponibles sur cette instance.
+            RAG features are not available on this instance.
           </div>
         );
       },

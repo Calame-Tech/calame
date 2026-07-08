@@ -17,6 +17,7 @@ import { persistProfiles, buildProfilesData } from '../lib/profiles.js';
 import {
   getConfigurationTableNames,
   getConfigurationSelectedTables,
+  getConfigurationTableOptions,
 } from '../lib/configuration-accessors.js';
 import type {
   Config,
@@ -27,6 +28,7 @@ import type {
   OAuthConfig,
   ExternalAuthConfig,
   DataScopeRule,
+  TableToolOptions,
 } from '../types/schema.js';
 import type { View } from '../router/index.js';
 
@@ -50,7 +52,7 @@ const DataScopingSection = lazy(() =>
       default: function DataScopingSectionUnavailable() {
         return (
           <div className="p-6 text-sm text-gray-400 text-center">
-            Les fonctionnalités de scoping ne sont pas disponibles sur cette instance.
+            Scoping features are not available on this instance.
           </div>
         );
       },
@@ -195,7 +197,7 @@ function McpDetailView({
   const [togglingProfile, setTogglingProfile] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [copiedEndpoint, setCopiedEndpoint] = useState(false);
+  const [copied, setCopied] = useState<'endpoint' | 'chat' | null>(null);
   const [activeSection, setActiveSection] = useState<
     'tables' | 'config' | 'tokens' | 'audit' | 'users' | 'scoping'
   >(
@@ -287,10 +289,32 @@ function McpDetailView({
     }
   }, [profileIndex, activeProfileIndex, onActiveProfileIndexChange]);
 
+  // Count effective tables from configurations — computed unconditionally
+  // (with the profile-not-found early return happening *after* this hook) so
+  // the hook always runs in the same order across renders, per the Rules of
+  // Hooks.
+  const profileConfigurations = profile?.configurations ?? [];
+  const effectiveTableCount = useMemo(() => {
+    const tables = new Set<string>();
+    for (const cfgName of profileConfigurations) {
+      const cfg = configurations.find((c) => c.name === cfgName);
+      if (cfg) {
+        for (const t of getConfigurationTableNames(cfg)) tables.add(t);
+      }
+    }
+    return tables.size;
+  }, [profileConfigurations, configurations]);
+
   if (!profile) {
     return (
       <div className="text-center text-gray-500 py-12">
-        <p>Profile &quot;{profileName}&quot; not found.</p>
+        <p>MCP Server &quot;{profileName}&quot; not found.</p>
+        <button
+          onClick={onNavigateBack}
+          className="mt-4 px-4 py-2 rounded-lg bg-os-700 hover:bg-os-600 text-white text-sm font-medium transition-all duration-200"
+        >
+          ← Back to MCP Servers
+        </button>
       </div>
     );
   }
@@ -306,19 +330,6 @@ function McpDetailView({
       ? (profileStatus?.endpoint ?? `/mcp/${profile.name}`)
       : buildMcpPath(profile.name, _tenant);
   const endpoint = `${window.location.origin}${basePath}`;
-
-  // Count effective tables from configurations
-  const profileConfigurations = profile.configurations ?? [];
-  const effectiveTableCount = useMemo(() => {
-    const tables = new Set<string>();
-    for (const cfgName of profileConfigurations) {
-      const cfg = configurations.find((c) => c.name === cfgName);
-      if (cfg) {
-        for (const t of getConfigurationTableNames(cfg)) tables.add(t);
-      }
-    }
-    return tables.size;
-  }, [profileConfigurations, configurations]);
 
   /** Save all profiles to backend before starting, so new profiles are known */
   const saveProfiles = async () => {
@@ -342,10 +353,10 @@ function McpDetailView({
       });
       const data = await res.json();
       if (data.success === false) {
-        setError(data.message || `Failed to start profile "${profile.name}".`);
+        setError(data.message || `Failed to start MCP server "${profile.name}".`);
       }
     } catch {
-      setError(`Network error starting profile "${profile.name}".`);
+      setError(`Network error starting MCP server "${profile.name}".`);
     } finally {
       setTogglingProfile(false);
     }
@@ -362,10 +373,10 @@ function McpDetailView({
       });
       const data = await res.json();
       if (data.success === false) {
-        setError(data.message || `Failed to stop profile "${profile.name}".`);
+        setError(data.message || `Failed to stop MCP server "${profile.name}".`);
       }
     } catch {
-      setError(`Network error stopping profile "${profile.name}".`);
+      setError(`Network error stopping MCP server "${profile.name}".`);
     } finally {
       setTogglingProfile(false);
     }
@@ -373,8 +384,8 @@ function McpDetailView({
 
   const handleCopyEndpoint = () => {
     navigator.clipboard.writeText(endpoint).then(() => {
-      setCopiedEndpoint(true);
-      setTimeout(() => setCopiedEndpoint(false), 2000);
+      setCopied('endpoint');
+      setTimeout(() => setCopied(null), 2000);
     });
   };
 
@@ -438,7 +449,7 @@ function McpDetailView({
         return updated;
       });
     } catch {
-      setResponseModeError('Erreur lors du changement de mode');
+      setResponseModeError('Error changing response mode');
     } finally {
       setTogglingResponseMode(false);
     }
@@ -449,27 +460,27 @@ function McpDetailView({
     {
       id: 'tables',
       label: 'Exposed Data',
-      tooltip: 'Gérer les profils de données et les tables accessibles via ce serveur MCP',
+      tooltip: 'Manage the Data Configurations and tables accessible via this MCP server',
     },
     {
       id: 'users',
       label: 'Users',
-      tooltip: 'Voir et gérer les utilisateurs ayant accès à ce serveur MCP',
+      tooltip: 'View and manage the users with access to this MCP server',
     },
     {
       id: 'tokens',
       label: 'API Keys',
-      tooltip: "Créer et révoquer des clés API pour l'authentification programmatique",
+      tooltip: 'Create and revoke API keys for programmatic authentication',
     },
     {
       id: 'scoping',
       label: 'Data Scoping',
-      tooltip: "Configurer l'isolation des données par utilisateur (row-level)",
+      tooltip: 'Configure per-user data isolation (row-level)',
     },
     {
       id: 'audit',
       label: 'Audit Log',
-      tooltip: "Consulter l'historique des requêtes et des accès à ce serveur",
+      tooltip: 'View the history of requests and access to this server',
     },
   ];
 
@@ -483,7 +494,7 @@ function McpDetailView({
               className={`w-3 h-3 rounded-full ${
                 isActive ? 'bg-green-500 shadow-lg shadow-green-500/30' : 'bg-gray-600'
               }`}
-              title={isActive ? "Serveur MCP en cours d'exécution" : 'Serveur MCP arrêté'}
+              title={isActive ? 'MCP server running' : 'MCP server stopped'}
             />
             <div>
               {editingLabel ? (
@@ -500,6 +511,9 @@ function McpDetailView({
                             ...updated[profileIndex],
                             label: editLabel.trim(),
                           };
+                          persistProfiles(buildProfilesData(updated)).catch(() => {
+                            setError('Failed to save the new label.');
+                          });
                           return updated;
                         });
                         setEditingLabel(false);
@@ -518,6 +532,9 @@ function McpDetailView({
                             ...updated[profileIndex],
                             label: editLabel.trim(),
                           };
+                          persistProfiles(buildProfilesData(updated)).catch(() => {
+                            setError('Failed to save the new label.');
+                          });
                           return updated;
                         });
                       }
@@ -561,15 +578,12 @@ function McpDetailView({
                       {profile.name}
                     </span>
                   )}
-                  <HelpTip
-                    content="Cliquer pour renommer ce serveur MCP"
-                    position="right"
-                    size="xs"
-                  />
+                  <HelpTip content="Click to rename this MCP server" position="right" size="xs" />
                 </h2>
               )}
               <p className="text-sm text-gray-500 mt-1">
-                {isActive ? 'Active' : 'Inactive'} &middot; {profileConfigurations.length} profile
+                {isActive ? 'Active' : 'Inactive'} &middot; {profileConfigurations.length} Data
+                Configuration
                 {profileConfigurations.length !== 1 ? 's' : ''} &middot; {effectiveTableCount} table
                 {effectiveTableCount !== 1 ? 's' : ''}
               </p>
@@ -580,7 +594,7 @@ function McpDetailView({
               <button
                 onClick={handleRefresh}
                 disabled={refreshing}
-                title="Recharger la configuration sans redémarrer le serveur"
+                title="Reload the configuration without restarting the server"
                 className="px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 disabled:opacity-50 bg-gray-700/30 text-gray-300 hover:bg-gray-700/50"
               >
                 {refreshing ? (
@@ -619,7 +633,7 @@ function McpDetailView({
             <button
               onClick={() => (isActive ? handleStopProfile() : handleStartProfile())}
               disabled={togglingProfile}
-              title={isActive ? 'Arrêter ce serveur MCP' : 'Démarrer ce serveur MCP'}
+              title={isActive ? 'Stop this MCP server' : 'Start this MCP server'}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 disabled:opacity-50 ${
                 isActive
                   ? 'bg-red-600/20 text-red-400 hover:bg-red-600/30'
@@ -650,7 +664,7 @@ function McpDetailView({
             </button>
             {confirmDelete ? (
               <div className="flex items-center gap-1">
-                <span className="text-xs text-gray-400 mr-1">Supprimer ?</span>
+                <span className="text-xs text-gray-400 mr-1">Delete?</span>
                 <button
                   onClick={() => {
                     if (profileIndex >= 0) {
@@ -661,19 +675,19 @@ function McpDetailView({
                   }}
                   className="px-2 py-1.5 text-xs bg-red-600 hover:bg-red-500 text-white rounded transition-all duration-200"
                 >
-                  Oui
+                  Yes
                 </button>
                 <button
                   onClick={() => setConfirmDelete(false)}
                   className="px-2 py-1.5 text-xs bg-gray-600 hover:bg-gray-500 text-white rounded transition-all duration-200"
                 >
-                  Non
+                  No
                 </button>
               </div>
             ) : (
               <button
                 onClick={() => setConfirmDelete(true)}
-                title="Supprimer ce serveur MCP"
+                title="Delete this MCP server"
                 className="p-2 text-gray-500 hover:text-red-400 transition-all duration-200 rounded-lg hover:bg-red-500/10"
               >
                 <svg
@@ -711,7 +725,7 @@ function McpDetailView({
             >
               <code className="text-sm text-os-400 font-mono">{endpoint}</code>
               <span className="text-xs text-gray-500 group-hover:text-os-400 transition-all duration-200">
-                {copiedEndpoint ? 'Copied!' : 'Copy'}
+                {copied === 'endpoint' ? 'Copied!' : 'Copy'}
               </span>
             </button>
           </div>
@@ -719,7 +733,7 @@ function McpDetailView({
             <p className="text-xs text-gray-500 mb-1 flex items-center gap-1">
               Chat
               <HelpTip
-                content="Lien partageable vers l'interface de chat pour vos utilisateurs finaux"
+                content="Shareable link to the chat interface for your end users"
                 position="bottom"
                 size="xs"
               />
@@ -728,8 +742,8 @@ function McpDetailView({
               onClick={() => {
                 const chatUrl = `${window.location.origin}/chat/${encodeURIComponent(profile.name)}`;
                 navigator.clipboard.writeText(chatUrl).then(() => {
-                  setCopiedEndpoint(true);
-                  setTimeout(() => setCopiedEndpoint(false), 2000);
+                  setCopied('chat');
+                  setTimeout(() => setCopied(null), 2000);
                 });
               }}
               className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-900/60 border border-gray-700 hover:border-os-600 transition-all duration-200 group"
@@ -738,7 +752,7 @@ function McpDetailView({
                 {window.location.origin}/chat/{encodeURIComponent(profile.name)}
               </code>
               <span className="text-xs text-gray-500 group-hover:text-os-400 transition-all duration-200">
-                Copy
+                {copied === 'chat' ? 'Copied!' : 'Copy'}
               </span>
             </button>
           </div>
@@ -747,7 +761,7 @@ function McpDetailView({
         {/* Response mode */}
         <div className="mt-4 flex items-center justify-between pt-3 border-t border-gray-700/50">
           <div>
-            <span className="text-xs text-gray-400">Mode de réponse</span>
+            <span className="text-xs text-gray-400">Response Mode</span>
             {responseModeError && (
               <p className="text-xs text-red-400 mt-0.5">{responseModeError}</p>
             )}
@@ -756,12 +770,12 @@ function McpDetailView({
             <span
               className={`text-xs font-medium ${isRawMode ? 'text-orange-400' : 'text-green-400'}`}
             >
-              {togglingResponseMode ? '...' : isRawMode ? 'Technique' : 'Naturel'}
+              {togglingResponseMode ? '...' : isRawMode ? 'Technical' : 'Natural'}
             </span>
             <button
               role="switch"
               aria-checked={isRawMode}
-              aria-label="Basculer le mode de réponse"
+              aria-label="Toggle response mode"
               onClick={handleToggleResponseMode}
               disabled={togglingResponseMode}
               className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-os-500 focus:ring-offset-2 focus:ring-offset-gray-900 disabled:opacity-50 ${
@@ -775,7 +789,7 @@ function McpDetailView({
               />
             </button>
             <HelpTip
-              content="En mode Naturel, les reponses sont formulees en langage courant sans termes techniques. En mode Technique, les noms de tables et colonnes de la base de donnees sont visibles."
+              content="In Natural mode, responses are phrased in plain language without technical terms. In Technical mode, the underlying database table and column names are visible."
               position="left"
               size="xs"
             />
@@ -793,41 +807,40 @@ function McpDetailView({
                   label: 'API Key',
                   desc: 'Calame API key',
                   tooltip:
-                    "Les utilisateurs s'authentifient avec une clé API générée par Calame. Idéal pour l'accès programmatique.",
+                    'Users authenticate with an API key generated by Calame. Ideal for programmatic access.',
                 },
                 {
                   value: 'calame',
                   label: 'Calame',
                   desc: 'User account',
-                  tooltip: 'Les utilisateurs se connectent avec leur email et mot de passe Calame.',
+                  tooltip: 'Users sign in with their Calame email and password.',
                 },
                 {
                   value: 'sso',
                   label: 'SSO',
                   desc: 'OIDC provider',
                   tooltip:
-                    "Authentification via votre SSO d'entreprise (Azure AD, Okta, Keycloak). À configurer dans les Paramètres.",
+                    'Authentication via your enterprise SSO (Azure AD, Okta, Keycloak). Configure it in Settings.',
                 },
                 {
                   value: 'oauth',
                   label: 'OAuth',
                   desc: 'GitHub, Google...',
-                  tooltip:
-                    'Les utilisateurs se connectent via GitHub, Google, GitLab ou un fournisseur OAuth personnalisé.',
+                  tooltip: 'Users sign in via GitHub, Google, GitLab, or a custom OAuth provider.',
                 },
                 {
                   value: 'external',
                   label: 'External',
                   desc: 'External API validation',
                   tooltip:
-                    "Les tokens sont validés par votre propre endpoint API. Utile pour s'intégrer à un système d'authentification existant.",
+                    'Access tokens are validated by your own API endpoint. Useful for integrating with an existing authentication system.',
                 },
                 {
                   value: 'open',
                   label: 'Open',
                   desc: 'No auth',
                   tooltip:
-                    "Accès libre sans authentification. À utiliser avec précaution — n'importe qui peut interroger ce serveur.",
+                    'Open access with no authentication. Use with caution — anyone can query this server.',
                 },
               ] as { value: AuthMode; label: string; desc: string; tooltip: string }[]
             ).map((mode) => {
@@ -1147,7 +1160,7 @@ function McpDetailView({
           {/* Configurations selection */}
           <div className="card-primary p-4">
             <div className="flex items-center justify-between mb-3">
-              <h4 className="text-sm font-semibold text-gray-300">Assigned Data Profiles</h4>
+              <h4 className="text-sm font-semibold text-gray-300">Assigned Data Configurations</h4>
               <div className="flex items-center gap-1">
                 <button
                   onClick={() => onNavigateToConfig('')}
@@ -1165,7 +1178,7 @@ function McpDetailView({
                   New
                 </button>
                 <HelpTip
-                  content="Create a new data profile and assign it to this server"
+                  content="Create a new Data Configuration and assign it to this server"
                   position="left"
                   size="xs"
                 />
@@ -1173,7 +1186,7 @@ function McpDetailView({
             </div>
             {configurations.length === 0 ? (
               <p className="text-sm text-gray-500">
-                No data profiles available. Click &quot;+ New&quot; to create one.
+                No Data Configurations available. Click &quot;+ New&quot; to create one.
               </p>
             ) : (
               <div className="flex flex-wrap gap-2">
@@ -1198,13 +1211,13 @@ function McpDetailView({
                         />
                         {cfg.label}
                         <span className="text-xs text-gray-500">
-                          ({tableCount} table{tableCount !== 1 ? 's' : ''}, {sourceCount} base
+                          ({tableCount} table{tableCount !== 1 ? 's' : ''}, {sourceCount} source
                           {sourceCount !== 1 ? 's' : ''})
                         </span>
                       </button>
                       <button
                         onClick={() => onNavigateToConfig(cfg.name)}
-                        title="Modifier ce profil de données"
+                        title="Edit this Data Configuration"
                         className="p-1 text-gray-500 hover:text-os-400 transition-all duration-200"
                       >
                         <svg
@@ -1237,6 +1250,7 @@ function McpDetailView({
               </h4>
               {(() => {
                 const mergedTables: Record<string, string[]> = {};
+                const mergedToolOptions: Record<string, TableToolOptions> = {};
                 for (const cfgName of profileConfigurations) {
                   const cfg = configurations.find((c) => c.name === cfgName);
                   if (!cfg) continue;
@@ -1249,6 +1263,11 @@ function McpDetailView({
                       mergedTables[table] = [...existing];
                     }
                   }
+                  // Last writer wins per table when multiple configurations set options —
+                  // mirrors getConfigurationTableOptions's own merge semantics.
+                  for (const [table, opts] of Object.entries(getConfigurationTableOptions(cfg))) {
+                    mergedToolOptions[table] = opts;
+                  }
                 }
                 const tableNames = Object.keys(mergedTables);
                 if (tableNames.length === 0) {
@@ -1258,17 +1277,39 @@ function McpDetailView({
                 }
                 return (
                   <div className="flex flex-wrap gap-2">
-                    {tableNames.map((tableName) => (
-                      <span
-                        key={tableName}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-blue-600/30 bg-blue-700/10 text-sm text-blue-300"
-                      >
-                        {tableName}
-                        <span className="text-xs text-gray-500">
-                          {mergedTables[tableName].length} cols
+                    {tableNames.map((tableName) => {
+                      const enabledTools = mergedToolOptions[tableName]?.enabledTools ?? [
+                        'describe',
+                        'aggregate',
+                        'query',
+                      ];
+                      return (
+                        <span
+                          key={tableName}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-blue-600/30 bg-blue-700/10 text-sm text-blue-300"
+                        >
+                          {tableName}
+                          <span className="text-xs text-gray-500">
+                            {mergedTables[tableName].length} cols
+                          </span>
+                          <span className="flex items-center gap-1">
+                            {enabledTools.map((tool) => (
+                              <span
+                                key={tool}
+                                title={`Tool: ${tool}`}
+                                className={`text-[9px] px-1 py-0.5 rounded font-bold ${
+                                  tool === 'write'
+                                    ? 'bg-amber-500/20 text-amber-400'
+                                    : 'bg-gray-700/60 text-gray-400'
+                                }`}
+                              >
+                                {tool}
+                              </span>
+                            ))}
+                          </span>
                         </span>
-                      </span>
-                    ))}
+                      );
+                    })}
                   </div>
                 );
               })()}
@@ -1287,7 +1328,7 @@ function McpDetailView({
       )}
 
       {activeSection === 'scoping' && (
-        <Suspense fallback={<div className="p-6 text-sm text-gray-500 italic">Chargement…</div>}>
+        <Suspense fallback={<div className="p-6 text-sm text-gray-500 italic">Loading…</div>}>
           <DataScopingSection
             profile={profile}
             configurations={configurations}
@@ -1298,7 +1339,7 @@ function McpDetailView({
 
       {activeSection === 'tokens' && (
         <div className="card-primary p-4">
-          <h3 className="text-sm font-semibold text-gray-300 mb-3">Tokens</h3>
+          <h3 className="text-sm font-semibold text-gray-300 mb-3">API Keys</h3>
           <TokenManagerLazy profile={profile} port={serveStatus.port} />
         </div>
       )}

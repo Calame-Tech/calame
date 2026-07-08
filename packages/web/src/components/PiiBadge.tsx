@@ -59,27 +59,27 @@ export default function PiiBadge({ detection, onChangeCategory, onRemove }: PiiB
   const editable = onChangeCategory || onRemove;
 
   const confidenceLabel: Record<PiiDetection['confidence'], string> = {
-    high: 'Haute confiance — donnée très probablement sensible.',
-    medium: 'Confiance moyenne — vérification recommandée.',
-    low: 'Faible confiance — détection incertaine.',
-    manual: 'Marqué manuellement par un administrateur.',
+    high: 'High confidence — data is very likely sensitive.',
+    medium: 'Medium confidence — verification recommended.',
+    low: 'Low confidence — uncertain detection.',
+    manual: 'Manually flagged by an administrator.',
   };
 
   const categoryDescriptions: Record<string, string> = {
-    email: 'Adresse e-mail',
-    phone: 'Numéro de téléphone',
-    name: 'Nom de personne',
-    address: 'Adresse postale',
-    credit_card: 'Numéro de carte bancaire',
-    password: 'Mot de passe ou secret',
-    ip_address: 'Adresse IP',
-    ssn: 'Numéro de sécurité sociale',
-    encrypted: 'Donnée chiffrée',
+    email: 'Email address',
+    phone: 'Phone number',
+    name: 'Person name',
+    address: 'Postal address',
+    credit_card: 'Credit card number',
+    password: 'Password or secret',
+    ip_address: 'IP address',
+    ssn: 'Social security number',
+    encrypted: 'Encrypted data',
   };
 
   const tooltipText = isManual
-    ? `IIP : ${categoryDescriptions[detection.category] ?? detection.category} — ${confidenceLabel.manual}${editable ? ' Cliquez pour modifier.' : ''}`
-    : `IIP : ${categoryDescriptions[detection.category] ?? detection.category} — ${confidenceLabel[detection.confidence]} Détecté par : ${detection.matchedBy}.${editable ? ' Cliquez pour modifier.' : ''}`;
+    ? `PII: ${categoryDescriptions[detection.category] ?? detection.category} — ${confidenceLabel.manual}${editable ? ' Click to edit.' : ''}`
+    : `PII: ${categoryDescriptions[detection.category] ?? detection.category} — ${confidenceLabel[detection.confidence]} Detected by: ${detection.matchedBy}.${editable ? ' Click to edit.' : ''}`;
 
   return (
     <div className="relative inline-block" ref={ref}>

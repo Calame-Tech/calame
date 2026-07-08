@@ -4,6 +4,20 @@ Dated log of dev sessions so other devs can catch up quickly without reading
 every commit. Newest first.
 
 ---
+## 2026-07-07/08 — Full UX overhaul (branch `feat/ux-overhaul`, 6 lots)
+
+Triggered by a UX audit (3 parallel agents + architecture pass, ~50 code-verified findings, 6 root causes) after three real frictions in user testing: approval queue unfindable, write tool inconfigurable, AI provider opaque. Six lots, each verified (build/typecheck/lint/tests) and committed:
+
+- **`db14f34` lot A — 8 bugs**: raw `fetch()` bypassed workspace scoping at ~35 sites (create/update/delete hit the `default` tenant regardless of active workspace) -> all through `apiFetch` now; MCP-server rename never persisted; `useMemo` after a conditional return (hooks violation); Notifications tab empty on mobile; save failures shown in green; localhost hardcoded in copyable snippets; audit tab unfiltered by default; cross-button "Copied!".
+- **`d2e5c65` lot B — URL routing**: hash-based sync (`#/mcp/foo/pending`) with pure `serializeView`/`parseHash`, same `{view,setView}` shape (zero call-site change), StrictMode-safe listener. F5/Back/deep-links work. +52 tests.
+- **`ebc72c9` lot C — approval loop promoted**: new GOVERN sidebar section (Pending Writes + Audit Log as top-level pages); global 15s pending-count poller feeding a sidebar badge (fixes the chicken-and-egg — badge shows without opening anything); notification bell items clickable -> Pending Writes; amber dashboard banner; ServePanel's hidden Pending tab removed.
+- **`f59a10b` lot D**: onboarding wizard now creates a real Data Configuration then a profile referencing it (wizard-made servers become editable — write/masking reachable); R/W tool badges surfaced in SchemaExplorer, McpDetail Effective Tables, config cards; tools/masking section opens by default; dirty-state guard on ConfigurationDetailPage.
+- **`8d3d026` lot E**: removed dead code (ProfileManager, ConnectionForm, ServePanel's unreachable detail view — 925 lines) + 9 quick wins (two-step confirm before approving delete/update, pedagogical empty state, clickable profileName, honest one-time-token copy, duplicate-name validation, activate loading state).
+- **`80fc308` lot F**: unified vocabulary (MCP Server / Data Configuration / Source / Workspace / API key) and translated the whole UI to English; cosmetic strings only, all within packages/web/src, no backend/route/enum touched.
+
+Suite: **1936 tests** (baseline 1850 -> +86). Branch stacked on `feat/approval-notifications`. Next: live manual test of the whole overhaul before merging.
+
+---
 
 ## 2026-07-04 → 07-07 — Approval notifications + write-path fixes (branch `feat/approval-notifications`)
 

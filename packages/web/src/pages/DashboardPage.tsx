@@ -30,6 +30,7 @@ interface DashboardPageProps {
   connectedCount: number;
   totalConnCount: number;
   hasConnections: boolean;
+  pendingWriteCount: number;
 }
 
 export default function DashboardPage({
@@ -46,6 +47,7 @@ export default function DashboardPage({
   connectedCount,
   totalConnCount,
   hasConnections,
+  pendingWriteCount,
 }: DashboardPageProps) {
   const { setShowOnboarding } = useSession();
 
@@ -61,7 +63,7 @@ export default function DashboardPage({
       {/* Page header */}
       <PageHeader
         title="Dashboard"
-        description="Overview of your MCP servers, connections, and activity."
+        description="Overview of your MCP servers, sources, and activity."
         actions={
           <div className="flex items-center gap-2">
             <Button variant="secondary" onClick={() => setShowOnboarding(true)}>
@@ -73,6 +75,23 @@ export default function DashboardPage({
           </div>
         }
       />
+
+      {/* Pending approvals banner — only shown when writes are awaiting review.
+          Surfaces the governance queue right at the top so it can't be missed. */}
+      {pendingWriteCount > 0 && (
+        <div
+          className="rounded-xl border border-amber-700/30 bg-amber-900/10 p-4 flex items-center justify-between gap-3 animate-fade-in-up"
+          style={{ animationDelay: '0ms' }}
+        >
+          <p className="text-sm text-amber-300">
+            {pendingWriteCount} write request{pendingWriteCount !== 1 ? 's' : ''} awaiting your
+            approval
+          </p>
+          <Button variant="secondary" onClick={() => setView({ page: 'pending-writes' })}>
+            Review &rarr;
+          </Button>
+        </div>
+      )}
 
       {/* Status ribbon */}
       <div
@@ -88,7 +107,7 @@ export default function DashboardPage({
         </Eyebrow>
         <span className="eyebrow text-gray-700">·</span>
         <Eyebrow>
-          {profiles.length} profile{profiles.length !== 1 ? 's' : ''}
+          {profiles.length} MCP Server{profiles.length !== 1 ? 's' : ''}
         </Eyebrow>
         {recentActivity.length > 0 &&
           (() => {
@@ -107,7 +126,7 @@ export default function DashboardPage({
           })()}
       </div>
 
-      {/* Resources grid: MCP Servers / Data Profiles / Databases */}
+      {/* Resources grid: MCP Servers / Data Configurations / Databases */}
       <div
         className="grid grid-cols-1 md:grid-cols-3 gap-4 animate-fade-in-up"
         style={{ animationDelay: '80ms' }}
@@ -173,13 +192,13 @@ export default function DashboardPage({
           }
         />
 
-        {/* Data Profiles */}
+        {/* Data Configurations */}
         <KpiCard
           accent="blue"
           onClick={() => setView({ page: 'configurations' })}
           eyebrow={
             <Eyebrow dotColor={configurations.length > 0 ? 'bg-blue-400' : 'bg-gray-600'}>
-              DATA PROFILES
+              DATA CONFIGURATIONS
               <HelpTip
                 content="Configure which tables and columns from your databases are exposed to AI clients"
                 position="bottom"
@@ -207,7 +226,9 @@ export default function DashboardPage({
                 );
               })}
               {configurations.length === 0 && (
-                <p className="text-[10px] text-gray-600 text-center py-2 eyebrow">No profiles</p>
+                <p className="text-[10px] text-gray-600 text-center py-2 eyebrow">
+                  No Data Configurations
+                </p>
               )}
               <button
                 onClick={() => setView({ page: 'configurations' })}
@@ -229,7 +250,7 @@ export default function DashboardPage({
             <Eyebrow dotColor={hasConnections ? 'bg-emerald-400' : 'bg-gray-600'}>
               DATABASES
               <HelpTip
-                content="Manage connections to PostgreSQL, MySQL or SQLite databases"
+                content="Manage sources connecting to PostgreSQL, MySQL or SQLite databases"
                 position="bottom"
               />
             </Eyebrow>
@@ -303,7 +324,7 @@ export default function DashboardPage({
           },
           {
             label: 'SETTINGS',
-            description: 'AI provider, SMTP and SSO/OIDC',
+            description: 'AI, email, SSO, branding & notifications',
             dot: 'bg-amber-500',
             page: 'settings' as const,
           },

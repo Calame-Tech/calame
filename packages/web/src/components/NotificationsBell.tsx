@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { apiFetch } from '../lib/api.js';
+import type { View } from '../router/index.js';
 
 interface NotificationItem {
   id: string;
@@ -9,6 +10,12 @@ interface NotificationItem {
   body: string;
   createdAt: string;
   readAt?: string;
+}
+
+interface NotificationsBellProps {
+  /** Navigates the app to a full `View` — used to jump straight to the
+   * pending-writes page when a write_queue.pending notification is clicked. */
+  onNavigate?: (view: View) => void;
 }
 
 const POLL_INTERVAL_MS = 30_000;
@@ -32,7 +39,7 @@ function formatRelativeTime(iso: string): string {
  * every 30s for the unread badge count, and lets the user open a small
  * dropdown with the 10 most recent unread notifications.
  */
-export default function NotificationsBell() {
+export default function NotificationsBell({ onNavigate }: NotificationsBellProps) {
   const [unreadCount, setUnreadCount] = useState(0);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [open, setOpen] = useState(false);
@@ -111,6 +118,19 @@ export default function NotificationsBell() {
     }
   };
 
+  const handleItemClick = (n: NotificationItem) => {
+    // Fire-and-forget — the dropdown closes immediately, no need to await.
+    apiFetch(`/api/notifications/${n.id}/read`, {
+      method: 'POST',
+      credentials: 'include',
+    }).catch(() => {});
+    if (n.type === 'write_queue.pending') {
+      onNavigate?.({ page: 'pending-writes' });
+    }
+    setOpen(false);
+    fetchUnread();
+  };
+
   return (
     <div className="relative" ref={containerRef}>
       <button
@@ -156,7 +176,7 @@ export default function NotificationsBell() {
                 onClick={handleMarkAllRead}
                 className="text-xs text-os-400 hover:text-os-300"
               >
-                Tout marquer lu
+                Mark all as read
               </button>
             </div>
             {notifications.length === 0 ? (
@@ -164,12 +184,18 @@ export default function NotificationsBell() {
             ) : (
               <ul>
                 {notifications.map((n) => (
-                  <li key={n.id} className="px-3 py-2 border-b border-gray-800/60 last:border-b-0">
-                    <p className="text-sm text-gray-200">{n.title}</p>
-                    <p className="text-xs text-gray-400 mt-0.5">{n.body}</p>
-                    <p className="text-[10px] text-gray-600 mt-1">
-                      {formatRelativeTime(n.createdAt)}
-                    </p>
+                  <li key={n.id} className="border-b border-gray-800/60 last:border-b-0">
+                    <button
+                      type="button"
+                      onClick={() => handleItemClick(n)}
+                      className="w-full text-left px-3 py-2 hover:bg-white/5 transition-colors"
+                    >
+                      <p className="text-sm text-gray-200">{n.title}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">{n.body}</p>
+                      <p className="text-[10px] text-gray-600 mt-1">
+                        {formatRelativeTime(n.createdAt)}
+                      </p>
+                    </button>
                   </li>
                 ))}
               </ul>

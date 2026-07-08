@@ -202,12 +202,15 @@ export default function ConnectionManager({
     setRevealStatus('loading');
     setRevealError('');
     try {
-      const res = await fetch(`/api/connections/${encodeURIComponent(editingConnection)}/reveal`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ password: revealPassword }),
-      });
+      const res = await apiFetch(
+        `/api/connections/${encodeURIComponent(editingConnection)}/reveal`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ password: revealPassword }),
+        },
+      );
       const data = await res.json();
       if (data.success) {
         setFormConnStr(data.connectionString);
@@ -326,7 +329,7 @@ export default function ConnectionManager({
     setFormStatus('testing');
     setFormMessage('');
     try {
-      const res = await fetch(`/api/connections/${encodeURIComponent(formName)}/test`, {
+      const res = await apiFetch(`/api/connections/${encodeURIComponent(formName)}/test`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -339,10 +342,10 @@ export default function ConnectionManager({
       const data = await res.json();
       if (data.success) {
         setFormStatus('success');
-        setFormMessage('Connexion réussie !');
+        setFormMessage('Connection successful!');
       } else {
         setFormStatus('error');
-        setFormMessage(data.message || 'Échec du test de connexion.');
+        setFormMessage(data.message || 'Connection test failed.');
       }
     } catch {
       setFormStatus('error');
@@ -370,7 +373,7 @@ export default function ConnectionManager({
     try {
       // If editing, delete the old connection first then recreate
       if (editingConnection) {
-        await fetch(`/api/connections/${encodeURIComponent(editingConnection)}`, {
+        await apiFetch(`/api/connections/${encodeURIComponent(editingConnection)}`, {
           method: 'DELETE',
         });
       }
@@ -414,7 +417,7 @@ export default function ConnectionManager({
 
       // Fetch schema for the new connection
       try {
-        const schemaRes = await fetch(`/api/schema/${encodeURIComponent(formName)}`);
+        const schemaRes = await apiFetch(`/api/schema/${encodeURIComponent(formName)}`);
         const schemaRaw = await schemaRes.json();
         const schemaData: DatabaseSchema = schemaRaw.schema ?? schemaRaw;
         if (schemaData.tables) {
@@ -432,7 +435,7 @@ export default function ConnectionManager({
         ][]) {
           if (n !== formName && info.connected && (info.tableCount as number) > 0) {
             try {
-              const sRes = await fetch(`/api/schema/${encodeURIComponent(n)}`);
+              const sRes = await apiFetch(`/api/schema/${encodeURIComponent(n)}`);
               const sData = await sRes.json();
               const sSchema = sData.schema ?? sData;
               if (sSchema.tables) {
@@ -456,7 +459,7 @@ export default function ConnectionManager({
   // ── Delete connection ────────────────────────────────────────────
   const handleDelete = async (name: string) => {
     try {
-      const res = await fetch(`/api/connections/${encodeURIComponent(name)}`, {
+      const res = await apiFetch(`/api/connections/${encodeURIComponent(name)}`, {
         method: 'DELETE',
       });
       const data = await res.json();
@@ -489,7 +492,7 @@ export default function ConnectionManager({
   };
 
   // Determine form title based on mode
-  const formTitle = editingConnection ? 'Modifier la base de données' : 'Nouvelle base de données';
+  const formTitle = editingConnection ? 'Edit database' : 'New database';
 
   return (
     <div className="space-y-4">
@@ -533,14 +536,14 @@ export default function ConnectionManager({
                 <div className="absolute top-2 right-2 flex items-center gap-1">
                   <button
                     onClick={() => handleDelete(name)}
-                    title="Confirmer la suppression définitive"
+                    title="Confirm permanent deletion"
                     className="px-2 py-0.5 text-xs bg-red-600 hover:bg-red-500 text-white rounded transition-all duration-200"
                   >
                     Yes
                   </button>
                   <button
                     onClick={() => setConfirmDelete(null)}
-                    title="Annuler la suppression"
+                    title="Cancel deletion"
                     className="px-2 py-0.5 text-xs bg-gray-600 hover:bg-gray-500 text-white rounded transition-all duration-200"
                   >
                     No
@@ -551,7 +554,7 @@ export default function ConnectionManager({
                   {/* Edit button */}
                   <button
                     onClick={() => startEdit(name)}
-                    title="Modifier la configuration de cette connexion"
+                    title="Edit this connection's configuration"
                     className="p-1 text-gray-500 hover:text-os-400 transition-all duration-200 rounded hover:bg-os-500/10"
                   >
                     <svg
@@ -571,7 +574,7 @@ export default function ConnectionManager({
                   {/* Delete button */}
                   <button
                     onClick={() => setConfirmDelete(name)}
-                    title="Supprimer cette connexion de la liste"
+                    title="Remove this connection from the list"
                     className="p-1 text-gray-500 hover:text-red-400 transition-all duration-200 rounded hover:bg-red-500/10"
                   >
                     <svg
@@ -590,11 +593,7 @@ export default function ConnectionManager({
               {/* Status dot + name */}
               <div className="flex items-center gap-2 mb-2 pr-16">
                 <span
-                  title={
-                    connected
-                      ? 'Connexion active'
-                      : 'Non connecté — cliquez sur Modifier pour vous connecter'
-                  }
+                  title={connected ? 'Active connection' : 'Not connected — click Edit to connect'}
                   className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${
                     connected ? 'bg-green-400 shadow-sm shadow-green-400/50' : 'bg-gray-500'
                   }`}
@@ -609,14 +608,14 @@ export default function ConnectionManager({
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
                   <span
-                    title={`Base de données ${dbType}`}
+                    title={`Database: ${dbType}`}
                     className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border ${DB_TYPE_COLORS[dbType]}`}
                   >
                     {dbType}
                   </span>
                   {remote?.sslConfig?.enabled && (
                     <span
-                      title="Chiffrement SSL/TLS activé sur cette connexion"
+                      title="SSL/TLS encryption enabled on this connection"
                       className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-700/20 text-green-400 border border-green-600/30"
                     >
                       SSL
@@ -624,7 +623,7 @@ export default function ConnectionManager({
                   )}
                   {remote?.sshConfig?.enabled && (
                     <span
-                      title="Tunnel SSH activé — connexion via un serveur bastion"
+                      title="SSH tunnel enabled — connecting via a bastion server"
                       className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-700/20 text-purple-400 border border-purple-600/30"
                     >
                       SSH
@@ -773,7 +772,7 @@ export default function ConnectionManager({
           {/* Connection string */}
           <div>
             <label className="block eyebrow mb-1.5">
-              Chaîne de connexion <span className="text-red-400">*</span>
+              Connection string <span className="text-red-400">*</span>
             </label>
             <div className="relative">
               <input
@@ -806,10 +805,10 @@ export default function ConnectionManager({
                 }}
                 title={
                   hasSavedConnStr && !connStringRevealed && !formConnStr
-                    ? 'Révéler la chaîne de connexion (mot de passe administrateur requis)'
+                    ? 'Reveal the connection string (admin password required)'
                     : showPassword
-                      ? 'Masquer la chaîne de connexion'
-                      : 'Afficher la chaîne de connexion en clair'
+                      ? 'Hide the connection string'
+                      : 'Show the connection string in plain text'
                 }
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-500 hover:text-gray-300"
               >

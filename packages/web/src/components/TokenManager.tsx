@@ -44,10 +44,10 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
       if (data.success !== false) {
         setTokens(data.tokens ?? []);
       } else {
-        setError(data.message || 'Failed to load tokens.');
+        setError(data.message || 'Failed to load API keys.');
       }
     } catch {
-      setError('Network error loading tokens.');
+      setError('Network error loading API keys.');
     } finally {
       setLoading(false);
     }
@@ -78,10 +78,10 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
         setNewLabel('');
         fetchTokens();
       } else {
-        setError(data.message || 'Failed to generate token.');
+        setError(data.message || 'Failed to generate API key.');
       }
     } catch {
-      setError('Network error generating token.');
+      setError('Network error generating API key.');
     } finally {
       setGenerating(false);
     }
@@ -90,7 +90,7 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
   const handleReveal = async (tokenId: string) => {
     setRevealError('');
     try {
-      const res = await fetch(`/api/tokens/${encodeURIComponent(tokenId)}/reveal`, {
+      const res = await apiFetch(`/api/tokens/${encodeURIComponent(tokenId)}/reveal`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -102,7 +102,7 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
         setRevealingTokenId(null);
         setRevealPassword('');
       } else {
-        setRevealError(data.message || 'Failed to reveal token.');
+        setRevealError(data.message || 'Failed to reveal API key.');
       }
     } catch {
       setRevealError('Connection error.');
@@ -117,15 +117,15 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
     setConfirmRevoke(null);
     setError(null);
     try {
-      const res = await fetch(`/api/tokens/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/tokens/${encodeURIComponent(id)}`, { method: 'DELETE' });
       const data = await res.json();
       if (data.success !== false) {
         setTokens((prev) => prev.filter((t) => t.id !== id));
       } else {
-        setError(data.message || 'Failed to revoke token.');
+        setError(data.message || 'Failed to revoke API key.');
       }
     } catch {
-      setError('Network error revoking token.');
+      setError('Network error revoking API key.');
     }
   };
 
@@ -183,10 +183,10 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
             </svg>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-yellow-400 mb-1">
-                Token generated - copy it now!
+                API key generated (token) - copy it now!
               </p>
               <p className="text-xs text-yellow-500/70 mb-3">
-                This token will only be shown once. Store it securely.
+                This API key will only be shown once. Store it securely.
               </p>
               <div className="flex items-center gap-2">
                 <code className="flex-1 px-3 py-2 rounded bg-gray-900 border border-gray-700 text-sm text-gray-100 font-mono truncate">
@@ -208,7 +208,7 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                 const tenant = getCurrentTenant();
                 const mcpPath = buildMcpPath(newlyGenerated.profileName, tenant);
                 const mcpUrl = `${window.location.origin}${mcpPath}?token=${newlyGenerated.token}`;
-                const mcpServerUrl = `http://localhost:${port}${mcpPath}`;
+                const mcpServerUrl = `${window.location.origin}${mcpPath}`;
                 return (
                   <>
                     <div className="mt-3">
@@ -226,11 +226,13 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                           {copied === 'mcp-url' ? 'Copied!' : 'Copy URL'}
                         </button>
                       </div>
-                      <p className="text-xs text-gray-600 mt-1">
-                        For remote access, expose via ngrok:{' '}
-                        <code className="text-gray-500">ngrok http {port}</code> then replace the
-                        origin.
-                      </p>
+                      {window.location.hostname === 'localhost' && (
+                        <p className="text-xs text-gray-600 mt-1">
+                          For remote access, expose via ngrok:{' '}
+                          <code className="text-gray-500">ngrok http {port}</code> then replace the
+                          origin.
+                        </p>
+                      )}
                     </div>
 
                     {/* MCP client config for Claude Desktop */}
@@ -239,7 +241,7 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                       <div className="relative">
                         <pre className="p-3 rounded bg-gray-900 border border-gray-700 text-xs text-gray-300 font-mono overflow-x-auto whitespace-pre">{`{
   "mcpServers": {
-    "forge-${newlyGenerated.profileName}": {
+    "calame-${newlyGenerated.profileName}": {
       "url": "${mcpServerUrl}",
       "headers": {
         "Authorization": "Bearer ${newlyGenerated.token}"
@@ -253,7 +255,7 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                               JSON.stringify(
                                 {
                                   mcpServers: {
-                                    [`forge-${newlyGenerated.profileName}`]: {
+                                    [`calame-${newlyGenerated.profileName}`]: {
                                       url: mcpServerUrl,
                                       headers: { Authorization: `Bearer ${newlyGenerated.token}` },
                                     },
@@ -287,7 +289,7 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
       )}
 
       {loading ? (
-        <div className="text-center py-8 text-gray-500 text-sm">Loading tokens...</div>
+        <div className="text-center py-8 text-gray-500 text-sm">Loading API keys...</div>
       ) : (
         profiles.map((profile) => {
           const profileTokens = tokensByProfile[profile.name] ?? [];
@@ -298,7 +300,7 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                   <h3 className="text-sm font-medium text-gray-200">{profile.label}</h3>
                   <span className="text-xs text-gray-500 font-mono">({profile.name})</span>
                   <span className="px-2 py-0.5 rounded-full text-xs bg-gray-700 text-gray-400">
-                    {profileTokens.length} token{profileTokens.length !== 1 ? 's' : ''}
+                    {profileTokens.length} API key{profileTokens.length !== 1 ? 's' : ''}
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5">
@@ -314,10 +316,10 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                     }}
                     className="px-4 py-2 rounded-lg bg-os-700 hover:bg-os-600 text-white text-sm font-medium transition-all duration-200"
                   >
-                    Generate Token
+                    Generate API Key
                   </button>
                   <HelpTip
-                    content="Generate a new API access token for this profile. The token will only be displayed once."
+                    content="Generate a new API key for this MCP server. The key will only be displayed once."
                     position="left"
                     maxWidth={280}
                     size="xs"
@@ -330,7 +332,7 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                 <div className="px-4 py-3 border-b border-white/5 bg-gray-800/30">
                   <div className="flex items-end gap-3">
                     <div className="flex-1">
-                      <label className="block eyebrow mb-1">Token Label</label>
+                      <label className="block eyebrow mb-1">API Key Label</label>
                       <input
                         type="text"
                         value={newLabel}
@@ -356,7 +358,7 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                         {generating ? 'Generating...' : 'Create'}
                       </button>
                       <HelpTip
-                        content="Create the token with the given label. This token will authenticate a specific MCP client."
+                        content="Create the API key with the given label. This key will authenticate a specific MCP client."
                         position="top"
                         size="xs"
                       />
@@ -399,7 +401,7 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                                   Reveal
                                 </button>
                                 <HelpTip
-                                  content="Reveal the full token value (admin password required)"
+                                  content="Reveal the full API key value (admin password required)"
                                   position="top"
                                   size="xs"
                                 />
@@ -425,8 +427,8 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                           <HelpTip
                             content={
                               confirmRevoke === tok.id
-                                ? 'Cliquer une seconde fois pour confirmer la révocation définitive de ce token.'
-                                : "Révoquer ce token — les clients qui l'utilisent seront immédiatement déconnectés."
+                                ? 'Click a second time to confirm permanently revoking this API key.'
+                                : 'Revoke this API key — clients using it will be disconnected immediately.'
                             }
                             position="left"
                             maxWidth={280}
@@ -488,7 +490,7 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                             </code>
                             <button
                               onClick={() => handleCopy(revealedTokens[tok.id], `reveal-${tok.id}`)}
-                              title="Copier le token dans le presse-papiers"
+                              title="Copy the API key to the clipboard"
                               className="text-xs text-gray-400 hover:text-gray-200 transition-colors flex-shrink-0"
                             >
                               {copied === `reveal-${tok.id}` ? 'Copied!' : 'Copy'}
@@ -513,7 +515,7 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                 </div>
               ) : (
                 <div className="px-4 py-6 text-center text-gray-500 text-sm">
-                  No tokens for this profile. Generate one to connect MCP clients.
+                  No API keys for this MCP server. Generate one to connect MCP clients.
                 </div>
               )}
             </div>
@@ -531,7 +533,7 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
               {' '}
               — URLs include the workspace id (
               <code className="text-os-400">{getCurrentTenant()}</code>) so external MCP clients
-              reach the right tenant
+              reach the right workspace
             </>
           )}
           :
@@ -539,13 +541,13 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
         <div className="space-y-1">
           {profiles.map((profile) => {
             const path = buildMcpPath(profile.name, getCurrentTenant());
-            const url = `http://localhost:${port}${path}`;
+            const url = `${window.location.origin}${path}`;
             return (
               <div key={profile.name} className="flex items-center gap-2">
                 <code className="text-xs text-os-400 font-mono">{url}</code>
                 <button
                   onClick={() => handleCopy(url, `url-${profile.name}`)}
-                  title="Copier l'URL de l'endpoint MCP dans le presse-papiers"
+                  title="Copy the MCP endpoint URL to the clipboard"
                   className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
                 >
                   {copied === `url-${profile.name}` ? 'Copied!' : 'Copy'}

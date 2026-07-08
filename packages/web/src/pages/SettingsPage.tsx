@@ -21,7 +21,7 @@ const OidcSettings = lazy(() =>
       default: function OidcSettingsUnavailable() {
         return (
           <div className="p-6 text-sm text-gray-400 text-center">
-            Les fonctionnalités SSO ne sont pas disponibles sur cette instance.
+            SSO features are not available on this instance.
           </div>
         );
       },
@@ -83,7 +83,7 @@ export default function SettingsPage({
       <PageHeader
         breadcrumb={breadcrumb}
         title="Settings"
-        description="Configure AI providers, email delivery, and single sign-on for your Calame instance."
+        description="Configure AI, email, SSO, branding & notifications for your Calame instance."
       />
 
       {/* Mobile: horizontal scrollable tab bar */}
@@ -154,9 +154,7 @@ export default function SettingsPage({
           {activeTab === 'ai' && <AiSettings />}
           {activeTab === 'email' && <SmtpSettings />}
           {activeTab === 'sso' && (
-            <Suspense
-              fallback={<div className="p-6 text-sm text-gray-500 italic">Chargement…</div>}
-            >
+            <Suspense fallback={<div className="p-6 text-sm text-gray-500 italic">Loading…</div>}>
               <OidcSettings availableProfiles={[...allProfileNames]} />
             </Suspense>
           )}
@@ -170,11 +168,12 @@ export default function SettingsPage({
         {activeTab === 'ai' && <AiSettings />}
         {activeTab === 'email' && <SmtpSettings />}
         {activeTab === 'sso' && (
-          <Suspense fallback={<div className="p-6 text-sm text-gray-500 italic">Chargement…</div>}>
+          <Suspense fallback={<div className="p-6 text-sm text-gray-500 italic">Loading…</div>}>
             <OidcSettings availableProfiles={[...allProfileNames]} />
           </Suspense>
         )}
         {activeTab === 'branding' && <BrandingSettings />}
+        {activeTab === 'notifications' && <NotificationSettings />}
       </Card>
     </div>
   );

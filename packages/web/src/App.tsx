@@ -24,6 +24,8 @@ import {
   MetricsPage,
   TenantsPage,
   KnowledgePage,
+  PendingWritesPage,
+  AuditLogPage,
 } from './pages/index.js';
 
 export default function App() {
@@ -68,6 +70,8 @@ export default function App() {
     activeProfile,
     serveStatus,
     fetchServeStatus,
+    pendingWriteCount,
+    refreshPendingWriteCount,
     recentActivity,
     piiDetections,
     scanning,
@@ -149,7 +153,19 @@ export default function App() {
       setShowOnboarding(false);
       bumpDataVersion();
     };
-    return <OnboardingWizard onComplete={dismissOnboarding} onSkip={dismissOnboarding} />;
+    return (
+      <OnboardingWizard
+        onComplete={dismissOnboarding}
+        onSkip={dismissOnboarding}
+        onNavigateToConfig={(configName) => {
+          // Close the wizard first, then navigate — otherwise the admin shell
+          // (which renders `view.page`) never gets a chance to mount before
+          // showOnboarding flips back to false on the next render.
+          dismissOnboarding();
+          setView({ page: 'config-detail', configName });
+        }}
+      />
+    );
   }
 
   // /login or unauthenticated admin — unified login page
@@ -181,6 +197,8 @@ export default function App() {
       <Sidebar
         currentPage={view.page}
         onNavigate={(page) => setView({ page } as View)}
+        onNavigateView={setView}
+        pendingWriteCount={pendingWriteCount}
         user={currentUser ?? undefined}
         onLogout={logout}
       />
@@ -208,6 +226,7 @@ export default function App() {
                 connectedCount={connectedCount}
                 totalConnCount={totalConnCount}
                 hasConnections={hasConnections}
+                pendingWriteCount={pendingWriteCount}
               />
             )}
 
@@ -330,6 +349,12 @@ export default function App() {
                 handleSchemaLoaded={handleSchemaLoaded}
               />
             )}
+
+            {view.page === 'pending-writes' && (
+              <PendingWritesPage setView={setView} onCountChange={refreshPendingWriteCount} />
+            )}
+
+            {view.page === 'audit-log' && <AuditLogPage setView={setView} profiles={profiles} />}
           </div>
         </main>
 

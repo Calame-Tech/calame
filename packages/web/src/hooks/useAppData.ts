@@ -32,6 +32,31 @@ import type {
 import { useSession } from '../context/SessionContext.js';
 
 /**
+ * Cheap equality for two ServeStatus snapshots so the 5s poller only triggers
+ * a re-render when something changed. `profiles`/`profileStatuses` are compared
+ * by JSON — they are small (a handful of profile names/flags).
+ */
+function shallowServeStatusEqual(a: ServeStatus, b: ServeStatus): boolean {
+  return (
+    a.active === b.active &&
+    a.port === b.port &&
+    a.startedAt === b.startedAt &&
+    a.totalRequests === b.totalRequests &&
+    JSON.stringify(a.profiles) === JSON.stringify(b.profiles) &&
+    JSON.stringify(a.profileStatuses) === JSON.stringify(b.profileStatuses)
+  );
+}
+
+/** Same idea for the recent-activity list (compared by id sequence). */
+function auditListEqual(a: AuditLogEntry[], b: AuditLogEntry[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i].id !== b[i].id) return false;
+  }
+  return true;
+}
+
+/**
  * Owns the shared admin data (connections, configurations, profiles, serve
  * status, audit activity, PII/masking) plus the polling/loading effects and
  * CRUD handlers. `isUserPage` disables the admin data loading on the
@@ -178,14 +203,19 @@ export function useAppData(isUserPage: boolean) {
       const res = await apiFetch('/api/serve/status', { credentials: 'include' });
       const data = await res.json();
       if (data.success !== false) {
-        setServeStatus({
+        const next: ServeStatus = {
           active: data.serving ?? data.active ?? false,
           port: data.port ?? 0,
           profiles: data.profiles ?? [],
           profileStatuses: data.profileStatuses,
           startedAt: data.startedAt,
           totalRequests: data.totalRequests ?? 0,
-        });
+        };
+        // Only re-render when something actually changed. The 5s poll used to
+        // set a fresh object every tick, re-rendering the whole App tree
+        // (and every page) even when idle — a needless main-thread tax that
+        // showed up as scroll jank.
+        setServeStatus((prev) => (shallowServeStatusEqual(prev, next) ? prev : next));
       }
     } catch {
       // Status endpoint may not exist yet
@@ -200,6 +230,35 @@ export function useAppData(isUserPage: boolean) {
     return () => clearInterval(interval);
   }, [authenticated, fetchServeStatus]);
 
+  // Pending write-queue count — powers the Govern sidebar badge, the
+  // notification bell's deep link and the dashboard "pending approvals"
+  // tile. Polled independently from the notification bell's own unread
+  // count so the badge always reflects the write queue, not just what has
+  // been surfaced as a notification (fixes the old chicken-and-egg: the
+  // badge no longer depends on the bell being opened first).
+  const [pendingWriteCount, setPendingWriteCount] = useState(0);
+
+  const refreshPendingWriteCount = useCallback(async () => {
+    try {
+      const res = await apiFetch('/api/write-queue/count', { credentials: 'include' });
+      const data = await res.json();
+      if (data.success !== false) {
+        setPendingWriteCount(data.pending ?? 0);
+      }
+    } catch {
+      // Endpoint may not be available yet
+    }
+  }, []);
+
+  // Poll the pending write-queue count (15s interval, same cadence as the
+  // recent-activity poller below).
+  useEffect(() => {
+    if (!authenticated || isUserPage) return;
+    refreshPendingWriteCount();
+    const interval = setInterval(refreshPendingWriteCount, 15_000);
+    return () => clearInterval(interval);
+  }, [authenticated, refreshPendingWriteCount]);
+
   // Recent activity for dashboard
   const [recentActivity, setRecentActivity] = useState<AuditLogEntry[]>([]);
 
@@ -211,7 +270,8 @@ export function useAppData(isUserPage: boolean) {
         const res = await apiFetch('/api/audit?limit=10&offset=0', { credentials: 'include' });
         const data = await res.json();
         if (data.success !== false && data.entries) {
-          setRecentActivity(data.entries);
+          const entries = data.entries as AuditLogEntry[];
+          setRecentActivity((prev) => (auditListEqual(prev, entries) ? prev : entries));
         }
       } catch {
         // Audit endpoint may not be available
@@ -474,6 +534,9 @@ export function useAppData(isUserPage: boolean) {
     // Serve status
     serveStatus,
     fetchServeStatus,
+    // Pending write-queue count (Govern nav badge)
+    pendingWriteCount,
+    refreshPendingWriteCount,
     // Recent activity
     recentActivity,
     // PII & Masking

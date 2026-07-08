@@ -32,7 +32,7 @@ const recentActivity: AuditLogEntry[] = [
   },
 ];
 
-function renderPage(setView = vi.fn()) {
+function renderPage(setView = vi.fn(), pendingWriteCount = 0) {
   render(
     <DashboardPage
       setView={setView}
@@ -48,6 +48,7 @@ function renderPage(setView = vi.fn()) {
       connectedCount={0}
       totalConnCount={1}
       hasConnections={true}
+      pendingWriteCount={pendingWriteCount}
     />,
   );
   return setView;
@@ -67,7 +68,7 @@ describe('DashboardPage', () => {
     renderPage();
     expect(screen.getByText('Dashboard')).toBeTruthy();
     expect(screen.getByText('MCP SERVERS')).toBeTruthy();
-    expect(screen.getByText('DATA PROFILES')).toBeTruthy();
+    expect(screen.getByText('DATA CONFIGURATIONS')).toBeTruthy();
     expect(screen.getByText('DATABASES')).toBeTruthy();
     expect(screen.getByText('RECENT ACTIVITY')).toBeTruthy();
     expect(screen.getByText('query_users')).toBeTruthy();
@@ -94,5 +95,17 @@ describe('DashboardPage', () => {
     const setView = renderPage();
     fireEvent.click(screen.getByText('USERS'));
     expect(setView).toHaveBeenCalledWith({ page: 'users' });
+  });
+
+  it('shows the pending approvals banner when pendingWriteCount > 0 and navigates on click', () => {
+    const setView = renderPage(vi.fn(), 3);
+    expect(screen.getByText('3 write requests awaiting your approval')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /Review/ }));
+    expect(setView).toHaveBeenCalledWith({ page: 'pending-writes' });
+  });
+
+  it('hides the pending approvals banner when pendingWriteCount is 0', () => {
+    renderPage(vi.fn(), 0);
+    expect(screen.queryByText(/awaiting your approval/)).toBeNull();
   });
 });

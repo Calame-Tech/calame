@@ -6,7 +6,11 @@ import { useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { Button, EmptyState, Breadcrumb } from '../components/ui/index.js';
 import HelpTip from '../components/HelpTip.js';
-import { getConfigurationTableNames } from '../lib/configuration-accessors.js';
+import {
+  getConfigurationTableNames,
+  getConfigurationTableOptions,
+  getConfigurationColumnMasking,
+} from '../lib/configuration-accessors.js';
 import type { Configuration } from '../types/schema.js';
 import type { View } from '../router/index.js';
 
@@ -31,7 +35,7 @@ export default function ConfigurationsPage({
         className="mb-4"
         items={[
           { label: 'Dashboard', onClick: () => setView({ page: 'dashboard' }) },
-          { label: 'Data Profiles' },
+          { label: 'Data Configurations' },
         ]}
       />
       <ConfigurationListView
@@ -89,13 +93,13 @@ function ConfigurationListView({
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <h2 className="heading-md">Data Profiles</h2>
+        <h2 className="heading-md">Data Configurations</h2>
         <div className="flex items-center gap-1.5">
           <Button variant="primary" onClick={() => setCreating(true)}>
-            + New Data Profile
+            + New Data Configuration
           </Button>
           <HelpTip
-            content="Create a new data profile to define which tables and columns to expose"
+            content="Create a new Data Configuration to define which tables and columns to expose"
             position="bottom"
           />
         </div>
@@ -106,7 +110,7 @@ function ConfigurationListView({
           <div className="flex gap-3">
             <input
               type="text"
-              placeholder="Profile name"
+              placeholder="Configuration name"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               className="input-editorial flex-1 text-sm"
@@ -130,13 +134,21 @@ function ConfigurationListView({
 
       {configurations.length === 0 && !creating ? (
         <EmptyState
-          title="No data profiles"
+          title="No Data Configurations"
           description="Create one to define which tables to expose."
         />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {configurations.map((cfg) => {
             const tableCount = getConfigurationTableNames(cfg).length;
+            const writeTableCount = Object.values(getConfigurationTableOptions(cfg)).filter((o) =>
+              o.enabledTools?.includes('write'),
+            ).length;
+            const maskedColumnCount = Object.values(getConfigurationColumnMasking(cfg)).reduce(
+              (sum, cols) =>
+                sum + Object.values(cols).filter((m) => m.maskingMode !== 'none').length,
+              0,
+            );
             return (
               <div
                 key={cfg.name}
@@ -154,7 +166,7 @@ function ConfigurationListView({
                         onDelete(cfg.name);
                       }
                     }}
-                    title="Supprimer ce profil de données"
+                    title="Delete this Data Configuration"
                     className="opacity-0 group-hover:opacity-100 p-1 text-gray-500 hover:text-rose-400 transition-all duration-200"
                   >
                     <svg
@@ -181,6 +193,27 @@ function ConfigurationListView({
                     {tableCount} table{tableCount !== 1 ? 's' : ''}
                   </span>
                 </div>
+                {(writeTableCount > 0 || maskedColumnCount > 0) && (
+                  <div className="flex gap-3 text-xs mt-1.5">
+                    {writeTableCount > 0 && (
+                      <span
+                        className="text-amber-400"
+                        title={`Write tool enabled on ${writeTableCount} table(s)`}
+                      >
+                        &#9999; write on {writeTableCount} table{writeTableCount !== 1 ? 's' : ''}
+                      </span>
+                    )}
+                    {maskedColumnCount > 0 && (
+                      <span
+                        className="text-gray-400"
+                        title={`${maskedColumnCount} column(s) masked`}
+                      >
+                        &#128737; {maskedColumnCount} masked column
+                        {maskedColumnCount !== 1 ? 's' : ''}
+                      </span>
+                    )}
+                  </div>
+                )}
                 {cfg.name !== cfg.label && (
                   <p className="font-mono-plex text-[10px] text-gray-600 uppercase tracking-widest mt-2">
                     {cfg.name}

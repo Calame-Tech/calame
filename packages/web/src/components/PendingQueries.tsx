@@ -119,15 +119,15 @@ export default function PendingQueries({
     const statusInfo: Record<PendingWriteQuery['status'], { classes: string; tooltip: string }> = {
       pending: {
         classes: 'bg-yellow-600/20 text-yellow-400',
-        tooltip: 'En attente de validation par un administrateur.',
+        tooltip: 'Awaiting approval from an administrator.',
       },
       approved: {
         classes: 'bg-green-600/20 text-green-400',
-        tooltip: 'Requête approuvée et exécutée en base de données.',
+        tooltip: 'Query approved and executed in the database.',
       },
       rejected: {
         classes: 'bg-red-600/20 text-red-400',
-        tooltip: 'Requête rejetée — elle ne sera pas exécutée.',
+        tooltip: 'Query rejected — it will not be executed.',
       },
     };
     const info = statusInfo[status];
@@ -145,16 +145,15 @@ export default function PendingQueries({
     const opInfo: Record<PendingWriteQuery['operation'], { classes: string; tooltip: string }> = {
       insert: {
         classes: 'bg-blue-600/20 text-blue-400',
-        tooltip: 'Opération INSERT — ajoute de nouvelles lignes dans la table.',
+        tooltip: 'INSERT operation — adds new rows to the table.',
       },
       update: {
         classes: 'bg-amber-600/20 text-amber-400',
-        tooltip: 'Opération UPDATE — modifie des lignes existantes dans la table.',
+        tooltip: 'UPDATE operation — modifies existing rows in the table.',
       },
       delete: {
         classes: 'bg-red-600/20 text-red-400',
-        tooltip:
-          'Opération DELETE — supprime des lignes de la table. Irréversible sans sauvegarde.',
+        tooltip: 'DELETE operation — removes rows from the table. Irreversible without a backup.',
       },
     };
     const info = opInfo[op];
@@ -237,7 +236,7 @@ export default function PendingQueries({
                   {onNavigateToProfile ? (
                     <button
                       onClick={() => onNavigateToProfile(entry.profileName)}
-                      title={`Aller au profil MCP ${entry.profileName}`}
+                      title={`Go to MCP server ${entry.profileName}`}
                       className="text-xs text-gray-500 hover:text-os-400 font-mono underline decoration-dotted transition-colors"
                     >
                       {entry.profileName}
@@ -253,7 +252,7 @@ export default function PendingQueries({
                         title={
                           entry.operation !== 'insert' && confirmApproveId === entry.id
                             ? `This will execute an irreversible ${entry.operation.toUpperCase()} immediately. Continue?`
-                            : 'Approuver et exécuter immédiatement cette requête en base de données.'
+                            : 'Approve and execute this query immediately in the database.'
                         }
                         className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 disabled:opacity-50 ${
                           entry.operation !== 'insert' && confirmApproveId === entry.id
@@ -270,7 +269,7 @@ export default function PendingQueries({
                       <button
                         onClick={() => handleReject(entry.id)}
                         disabled={actionLoading === entry.id}
-                        title="Rejeter cette requête — elle ne sera pas exécutée et sera marquée comme rejetée."
+                        title="Reject this query — it will not be executed and will be marked as rejected."
                         className="px-3 py-1.5 rounded-lg bg-red-600/20 text-red-400 hover:bg-red-600/30 text-sm font-medium transition-all duration-200 disabled:opacity-50"
                       >
                         {actionLoading === entry.id ? '...' : 'Reject'}
@@ -281,8 +280,8 @@ export default function PendingQueries({
                     onClick={() => setExpandedId(expandedId === entry.id ? null : entry.id)}
                     title={
                       expandedId === entry.id
-                        ? 'Masquer le SQL et les paramètres de cette requête.'
-                        : 'Afficher le SQL complet et les paramètres de cette requête.'
+                        ? 'Hide the SQL and parameters for this query.'
+                        : 'Show the full SQL and parameters for this query.'
                     }
                     className="text-gray-500 hover:text-gray-300 text-sm transition-colors"
                   >

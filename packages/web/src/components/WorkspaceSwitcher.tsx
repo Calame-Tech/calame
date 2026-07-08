@@ -10,7 +10,7 @@ import {
 interface WorkspaceSwitcherProps {
   className?: string;
   /**
-   * Optional handler invoked when the admin clicks "Gérer les workspaces"
+   * Optional handler invoked when the admin clicks "Manage workspaces"
    * inside the dropdown. When supplied, a link to the tenant administration
    * page is rendered at the bottom of the menu. When omitted, the link is
    * hidden — useful for environments where the management page is not wired
@@ -136,9 +136,7 @@ export default function WorkspaceSwitcher({
   const handleCreate = () => {
     const trimmed = newInput.trim();
     if (!TENANT_ID_REGEX.test(trimmed)) {
-      setInputError(
-        'Format invalide — lettres, chiffres, tirets et underscores uniquement (1-64 car.).',
-      );
+      setInputError('Invalid format — letters, digits, hyphens and underscores only (1-64 chars).');
       return;
     }
     setInputError(null);
@@ -163,7 +161,7 @@ export default function WorkspaceSwitcher({
         onClick={() => setOpen((prev) => !prev)}
         aria-haspopup="listbox"
         aria-expanded={open}
-        aria-label={`Workspace actuel : ${toggleLabel}. Cliquer pour changer.`}
+        aria-label={`Current workspace: ${toggleLabel}. Click to change.`}
         className={[
           'w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs transition-colors',
           'focus:outline-none focus:ring-2 focus:ring-os-500/60',
@@ -198,8 +196,8 @@ export default function WorkspaceSwitcher({
       {isNonDefault && (
         <span
           className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-violet-500 border border-gray-950"
-          aria-label="Workspace non-default actif"
-          title={`Workspace "${tenant}" actif`}
+          aria-label="Non-default workspace active"
+          title={`Workspace "${tenant}" active`}
         />
       )}
 
@@ -207,7 +205,7 @@ export default function WorkspaceSwitcher({
       {open && (
         <div
           role="dialog"
-          aria-label="Sélecteur de workspace"
+          aria-label="Workspace switcher"
           className="absolute left-0 top-full mt-1.5 w-56 rounded-xl border border-white/10 bg-gray-900/95 backdrop-blur-xl shadow-xl shadow-black/40 z-50 overflow-hidden"
         >
           {/* Header */}
@@ -218,7 +216,7 @@ export default function WorkspaceSwitcher({
           </div>
 
           {/* Known workspace list */}
-          <ul role="listbox" aria-label="Workspaces disponibles" className="py-1">
+          <ul role="listbox" aria-label="Available workspaces" className="py-1">
             {allTenants.map((t) => {
               const isActive = tenant === t;
               return (
@@ -247,7 +245,7 @@ export default function WorkspaceSwitcher({
           {/* New workspace input */}
           <div className="px-3 py-2.5">
             <p className="font-mono-plex text-[10px] uppercase tracking-widest text-gray-600 mb-2 select-none">
-              Nouveau workspace
+              New workspace
             </p>
             <div className="flex gap-1.5">
               <input
@@ -259,9 +257,9 @@ export default function WorkspaceSwitcher({
                   setInputError(null);
                 }}
                 onKeyDown={handleInputKeyDown}
-                placeholder="mon-workspace"
+                placeholder="my-workspace"
                 maxLength={64}
-                aria-label="Nom du nouveau workspace"
+                aria-label="New workspace name"
                 aria-describedby={inputError ? 'ws-input-error' : undefined}
                 className={[
                   'flex-1 min-w-0 bg-white/5 border rounded-lg px-2 py-1 text-xs text-gray-200',
@@ -302,7 +300,7 @@ export default function WorkspaceSwitcher({
                   }}
                   className="w-full text-left text-xs text-gray-400 hover:text-gray-100 focus:outline-none focus:text-gray-100"
                 >
-                  Gérer les workspaces &rarr;
+                  Manage workspaces &rarr;
                 </button>
               </div>
             </>

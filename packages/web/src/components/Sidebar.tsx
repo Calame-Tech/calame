@@ -284,7 +284,7 @@ const NAV_SECTIONS: NavSection[] = [
       },
       {
         page: 'configurations',
-        label: 'Data Profiles',
+        label: 'Data Configurations',
         activeWhen: ['config-detail'],
         icon: IconRectangleStack,
       },

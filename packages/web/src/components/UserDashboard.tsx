@@ -101,7 +101,7 @@ export default function UserDashboard({ onLogout }: { onLogout: () => void }) {
   const handleRegenerateToken = async () => {
     if (
       !confirm(
-        'Regenerate your token? Your current token will stop working immediately. You will need to update your MCP client configuration.',
+        'Regenerate your access token? Your current token will stop working immediately. You will need to update your MCP client configuration.',
       )
     )
       return;
@@ -329,12 +329,12 @@ export default function UserDashboard({ onLogout }: { onLogout: () => void }) {
 
             {/* Token section */}
             <div className="card-primary p-4">
-              <h2 className="heading-md mb-3">My Token</h2>
+              <h2 className="heading-md mb-3">My Access Token</h2>
 
               {newToken ? (
                 <div className="bg-green-900/30 border border-green-700 rounded-lg p-4 mb-4">
                   <p className="text-green-300 text-sm font-medium mb-2">
-                    New token generated — copy it now.
+                    New access token generated — copy it now.
                   </p>
                   <div className="flex items-center gap-2">
                     <code className="flex-1 bg-gray-900 px-3 py-2 rounded text-green-300 text-sm font-mono break-all">
@@ -384,7 +384,7 @@ export default function UserDashboard({ onLogout }: { onLogout: () => void }) {
                   {showRevealPrompt && !revealedToken && (
                     <div className="mt-2 p-3 rounded-lg border border-os-600/40 bg-os-900/20 space-y-2">
                       <p className="text-xs text-gray-300">
-                        Enter your password to reveal your API key.
+                        Enter your password to reveal your access token.
                       </p>
                       <div className="flex items-center gap-2">
                         <input
@@ -427,7 +427,7 @@ export default function UserDashboard({ onLogout }: { onLogout: () => void }) {
                   onClick={handleRegenerateToken}
                   className="text-xs text-gray-400 hover:text-red-400 transition-colors"
                 >
-                  Regenerate token
+                  Regenerate access token
                 </button>
                 {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
               </div>

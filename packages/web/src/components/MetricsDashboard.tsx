@@ -757,12 +757,12 @@ export default function MetricsDashboard() {
               )}
             </div>
 
-            {/* Top Tokens */}
+            {/* Top API Keys */}
             <div className="card-primary p-6">
               <h3 className="flex items-center gap-2 font-mono-plex uppercase tracking-widest text-[10px] text-gray-500 mb-5">
-                Top Tokens
+                Top API Keys
                 <HelpTip
-                  content="Most active authentication tokens, ranked by number of requests made."
+                  content="Most active API keys, ranked by number of requests made."
                   position="top"
                   maxWidth={280}
                   size="xs"
@@ -770,7 +770,7 @@ export default function MetricsDashboard() {
               </h3>
               {!metrics || metrics.topTokens.length === 0 ? (
                 <p className="text-gray-600 text-sm text-center py-4">
-                  No token activity recorded.
+                  No API key activity recorded.
                 </p>
               ) : (
                 <div className="space-y-0.5 max-h-64 overflow-y-auto pr-1">
@@ -792,7 +792,7 @@ export default function MetricsDashboard() {
           {/* Row 3: Avg response time by profile */}
           <div className="card-primary p-6 animate-fade-in-up" style={{ animationDelay: '320ms' }}>
             <h3 className="flex items-center gap-2 font-mono-plex uppercase tracking-widest text-[10px] text-gray-500 mb-5">
-              Average Response Time by Profile
+              Average Response Time by MCP Server
               <HelpTip
                 content="Average response time per MCP server. Green < 100 ms, yellow 100–500 ms, red > 500 ms."
                 position="top"
@@ -806,11 +806,11 @@ export default function MetricsDashboard() {
               </p>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full" aria-label="Average response time per profile">
+                <table className="w-full" aria-label="Average response time per MCP server">
                   <thead>
                     <tr className="border-b border-white/5">
                       <th className="pb-3 pr-6 text-left font-mono-plex uppercase tracking-widest text-[10px] text-gray-500">
-                        Profile
+                        MCP Server
                       </th>
                       <th className="pb-3 pr-6 text-right font-mono-plex uppercase tracking-widest text-[10px] text-gray-500">
                         Avg Response

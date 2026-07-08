@@ -176,7 +176,7 @@ export default function NotificationsBell({ onNavigate }: NotificationsBellProps
                 onClick={handleMarkAllRead}
                 className="text-xs text-os-400 hover:text-os-300"
               >
-                Tout marquer lu
+                Mark all as read
               </button>
             </div>
             {notifications.length === 0 ? (

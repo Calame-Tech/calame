@@ -97,13 +97,13 @@ export default function ServePanel({
         });
         const data = await res.json();
         if (data.success === false) {
-          setError(data.message || `Failed to start profile "${profileName}".`);
+          setError(data.message || `Failed to start MCP server "${profileName}".`);
         } else {
           // Trigger an immediate status refresh in App.tsx instead of polling locally
           onServeAction?.();
         }
       } catch {
-        setError(`Network error starting profile "${profileName}".`);
+        setError(`Network error starting MCP server "${profileName}".`);
       } finally {
         setTogglingProfile(null);
       }
@@ -124,12 +124,12 @@ export default function ServePanel({
         });
         const data = await res.json();
         if (data.success === false) {
-          setError(data.message || `Failed to stop profile "${profileName}".`);
+          setError(data.message || `Failed to stop MCP server "${profileName}".`);
         } else {
           onServeAction?.();
         }
       } catch {
-        setError(`Network error stopping profile "${profileName}".`);
+        setError(`Network error stopping MCP server "${profileName}".`);
       } finally {
         setTogglingProfile(null);
       }
@@ -314,9 +314,9 @@ export default function ServePanel({
                     e.stopPropagation();
                     setConfirmDeleteProfile(profile.name);
                   }}
-                  title={`Supprimer ce serveur MCP et sa configuration`}
+                  title={`Delete this MCP server and its configuration`}
                   className="absolute top-2 right-2 p-1 text-gray-500 hover:text-red-400 transition-all duration-200 rounded hover:bg-red-500/10 z-10"
-                  aria-label={`Supprimer le profil ${profile.label || profile.name}`}
+                  aria-label={`Delete MCP server ${profile.label || profile.name}`}
                 >
                   <svg
                     className="w-4 h-4"
@@ -347,7 +347,7 @@ export default function ServePanel({
                   <span
                     className={`flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium ${AUTH_MODE_STYLES[profile.authMode ?? 'token']}`}
                     aria-label={`Auth mode: ${AUTH_MODE_LABELS[profile.authMode ?? 'token']}`}
-                    title={`Mode d'authentification : ${AUTH_MODE_DESCRIPTIONS[profile.authMode ?? 'token']}`}
+                    title={`Authentication mode: ${AUTH_MODE_DESCRIPTIONS[profile.authMode ?? 'token']}`}
                   >
                     {AUTH_MODE_LABELS[profile.authMode ?? 'token']}
                   </span>
@@ -357,14 +357,14 @@ export default function ServePanel({
                         ? 'bg-orange-700/20 text-orange-400 border border-orange-600/30'
                         : 'bg-green-700/20 text-green-400 border border-green-600/30'
                     }`}
-                    aria-label={`Mode de réponse : ${(profile.responseMode ?? 'friendly') === 'raw' ? 'Technique' : 'Naturel'}`}
+                    aria-label={`Response mode: ${(profile.responseMode ?? 'friendly') === 'raw' ? 'Technical' : 'Natural'}`}
                     title={
                       (profile.responseMode ?? 'friendly') === 'raw'
-                        ? 'Mode Technique : les noms de tables et colonnes sont visibles dans les réponses'
-                        : 'Mode Naturel : les réponses sont formulées en langage courant'
+                        ? 'Technical mode: table and column names are visible in responses'
+                        : 'Natural mode: responses are phrased in plain language'
                     }
                   >
-                    {(profile.responseMode ?? 'friendly') === 'raw' ? 'Technique' : 'Naturel'}
+                    {(profile.responseMode ?? 'friendly') === 'raw' ? 'Technical' : 'Natural'}
                   </span>
                 </div>
                 {profile.label && profile.label !== profile.name && (
@@ -399,7 +399,7 @@ export default function ServePanel({
                         });
                       }}
                       aria-label={`Copy chat link for ${profile.label || profile.name}`}
-                      title="Copier le lien de chat partageable pour ce profil (accessible sans interface Calame)"
+                      title="Copy the shareable chat link for this MCP server (accessible without the Calame interface)"
                       className="flex-shrink-0 text-xs text-gray-500 hover:text-gray-300 transition-colors focus:outline-none focus:ring-1 focus:ring-os-500 rounded"
                     >
                       {copiedChatLink === profile.name ? 'Copied!' : 'Copy'}
@@ -416,9 +416,9 @@ export default function ServePanel({
                       e.stopPropagation();
                       onPreviewProfile(profile.name);
                     }}
-                    title="Prévisualiser la configuration de ce profil sans le démarrer"
+                    title="Preview this MCP server's configuration without starting it"
                     className="text-xs text-os-400 hover:text-os-300 transition-colors focus:outline-none focus:ring-1 focus:ring-os-500 rounded"
-                    aria-label={`Preview profile ${profile.label || profile.name}`}
+                    aria-label={`Preview MCP server ${profile.label || profile.name}`}
                   >
                     Preview
                   </button>
@@ -464,11 +464,7 @@ export default function ServePanel({
                     )}
                   </button>
                   <HelpTip
-                    content={
-                      isActive
-                        ? 'Arrêter le serveur MCP pour ce profil'
-                        : 'Démarrer le serveur MCP pour ce profil'
-                    }
+                    content={isActive ? 'Stop this MCP server' : 'Start this MCP server'}
                     position="top"
                     size="xs"
                   />

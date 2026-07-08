@@ -4,35 +4,34 @@ const MODES: { value: MaskingMode; label: string; description: string }[] = [
   {
     value: 'none',
     label: 'None',
-    description: 'Aucun masquage — la valeur brute est exposée telle quelle.',
+    description: 'No masking — the raw value is exposed as-is.',
   },
   {
     value: 'exclude',
     label: 'Exclude',
-    description: 'Exclut complètement cette colonne des résultats renvoyés par le serveur MCP.',
+    description: 'Completely excludes this column from results returned by the MCP server.',
   },
   {
     value: 'hash',
     label: 'Hash',
     description:
-      'Remplace la valeur par son empreinte SHA-256. Permet la comparaison sans révéler la donnée réelle.',
+      'Replaces the value with its SHA-256 hash. Allows comparison without revealing the real data.',
   },
   {
     value: 'truncate',
     label: 'Truncate',
     description:
-      'Masque une partie de la valeur en ne conservant que les premiers et/ou derniers caractères configurés.',
+      'Masks part of the value, keeping only the configured number of leading and/or trailing characters.',
   },
   {
     value: 'replace',
     label: 'Replace',
-    description: 'Remplace la valeur entière par une chaîne fixe (ex. [MASQUÉ]).',
+    description: 'Replaces the entire value with a fixed string (e.g. [MASKED]).',
   },
   {
     value: 'aggregate_only',
     label: 'Aggregate only',
-    description:
-      'Autorise uniquement les agrégats (COUNT, SUM…). Les valeurs individuelles ne sont pas accessibles.',
+    description: 'Allows only aggregates (COUNT, SUM…). Individual values are not accessible.',
   },
 ];
 
@@ -59,7 +58,7 @@ export default function MaskingSelector({ masking, onChange }: MaskingSelectorPr
           }
           onChange(updated);
         }}
-        title={currentMode?.description ?? 'Sélectionnez un mode de masquage pour cette colonne.'}
+        title={currentMode?.description ?? 'Select a masking mode for this column.'}
         className="px-2 py-1 rounded bg-gray-800/80 border border-white/10 text-gray-200 text-xs focus:outline-none focus:border-os-500 focus:ring-1 focus:ring-os-500/30"
       >
         {MODES.map((m) => (
@@ -86,7 +85,7 @@ export default function MaskingSelector({ masking, onChange }: MaskingSelectorPr
                 },
               })
             }
-            title="Nombre de caractères à conserver depuis le début de la valeur."
+            title="Number of characters to keep from the start of the value."
             className="w-12 px-1.5 py-0.5 rounded bg-gray-800 border border-white/10 text-gray-200 text-xs focus:outline-none focus:border-os-500"
           />
           <span>first /</span>
@@ -104,7 +103,7 @@ export default function MaskingSelector({ masking, onChange }: MaskingSelectorPr
                 },
               })
             }
-            title="Nombre de caractères à conserver depuis la fin de la valeur."
+            title="Number of characters to keep from the end of the value."
             className="w-12 px-1.5 py-0.5 rounded bg-gray-800 border border-white/10 text-gray-200 text-xs focus:outline-none focus:border-os-500"
           />
           <span>last</span>
@@ -117,7 +116,7 @@ export default function MaskingSelector({ masking, onChange }: MaskingSelectorPr
           value={masking.replaceValue ?? '[MASKED]'}
           onChange={(e) => onChange({ ...masking, replaceValue: e.target.value })}
           placeholder="[MASKED]"
-          title="Valeur fixe qui remplacera la donnée réelle dans toutes les réponses."
+          title="Fixed value that will replace the real data in all responses."
           className="w-32 px-2 py-0.5 rounded bg-gray-800 border border-white/10 text-gray-200 text-xs focus:outline-none focus:border-os-500"
         />
       )}

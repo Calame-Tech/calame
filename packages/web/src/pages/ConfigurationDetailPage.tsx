@@ -41,7 +41,7 @@ const RagAccessSelector = lazy(() =>
       default: function RagAccessSelectorUnavailable() {
         return (
           <div className="p-6 text-sm text-gray-400 text-center">
-            Les fonctionnalités RAG ne sont pas disponibles sur cette instance.
+            RAG features are not available on this instance.
           </div>
         );
       },
@@ -112,7 +112,7 @@ export default function ConfigurationDetailPage({
               ]
             : [
                 {
-                  label: 'Data Profiles',
+                  label: 'Data Configurations',
                   onClick: () =>
                     guardedNavigate(isDirty, () => setView({ page: 'configurations' })),
                 },
@@ -546,11 +546,15 @@ function ConfigurationDetailView({
                     {configName}
                   </span>
                 )}
-                <HelpTip content="Click to rename this data profile" position="right" size="xs" />
+                <HelpTip
+                  content="Click to rename this Data Configuration"
+                  position="right"
+                  size="xs"
+                />
               </h2>
             )}
             <p className="text-sm text-gray-500 mt-1">
-              {[...selectedConns].length} connection{[...selectedConns].length !== 1 ? 's' : ''}{' '}
+              {[...selectedConns].length} source{[...selectedConns].length !== 1 ? 's' : ''}{' '}
               &middot; {tableCount} table{tableCount !== 1 ? 's' : ''}
             </p>
           </div>
@@ -598,7 +602,7 @@ function ConfigurationDetailView({
             ) : (
               <button
                 onClick={() => guardedNavigate(isDirty, () => setConfirmDelete(true))}
-                title="Supprimer ce profil de données"
+                title="Delete this Data Configuration"
                 className="p-2 text-gray-500 hover:text-rose-400 transition-all duration-200 rounded-lg hover:bg-rose-500/10"
               >
                 <svg
@@ -637,7 +641,7 @@ function ConfigurationDetailView({
                   type="button"
                   disabled
                   aria-disabled="true"
-                  title="Les bases de connaissance RAG ne sont pas disponibles sur cette instance."
+                  title="RAG knowledge bases are not available on this instance."
                   className="px-5 py-3 text-sm font-medium border-b-2 border-transparent text-gray-600 cursor-not-allowed opacity-50"
                 >
                   {tab.label}
@@ -715,7 +719,7 @@ function ConfigurationDetailView({
                               e.stopPropagation();
                               onNavigateToEditConnection(connName);
                             }}
-                            title="Modifier les paramètres de cette connexion"
+                            title="Edit this source's settings"
                             className="p-0.5 text-gray-500 hover:text-os-400 transition-colors"
                           >
                             <svg
@@ -833,7 +837,7 @@ function ConfigurationDetailView({
                     d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                   />
                 </svg>
-                Chargement…
+                Loading…
               </div>
             }
           >

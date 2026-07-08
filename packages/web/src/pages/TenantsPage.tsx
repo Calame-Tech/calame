@@ -19,7 +19,7 @@ export default function TenantsPage({ setView }: TenantsPageProps) {
           { label: 'Workspaces' },
         ]}
         title="Workspaces"
-        description="Liste de tous les workspaces (tenants) découverts sur cette instance. Les workspaces sont créés implicitement lors de la première écriture avec un identifiant donné."
+        description="List of all workspaces discovered on this instance. Workspaces are created implicitly the first time a write uses a given identifier."
       />
       <TenantManagement />
     </div>

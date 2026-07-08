@@ -63,7 +63,7 @@ describe('ConfigurationDetailPage', () => {
 
   it('navigates back to the configurations list via the breadcrumb', () => {
     const setView = renderPage();
-    fireEvent.click(screen.getByText('Data Profiles'));
+    fireEvent.click(screen.getByText('Data Configurations'));
     expect(setView).toHaveBeenCalledWith({ page: 'configurations' });
   });
 

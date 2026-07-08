@@ -68,7 +68,7 @@ describe('DashboardPage', () => {
     renderPage();
     expect(screen.getByText('Dashboard')).toBeTruthy();
     expect(screen.getByText('MCP SERVERS')).toBeTruthy();
-    expect(screen.getByText('DATA PROFILES')).toBeTruthy();
+    expect(screen.getByText('DATA CONFIGURATIONS')).toBeTruthy();
     expect(screen.getByText('DATABASES')).toBeTruthy();
     expect(screen.getByText('RECENT ACTIVITY')).toBeTruthy();
     expect(screen.getByText('query_users')).toBeTruthy();

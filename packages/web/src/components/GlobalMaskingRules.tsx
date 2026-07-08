@@ -171,9 +171,9 @@ export default function GlobalMaskingRules({ rules, onRulesChange }: GlobalMaski
           )}
           <button
             onClick={() => removeRule(i)}
-            title="Supprimer cette règle"
+            title="Delete this rule"
             className="text-gray-500 hover:text-red-400 text-xs transition-colors"
-            aria-label="Supprimer cette règle de masquage"
+            aria-label="Delete this masking rule"
           >
             &times;
           </button>

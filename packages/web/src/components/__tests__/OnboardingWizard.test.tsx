@@ -52,7 +52,11 @@ function installFetchMock(): Call[] {
       });
     }
     if (url.includes('/api/configurations')) {
-      return jsonResponse({ success: true, name: 'my-first-profile-config', overwritten: false });
+      return jsonResponse({
+        success: true,
+        name: 'my-first-mcp-server-config',
+        overwritten: false,
+      });
     }
     if (url.includes('/api/profiles/save')) {
       return jsonResponse({ success: true });
@@ -71,7 +75,7 @@ async function runToSubmit(): Promise<void> {
   fireEvent.click(screen.getByText('Use demo database (SQLite)'));
   await waitFor(() => expect(screen.getByText(/tables selected/)).toBeTruthy());
   fireEvent.click(screen.getByText('Continue'));
-  fireEvent.click(screen.getByText('Create profile & activate'));
+  fireEvent.click(screen.getByText('Create MCP server & activate'));
 }
 
 describe('OnboardingWizard', () => {
@@ -98,14 +102,14 @@ describe('OnboardingWizard', () => {
     // The profile save references the configuration by name (modern shape) —
     // no inline sources/scopes duplicated onto the profile.
     const profileBody = JSON.parse(calls[profileIndex].body ?? '{}');
-    const savedProfile = profileBody.profiles['my-first-profile'];
-    expect(savedProfile.configurations).toEqual(['my-first-profile-config']);
+    const savedProfile = profileBody.profiles['my-first-mcp-server'];
+    expect(savedProfile.configurations).toEqual(['my-first-mcp-server-config']);
     expect(savedProfile.sources).toBeUndefined();
     expect(savedProfile.scopes).toBeUndefined();
 
     // The configuration itself carries the real sources/scopes.
     const configBody = JSON.parse(calls[configIndex].body ?? '{}');
-    expect(configBody.name).toBe('my-first-profile-config');
+    expect(configBody.name).toBe('my-first-mcp-server-config');
     expect(configBody.sources).toEqual(['demo-logistique']);
   });
 
@@ -153,7 +157,7 @@ describe('OnboardingWizard', () => {
     await waitFor(() => expect(screen.getByText("You're all set!")).toBeTruthy());
 
     fireEvent.click(screen.getByText(/Fine-tune tables, tools/));
-    expect(onNavigateToConfig).toHaveBeenCalledWith('my-first-profile-config');
+    expect(onNavigateToConfig).toHaveBeenCalledWith('my-first-mcp-server-config');
   });
 
   it('omits the fine-tune link when onNavigateToConfig is not provided', async () => {

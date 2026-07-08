@@ -93,7 +93,7 @@ describe('NotificationsBell', () => {
     expect(await screen.findByText('Write pending')).toBeInTheDocument();
     expect(screen.getByText('INSERT on users')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Tout marquer lu' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Mark all as read' }));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(

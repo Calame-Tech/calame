@@ -16,7 +16,7 @@ const ChatSsoLogin = lazy(() =>
       default: function ChatSsoLoginUnavailable() {
         return (
           <div className="p-6 text-sm text-gray-400 text-center">
-            Les fonctionnalités SSO ne sont pas disponibles sur cette instance.
+            SSO features are not available on this instance.
           </div>
         );
       },
@@ -257,7 +257,7 @@ function TokenLoginForm({ profile, onSuccess }: { profile: ChatProfile; onSucces
       if (data.success) {
         onSuccess();
       } else {
-        setError(data.message || 'Invalid token. Please try again.');
+        setError(data.message || 'Invalid API key. Please try again.');
       }
     } catch {
       setError('Connection error. Please try again.');
@@ -653,7 +653,7 @@ export default function ChatEntryPage({ profileName }: ChatEntryPageProps) {
         }
       } catch {
         if (!cancelled) {
-          setPageState({ step: 'error', message: 'Could not load the chat profile.' });
+          setPageState({ step: 'error', message: 'Could not load the MCP server.' });
         }
         return;
       }
@@ -878,7 +878,7 @@ export default function ChatEntryPage({ profileName }: ChatEntryPageProps) {
 
     case 'sso':
       return (
-        <Suspense fallback={<div className="p-6 text-sm text-gray-500 italic">Chargement…</div>}>
+        <Suspense fallback={<div className="p-6 text-sm text-gray-500 italic">Loading…</div>}>
           <ChatSsoLogin profile={profile} />
         </Suspense>
       );

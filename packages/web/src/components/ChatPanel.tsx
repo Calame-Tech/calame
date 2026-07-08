@@ -205,9 +205,9 @@ export default function ChatPanel({ selectedTables, activeProfiles }: ChatPanelP
         </div>
       ) : (
         <div className="mb-4 flex items-center gap-3 px-3 py-2 rounded-lg bg-gray-800/50 border border-gray-700/50 text-sm">
-          <span className="text-gray-400 shrink-0">Profile to test:</span>
+          <span className="text-gray-400 shrink-0">MCP server to test:</span>
           <DarkSelect
-            ariaLabel="Profile to test"
+            ariaLabel="MCP server to test"
             value={selectedProfile ?? ''}
             options={activeProfiles.map((name) => ({ value: name, label: name }))}
             onChange={(v) => setSelectedProfile(v)}

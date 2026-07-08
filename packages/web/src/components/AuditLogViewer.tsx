@@ -125,7 +125,7 @@ export default function AuditLogViewer({ profiles }: AuditLogViewerProps) {
         {profiles.length > 1 && (
           <div>
             <label className="flex items-center gap-1 text-xs text-gray-400 mb-1">
-              Profile
+              MCP Server
               <HelpTip content="Filter entries by MCP server." position="top" size="xs" />
             </label>
             <select
@@ -138,7 +138,7 @@ export default function AuditLogViewer({ profiles }: AuditLogViewerProps) {
                 backgroundPosition: 'right 8px center',
               }}
             >
-              <option value="">All profiles</option>
+              <option value="">All MCP servers</option>
               {profiles.map((p) => (
                 <option key={p.name} value={p.name}>
                   {p.label}
@@ -210,14 +210,14 @@ export default function AuditLogViewer({ profiles }: AuditLogViewerProps) {
         {/* Export buttons */}
         <button
           onClick={() => handleExport('json')}
-          title="Télécharger toutes les entrées filtrées au format JSON."
+          title="Download all filtered entries in JSON format."
           className="px-3 py-2 rounded-lg border border-white/10 text-gray-400 hover:text-gray-200 hover:bg-gray-800 text-sm transition-colors"
         >
           Export JSON
         </button>
         <button
           onClick={() => handleExport('csv')}
-          title="Télécharger toutes les entrées filtrées au format CSV (compatible Excel)."
+          title="Download all filtered entries in CSV format (Excel-compatible)."
           className="px-3 py-2 rounded-lg border border-white/10 text-gray-400 hover:text-gray-200 hover:bg-gray-800 text-sm transition-colors"
         >
           Export CSV
@@ -243,7 +243,7 @@ export default function AuditLogViewer({ profiles }: AuditLogViewerProps) {
               </th>
               <th className="px-4 py-3 font-medium">
                 <span className="flex items-center gap-1">
-                  Profile{' '}
+                  MCP Server{' '}
                   <HelpTip
                     content="MCP server that handled the request."
                     position="bottom"
@@ -350,8 +350,8 @@ export default function AuditLogViewer({ profiles }: AuditLogViewerProps) {
                         <span
                           title={
                             entry.result === 'success'
-                              ? "L'outil a été exécuté sans erreur."
-                              : "L'outil a échoué. Cliquez sur la ligne pour voir les détails."
+                              ? 'The tool executed without error.'
+                              : 'The tool failed. Click the row to see details.'
                           }
                           className={`px-2 py-0.5 rounded-full text-xs ${
                             entry.result === 'success'

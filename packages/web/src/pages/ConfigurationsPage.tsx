@@ -35,7 +35,7 @@ export default function ConfigurationsPage({
         className="mb-4"
         items={[
           { label: 'Dashboard', onClick: () => setView({ page: 'dashboard' }) },
-          { label: 'Data Profiles' },
+          { label: 'Data Configurations' },
         ]}
       />
       <ConfigurationListView
@@ -93,13 +93,13 @@ function ConfigurationListView({
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <h2 className="heading-md">Data Profiles</h2>
+        <h2 className="heading-md">Data Configurations</h2>
         <div className="flex items-center gap-1.5">
           <Button variant="primary" onClick={() => setCreating(true)}>
-            + New Data Profile
+            + New Data Configuration
           </Button>
           <HelpTip
-            content="Create a new data profile to define which tables and columns to expose"
+            content="Create a new Data Configuration to define which tables and columns to expose"
             position="bottom"
           />
         </div>
@@ -110,7 +110,7 @@ function ConfigurationListView({
           <div className="flex gap-3">
             <input
               type="text"
-              placeholder="Profile name"
+              placeholder="Configuration name"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               className="input-editorial flex-1 text-sm"
@@ -134,7 +134,7 @@ function ConfigurationListView({
 
       {configurations.length === 0 && !creating ? (
         <EmptyState
-          title="No data profiles"
+          title="No Data Configurations"
           description="Create one to define which tables to expose."
         />
       ) : (
@@ -166,7 +166,7 @@ function ConfigurationListView({
                         onDelete(cfg.name);
                       }
                     }}
-                    title="Supprimer ce profil de données"
+                    title="Delete this Data Configuration"
                     className="opacity-0 group-hover:opacity-100 p-1 text-gray-500 hover:text-rose-400 transition-all duration-200"
                   >
                     <svg

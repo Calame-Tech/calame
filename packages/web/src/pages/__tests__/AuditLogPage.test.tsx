@@ -23,7 +23,7 @@ describe('AuditLogPage', () => {
     await flushEffects();
     // Filter dropdown only renders when more than one profile is passed in —
     // confirms `profiles` (all profiles) was forwarded, not a single one.
-    expect(screen.getByText('All profiles')).toBeTruthy();
+    expect(screen.getByText('All MCP servers')).toBeTruthy();
   });
 
   it('navigates back to the dashboard via the breadcrumb', async () => {

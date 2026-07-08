@@ -27,8 +27,8 @@ function renderPage({
 describe('ConfigurationsPage', () => {
   it('renders an empty state when there are no data profiles', () => {
     renderPage();
-    expect(screen.getAllByText('Data Profiles').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText('No data profiles')).toBeTruthy();
+    expect(screen.getAllByText('Data Configurations').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('No Data Configurations')).toBeTruthy();
   });
 
   it('renders a card per configuration', () => {
@@ -86,9 +86,9 @@ describe('ConfigurationsPage', () => {
 
   it('creates a new data profile and navigates to its detail view', () => {
     const { setView, setConfigurations, handleConfigurationSave } = renderPage();
-    fireEvent.click(screen.getByText('+ New Data Profile'));
+    fireEvent.click(screen.getByText('+ New Data Configuration'));
 
-    fireEvent.change(screen.getByPlaceholderText('Profile name'), {
+    fireEvent.change(screen.getByPlaceholderText('Configuration name'), {
       target: { value: 'My Profile' },
     });
     fireEvent.change(screen.getByPlaceholderText('Display name'), {

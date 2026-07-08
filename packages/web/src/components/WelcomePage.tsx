@@ -204,7 +204,7 @@ export default function WelcomePage({ code }: WelcomePageProps) {
   const steps = [
     { n: 1, label: 'Verify access' },
     { n: 2, label: 'Set password' },
-    { n: 3, label: 'Get your token' },
+    { n: 3, label: 'Get your access token' },
   ];
 
   return (

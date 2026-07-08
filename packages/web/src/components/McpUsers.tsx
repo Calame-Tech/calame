@@ -137,7 +137,7 @@ export default function McpUsers({ profileName, onNavigateToUser }: McpUsersProp
 
   const formatDate = (date: string | null) => {
     if (!date) return '—';
-    return new Date(date).toLocaleDateString('fr-FR', {
+    return new Date(date).toLocaleDateString('en-US', {
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',
@@ -176,7 +176,7 @@ export default function McpUsers({ profileName, onNavigateToUser }: McpUsersProp
       {newToken && (
         <div className="bg-green-900/30 border border-green-700 rounded-lg p-3">
           <p className="text-green-300 text-sm font-medium mb-1">
-            Token — copy now, shown once only
+            Access Token — copy now, shown once only
           </p>
           <div className="flex items-center gap-2">
             <code className="flex-1 bg-gray-800 px-3 py-1.5 rounded text-green-300 text-xs font-mono break-all">

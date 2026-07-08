@@ -60,7 +60,7 @@ describe('McpDetailPage', () => {
 
   it('shows a not-found message for an unknown profile', async () => {
     renderPage({ profileName: 'ghost' });
-    expect(screen.getByText('Profile "ghost" not found.')).toBeTruthy();
+    expect(screen.getByText('MCP Server "ghost" not found.')).toBeTruthy();
     await flushEffects();
   });
 

@@ -84,7 +84,7 @@ export default function ProfilePreview({ profileName, onClose }: ProfilePreviewP
     <div
       role="dialog"
       aria-modal="true"
-      aria-label={`Profile preview: ${profileName}`}
+      aria-label={`MCP Server preview: ${profileName}`}
       className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
       onClick={handleBackdropClick}
     >
@@ -92,7 +92,7 @@ export default function ProfilePreview({ profileName, onClose }: ProfilePreviewP
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-lg font-semibold text-gray-100">
-            Profile Preview: <span className="text-os-400 font-mono">{profileName}</span>
+            MCP Server Preview: <span className="text-os-400 font-mono">{profileName}</span>
           </h2>
           <button
             onClick={onClose}
@@ -163,7 +163,7 @@ export default function ProfilePreview({ profileName, onClose }: ProfilePreviewP
 
             {data.tables.length === 0 && (
               <p className="text-gray-500 text-sm text-center py-8">
-                No tables found in this profile.
+                No tables found in this MCP server.
               </p>
             )}
 

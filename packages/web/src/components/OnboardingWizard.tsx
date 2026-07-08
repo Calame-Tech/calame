@@ -66,7 +66,7 @@ export default function OnboardingWizard({
   });
 
   const [step3Profile, setStep3Profile] = useState<Step3ProfileState>({
-    profileName: 'My first profile',
+    profileName: 'My first MCP server',
     loading: false,
     error: '',
   });
@@ -195,13 +195,13 @@ export default function OnboardingWizard({
     // list, so it always gets a distinct `-config` suffix.
     const configName = `${name}-config`;
     if (!label) {
-      setStep3Profile((s) => ({ ...s, error: 'Profile name is required.' }));
+      setStep3Profile((s) => ({ ...s, error: 'MCP server name is required.' }));
       return;
     }
     if (!name) {
       setStep3Profile((s) => ({
         ...s,
-        error: 'Profile name must contain at least one letter or number.',
+        error: 'MCP server name must contain at least one letter or number.',
       }));
       return;
     }
@@ -273,7 +273,7 @@ export default function OnboardingWizard({
         setStep3Profile((s) => ({
           ...s,
           loading: false,
-          error: saveData.message ?? 'Failed to create profile.',
+          error: saveData.message ?? 'Failed to create MCP server.',
         }));
         return;
       }
@@ -437,7 +437,7 @@ function StepConnect({ state, setState, onDemo, onCustom }: StepConnectProps) {
         <p className="text-xs font-semibold tracking-widest text-os-400 uppercase mb-2">Step 1</p>
         <h1 className="heading-lg mb-2">Connect your first database</h1>
         <p className="text-sm text-gray-400">
-          Connect to a database to start exploring your data and building MCP profiles.
+          Connect to a database to start exploring your data and building MCP servers.
         </p>
       </div>
 
@@ -571,7 +571,7 @@ function StepTables({ state, connectionName, onToggle, onToggleAll, onNext }: St
         <h1 className="heading-lg mb-2">Select tables to expose</h1>
         <p className="text-sm text-gray-400">
           Choose which tables from <span className="text-gray-200 font-mono">{connectionName}</span>{' '}
-          will be accessible through your MCP profile. All columns are included by default.
+          will be accessible through your MCP server. All columns are included by default.
         </p>
       </div>
 
@@ -670,9 +670,9 @@ function StepProfile({
     <div className="space-y-6">
       <div>
         <p className="text-xs font-semibold tracking-widest text-os-400 uppercase mb-2">Step 3</p>
-        <h1 className="heading-lg mb-2">Name your MCP profile</h1>
+        <h1 className="heading-lg mb-2">Name your MCP server</h1>
         <p className="text-sm text-gray-400">
-          Your profile will expose {tableCount} table{tableCount !== 1 ? 's' : ''} from{' '}
+          Your MCP server will expose {tableCount} table{tableCount !== 1 ? 's' : ''} from{' '}
           <span className="text-gray-200 font-mono">{connectionName}</span>.
         </p>
       </div>
@@ -680,7 +680,7 @@ function StepProfile({
       <form onSubmit={onSubmit} className="card-primary p-4 space-y-4" noValidate>
         <div>
           <label htmlFor="profile-name" className="block text-sm font-medium text-gray-300 mb-1">
-            Profile name{' '}
+            MCP server name{' '}
             <span className="text-red-400" aria-hidden="true">
               *
             </span>
@@ -691,7 +691,7 @@ function StepProfile({
             value={state.profileName}
             onChange={(e) => onChange(e.target.value)}
             className="input-editorial w-full"
-            placeholder="My first profile"
+            placeholder="My first MCP server"
             autoFocus
           />
           {slugifyProfileName(state.profileName) && (
@@ -723,7 +723,7 @@ function StepProfile({
             disabled={state.loading || !state.profileName.trim()}
             className="flex-1 py-2 px-4 bg-os-700 hover:bg-os-600 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-os-500"
           >
-            {state.loading ? 'Creating...' : 'Create profile & activate'}
+            {state.loading ? 'Creating...' : 'Create MCP server & activate'}
           </button>
         </div>
       </form>
@@ -778,7 +778,7 @@ function StepDone({
             Your MCP server is ready.{' '}
             {profileName && (
               <>
-                Profile <span className="text-gray-200 font-medium">{profileName}</span> has been
+                MCP server <span className="text-gray-200 font-medium">{profileName}</span> has been
                 created.
               </>
             )}

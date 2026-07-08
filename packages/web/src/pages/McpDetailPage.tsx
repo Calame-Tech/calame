@@ -17,6 +17,7 @@ import { persistProfiles, buildProfilesData } from '../lib/profiles.js';
 import {
   getConfigurationTableNames,
   getConfigurationSelectedTables,
+  getConfigurationTableOptions,
 } from '../lib/configuration-accessors.js';
 import type {
   Config,
@@ -27,6 +28,7 @@ import type {
   OAuthConfig,
   ExternalAuthConfig,
   DataScopeRule,
+  TableToolOptions,
 } from '../types/schema.js';
 import type { View } from '../router/index.js';
 
@@ -1252,6 +1254,7 @@ function McpDetailView({
               </h4>
               {(() => {
                 const mergedTables: Record<string, string[]> = {};
+                const mergedToolOptions: Record<string, TableToolOptions> = {};
                 for (const cfgName of profileConfigurations) {
                   const cfg = configurations.find((c) => c.name === cfgName);
                   if (!cfg) continue;
@@ -1264,6 +1267,11 @@ function McpDetailView({
                       mergedTables[table] = [...existing];
                     }
                   }
+                  // Last writer wins per table when multiple configurations set options —
+                  // mirrors getConfigurationTableOptions's own merge semantics.
+                  for (const [table, opts] of Object.entries(getConfigurationTableOptions(cfg))) {
+                    mergedToolOptions[table] = opts;
+                  }
                 }
                 const tableNames = Object.keys(mergedTables);
                 if (tableNames.length === 0) {
@@ -1273,17 +1281,39 @@ function McpDetailView({
                 }
                 return (
                   <div className="flex flex-wrap gap-2">
-                    {tableNames.map((tableName) => (
-                      <span
-                        key={tableName}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-blue-600/30 bg-blue-700/10 text-sm text-blue-300"
-                      >
-                        {tableName}
-                        <span className="text-xs text-gray-500">
-                          {mergedTables[tableName].length} cols
+                    {tableNames.map((tableName) => {
+                      const enabledTools = mergedToolOptions[tableName]?.enabledTools ?? [
+                        'describe',
+                        'aggregate',
+                        'query',
+                      ];
+                      return (
+                        <span
+                          key={tableName}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-blue-600/30 bg-blue-700/10 text-sm text-blue-300"
+                        >
+                          {tableName}
+                          <span className="text-xs text-gray-500">
+                            {mergedTables[tableName].length} cols
+                          </span>
+                          <span className="flex items-center gap-1">
+                            {enabledTools.map((tool) => (
+                              <span
+                                key={tool}
+                                title={`Tool: ${tool}`}
+                                className={`text-[9px] px-1 py-0.5 rounded font-bold ${
+                                  tool === 'write'
+                                    ? 'bg-amber-500/20 text-amber-400'
+                                    : 'bg-gray-700/60 text-gray-400'
+                                }`}
+                              >
+                                {tool}
+                              </span>
+                            ))}
+                          </span>
                         </span>
-                      </span>
-                    ))}
+                      );
+                    })}
                   </div>
                 );
               })()}

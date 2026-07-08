@@ -47,7 +47,9 @@ export default function ConfigPanel({
   onGlobalMaskingRulesChange,
   onPiiOverride,
 }: ConfigPanelProps) {
-  const [advancedOpen, setAdvancedOpen] = useState(false);
+  // Open by default (Lot D2): write/masking status should be visible without an
+  // extra click — this was the "hidden unless you dig into Advanced" gap.
+  const [advancedOpen, setAdvancedOpen] = useState(true);
   const [tableFilter, setTableFilter] = useState('');
 
   const update = (patch: Partial<Config>) => {
@@ -108,7 +110,7 @@ export default function ConfigPanel({
                   d="M9 5l7 7-7 7"
                 />
               </svg>
-              Advanced Table Options
+              Table Tools &amp; Masking
               <span className="text-xs text-gray-500 font-normal">
                 ({activeTables.length} tables)
               </span>

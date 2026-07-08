@@ -6,6 +6,13 @@ import { buildMcpUrl } from '../lib/mcp-url.js';
 interface OnboardingWizardProps {
   onComplete: () => void;
   onSkip: () => void;
+  /**
+   * Optional deep link from the final step to the newly created configuration's
+   * detail page (Table Tools & Masking / Advanced settings). When omitted, the
+   * "Fine-tune..." link is not rendered — callers that don't wire navigation
+   * still get a fully working wizard.
+   */
+  onNavigateToConfig?: (configName: string) => void;
 }
 
 type DbType = 'postgresql' | 'mysql' | 'sqlite';
@@ -33,10 +40,15 @@ interface Step3ProfileState {
 
 const TOTAL_STEPS = 4;
 
-export default function OnboardingWizard({ onComplete, onSkip }: OnboardingWizardProps) {
+export default function OnboardingWizard({
+  onComplete,
+  onSkip,
+  onNavigateToConfig,
+}: OnboardingWizardProps) {
   const [step, setStep] = useState(1);
   const [createdConnectionName, setCreatedConnectionName] = useState('');
   const [createdProfileName, setCreatedProfileName] = useState('');
+  const [createdConfigName, setCreatedConfigName] = useState('');
 
   const [step1, setStep1] = useState<Step1State>({
     connectionName: '',
@@ -178,6 +190,10 @@ export default function OnboardingWizard({ onComplete, onSkip }: OnboardingWizar
     // The backend chat/auth routes only accept [a-zA-Z0-9_-]+ profile names —
     // the typed text becomes the display label, the slug becomes the name.
     const name = slugifyProfileName(label);
+    // The configuration lives in its own namespace (the `configurations` table)
+    // but sharing the profile's slug would be confusing in the "Data Profiles"
+    // list, so it always gets a distinct `-config` suffix.
+    const configName = `${name}-config`;
     if (!label) {
       setStep3Profile((s) => ({ ...s, error: 'Profile name is required.' }));
       return;
@@ -207,7 +223,38 @@ export default function OnboardingWizard({ onComplete, onSkip }: OnboardingWizar
         }
       }
 
-      // 1. Save profile with real scopes
+      // 1. Create the Data Configuration first — this is what makes the
+      // profile show up under "Data Profiles" and gives the user a place to
+      // enable the write tool / column masking afterwards (TableOptionsCard
+      // only mounts on the configuration detail page).
+      const configRes = await apiFetch('/api/configurations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          name: configName,
+          label,
+          sources: [createdConnectionName],
+          scopes: {
+            [createdConnectionName]: {
+              kind: 'relational',
+              selectedTables,
+            },
+          },
+        }),
+      });
+      const configData = (await configRes.json()) as { success: boolean; message?: string };
+      if (!configData.success) {
+        setStep3Profile((s) => ({
+          ...s,
+          loading: false,
+          error: configData.message ?? 'Failed to create the data configuration.',
+        }));
+        return; // Don't create a profile with no backing configuration.
+      }
+
+      // 2. Save the profile referencing the configuration by name (the shape
+      // every configuration-backed profile in the app uses).
       const saveRes = await apiFetch('/api/profiles/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -216,13 +263,7 @@ export default function OnboardingWizard({ onComplete, onSkip }: OnboardingWizar
           profiles: {
             [name]: {
               label,
-              sources: [createdConnectionName],
-              scopes: {
-                [createdConnectionName]: {
-                  kind: 'relational',
-                  selectedTables,
-                },
-              },
+              configurations: [configName],
             },
           },
         }),
@@ -237,7 +278,7 @@ export default function OnboardingWizard({ onComplete, onSkip }: OnboardingWizar
         return;
       }
 
-      // 2. Activate profile — non-blocking: absorb errors, profile is already saved
+      // 3. Activate profile — non-blocking: absorb errors, profile is already saved
       try {
         await apiFetch('/api/serve/start', {
           method: 'POST',
@@ -252,6 +293,7 @@ export default function OnboardingWizard({ onComplete, onSkip }: OnboardingWizar
         );
       }
 
+      setCreatedConfigName(configName);
       setCreatedProfileName(name);
       setStep3Profile((s) => ({ ...s, loading: false }));
       setStep(4);
@@ -348,9 +390,11 @@ export default function OnboardingWizard({ onComplete, onSkip }: OnboardingWizar
             <StepDone
               mcpUrl={mcpUrl}
               profileName={createdProfileName}
+              configName={createdConfigName}
               copied={copied}
               onCopy={copyUrl}
               onComplete={onComplete}
+              onNavigateToConfig={onNavigateToConfig}
             />
           )}
         </div>
@@ -692,12 +736,22 @@ function StepProfile({
 interface StepDoneProps {
   mcpUrl: string;
   profileName: string;
+  configName: string;
   copied: boolean;
   onCopy: () => void;
   onComplete: () => void;
+  onNavigateToConfig?: (configName: string) => void;
 }
 
-function StepDone({ mcpUrl, profileName, copied, onCopy, onComplete }: StepDoneProps) {
+function StepDone({
+  mcpUrl,
+  profileName,
+  configName,
+  copied,
+  onCopy,
+  onComplete,
+  onNavigateToConfig,
+}: StepDoneProps) {
   return (
     <div className="space-y-6">
       <div className="flex flex-col items-center text-center space-y-3">
@@ -792,6 +846,16 @@ function StepDone({ mcpUrl, profileName, copied, onCopy, onComplete }: StepDoneP
       >
         Go to dashboard
       </button>
+
+      {onNavigateToConfig && configName && (
+        <button
+          type="button"
+          onClick={() => onNavigateToConfig(configName)}
+          className="w-full text-center text-sm text-os-400 hover:text-os-300 transition-colors focus:outline-none focus:ring-2 focus:ring-os-700 rounded px-2 py-1"
+        >
+          Fine-tune tables, tools &amp; masking &rarr;
+        </button>
+      )}
     </div>
   );
 }

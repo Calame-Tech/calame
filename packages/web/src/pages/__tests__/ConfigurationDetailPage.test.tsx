@@ -74,4 +74,35 @@ describe('ConfigurationDetailPage', () => {
     expect(await screen.findByText('Rag selector (mock)')).toBeTruthy();
     await flushEffects();
   });
+
+  it('disables Save until the configuration is edited, then enables it', () => {
+    renderPage();
+    const saveButton = screen.getByRole('button', { name: 'Save changes' });
+    expect(saveButton).toBeDisabled();
+    expect(saveButton.title).toBe('No changes');
+
+    fireEvent.click(document.querySelector('h2')!);
+    fireEvent.change(screen.getByDisplayValue('Sales'), { target: { value: 'Sales EMEA' } });
+
+    const updatedButton = screen.getByRole('button', { name: 'Save changes' });
+    expect(updatedButton).not.toBeDisabled();
+  });
+
+  it('confirms before leaving via the breadcrumb when there are unsaved changes', () => {
+    const setView = renderPage();
+
+    fireEvent.click(document.querySelector('h2')!);
+    fireEvent.change(screen.getByDisplayValue('Sales'), { target: { value: 'Sales EMEA' } });
+
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    fireEvent.click(screen.getByText('Dashboard'));
+    expect(confirmSpy).toHaveBeenCalledWith('You have unsaved changes. Leave without saving?');
+    expect(setView).not.toHaveBeenCalled();
+
+    confirmSpy.mockReturnValue(true);
+    fireEvent.click(screen.getByText('Dashboard'));
+    expect(setView).toHaveBeenCalledWith({ page: 'dashboard' });
+
+    confirmSpy.mockRestore();
+  });
 });

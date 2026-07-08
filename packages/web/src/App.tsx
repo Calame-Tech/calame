@@ -153,7 +153,19 @@ export default function App() {
       setShowOnboarding(false);
       bumpDataVersion();
     };
-    return <OnboardingWizard onComplete={dismissOnboarding} onSkip={dismissOnboarding} />;
+    return (
+      <OnboardingWizard
+        onComplete={dismissOnboarding}
+        onSkip={dismissOnboarding}
+        onNavigateToConfig={(configName) => {
+          // Close the wizard first, then navigate — otherwise the admin shell
+          // (which renders `view.page`) never gets a chance to mount before
+          // showOnboarding flips back to false on the next render.
+          dismissOnboarding();
+          setView({ page: 'config-detail', configName });
+        }}
+      />
+    );
   }
 
   // /login or unauthenticated admin — unified login page

@@ -50,6 +50,40 @@ describe('ConfigurationsPage', () => {
     expect(setView).toHaveBeenCalledWith({ page: 'config-detail', configName: 'sales' });
   });
 
+  it('shows write and masking badges when the configuration has them, hides them otherwise', () => {
+    const withToolsAndMasking: Configuration = {
+      name: 'sales',
+      label: 'Sales',
+      sources: ['db1'],
+      scopes: {
+        db1: {
+          kind: 'relational',
+          selectedTables: { orders: ['id', 'total', 'email'] },
+          tableOptions: {
+            orders: {
+              enabledTools: ['describe', 'query', 'write'],
+              maxLimit: 100,
+              filterableColumns: [],
+              groupableColumns: [],
+            },
+          },
+          columnMasking: {
+            orders: {
+              email: { maskingMode: 'hash' },
+              total: { maskingMode: 'none' },
+            },
+          },
+        },
+      },
+    };
+    const plain: Configuration = { name: 'hr', label: 'Human Resources' };
+
+    renderPage({ configurations: [withToolsAndMasking, plain] });
+
+    expect(screen.getByText(/write on 1 table/)).toBeTruthy();
+    expect(screen.getByText(/1 masked column/)).toBeTruthy();
+  });
+
   it('creates a new data profile and navigates to its detail view', () => {
     const { setView, setConfigurations, handleConfigurationSave } = renderPage();
     fireEvent.click(screen.getByText('+ New Data Profile'));

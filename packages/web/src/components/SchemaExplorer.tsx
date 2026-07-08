@@ -1,5 +1,11 @@
 import React, { useState, useMemo } from 'react';
-import type { DatabaseSchema, TableInfo, Relation, PiiDetection } from '../types/schema.js';
+import type {
+  DatabaseSchema,
+  TableInfo,
+  Relation,
+  PiiDetection,
+  TableToolOptions,
+} from '../types/schema.js';
 import PiiBadge from './PiiBadge.js';
 
 interface SchemaExplorerProps {
@@ -13,6 +19,13 @@ interface SchemaExplorerProps {
   connectionSchemas?: Record<string, DatabaseSchema>;
   /** Labels for connection names (keyed by connection name) */
   connectionLabels?: Record<string, string>;
+  /**
+   * Effective tool options per table (Lot D2). When provided, selected tables
+   * show a small R/W badge next to the column count so it's visible at a
+   * glance which tables have the write tool enabled — without opening
+   * "Advanced" / ConfigPanel.
+   */
+  tableOptions?: Record<string, TableToolOptions>;
 }
 
 /** Map common PG type keywords to badge colors */
@@ -56,6 +69,7 @@ export default function SchemaExplorer({
   scanning,
   connectionSchemas,
   connectionLabels,
+  tableOptions,
 }: SchemaExplorerProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedTables, setExpandedTables] = useState<Set<string>>(new Set());
@@ -202,6 +216,28 @@ export default function SchemaExplorer({
     return DB_COLORS[idx % DB_COLORS.length];
   };
 
+  // Tiny R/W tool badge for a selected table — amber "W" when the write tool
+  // is enabled, gray "R" otherwise. Only rendered when `tableOptions` is
+  // supplied so callers that don't pass it see no behavior change.
+  const renderToolBadge = (tableName: string) => {
+    const enabledTools = tableOptions?.[tableName]?.enabledTools ?? [
+      'describe',
+      'aggregate',
+      'query',
+    ];
+    const hasWrite = enabledTools.includes('write');
+    return (
+      <span
+        title={`Tools: ${enabledTools.join(', ')}`}
+        className={`flex-shrink-0 text-[9px] px-1 py-0.5 rounded font-bold ${
+          hasWrite ? 'bg-amber-500/20 text-amber-400' : 'bg-gray-700/60 text-gray-500'
+        }`}
+      >
+        {hasWrite ? 'W' : 'R'}
+      </span>
+    );
+  };
+
   // Render a table button
   const renderTableButton = (table: TableInfo, connName?: string) => {
     const selectedCols = selectedTables[table.name] ?? new Set<string>();
@@ -242,6 +278,8 @@ export default function SchemaExplorer({
         <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-gray-700/80 text-gray-400 font-medium">
           {selectedCols.size}/{table.columns.length}
         </span>
+        {/* Effective tool badge (R/W) — only when hasSelection and tableOptions is provided */}
+        {tableOptions && hasSelection && renderToolBadge(table.name)}
       </button>
     );
   };

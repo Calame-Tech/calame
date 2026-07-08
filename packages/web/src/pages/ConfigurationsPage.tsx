@@ -6,7 +6,11 @@ import { useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { Button, EmptyState, Breadcrumb } from '../components/ui/index.js';
 import HelpTip from '../components/HelpTip.js';
-import { getConfigurationTableNames } from '../lib/configuration-accessors.js';
+import {
+  getConfigurationTableNames,
+  getConfigurationTableOptions,
+  getConfigurationColumnMasking,
+} from '../lib/configuration-accessors.js';
 import type { Configuration } from '../types/schema.js';
 import type { View } from '../router/index.js';
 
@@ -137,6 +141,14 @@ function ConfigurationListView({
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {configurations.map((cfg) => {
             const tableCount = getConfigurationTableNames(cfg).length;
+            const writeTableCount = Object.values(getConfigurationTableOptions(cfg)).filter((o) =>
+              o.enabledTools?.includes('write'),
+            ).length;
+            const maskedColumnCount = Object.values(getConfigurationColumnMasking(cfg)).reduce(
+              (sum, cols) =>
+                sum + Object.values(cols).filter((m) => m.maskingMode !== 'none').length,
+              0,
+            );
             return (
               <div
                 key={cfg.name}
@@ -181,6 +193,27 @@ function ConfigurationListView({
                     {tableCount} table{tableCount !== 1 ? 's' : ''}
                   </span>
                 </div>
+                {(writeTableCount > 0 || maskedColumnCount > 0) && (
+                  <div className="flex gap-3 text-xs mt-1.5">
+                    {writeTableCount > 0 && (
+                      <span
+                        className="text-amber-400"
+                        title={`Write tool enabled on ${writeTableCount} table(s)`}
+                      >
+                        &#9999; write on {writeTableCount} table{writeTableCount !== 1 ? 's' : ''}
+                      </span>
+                    )}
+                    {maskedColumnCount > 0 && (
+                      <span
+                        className="text-gray-400"
+                        title={`${maskedColumnCount} column(s) masked`}
+                      >
+                        &#128737; {maskedColumnCount} masked column
+                        {maskedColumnCount !== 1 ? 's' : ''}
+                      </span>
+                    )}
+                  </div>
+                )}
                 {cfg.name !== cfg.label && (
                   <p className="font-mono-plex text-[10px] text-gray-600 uppercase tracking-widest mt-2">
                     {cfg.name}

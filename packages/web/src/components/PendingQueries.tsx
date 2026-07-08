@@ -4,17 +4,22 @@ import type { PendingWriteQuery } from '../types/schema.js';
 
 interface PendingQueriesProps {
   onPendingCountChange?: (count: number) => void;
+  onNavigateToProfile?: (profileName: string) => void;
 }
 
 type StatusFilter = 'all' | 'pending' | 'approved' | 'rejected';
 
-export default function PendingQueries({ onPendingCountChange }: PendingQueriesProps) {
+export default function PendingQueries({
+  onPendingCountChange,
+  onNavigateToProfile,
+}: PendingQueriesProps) {
   const [entries, setEntries] = useState<PendingWriteQuery[]>([]);
   const [total, setTotal] = useState(0);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('pending');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [confirmApproveId, setConfirmApproveId] = useState<string | null>(null);
 
   const fetchEntries = useCallback(async () => {
     try {
@@ -76,7 +81,22 @@ export default function PendingQueries({ onPendingCountChange }: PendingQueriesP
       // Silently fail
     } finally {
       setActionLoading(null);
+      setConfirmApproveId(null);
     }
+  };
+
+  // insert is a direct one-click approve; delete/update require a second
+  // confirming click since they execute an irreversible write immediately.
+  const handleApproveClick = (entry: PendingWriteQuery) => {
+    if (entry.operation === 'insert') {
+      handleApprove(entry.id);
+      return;
+    }
+    if (confirmApproveId === entry.id) {
+      handleApprove(entry.id);
+      return;
+    }
+    setConfirmApproveId(entry.id);
   };
 
   const handleReject = async (id: string) => {
@@ -190,7 +210,15 @@ export default function PendingQueries({ onPendingCountChange }: PendingQueriesP
         <div className="text-center text-gray-500 py-8">Loading...</div>
       ) : entries.length === 0 ? (
         <div className="card-primary p-8 text-center text-gray-500">
-          No {statusFilter === 'all' ? '' : statusFilter} write queries.
+          {statusFilter === 'pending' ? (
+            <>
+              No pending writes. Write operations proposed by an LLM will appear here — enable the{' '}
+              <code className="text-xs text-gray-400">write</code> tool on a table in a Data
+              Configuration.
+            </>
+          ) : (
+            `No ${statusFilter === 'all' ? '' : statusFilter} write queries.`
+          )}
         </div>
       ) : (
         <div className="space-y-3">
@@ -206,16 +234,38 @@ export default function PendingQueries({ onPendingCountChange }: PendingQueriesP
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
                   <span className="text-xs text-gray-500">{formatTime(entry.timestamp)}</span>
-                  <span className="text-xs text-gray-600 font-mono">{entry.profileName}</span>
+                  {onNavigateToProfile ? (
+                    <button
+                      onClick={() => onNavigateToProfile(entry.profileName)}
+                      title={`Aller au profil MCP ${entry.profileName}`}
+                      className="text-xs text-gray-500 hover:text-os-400 font-mono underline decoration-dotted transition-colors"
+                    >
+                      {entry.profileName}
+                    </button>
+                  ) : (
+                    <span className="text-xs text-gray-600 font-mono">{entry.profileName}</span>
+                  )}
                   {entry.status === 'pending' && (
                     <div className="flex gap-2">
                       <button
-                        onClick={() => handleApprove(entry.id)}
+                        onClick={() => handleApproveClick(entry)}
                         disabled={actionLoading === entry.id}
-                        title="Approuver et exécuter immédiatement cette requête en base de données."
-                        className="px-3 py-1.5 rounded-lg bg-green-600/20 text-green-400 hover:bg-green-600/30 text-sm font-medium transition-all duration-200 disabled:opacity-50"
+                        title={
+                          entry.operation !== 'insert' && confirmApproveId === entry.id
+                            ? `This will execute an irreversible ${entry.operation.toUpperCase()} immediately. Continue?`
+                            : 'Approuver et exécuter immédiatement cette requête en base de données.'
+                        }
+                        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 disabled:opacity-50 ${
+                          entry.operation !== 'insert' && confirmApproveId === entry.id
+                            ? 'bg-green-600 text-white hover:bg-green-500'
+                            : 'bg-green-600/20 text-green-400 hover:bg-green-600/30'
+                        }`}
                       >
-                        {actionLoading === entry.id ? '...' : 'Approve'}
+                        {actionLoading === entry.id
+                          ? '...'
+                          : entry.operation !== 'insert' && confirmApproveId === entry.id
+                            ? 'Confirm Approve'
+                            : 'Approve'}
                       </button>
                       <button
                         onClick={() => handleReject(entry.id)}

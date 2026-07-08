@@ -500,7 +500,7 @@ export default function UserDashboard({ onLogout }: { onLogout: () => void }) {
                                   [p.profileName]: {
                                     url: p.mcpUrl,
                                     headers: {
-                                      Authorization: `Bearer ${newToken ?? '<your-token>'}`,
+                                      Authorization: `Bearer ${newToken ?? revealedToken ?? '<your-token>'}`,
                                     },
                                   },
                                 },

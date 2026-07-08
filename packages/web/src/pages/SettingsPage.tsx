@@ -83,7 +83,7 @@ export default function SettingsPage({
       <PageHeader
         breadcrumb={breadcrumb}
         title="Settings"
-        description="Configure AI providers, email delivery, and single sign-on for your Calame instance."
+        description="Configure AI, email, SSO, branding & notifications for your Calame instance."
       />
 
       {/* Mobile: horizontal scrollable tab bar */}

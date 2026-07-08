@@ -81,6 +81,7 @@ export default function WelcomePage({ code }: WelcomePageProps) {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordError, setPasswordError] = useState('');
+  const [activating, setActivating] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -110,6 +111,7 @@ export default function WelcomePage({ code }: WelcomePageProps) {
       setPasswordError('Passwords do not match.');
       return;
     }
+    setActivating(true);
     try {
       const res = await apiFetch(`/api/onboarding/${code}/activate`, {
         method: 'POST',
@@ -125,6 +127,8 @@ export default function WelcomePage({ code }: WelcomePageProps) {
       }
     } catch {
       setError('Connection error.');
+    } finally {
+      setActivating(false);
     }
   };
 
@@ -416,23 +420,29 @@ export default function WelcomePage({ code }: WelcomePageProps) {
 
                 <button
                   onClick={handleActivate}
-                  disabled={!password || !confirmPassword}
+                  disabled={!password || !confirmPassword || activating}
                   className="flex items-center justify-center gap-2 w-full py-3 px-6 bg-gradient-to-r from-os-600 to-os-500 hover:from-os-500 hover:to-os-400 disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-os-600/20 text-white font-medium tracking-wide rounded-lg transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-os-500/50"
                   aria-label="Activate my account"
                 >
-                  Activate My Account
-                  <svg
-                    className="w-4 h-4"
-                    viewBox="0 0 16 16"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
-                  >
-                    <path d="M3 8h10M9 4l4 4-4 4" />
-                  </svg>
+                  {activating ? (
+                    'Activating…'
+                  ) : (
+                    <>
+                      Activate My Account
+                      <svg
+                        className="w-4 h-4"
+                        viewBox="0 0 16 16"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M3 8h10M9 4l4 4-4 4" />
+                      </svg>
+                    </>
+                  )}
                 </button>
 
                 <p className="font-mono-plex text-[10px] text-gray-600 text-center tracking-wide">
@@ -493,7 +503,7 @@ export default function WelcomePage({ code }: WelcomePageProps) {
                         />
                       </svg>
                       <span className="font-mono-plex text-[10px] uppercase tracking-[0.2em] text-amber-400/80">
-                        One-time display — copy now
+                        Copy it now — you can reveal it later from your account with your password
                       </span>
                     </div>
 

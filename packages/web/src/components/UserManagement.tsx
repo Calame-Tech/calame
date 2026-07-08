@@ -735,7 +735,7 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
         <div className="bg-green-900/30 border border-green-700 rounded-lg p-4">
           <h3 className="text-green-300 font-medium mb-2">Token Generated</h3>
           <p className="text-gray-400 text-sm mb-2">
-            Copy this token now — it will not be shown again.
+            Copy it now — you can reveal it later from your account with your password.
           </p>
           <div className="flex items-center gap-2">
             <code className="flex-1 bg-gray-800 px-3 py-2 rounded text-green-300 text-sm font-mono break-all">

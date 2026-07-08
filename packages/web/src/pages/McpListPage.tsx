@@ -55,7 +55,6 @@ export default function McpListPage({
           serveStatus={serveStatus}
           onServeAction={fetchServeStatus}
           onSelectProfile={handleSelectProfile}
-          onBack={() => setView({ page: 'dashboard' })}
           onCreateProfile={(name, label) => {
             handleProfileCreate(name, label);
             setView({ page: 'mcp-detail', profileName: name });

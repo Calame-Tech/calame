@@ -322,7 +322,7 @@ export default function DashboardPage({
           },
           {
             label: 'SETTINGS',
-            description: 'AI provider, SMTP and SSO/OIDC',
+            description: 'AI, email, SSO, branding & notifications',
             dot: 'bg-amber-500',
             page: 'settings' as const,
           },

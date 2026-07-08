@@ -72,7 +72,7 @@ export default function AiSettingsAssignment({
         <div className="flex items-center gap-2">
           <h4 className="text-sm font-semibold text-gray-300">AI Settings</h4>
           <HelpTip
-            content="Select which AI settings the chat clients of this MCP can use. Drag the order: the first entry is the default. Leave empty to fall back to the global default."
+            content="Select which AI settings the chat clients of this MCP can use. Use ↑/↓ to reorder; the first entry is the default. Leave empty to fall back to the global default."
             position="right"
             maxWidth={340}
           />

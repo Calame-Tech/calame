@@ -27,7 +27,10 @@ export default function PendingWritesPage({ setView, onCountChange }: PendingWri
         title="Pending Writes"
         description="Write operations proposed by LLMs, awaiting human approval."
       />
-      <PendingQueries onPendingCountChange={() => onCountChange?.()} />
+      <PendingQueries
+        onPendingCountChange={() => onCountChange?.()}
+        onNavigateToProfile={(profileName) => setView({ page: 'mcp-detail', profileName })}
+      />
     </div>
   );
 }

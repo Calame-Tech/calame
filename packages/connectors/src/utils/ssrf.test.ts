@@ -55,6 +55,20 @@ describe('isPrivateIPv4', () => {
 });
 
 // ---------------------------------------------------------------------------
+// isPrivateIPv4 — limited broadcast address (255.255.255.255)
+//
+// Documents current behavior: none of the blocked ranges in ssrf.ts cover
+// 255.255.255.255, so isPrivateIPv4 returns false for it today. This is not
+// necessarily desired security behavior — just what the function does now.
+// ---------------------------------------------------------------------------
+
+describe('isPrivateIPv4 — limited broadcast address', () => {
+  it('currently returns false for 255.255.255.255 (not covered by any blocked range)', () => {
+    expect(isPrivateIPv4('255.255.255.255')).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // isPrivateIPv6 — table-driven
 // ---------------------------------------------------------------------------
 

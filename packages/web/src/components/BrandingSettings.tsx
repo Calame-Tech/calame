@@ -1,18 +1,49 @@
 import { useState, useCallback } from 'react';
 import { apiFetch } from '../lib/api.js';
-import { useBranding, DEFAULT_LOGO_SRC } from '../lib/branding.js';
+import { useBranding, DEFAULT_LOGO_SRC, BASE_FONT_OPTIONS } from '../lib/branding.js';
 import { Button } from './ui/index.js';
 
+const DEFAULT_ACCENT_COLOR = '#5c7cfa';
+
+/** Human-readable label for a font-family CSS value, e.g. the "Inter" in
+ * "'Inter', system-ui, sans-serif". Falls back to the raw value. */
+function fontLabel(fontFamily: string): string {
+  const first = fontFamily
+    .split(',')[0]
+    ?.trim()
+    .replace(/^['"]|['"]$/g, '');
+  return first || fontFamily;
+}
+
 /**
- * Branding settings panel — set a custom logo and favicon.
+ * Branding settings panel — set a custom logo, favicon, accent color, and font.
  */
 export default function BrandingSettings() {
   const branding = useBranding();
   const [logo, setLogo] = useState(branding.logo ?? '');
   const [favicon, setFavicon] = useState(branding.favicon ?? '');
+  const [accentColor, setAccentColor] = useState(branding.accentColor ?? '');
+  const [fontFamily, setFontFamily] = useState(branding.fontFamily ?? '');
+  const [customFonts, setCustomFonts] = useState<string[]>(
+    branding.fontFamily && !(BASE_FONT_OPTIONS as readonly string[]).includes(branding.fontFamily)
+      ? [branding.fontFamily]
+      : [],
+  );
+  const [customFontInput, setCustomFontInput] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
+
+  const fontOptions = [...BASE_FONT_OPTIONS, ...customFonts];
+
+  const handleAddCustomFont = useCallback(() => {
+    const name = customFontInput.trim();
+    if (!name) return;
+    const value = `'${name}', system-ui, sans-serif`;
+    setCustomFonts((prev) => (prev.includes(value) ? prev : [...prev, value]));
+    setFontFamily(value);
+    setCustomFontInput('');
+  }, [customFontInput]);
 
   const handleLogoUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -26,12 +57,22 @@ export default function BrandingSettings() {
     setSaving(true);
     setError('');
     setSaved(false);
+    if (accentColor && !/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(accentColor)) {
+      setError('Accent color must be a hex code like #5c7cfa');
+      setSaving(false);
+      return;
+    }
     try {
       const res = await apiFetch('/api/branding', {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ logo: logo || null, favicon: favicon || null }),
+        body: JSON.stringify({
+          logo: logo || null,
+          favicon: favicon || null,
+          accentColor: accentColor || null,
+          fontFamily: fontFamily || null,
+        }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -44,11 +85,13 @@ export default function BrandingSettings() {
     } finally {
       setSaving(false);
     }
-  }, [logo, favicon]);
+  }, [logo, favicon, accentColor, fontFamily]);
 
   const handleReset = useCallback(() => {
     setLogo('');
     setFavicon('');
+    setAccentColor('');
+    setFontFamily('');
   }, []);
 
   return (
@@ -56,7 +99,8 @@ export default function BrandingSettings() {
       <div>
         <h3 className="text-lg font-semibold text-gray-100">Branding</h3>
         <p className="text-sm text-gray-400 mt-1">
-          Customize your instance with a custom logo and favicon.
+          Customize your instance with a custom logo, favicon, accent color, and font — applied
+          instance-wide for every user.
         </p>
       </div>
 
@@ -114,6 +158,86 @@ export default function BrandingSettings() {
             </button>
           )}
         </div>
+      </div>
+
+      {/* Accent color */}
+      <div className="space-y-2">
+        <label className="block text-sm font-medium text-gray-300">Accent color</label>
+        <div className="flex items-center gap-3">
+          <input
+            type="color"
+            value={accentColor || DEFAULT_ACCENT_COLOR}
+            onChange={(e) => setAccentColor(e.target.value)}
+            className="h-9 w-9 rounded border border-gray-700 bg-gray-800 p-0.5"
+            aria-label="Accent color picker"
+          />
+          <input
+            type="text"
+            value={accentColor}
+            onChange={(e) => setAccentColor(e.target.value.trim())}
+            placeholder={DEFAULT_ACCENT_COLOR}
+            className="input-editorial w-32 text-sm"
+            aria-label="Accent color hex code"
+          />
+          {accentColor && (
+            <button
+              type="button"
+              onClick={() => setAccentColor('')}
+              className="text-sm text-gray-500 hover:text-gray-300"
+            >
+              Reset to default
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Font */}
+      <div className="space-y-2">
+        <label className="block text-sm font-medium text-gray-300">Font</label>
+        <div className="flex items-center gap-3">
+          <select
+            value={fontFamily || BASE_FONT_OPTIONS[0]}
+            onChange={(e) => setFontFamily(e.target.value)}
+            className="input-editorial text-sm"
+            style={{ fontFamily: fontFamily || BASE_FONT_OPTIONS[0] }}
+          >
+            {fontOptions.map((font) => (
+              <option key={font} value={font} style={{ fontFamily: font }}>
+                {fontLabel(font)}
+              </option>
+            ))}
+          </select>
+          {fontFamily && (
+            <button
+              type="button"
+              onClick={() => setFontFamily('')}
+              className="text-sm text-gray-500 hover:text-gray-300"
+            >
+              Reset to default
+            </button>
+          )}
+        </div>
+        <div className="flex items-center gap-3">
+          <input
+            type="text"
+            value={customFontInput}
+            onChange={(e) => setCustomFontInput(e.target.value)}
+            placeholder="Add a font by name (e.g. Poppins)"
+            className="input-editorial w-64 text-sm"
+            aria-label="Add a custom font"
+          />
+          <button
+            type="button"
+            onClick={handleAddCustomFont}
+            disabled={!customFontInput.trim()}
+            className="text-sm text-os-400 hover:text-os-300 disabled:opacity-40 disabled:hover:text-os-400"
+          >
+            Add
+          </button>
+        </div>
+        <p className="text-xs text-gray-500">
+          Added fonts must already be installed on users' devices or loaded elsewhere on the page.
+        </p>
       </div>
 
       {/* Preview */}

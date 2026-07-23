@@ -3,9 +3,27 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    /* Default `os` accent palette, as "r g b" triplets — overridden app-wide by
+       BrandingProvider (see lib/branding.tsx) when an admin sets a custom
+       accent color. */
+    --color-os-50: 240 244 255;
+    --color-os-100: 219 228 255;
+    --color-os-200: 186 200 255;
+    --color-os-300: 145 167 255;
+    --color-os-400: 116 143 252;
+    --color-os-500: 92 124 250;
+    --color-os-600: 76 110 245;
+    --color-os-700: 66 99 235;
+    --color-os-800: 59 91 219;
+    --color-os-900: 54 79 199;
+    --color-os-950: 30 42 94;
+    --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
+  }
+
   body {
     @apply bg-gray-950 text-gray-100;
-    font-family: 'IBM Plex Sans', system-ui, sans-serif;
+    font-family: var(--font-sans);
   }
 
   /* Dark theme scrollbar */
@@ -26,7 +44,7 @@
 
 @layer components {
   .font-display {
-    font-family: 'IBM Plex Sans', system-ui, sans-serif;
+    font-family: var(--font-sans);
     font-weight: 300;
     letter-spacing: -0.02em;
   }
@@ -47,7 +65,7 @@
     text-transform: uppercase;
     letter-spacing: 0.25em;
     font-size: 10px;
-    color: rgb(116 143 252 / 0.7); /* os-400/70 */
+    color: rgb(var(--color-os-400) / 0.7);
   }
 
   /* --- Hairline divider --- */

@@ -56,3 +56,6 @@ export type { PiiSpan, TextMaskingMode } from './pii/text-scanner.js';
 
 // Sources — abstract adapter system
 export * from './sources/index.js';
+
+// Utils
+export { truncate } from './utils.js';

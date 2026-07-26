@@ -38,11 +38,14 @@
       "path-to-regexp@8.x": "^8.4.0",
       "hono": ">=4.12.25",
       "@hono/node-server": "^1.19.13",
-      "fast-uri": ">=3.1.2",
-      "tar": ">=7.5.8",
+      "fast-uri": "^3.1.4",
+      "tar": "^7.5.19",
       "ws": ">=8.21.0",
       "form-data": ">=4.0.6",
-      "nodemailer": ">=9.0.1"
+      "nodemailer": ">=9.0.1",
+      "js-yaml": "^4.3.0",
+      "brace-expansion@1.1.12": "^1.1.16",
+      "brace-expansion@5.0.4": "^5.0.7"
     }
   }
 }

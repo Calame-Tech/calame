@@ -13,18 +13,22 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        // Each shade reads a `--color-os-{shade}` custom property ("r g b"),
+        // defaulted in index.css and overridden app-wide by BrandingProvider
+        // when an admin sets a custom accent color. <alpha-value> keeps
+        // opacity modifiers (e.g. `bg-os-500/20`) working.
         os: {
-          50: '#f0f4ff',
-          100: '#dbe4ff',
-          200: '#bac8ff',
-          300: '#91a7ff',
-          400: '#748ffc',
-          500: '#5c7cfa',
-          600: '#4c6ef5',
-          700: '#4263eb',
-          800: '#3b5bdb',
-          900: '#364fc7',
-          950: '#1e2a5e',
+          50: 'rgb(var(--color-os-50) / <alpha-value>)',
+          100: 'rgb(var(--color-os-100) / <alpha-value>)',
+          200: 'rgb(var(--color-os-200) / <alpha-value>)',
+          300: 'rgb(var(--color-os-300) / <alpha-value>)',
+          400: 'rgb(var(--color-os-400) / <alpha-value>)',
+          500: 'rgb(var(--color-os-500) / <alpha-value>)',
+          600: 'rgb(var(--color-os-600) / <alpha-value>)',
+          700: 'rgb(var(--color-os-700) / <alpha-value>)',
+          800: 'rgb(var(--color-os-800) / <alpha-value>)',
+          900: 'rgb(var(--color-os-900) / <alpha-value>)',
+          950: 'rgb(var(--color-os-950) / <alpha-value>)',
         },
       },
       animation: {

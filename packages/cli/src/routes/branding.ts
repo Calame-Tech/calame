@@ -41,7 +41,33 @@ function getAdminUser(req: Request, state: AppState) {
   return user && user.role === 'admin' && user.status === 'active' ? user : null;
 }
 
-const EMPTY = { logo: null, favicon: null, updatedAt: null } as const;
+/** Accent color must be a `#rgb` or `#rrggbb` hex string, or null. */
+const HEX_COLOR = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
+function validateColor(value: unknown, field: string): string | null | ValidationError {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value !== 'string') return { error: `${field} must be a string or null` };
+  if (!HEX_COLOR.test(value)) {
+    return { error: `${field} must be a hex color like #5c7cfa` };
+  }
+  return value;
+}
+
+/** Font family is a free-form CSS font-family value (name, optionally with fallbacks). */
+const MAX_FONT_LEN = 200;
+function validateFont(value: unknown, field: string): string | null | ValidationError {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value !== 'string') return { error: `${field} must be a string or null` };
+  if (value.length > MAX_FONT_LEN) return { error: `${field} is too long (max ${MAX_FONT_LEN})` };
+  return value;
+}
+
+const EMPTY = {
+  logo: null,
+  favicon: null,
+  accentColor: null,
+  fontFamily: null,
+  updatedAt: null,
+} as const;
 
 /**
  * /api/branding
@@ -67,6 +93,8 @@ export function registerBrandingRoutes(app: Express, state: AppState) {
       res.json({
         logo: data.logo ?? null,
         favicon: data.favicon ?? null,
+        accentColor: data.accentColor ?? null,
+        fontFamily: data.fontFamily ?? null,
         updatedAt: data.updatedAt ?? null,
       });
     } catch {
@@ -86,16 +114,25 @@ export function registerBrandingRoutes(app: Express, state: AppState) {
     const db = state.db?.raw;
     if (!db) return res.status(500).json({ error: 'Database not available' });
 
-    const body = (req.body ?? {}) as { logo?: unknown; favicon?: unknown };
+    const body = (req.body ?? {}) as {
+      logo?: unknown;
+      favicon?: unknown;
+      accentColor?: unknown;
+      fontFamily?: unknown;
+    };
 
     const logo = validateImage(body.logo, 'logo');
     if (isError(logo)) return res.status(400).json(logo);
     const favicon = validateImage(body.favicon, 'favicon');
     if (isError(favicon)) return res.status(400).json(favicon);
+    const accentColor = validateColor(body.accentColor, 'accentColor');
+    if (isError(accentColor)) return res.status(400).json(accentColor);
+    const fontFamily = validateFont(body.fontFamily, 'fontFamily');
+    if (isError(fontFamily)) return res.status(400).json(fontFamily);
 
     const tenantId = getTenantId(req);
     const updatedAt = new Date().toISOString();
-    const payload = { logo, favicon, updatedAt };
+    const payload = { logo, favicon, accentColor, fontFamily, updatedAt };
     db.prepare('INSERT OR REPLACE INTO branding (key, value) VALUES (?, ?)').run(
       tenantId,
       JSON.stringify(payload),

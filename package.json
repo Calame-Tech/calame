@@ -19,7 +19,7 @@
     "typecheck": "tsc -b --noEmit",
     "dev": "pnpm --filter calame run dev",
     "start": "pnpm build && pnpm dev",
-    "prepare": "husky"
+    "prepare": "husky || true"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^8.0.0",

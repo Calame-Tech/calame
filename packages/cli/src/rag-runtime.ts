@@ -100,7 +100,19 @@ export async function initRagRuntime(
   if (!storeResult) return;
   const { vectorStore, dimension }: { vectorStore: VectorStore; dimension: number } = storeResult;
 
-  const encryptionKey = deriveKeyFromEnv();
+  // Config encryption key. `deriveKeyFromEnv` throws under NODE_ENV=production
+  // when CALAME_ENCRYPTION_KEY is unset. Catch it like every other failure path
+  // in this function: a missing key must disable RAG, not kill the host — the
+  // server still serves databases and MCP profiles that never touch this key.
+  let encryptionKey: Buffer;
+  try {
+    encryptionKey = deriveKeyFromEnv();
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    log.warn(`${msg} RAG features disabled.`);
+    state.ragDisabledReason = msg;
+    return;
+  }
   const encryptConfig = (plaintext: string): string => encryptString(plaintext, encryptionKey);
   const decryptConfig = (ciphertext: string): string => decryptString(ciphertext, encryptionKey);
 

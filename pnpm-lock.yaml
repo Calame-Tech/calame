@@ -186,6 +186,12 @@ importers:
 
   ee/rag-gdrive:
     dependencies:
+      '@calame-ee/rag-connectors':
+        specifier: workspace:*
+        version: link:../rag-connectors
+      '@calame-ee/rag-core':
+        specifier: workspace:*
+        version: link:../rag-core
       google-auth-library:
         specifier: ^9.0.0
         version: 9.15.1
@@ -196,12 +202,6 @@ importers:
         specifier: ^2.1.35
         version: 2.1.35
     devDependencies:
-      '@calame-ee/rag-connectors':
-        specifier: workspace:*
-        version: link:../rag-connectors
-      '@calame-ee/rag-core':
-        specifier: workspace:*
-        version: link:../rag-core
       '@types/mime-types':
         specifier: ^2.1.4
         version: 2.1.4
@@ -214,6 +214,12 @@ importers:
 
   ee/rag-gsheets:
     dependencies:
+      '@calame-ee/rag-connectors':
+        specifier: workspace:*
+        version: link:../rag-connectors
+      '@calame-ee/rag-core':
+        specifier: workspace:*
+        version: link:../rag-core
       google-auth-library:
         specifier: ^9.0.0
         version: 9.15.1
@@ -224,12 +230,6 @@ importers:
         specifier: ^2.1.35
         version: 2.1.35
     devDependencies:
-      '@calame-ee/rag-connectors':
-        specifier: workspace:*
-        version: link:../rag-connectors
-      '@calame-ee/rag-core':
-        specifier: workspace:*
-        version: link:../rag-core
       '@types/mime-types':
         specifier: ^2.1.4
         version: 2.1.4
@@ -245,6 +245,12 @@ importers:
       '@azure/identity':
         specifier: ^4.4.1
         version: 4.13.1
+      '@calame-ee/rag-connectors':
+        specifier: workspace:*
+        version: link:../rag-connectors
+      '@calame-ee/rag-core':
+        specifier: workspace:*
+        version: link:../rag-core
       '@microsoft/microsoft-graph-client':
         specifier: ^3.0.7
         version: 3.0.7(@azure/identity@4.13.1)
@@ -252,12 +258,6 @@ importers:
         specifier: ^2.1.35
         version: 2.1.35
     devDependencies:
-      '@calame-ee/rag-connectors':
-        specifier: workspace:*
-        version: link:../rag-connectors
-      '@calame-ee/rag-core':
-        specifier: workspace:*
-        version: link:../rag-core
       '@types/mime-types':
         specifier: ^2.1.4
         version: 2.1.4
@@ -270,16 +270,16 @@ importers:
 
   ee/rag-notion:
     dependencies:
-      '@notionhq/client':
-        specifier: ^2.2.15
-        version: 2.3.0
-    devDependencies:
       '@calame-ee/rag-connectors':
         specifier: workspace:*
         version: link:../rag-connectors
       '@calame-ee/rag-core':
         specifier: workspace:*
         version: link:../rag-core
+      '@notionhq/client':
+        specifier: ^2.2.15
+        version: 2.3.0
+    devDependencies:
       typescript:
         specifier: ~5.7.0
         version: 5.7.3

@@ -7,6 +7,9 @@ services:
       - calame-data:/data
     environment:
       - CALAME_SECRET_KEY
+      # Required: the image runs with NODE_ENV=production, where an unset key
+      # disables RAG (knowledge bases) at boot. Generate with `openssl rand -hex 32`.
+      - CALAME_ENCRYPTION_KEY
       - CALAME_DATA_DIR=/data
       - CALAME_LOG_LEVEL=${CALAME_LOG_LEVEL:-info}
       - CALAME_LOG_FORMAT=${CALAME_LOG_FORMAT:-text}

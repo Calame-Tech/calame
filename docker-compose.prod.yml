@@ -30,6 +30,9 @@ services:
       - calame-data:/data
     environment:
       - CALAME_SECRET_KEY
+      # Required in production: without it RAG (knowledge bases) is disabled at
+      # boot. Generate with `openssl rand -hex 32`.
+      - CALAME_ENCRYPTION_KEY
       - CALAME_DATA_DIR=/data
       - CALAME_TRUST_PROXY=true
       - CALAME_CORS_ORIGINS=https://${CALAME_DOMAIN}

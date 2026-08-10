@@ -1,13 +1,67 @@
 import type { Express, Request } from 'express';
 import type { AppState } from '../state.js';
-import type { ServeProfile } from '@calame/core';
+import type { ServeConfiguration, ServeProfile } from '@calame/core';
 import {
   upgradeProfileShape,
   getProfileRelationalSources,
   getConfigurationSelectedTables,
+  getConfigurationDocumentScopes,
 } from '@calame/core';
 import { readConfigurationsFile } from './configurations.js';
 import { getTenantId } from '../tenancy.js';
+
+/**
+ * True when the profile carries at least one document (knowledge / RAG) scope —
+ * either declared directly on the profile or contributed by one of its linked
+ * Configurations (the Knowledge tab writes into the Configuration, so that is
+ * the usual location).
+ *
+ * Such a profile is servable on its own: the MCP endpoint registers the `rag_*`
+ * tool set without touching any database. See `registerToolsViaAdapters`.
+ */
+function hasKnowledgeSources(
+  profile: ServeProfile,
+  configurations: Record<string, ServeConfiguration>,
+): boolean {
+  if (Object.values(profile.scopes ?? {}).some((scope) => scope.kind === 'document')) {
+    return true;
+  }
+  for (const configName of profile.configurations ?? []) {
+    const config = configurations[configName];
+    if (config && Object.keys(getConfigurationDocumentScopes(config)).length > 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Fold the relational tables merged from a profile's Configurations into a
+ * `relational` scope on the profile.
+ *
+ * No-op when the merge produced no table: writing an empty relational scope on
+ * a knowledge-only profile would overwrite its document scope (the scope map is
+ * keyed by source id) and strand the RAG sources.
+ */
+function applyMergedTables(profile: ServeProfile, mergedTables: Record<string, string[]>): void {
+  if (Object.keys(mergedTables).length === 0) return;
+
+  const existingScopes = profile.scopes ?? {};
+  // Never land the relational scope on a source id that already holds a
+  // document/nosql scope — pick the first free relational slot instead.
+  const targetSource =
+    (profile.sources ?? []).find(
+      (sourceId) => (existingScopes[sourceId]?.kind ?? 'relational') === 'relational',
+    ) ?? 'default';
+
+  profile.sources = (profile.sources ?? []).includes(targetSource)
+    ? profile.sources
+    : [...(profile.sources ?? []), targetSource];
+  profile.scopes = {
+    ...existingScopes,
+    [targetSource]: { kind: 'relational', selectedTables: mergedTables },
+  };
+}
 
 export function registerServeStatusRoute(app: Express, state: AppState): void {
   const dataDir = state.config?.dataDir ?? process.cwd();
@@ -47,7 +101,12 @@ export function registerServeStatusRoute(app: Express, state: AppState): void {
       // Backward compat: synthesise a default relational source on profiles
       // that have no configurations and no sources. Mirrors the historic
       // behaviour where empty profiles defaulted to `connections: ['default']`.
+      //
+      // Profiles that already declare any scope are left untouched: a
+      // knowledge-only profile carries document scopes, and overwriting
+      // `sources` with `['default']` here would drop its RAG source ids.
       for (const profile of Object.values(serveProfiles)) {
+        if (Object.keys(profile.scopes ?? {}).length > 0) continue;
         if (!profile.configurations?.length && getProfileRelationalSources(profile).length === 0) {
           profile.sources = ['default'];
           profile.scopes = {
@@ -92,15 +151,6 @@ export function registerServeStatusRoute(app: Express, state: AppState): void {
 
   app.post('/api/serve/start', async (req, res) => {
     try {
-      // Validate prerequisites
-      if (state.connections.size === 0) {
-        res.status(400).json({
-          success: false,
-          message: 'No database connections available. Add a connection first.',
-        });
-        return;
-      }
-
       // Load profiles from SQLite
       let profilesData: Record<string, ServeProfile>;
 
@@ -153,6 +203,27 @@ export function registerServeStatusRoute(app: Express, state: AppState): void {
       // multi-tenancy: bind the caller's tenant so this can't pick up a
       // configuration row owned by another tenant.
       const configsFile = readConfigurationsFile(state.db!, getTenantId(req));
+
+      // --- Validate prerequisites ---
+      // A database connection is NOT required: a knowledge-only profile (RAG
+      // document sources, no DB) serves the `rag_*` tool set on its own. Reject
+      // only when the instance has neither a connection nor any knowledge
+      // source to serve — otherwise the MCP endpoint would have nothing to
+      // register and would answer -32601 to tools/list.
+      if (state.connections.size === 0) {
+        const anyKnowledge = Object.values(serveProfiles).some((sp) =>
+          hasKnowledgeSources(sp, configsFile.configurations),
+        );
+        if (!anyKnowledge) {
+          res.status(400).json({
+            success: false,
+            message:
+              'No data source available. Connect a database or attach a knowledge base to this MCP first.',
+          });
+          return;
+        }
+      }
+
       for (const [_name, sp] of Object.entries(serveProfiles)) {
         if (sp.configurations && sp.configurations.length > 0) {
           const mergedTables: Record<string, string[]> = {};
@@ -172,13 +243,9 @@ export function registerServeStatusRoute(app: Express, state: AppState): void {
               }
             }
           }
-          // Phase 5 — write the merged tables into a `default` relational
-          // scope rather than the legacy `selectedTables` root field.
-          sp.sources = sp.sources?.length ? sp.sources : ['default'];
-          sp.scopes = {
-            ...(sp.scopes ?? {}),
-            [sp.sources[0]]: { kind: 'relational', selectedTables: mergedTables },
-          };
+          // Phase 5 — write the merged tables into a relational scope rather
+          // than the legacy `selectedTables` root field.
+          applyMergedTables(sp, mergedTables);
         }
       }
 
@@ -379,13 +446,7 @@ export function registerServeStatusRoute(app: Express, state: AppState): void {
               }
             }
           }
-          updatedProfile.sources = updatedProfile.sources?.length
-            ? updatedProfile.sources
-            : ['default'];
-          updatedProfile.scopes = {
-            ...(updatedProfile.scopes ?? {}),
-            [updatedProfile.sources[0]]: { kind: 'relational', selectedTables: mergedTables },
-          };
+          applyMergedTables(updatedProfile, mergedTables);
         }
 
         state.serveProfiles[name] = updatedProfile;

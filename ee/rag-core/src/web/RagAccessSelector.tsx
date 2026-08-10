@@ -799,7 +799,29 @@ export default function RagAccessSelector({
 
       const allJobs: RagJob[] = jobsRes.jobs ?? [];
 
-      const nodes: SourceNode[] = (sourcesRes.sources ?? []).map((source) => {
+      // This selector edits DOCUMENT access only, but /api/rag/sources may
+      // list rows of other types stored in the same table (e.g. 'mcp' proxy
+      // sources ride rag_sources for now). Those must never become source
+      // nodes: handleSave rebuilds the scope of every listed node with
+      // buildDocumentScope (or deletes it when unchecked), which would
+      // silently destroy a kind:'mcp' scope. Filtering here keeps unknown
+      // types out of the save loop entirely, so their scopes pass through
+      // handleSave untouched via the initialScopes spread.
+      const DOCUMENT_SOURCE_TYPES: ReadonlySet<string> = new Set([
+        'local',
+        's3',
+        'http',
+        'gdrive',
+        'gsheets',
+        'sharepoint',
+        'notion',
+        'git',
+      ]);
+      const documentSources = (sourcesRes.sources ?? []).filter((source) =>
+        DOCUMENT_SOURCE_TYPES.has(source.type),
+      );
+
+      const nodes: SourceNode[] = documentSources.map((source) => {
         const activeJob =
           allJobs.find(
             (j) => j.sourceId === source.id && (j.status === 'running' || j.status === 'pending'),

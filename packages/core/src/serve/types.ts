@@ -281,4 +281,14 @@ export interface PendingWriteQuery {
    * that predate Slice 1 keep compiling.
    */
   action?: PendingWriteAction;
+  /**
+   * `true` when the row's persisted `action_json` (or `params`) could not be
+   * parsed. The entry stays LISTABLE — one corrupt row must not 500 the whole
+   * Pending view — with a `kind: 'sql'` action synthesized from the flat
+   * columns and a `[corrupt action]` marker on `description`, but it is NOT
+   * executable: the approval route refuses it outright so an empty/partial
+   * payload can never reach an executor. Rejecting it stays possible; that is
+   * the admin's way out.
+   */
+  actionCorrupt?: boolean;
 }

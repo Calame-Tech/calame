@@ -221,7 +221,14 @@ describe('isWriteToolName', () => {
     ['search_memory_facts', false],
     ['get_status', false],
     ['list_tables', false],
-    ['random_name', false],
+    // Fail-closed policy (review fix): an UNKNOWN verb is treated as a write
+    // (approval-gated) rather than a pass-through read — store_/save_/move_
+    // style tools must never bypass the approval queue.
+    ['random_name', true],
+    ['store_memory', true],
+    ['save_document', true],
+    ['upsert_entity', true],
+    ['move_file', true],
   ])('%s -> %s', (name, expected) => {
     expect(isWriteToolName(name)).toBe(expected);
   });

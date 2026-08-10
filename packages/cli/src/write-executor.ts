@@ -1,6 +1,7 @@
 import type { AppState } from './state.js';
 import type { PendingWriteQuery } from '@calame/core';
 import type { McpProxyAdapterConfig } from '@calame/connectors';
+import { lookupLiveRagSource } from './rag-source-lookup.js';
 
 /**
  * Execute an APPROVED write from the queue against its target connection.
@@ -51,11 +52,18 @@ export function resolveWriteTarget(
  * here, exactly the same "reference, not config" rule `resolveWriteTarget`
  * already applies to `connectionName` for SQL writes (write-queue v15).
  *
- * Uses the identical storage path `registration.ts`'s `resolveAdapterConfig`
- * uses for `scope.kind === 'mcp'`: Slice 0 has no dedicated persistence table
- * for non-relational sources, so an MCP source's encrypted config lives in
- * `rag_sources.config_encrypted` (the one existing "unified sources" table),
- * decrypted via the RAG runtime's `decryptConfig`.
+ * Goes through the shared `loadLiveRagSource` helper — the same one
+ * `routes/serve/registration.ts` uses to register the tool in the first place
+ * — so the two ends of the approval gate can never disagree on what a
+ * resolvable source is. That helper binds BOTH `tenant_id = ?` and
+ * `deleted_at IS NULL`, which means:
+ *
+ *   - `tenantId` MUST be the tenant of the QUEUE ENTRY (the route passes
+ *     `existing.tenantId ?? DEFAULT_TENANT_ID`), so an entry can only ever
+ *     execute against a source its own tenant owns — approving a foreign
+ *     source's tool is impossible even if the action payload names one;
+ *   - a soft-deleted source is no longer executable, matching the fact that
+ *     it is already hidden from every listing and skipped by the schedulers.
  *
  * Throws — never returns null/undefined — so the caller can fail the
  * approval cleanly (nothing persisted, nothing executed) before ever
@@ -64,28 +72,29 @@ export function resolveWriteTarget(
  * is invoked, so a thrown error here leaves the queue entry untouched at
  * `status: 'pending'` — the admin can fix the source and retry approval.
  */
-export function resolveMcpWriteTarget(state: AppState, sourceId: string): McpProxyAdapterConfig {
+export function resolveMcpWriteTarget(
+  state: AppState,
+  sourceId: string,
+  tenantId: string,
+): McpProxyAdapterConfig {
   if (!state.ragRuntime || !state.db) {
     throw new Error(
       `MCP source "${sourceId}" is not available — the RAG runtime is not initialized.`,
     );
   }
-  let row: { config_encrypted: string } | undefined;
-  try {
-    row = state.db.raw
-      .prepare<
-        [string],
-        { config_encrypted: string }
-      >('SELECT config_encrypted FROM rag_sources WHERE id = ? LIMIT 1')
-      .get(sourceId);
-  } catch {
-    // Defensive: rag_sources may not exist (RAG schema never initialized).
-    row = undefined;
+  const lookup = lookupLiveRagSource(state.db, sourceId, tenantId);
+  if (lookup.status === 'deleted') {
+    throw new Error(
+      `MCP source "${sourceId}" has been deleted — it can no longer execute this write.`,
+    );
   }
-  if (!row) {
+  if (lookup.status !== 'ok') {
+    // 'missing' and 'foreign' collapse into one message on purpose: an admin
+    // must not be able to probe another tenant's source ids through the
+    // difference between "gone" and "not yours".
     throw new Error(`MCP source "${sourceId}" is gone — reconnect it before approving this write.`);
   }
-  const decrypted = state.ragRuntime.decryptConfig(row.config_encrypted);
+  const decrypted = state.ragRuntime.decryptConfig(lookup.source.configEncrypted);
   return JSON.parse(decrypted) as McpProxyAdapterConfig;
 }
 

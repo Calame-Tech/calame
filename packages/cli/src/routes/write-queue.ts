@@ -3,6 +3,7 @@ import type { AppState } from '../state.js';
 import type { PendingWriteQuery } from '@calame/core';
 import { callUpstreamTool } from '@calame/connectors';
 import { getTenantId } from '../tenancy.js';
+import { CORRUPT_ACTION_MESSAGE } from '../write-queue.js';
 import {
   resolveWriteTarget,
   executeApprovedWrite,
@@ -68,18 +69,35 @@ export function registerWriteQueueRoute(app: Express, state: AppState): void {
         return;
       }
 
-      // Slice 1 (MCP write-approval): a `kind: 'mcp-tool'` entry forwards to
-      // the upstream MCP server instead of executing SQL. The source is
-      // resolved by `action.sourceId` — never from config stored on the
-      // queue row — the SAME "reference, not config" rule `resolveWriteTarget`
-      // already applies to SQL writes below. A vanished/disabled source
-      // throws BEFORE any queue mutation, so the entry stays 'pending' and
-      // nothing executes — identical failure shape to the SQL "target
-      // connection is gone" case.
+      // A row whose action_json failed to parse is listable (so the admin can
+      // see and REJECT it) but never executable — approving would run
+      // whatever the flat compat columns hold (an empty sql_text) against
+      // some connection.
+      if (existing.actionCorrupt) {
+        res.status(500).json({ success: false, message: CORRUPT_ACTION_MESSAGE });
+        return;
+      }
+
+      // Exhaustive dispatch on the action kind. `sql` (or a legacy row with
+      // no action) takes the SQL path; `mcp-tool` forwards upstream; any
+      // OTHER kind — e.g. a row written by a newer build before a rollback —
+      // is refused without mutating the entry, instead of falling through to
+      // the SQL executor with an empty sql_text.
+      const kind = existing.action?.kind ?? 'sql';
       let entry: PendingWriteQuery | null;
-      if (existing.action?.kind === 'mcp-tool') {
+      if (kind === 'mcp-tool' && existing.action?.kind === 'mcp-tool') {
+        // Slice 1 (MCP write-approval): the source is resolved by
+        // `action.sourceId` AND the entry's tenant — never from config stored
+        // on the queue row — the SAME "reference, not config" rule
+        // `resolveWriteTarget` applies to SQL writes below. A vanished,
+        // soft-deleted, or foreign-tenant source throws BEFORE any queue
+        // mutation, so the entry stays 'pending' and nothing executes.
         const { sourceId, toolName, args } = existing.action;
-        const upstreamConfig = resolveMcpWriteTarget(state, sourceId);
+        const upstreamConfig = resolveMcpWriteTarget(
+          state,
+          sourceId,
+          existing.tenantId ?? 'default',
+        );
 
         entry = await writeQueue.approveMcpTool(req.params.id, async () => {
           const result = await callUpstreamTool(upstreamConfig, toolName, args);
@@ -88,7 +106,7 @@ export function registerWriteQueueRoute(app: Express, state: AppState): void {
           }
           return result.text;
         });
-      } else {
+      } else if (kind === 'sql') {
         // Resolve the TARGET connection stamped on the entry (legacy rows fall
         // back to the cached connection) and execute via the matching driver —
         // never a hardcoded dialect against whatever connection came last.
@@ -97,6 +115,12 @@ export function registerWriteQueueRoute(app: Express, state: AppState): void {
         entry = await writeQueue.approve(req.params.id, (sql: string, params: unknown[]) =>
           executeApprovedWrite(target.databaseType, target.connectionString, sql, params),
         );
+      } else {
+        res.status(400).json({
+          success: false,
+          message: `Unsupported write action kind "${kind}" — this entry may have been written by a newer version.`,
+        });
+        return;
       }
 
       if (!entry) {

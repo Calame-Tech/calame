@@ -61,7 +61,7 @@ describe('write-queue routes — mcp-tool action approval (Slice 1)', () => {
     // registration.ts's resolveAdapterConfig): a minimal rag_sources table
     // holding the encrypted upstream config, keyed by sourceId.
     db.raw.exec(
-      `CREATE TABLE rag_sources (id TEXT PRIMARY KEY, type TEXT, name TEXT, config_encrypted TEXT, tenant_id TEXT)`,
+      `CREATE TABLE rag_sources (id TEXT PRIMARY KEY, type TEXT, name TEXT, config_encrypted TEXT, tenant_id TEXT, deleted_at TEXT)`,
     );
     db.raw
       .prepare(
@@ -150,6 +150,109 @@ describe('write-queue routes — mcp-tool action approval (Slice 1)', () => {
 
     await request(app).post(`/api/write-queue/${id}/approve`).set('Cookie', cookie).expect(404);
 
+    expect(mockedCallUpstreamTool).not.toHaveBeenCalled();
+    expect(state.writeQueue!.getById(id)?.status).toBe('pending');
+  });
+
+  // -------------------------------------------------------------------------
+  // Review fixes — security hardening
+  // -------------------------------------------------------------------------
+
+  it('refuses to execute against a source owned by ANOTHER tenant — entry stays pending', async () => {
+    // The entry belongs to 'default' but references a source owned by
+    // 'tenant-b': source resolution filters on the ENTRY's tenant, so this
+    // must fail before any mutation — tenant B's credentials are never
+    // decrypted into an upstream call for tenant A's approval.
+    db.raw
+      .prepare(
+        `INSERT INTO rag_sources (id, type, name, config_encrypted, tenant_id) VALUES (?, 'mcp', 'Foreign', ?, 'tenant-b')`,
+      )
+      .run('src-foreign', 'enc:{"url":"https://foreign.example.com/mcp"}');
+    const id = queueMcpWrite('default', 'src-foreign');
+
+    const res = await request(app)
+      .post(`/api/write-queue/${id}/approve`)
+      .set('Cookie', cookie)
+      .expect(500);
+
+    expect(res.body.success).toBe(false);
+    expect(mockedCallUpstreamTool).not.toHaveBeenCalled();
+    expect(state.writeQueue!.getById(id)?.status).toBe('pending');
+  });
+
+  it('refuses to execute against a soft-deleted source — entry stays pending', async () => {
+    db.raw
+      .prepare(
+        `INSERT INTO rag_sources (id, type, name, config_encrypted, tenant_id, deleted_at) VALUES (?, 'mcp', 'Deleted', ?, 'default', ?)`,
+      )
+      .run('src-deleted', 'enc:{"url":"https://old.example.com/mcp"}', new Date().toISOString());
+    const id = queueMcpWrite('default', 'src-deleted');
+
+    await request(app).post(`/api/write-queue/${id}/approve`).set('Cookie', cookie).expect(500);
+
+    expect(mockedCallUpstreamTool).not.toHaveBeenCalled();
+    expect(state.writeQueue!.getById(id)?.status).toBe('pending');
+  });
+
+  it('concurrent approves execute the upstream tool exactly once (atomic claim)', async () => {
+    // The upstream call is slow (50ms) — under the old check-then-act shape
+    // both requests would pass the pending check and both would execute.
+    mockedCallUpstreamTool.mockImplementation(
+      () =>
+        new Promise((resolve) =>
+          setTimeout(() => resolve({ text: 'added once', isError: false }), 50),
+        ),
+    );
+    const id = queueMcpWrite('default');
+
+    const [a, b] = await Promise.all([
+      request(app).post(`/api/write-queue/${id}/approve`).set('Cookie', cookie),
+      request(app).post(`/api/write-queue/${id}/approve`).set('Cookie', cookie),
+    ]);
+
+    expect(mockedCallUpstreamTool).toHaveBeenCalledTimes(1);
+    const statuses = [a.status, b.status].sort();
+    expect(statuses).toEqual([200, 404]); // one winner, one clean loser
+    expect(state.writeQueue!.getById(id)?.status).toBe('approved');
+  });
+
+  it('a corrupt action_json row is listable and rejectable but never executable', async () => {
+    const id = queueMcpWrite('default');
+    db.raw.prepare(`UPDATE write_queue SET action_json = ? WHERE id = ?`).run('{not json!', id);
+
+    // Listable — the corruption is surfaced, not thrown.
+    const list = await request(app).get('/api/write-queue').set('Cookie', cookie).expect(200);
+    const listed = (list.body.entries as Array<{ id: string; description: string }>).find(
+      (e) => e.id === id,
+    );
+    expect(listed?.description).toContain('[corrupt action]');
+
+    // Never executable.
+    const approve = await request(app)
+      .post(`/api/write-queue/${id}/approve`)
+      .set('Cookie', cookie)
+      .expect(500);
+    expect(approve.body.message).toContain('corrupt action payload');
+    expect(mockedCallUpstreamTool).not.toHaveBeenCalled();
+    expect(state.writeQueue!.getById(id)?.status).toBe('pending');
+
+    // Rejectable — the admin's way out.
+    await request(app).post(`/api/write-queue/${id}/reject`).set('Cookie', cookie).expect(200);
+    expect(state.writeQueue!.getById(id)?.status).toBe('rejected');
+  });
+
+  it('an unknown action kind is refused without mutation (no fall-through to the SQL path)', async () => {
+    const id = queueMcpWrite('default');
+    db.raw
+      .prepare(`UPDATE write_queue SET action_json = ? WHERE id = ?`)
+      .run(JSON.stringify({ kind: 'future-kind', anything: true }), id);
+
+    const res = await request(app)
+      .post(`/api/write-queue/${id}/approve`)
+      .set('Cookie', cookie)
+      .expect(400);
+
+    expect(res.body.message).toContain('Unsupported write action kind');
     expect(mockedCallUpstreamTool).not.toHaveBeenCalled();
     expect(state.writeQueue!.getById(id)?.status).toBe('pending');
   });

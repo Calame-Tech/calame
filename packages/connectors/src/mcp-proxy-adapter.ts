@@ -19,7 +19,7 @@
  *     truncated and normalized to plain text — never interpreted/executed.
  *
  * Slice 1 (see spec §5, §9) adds the approval gate: a tool classified as a
- * write by `isWriteToolName` registers IFF `ctx.onWriteRequest` is present —
+ * write by `classifyMcpTool` registers IFF `ctx.onWriteRequest` is present —
  * fail closed otherwise, matching the relational adapter's rule for missing
  * `onWriteRequest`. When it registers, its handler never calls upstream: it
  * queues `{ kind: 'mcp-tool', sourceId, toolName, args }` for admin approval
@@ -38,10 +38,11 @@ import type {
   ScopeSelection,
   McpRegistrationContext,
   McpToolInfo,
+  McpToolAnnotations,
   AuditLogEntry,
   Capability,
 } from '@calame/core';
-import { isWriteToolName } from '@calame/core';
+import { isReadToolName } from '@calame/core';
 
 // ---------------------------------------------------------------------------
 // Config type
@@ -263,6 +264,76 @@ export async function callUpstreamTool(
   return { text, isError: isUpstreamError(upstreamResult) };
 }
 
+// ---------------------------------------------------------------------------
+// Read/write classification policy — the reference implementation.
+// ---------------------------------------------------------------------------
+
+/** Outcome of {@link classifyMcpTool}. */
+export type McpToolClassification = 'read' | 'write';
+
+/**
+ * Decide whether an upstream MCP tool is a READ (proxied straight through) or
+ * a WRITE (registered only as an approval-gated proposal, never executed by
+ * the LLM's call). This function is the single reference for that decision —
+ * `introspect` stamps its result onto `McpToolInfo.isWrite` and everything
+ * downstream reads that flag.
+ *
+ * The policy, in order:
+ *
+ *  1. **The upstream's own annotations win.** If the tool carries an MCP
+ *     `annotations` object, `readOnlyHint === true` means read; ANY other
+ *     shape (`readOnlyHint: false`, a `destructiveHint` with no
+ *     `readOnlyHint`, an annotations object that says nothing at all) means
+ *     write. A server that annotates its tools and declines to mark this one
+ *     read-only is taken at its word.
+ *  2. **Otherwise, a name allowlist.** With no annotations to go on, only a
+ *     recognisably read-shaped prefix (`search_`, `get_`, `list_`, `find_`,
+ *     `query_`, `read_`, `fetch_`, `count_`, `describe_`, `retrieve_`,
+ *     `lookup_`, `browse_` — see `isReadToolName` in `@calame/core`)
+ *     classifies as a read.
+ *  3. **Everything else is a write.** This is the fail-closed rule and the
+ *     reason the policy exists: the previous heuristic listed *write* verbs
+ *     and defaulted the rest to read, so `store_memory`, `append_row`,
+ *     `upsert_entity`, `purge_cache` and every tool name nobody thought of
+ *     were proxied to the upstream with no approval. An unknown name is now
+ *     approval-gated by construction.
+ *
+ * The cost asymmetry justifies the bias: a read misclassified as a write
+ * costs an admin one click; a write misclassified as a read is an ungoverned
+ * mutation on someone else's server.
+ */
+export function classifyMcpTool(tool: {
+  name: string;
+  annotations?: McpToolAnnotations | null;
+}): McpToolClassification {
+  const annotations = tool.annotations;
+  if (annotations !== undefined && annotations !== null) {
+    return annotations.readOnlyHint === true ? 'read' : 'write';
+  }
+  return isReadToolName(tool.name) ? 'read' : 'write';
+}
+
+/**
+ * Narrow an untrusted `tools/list` entry's `annotations` field to the subset
+ * Calame reads. Returns `undefined` when the upstream sent nothing usable, so
+ * `classifyMcpTool` falls through to the name policy rather than treating a
+ * malformed value as "annotated".
+ */
+function readToolAnnotations(raw: unknown): McpToolAnnotations | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const source = raw as Record<string, unknown>;
+  const picked: McpToolAnnotations = {};
+  for (const key of [
+    'readOnlyHint',
+    'destructiveHint',
+    'idempotentHint',
+    'openWorldHint',
+  ] as const) {
+    if (typeof source[key] === 'boolean') picked[key] = source[key];
+  }
+  return picked;
+}
+
 /**
  * Builds a compact, human-readable summary of a queued write for the admin
  * approval UI: tool name + a JSON preview of its arguments, capped so a
@@ -347,7 +418,12 @@ export function buildMcpProxySourceAdapter(
     // -----------------------------------------------------------------------
     async introspect(config: McpProxyAdapterConfig, _sourceId: string): Promise<McpSchema> {
       let listed: {
-        tools: ReadonlyArray<{ name: string; description?: string; inputSchema: unknown }>;
+        tools: ReadonlyArray<{
+          name: string;
+          description?: string;
+          inputSchema: unknown;
+          annotations?: unknown;
+        }>;
       };
       try {
         listed = await withUpstreamClient(config, transportFactory, async (client, signal) =>
@@ -357,12 +433,19 @@ export function buildMcpProxySourceAdapter(
         const message = err instanceof Error ? err.message : String(err);
         throw new Error(`Failed to list tools from MCP server at "${config.url}": ${message}`);
       }
-      const tools: McpToolInfo[] = listed.tools.map((t) => ({
-        name: t.name,
-        description: t.description ?? '',
-        inputSchema: t.inputSchema,
-        isWrite: isWriteToolName(t.name),
-      }));
+      const tools: McpToolInfo[] = listed.tools.map((t) => {
+        // The upstream's annotations are carried onto McpToolInfo rather than
+        // dropped: they are the strongest classification signal available, and
+        // keeping them makes the decision auditable after the fact.
+        const annotations = readToolAnnotations(t.annotations);
+        return {
+          name: t.name,
+          description: t.description ?? '',
+          inputSchema: t.inputSchema,
+          isWrite: classifyMcpTool({ name: t.name, annotations }) === 'write',
+          ...(annotations ? { annotations } : {}),
+        };
+      });
       return { kind: 'mcp', tools };
     },
 
@@ -412,105 +495,124 @@ export function buildMcpProxySourceAdapter(
 
         const registeredName = `${ns}${tool.name}`;
 
-        // -------------------------------------------------------------------
-        // Write tool (Slice 1) — approval-gated. Fail closed: only registers
-        // when the host wired an onWriteRequest, matching the relational
-        // adapter's rule for the same missing dependency.
-        // -------------------------------------------------------------------
-        if (tool.isWrite) {
-          if (!onWriteRequest) continue;
+        // Per-tool isolation: `server.registerTool` throws on a duplicate name,
+        // and an upstream tool can collide with one already registered by a
+        // neighbouring source (`calc`, `query`, …) or by another proxied server
+        // sharing this namespace. Without this guard the first collision aborts
+        // the whole loop and every REMAINING tool of this source disappears
+        // silently. Audit the collision and keep going instead.
+        try {
+          // -----------------------------------------------------------------
+          // Write tool (Slice 1) — approval-gated. Fail closed: only registers
+          // when the host wired an onWriteRequest, matching the relational
+          // adapter's rule for the same missing dependency.
+          // -----------------------------------------------------------------
+          if (tool.isWrite) {
+            if (!onWriteRequest) continue;
 
-          const writeDescription =
-            (tool.description ? `${tool.description} ` : '') +
-            `Proposes a write via the proxied MCP tool "${tool.name}" from upstream source "${sourceName}". Queued for admin approval — nothing executes immediately.`;
+            const writeDescription =
+              (tool.description ? `${tool.description} ` : '') +
+              `Proposes a write via the proxied MCP tool "${tool.name}" from upstream source "${sourceName}". Queued for admin approval — nothing executes immediately.`;
+
+            ctx.server.registerTool(
+              registeredName,
+              {
+                description: writeDescription,
+                inputSchema: z.looseObject({}),
+                annotations: { readOnlyHint: false, destructiveHint: true },
+              },
+              (args: Record<string, unknown>) => {
+                const t0 = Date.now();
+                const id = onWriteRequest({
+                  profileName: ctx.profileName,
+                  description: summarizeWriteForApproval(tool.name, args),
+                  // Compat values for the legacy flat PendingWriteQuery fields —
+                  // see the PendingWriteAction doc comment in @calame/core:
+                  // sql is empty (there is none), tableName carries the upstream
+                  // tool name (keeps it visible in list views keyed on
+                  // tableName). operation is derived from the tool-name verb so
+                  // destructive upstream tools (delete_entity, remove_fact,
+                  // update_x) inherit the UI's two-step approve confirmation
+                  // exactly like SQL update/delete; additive tools map to
+                  // 'insert' (one-click).
+                  sql: '',
+                  params: [],
+                  tableName: tool.name,
+                  operation: operationForWriteTool(tool.name),
+                  action: { kind: 'mcp-tool', sourceId, toolName: tool.name, args },
+                });
+
+                audit(registeredName, args, 'success', `queued for approval (ID: ${id})`, t0);
+
+                const text = `Write request submitted for approval (ID: ${id}). An admin will review it.\n\nTool: ${tool.name}\nArgs: ${JSON.stringify(args)}`;
+                return { content: [{ type: 'text' as const, text }] };
+              },
+            );
+            continue;
+          }
+
+          // -----------------------------------------------------------------
+          // Read tool — forwards immediately and audits.
+          // -----------------------------------------------------------------
+          const description =
+            tool.description ||
+            `Proxied MCP tool "${tool.name}" from upstream source "${sourceName}". Read-only.`;
 
           ctx.server.registerTool(
             registeredName,
             {
-              description: writeDescription,
+              description,
+              // The upstream's real argument shape is JSON Schema, not a Zod
+              // schema the SDK can consume directly (see McpToolInfo.inputSchema
+              // doc). A permissive passthrough object defers validation to the
+              // upstream server itself — consistent with treating it as an
+              // opaque, untrusted-but-forwarded call.
               inputSchema: z.looseObject({}),
-              annotations: { readOnlyHint: false, destructiveHint: true },
+              annotations: { readOnlyHint: true },
             },
-            (args: Record<string, unknown>) => {
+            async (args: Record<string, unknown>) => {
               const t0 = Date.now();
-              const id = onWriteRequest({
-                profileName: ctx.profileName,
-                description: summarizeWriteForApproval(tool.name, args),
-                // Compat values for the legacy flat PendingWriteQuery fields —
-                // see the PendingWriteAction doc comment in @calame/core:
-                // sql is empty (there is none), tableName carries the upstream
-                // tool name (keeps it visible in list views keyed on
-                // tableName). operation is derived from the tool-name verb so
-                // destructive upstream tools (delete_entity, remove_fact,
-                // update_x) inherit the UI's two-step approve confirmation
-                // exactly like SQL update/delete; additive tools map to
-                // 'insert' (one-click).
-                sql: '',
-                params: [],
-                tableName: tool.name,
-                operation: operationForWriteTool(tool.name),
-                action: { kind: 'mcp-tool', sourceId, toolName: tool.name, args },
-              });
+              try {
+                const { text, isError } = await callUpstreamTool(
+                  config,
+                  tool.name,
+                  args,
+                  transportFactory,
+                );
 
-              audit(registeredName, args, 'success', `queued for approval (ID: ${id})`, t0);
+                audit(
+                  registeredName,
+                  args,
+                  isError ? 'error' : 'success',
+                  `${isError ? 'upstream error' : 'forwarded'} (${text.length} chars)`,
+                  t0,
+                );
 
-              const text = `Write request submitted for approval (ID: ${id}). An admin will review it.\n\nTool: ${tool.name}\nArgs: ${JSON.stringify(args)}`;
-              return { content: [{ type: 'text' as const, text }] };
+                return isError
+                  ? { content: [{ type: 'text' as const, text }], isError: true }
+                  : { content: [{ type: 'text' as const, text }] };
+              } catch (err: unknown) {
+                const message = err instanceof Error ? err.message : String(err);
+                audit(registeredName, args, 'error', `call failed: ${message}`, t0);
+                return {
+                  content: [
+                    { type: 'text' as const, text: `Upstream MCP call failed: ${message}` },
+                  ],
+                  isError: true,
+                };
+              }
             },
           );
-          continue;
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : String(err);
+          audit(
+            registeredName,
+            {},
+            'error',
+            `tool registration skipped (likely a name collision): ${message}`,
+            Date.now(),
+          );
         }
-
-        // -------------------------------------------------------------------
-        // Read tool — forwards immediately and audits.
-        // -------------------------------------------------------------------
-        const description =
-          tool.description ||
-          `Proxied MCP tool "${tool.name}" from upstream source "${sourceName}". Read-only.`;
-
-        ctx.server.registerTool(
-          registeredName,
-          {
-            description,
-            // The upstream's real argument shape is JSON Schema, not a Zod
-            // schema the SDK can consume directly (see McpToolInfo.inputSchema
-            // doc). A permissive passthrough object defers validation to the
-            // upstream server itself — consistent with treating it as an
-            // opaque, untrusted-but-forwarded call.
-            inputSchema: z.looseObject({}),
-            annotations: { readOnlyHint: true },
-          },
-          async (args: Record<string, unknown>) => {
-            const t0 = Date.now();
-            try {
-              const { text, isError } = await callUpstreamTool(
-                config,
-                tool.name,
-                args,
-                transportFactory,
-              );
-
-              audit(
-                registeredName,
-                args,
-                isError ? 'error' : 'success',
-                `${isError ? 'upstream error' : 'forwarded'} (${text.length} chars)`,
-                t0,
-              );
-
-              return isError
-                ? { content: [{ type: 'text' as const, text }], isError: true }
-                : { content: [{ type: 'text' as const, text }] };
-            } catch (err: unknown) {
-              const message = err instanceof Error ? err.message : String(err);
-              audit(registeredName, args, 'error', `call failed: ${message}`, t0);
-              return {
-                content: [{ type: 'text' as const, text: `Upstream MCP call failed: ${message}` }],
-                isError: true,
-              };
-            }
-          },
-        );
       }
     },
   };

@@ -1,0 +1,290 @@
+#!/usr/bin/env node
+/**
+ * Bundle the Calame server (packages/cli) into a self-contained folder that
+ * can run outside the monorepo with nothing but a portable Node runtime.
+ *
+ * Output: dist-bundle/
+ *   server.mjs        — single-file esbuild bundle of packages/cli/src/index.ts
+ *   node_modules/      — the handful of packages esbuild could not bundle
+ *                        (native prebuilds / dynamic-require offenders), plus
+ *                        their own runtime dependency closure
+ *   web/                — the built frontend (packages/web/dist)
+ *   README.md           — how to run the bundle
+ *
+ * Usage: pnpm bundle   (or: node scripts/bundle-server.mjs)
+ */
+
+import { execSync } from 'node:child_process';
+import { createRequire } from 'node:module';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const CLI_DIR = path.join(REPO_ROOT, 'packages/cli');
+const RAG_CORE_DIR = path.join(REPO_ROOT, 'ee/rag-core');
+const WEB_DIR = path.join(REPO_ROOT, 'packages/web');
+const WEB_DIST = path.join(WEB_DIR, 'dist');
+const OUT_DIR = path.join(REPO_ROOT, 'dist-bundle');
+const OUT_FILE = path.join(OUT_DIR, 'server.mjs');
+const OUT_NODE_MODULES = path.join(OUT_DIR, 'node_modules');
+
+// Packages esbuild must leave untouched:
+//   - better-sqlite3, sqlite-vec: ship prebuilt native addons (.node/.dll) —
+//     can't be inlined into a JS bundle.
+//   - ssh2: pulls in optional native bindings (cpu-features, nan) via a
+//     try/catch require; on this box neither built, so ssh2 already runs in
+//     pure-JS mode, but its own dynamic requires still confuse esbuild if
+//     bundled, so it stays external.
+//   - pg-native: not a real dependency of our code — `pg` lazily
+//     `require()`s it behind a getter (`pg.native`) that we never touch, but
+//     the getter's target file does a *static* `require('pg-native')` that
+//     esbuild resolves at build time even though it never runs. Marking it
+//     external avoids a "Could not resolve pg-native" build error. Since
+//     pg-native isn't installed (it's optional and we don't use it), there is
+//     nothing to copy into the bundle for it.
+const ESBUILD_EXTERNAL = ['better-sqlite3', 'sqlite-vec', 'ssh2', 'pg-native'];
+
+// The subset of ESBUILD_EXTERNAL that actually needs to be physically copied
+// into dist-bundle/node_modules, and the workspace package that declares each
+// one directly (pnpm's strict node_modules only exposes a package to the
+// dependents that actually declare it — sqlite-vec is a dependency of
+// ee/rag-core, not of packages/cli, so it must be resolved starting there).
+const NATIVE_ROOTS = [
+  { pkg: 'better-sqlite3', from: CLI_DIR },
+  { pkg: 'ssh2', from: CLI_DIR },
+  { pkg: 'sqlite-vec', from: RAG_CORE_DIR },
+];
+
+// Declared as a runtime "dependency" by better-sqlite3's package.json, but
+// only ever require()'d from its install script (to fetch the prebuilt
+// .node binary) — never from lib/*.js. Skipping it avoids dragging in its own
+// large dependency tree (tar-fs, node-abi, simple-get, ...) for nothing.
+const EXCLUDE_TRANSITIVE = new Set(['prebuild-install']);
+
+const NATIVE_BINARY_EXTENSIONS = new Set(['.node', '.dll', '.so', '.dylib']);
+
+function log(msg) {
+  console.log(msg);
+}
+
+function formatBytes(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ['KB', 'MB', 'GB'];
+  let value = bytes / 1024;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex++;
+  }
+  return `${value.toFixed(2)} ${units[unitIndex]}`;
+}
+
+function dirSizeBytes(dir) {
+  let total = 0;
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) total += dirSizeBytes(full);
+    else if (entry.isFile()) total += fs.statSync(full).size;
+  }
+  return total;
+}
+
+function findNativeBinaries(dir) {
+  const found = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      found.push(...findNativeBinaries(full));
+    } else if (NATIVE_BINARY_EXTENSIONS.has(path.extname(entry.name))) {
+      found.push(full);
+    }
+  }
+  return found;
+}
+
+/**
+ * Resolve the on-disk directory of an installed package, starting the module
+ * resolution search from `fromDir` (so pnpm's per-package isolation is
+ * respected — a package is only resolvable from a directory that actually
+ * depends on it).
+ *
+ * Uses `resolve.paths()` (the list of node_modules directories Node would
+ * search) plus a plain fs check, rather than `require.resolve()` itself —
+ * some of the packages we need to locate (e.g. sqlite-vec-windows-x64) ship
+ * an "exports" map with no "." entry, since they are never `require()`d
+ * directly (only resolved as a path to a .dll/.so). `require.resolve` would
+ * throw on those; a directory-existence check does not care.
+ */
+function resolvePackageDir(pkgName, fromDir) {
+  const req = createRequire(path.join(fromDir, 'package.json'));
+  const searchPaths = req.resolve.paths(pkgName) ?? [];
+  for (const candidate of searchPaths) {
+    const dir = path.join(candidate, pkgName);
+    if (fs.existsSync(path.join(dir, 'package.json'))) {
+      // pnpm exposes packages as symlinks into its content-addressed store
+      // (node_modules/.pnpm/...). Resolve to the real path before returning —
+      // callers use this as the search base for that package's own
+      // dependencies, and pnpm only places those alongside the *real*
+      // location, not the symlink's apparent one.
+      return fs.realpathSync(dir);
+    }
+  }
+  throw new Error(
+    `"${pkgName}" not found (searched ${searchPaths.length} node_modules dirs from ${fromDir})`,
+  );
+}
+
+/**
+ * Recursively copy a package and its production dependency closure
+ * (dependencies + optionalDependencies) into dist-bundle/node_modules, using
+ * a single flat directory so Node's normal upward node_modules resolution
+ * finds everything as siblings.
+ */
+function copyPackageClosure(pkgName, fromDir, visited, copied) {
+  if (visited.has(pkgName)) return;
+  visited.add(pkgName);
+
+  let pkgDir;
+  try {
+    pkgDir = resolvePackageDir(pkgName, fromDir);
+  } catch (err) {
+    log(`    (skip) ${pkgName}: ${err.message}`);
+    return;
+  }
+
+  const destDir = path.join(OUT_NODE_MODULES, pkgName);
+  fs.cpSync(pkgDir, destDir, {
+    recursive: true,
+    dereference: true,
+    // pnpm keeps a package's own deps as siblings in the store, not nested
+    // inside the package folder, so any node_modules found here would be
+    // stray — skip it rather than duplicating what we copy explicitly below.
+    filter: (src) => path.basename(src) !== 'node_modules',
+  });
+  copied.push({ name: pkgName, from: pkgDir, to: destDir });
+
+  const pkgJson = JSON.parse(fs.readFileSync(path.join(pkgDir, 'package.json'), 'utf-8'));
+  const deps = { ...pkgJson.dependencies, ...pkgJson.optionalDependencies };
+  for (const dep of Object.keys(deps)) {
+    if (EXCLUDE_TRANSITIVE.has(dep)) continue;
+    copyPackageClosure(dep, pkgDir, visited, copied);
+  }
+}
+
+async function main() {
+  log('== Calame server bundler ==\n');
+
+  // 1. Build the web UI if it hasn't been built yet.
+  if (!fs.existsSync(WEB_DIST)) {
+    log('packages/web/dist not found — building the frontend first...');
+    execSync('pnpm --filter @calame/web build', { cwd: REPO_ROOT, stdio: 'inherit' });
+  } else {
+    log('packages/web/dist already present — skipping frontend build.');
+  }
+
+  // 2. Reset the output directory.
+  fs.rmSync(OUT_DIR, { recursive: true, force: true });
+  fs.mkdirSync(OUT_NODE_MODULES, { recursive: true });
+
+  // 3. Bundle the server entry point with esbuild.
+  log('\nBundling packages/cli/src/index.ts with esbuild...');
+  const esbuild = await import('esbuild');
+  await esbuild.build({
+    entryPoints: [path.join(CLI_DIR, 'src/index.ts')],
+    outfile: OUT_FILE,
+    bundle: true,
+    platform: 'node',
+    format: 'esm',
+    target: 'node20',
+    sourcemap: false,
+    external: ESBUILD_EXTERNAL,
+    // The ESM output has no global `require`. Bundled CJS dependencies that
+    // esbuild couldn't statically resolve into plain imports (or that use
+    // require() for dynamic/optional lookups) still call require() at
+    // runtime, so we shim one in via createRequire.
+    banner: {
+      js: "import { createRequire } from 'node:module';\nconst require = createRequire(import.meta.url);",
+    },
+    logLevel: 'info',
+  });
+
+  // 4. Copy the packages esbuild left external, plus their dependency
+  // closure, so the bundle's require()/import() of them resolves.
+  log('\nCopying native/external packages into dist-bundle/node_modules...');
+  const visited = new Set();
+  const copied = [];
+  for (const { pkg, from } of NATIVE_ROOTS) {
+    copyPackageClosure(pkg, from, visited, copied);
+  }
+  try {
+    resolvePackageDir('pg-native', CLI_DIR);
+    log(
+      '    (!) pg-native is installed but was NOT copied — verify write-executor pg usage does not touch pg.native.',
+    );
+  } catch {
+    log(
+      '    pg-native: not installed (optional native addon for `pg`; pg falls back to its pure-JS driver). ' +
+        'Kept external only so esbuild does not error resolving it at build time — nothing to copy.',
+    );
+  }
+
+  // 5. Copy the built frontend.
+  log('\nCopying packages/web/dist -> dist-bundle/web...');
+  fs.cpSync(WEB_DIST, path.join(OUT_DIR, 'web'), { recursive: true, dereference: true });
+
+  // 6. Write the README.
+  fs.writeFileSync(
+    path.join(OUT_DIR, 'README.md'),
+    `# Calame server bundle
+
+Self-contained build of the Calame server. Requires nothing but a Node.js
+20+ runtime (portable or system-installed) — no pnpm, no monorepo checkout.
+
+## Run
+
+\`\`\`
+CALAME_PACKAGED=1 CALAME_WEB_DIST=<this-dir>/web node server.mjs
+\`\`\`
+
+On Windows (cmd.exe):
+
+\`\`\`
+set CALAME_PACKAGED=1
+set CALAME_WEB_DIST=<this-dir>\\web
+node server.mjs
+\`\`\`
+
+The server listens on port 4567 by default (override with \`--port <n>\` or
+\`CALAME_PORT\`). Other configuration is via the same \`CALAME_*\` environment
+variables documented in packages/cli — e.g. \`CALAME_DATA_DIR\` for where the
+SQLite database and secret file are stored.
+`,
+  );
+
+  // 7. Summary.
+  const bundleSize = fs.statSync(OUT_FILE).size;
+  const nodeModulesSize = dirSizeBytes(OUT_NODE_MODULES);
+  const webSize = dirSizeBytes(path.join(OUT_DIR, 'web'));
+
+  log('\n== Summary ==');
+  log(`  server.mjs        : ${formatBytes(bundleSize)}`);
+  log(`  node_modules/      : ${formatBytes(nodeModulesSize)} (${copied.length} packages)`);
+  log(`  web/                : ${formatBytes(webSize)}`);
+  log(`  total dist-bundle/  : ${formatBytes(bundleSize + nodeModulesSize + webSize)}`);
+  log('\n  Native/external packages copied:');
+  for (const { name, to } of copied) {
+    const binaries = findNativeBinaries(to);
+    const evidence =
+      binaries.length > 0
+        ? binaries.map((b) => path.relative(OUT_DIR, b)).join(', ')
+        : '(pure JS, no native binary)';
+    log(`    - ${name}: ${evidence}`);
+  }
+  log('\nDone. See dist-bundle/README.md for run instructions.');
+}
+
+main().catch((err) => {
+  console.error('\nBundle failed:', err);
+  process.exit(1);
+});

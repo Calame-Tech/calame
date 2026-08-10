@@ -1,3 +1,6 @@
+import os from 'os';
+import path from 'path';
+
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 export type LogFormat = 'text' | 'json';
 
@@ -79,6 +82,20 @@ export interface AppConfig {
   llmClassifierEndpoint: string | null;
   /** Confidence threshold above which injection_attempt messages are blocked. Set via CALAME_LLM_ROUTER_INJECTION_THRESHOLD. Default: 0.8. */
   llmRouterInjectionThreshold: number;
+
+  // Packaged desktop mode (Tauri sidecar)
+  /**
+   * Whether Calame is running as a packaged desktop app: a bundled single-file server
+   * running outside the pnpm workspace, with no monorepo layout around it. Set via
+   * CALAME_PACKAGED (truthy: "1" or "true"). Default: false.
+   */
+  packaged: boolean;
+  /**
+   * Absolute path to the built web UI (dist directory with index.html) to serve as static
+   * assets. Set via CALAME_WEB_DIST. Falls back to a path relative to the server bundle when
+   * unset, which only resolves correctly inside the monorepo layout.
+   */
+  webDistPath: string | null;
 }
 
 const LOG_LEVELS: LogLevel[] = ['debug', 'info', 'warn', 'error'];
@@ -100,13 +117,50 @@ function envBool(key: string, fallback: boolean): boolean {
   return raw === 'true' || raw === '1' || raw === 'yes';
 }
 
+/**
+ * Whether Calame is running in packaged desktop mode (CALAME_PACKAGED=1/true). Exposed as a
+ * standalone function (in addition to AppConfig.packaged) because index.ts needs to know this
+ * before loadConfig() runs — packaged mode changes how the project root / cwd is resolved,
+ * which happens at module load time, ahead of configuration loading.
+ */
+export function isPackagedMode(): boolean {
+  return envBool('CALAME_PACKAGED', false);
+}
+
+/**
+ * Platform-appropriate per-user application data directory for Calame, used as the default
+ * dataDir in packaged mode (no writable monorepo checkout to fall back to). Mirrors common
+ * desktop app conventions:
+ *  - Windows: %APPDATA%\Calame
+ *  - macOS:   ~/Library/Application Support/Calame
+ *  - Linux:   $XDG_DATA_HOME/calame or ~/.local/share/calame
+ */
+export function getPackagedDataDir(): string {
+  const platform = process.platform;
+  if (platform === 'win32') {
+    const appData = process.env.APPDATA ?? path.join(os.homedir(), 'AppData', 'Roaming');
+    return path.join(appData, 'Calame');
+  }
+  if (platform === 'darwin') {
+    return path.join(os.homedir(), 'Library', 'Application Support', 'Calame');
+  }
+  const xdgDataHome = process.env.XDG_DATA_HOME;
+  if (xdgDataHome) {
+    return path.join(xdgDataHome, 'calame');
+  }
+  return path.join(os.homedir(), '.local', 'share', 'calame');
+}
+
 export function loadConfig(overrides?: Partial<AppConfig>): AppConfig {
+  const packaged = isPackagedMode();
+  const defaultDataDir = packaged ? getPackagedDataDir() : process.cwd();
+
   const config: AppConfig = {
     port: overrides?.port ?? envInt('CALAME_PORT', 4567),
     basePath: envString('CALAME_BASE_PATH', '/') ?? '/',
     adminPassword: envString('CALAME_ADMIN_PASSWORD'),
     secretKey: envString('CALAME_SECRET_KEY'),
-    dataDir: envString('CALAME_DATA_DIR', process.cwd()) ?? process.cwd(),
+    dataDir: envString('CALAME_DATA_DIR', defaultDataDir) ?? defaultDataDir,
     trustProxy: envBool('CALAME_TRUST_PROXY', false),
     corsOrigins: envString('CALAME_CORS_ORIGINS', '*') ?? '*',
     logLevel: (envString('CALAME_LOG_LEVEL', 'info') as LogLevel) ?? 'info',
@@ -153,6 +207,8 @@ export function loadConfig(overrides?: Partial<AppConfig>): AppConfig {
       const parsed = parseFloat(raw);
       return isNaN(parsed) ? 0.8 : Math.min(1, Math.max(0, parsed));
     })(),
+    packaged,
+    webDistPath: envString('CALAME_WEB_DIST'),
   };
 
   // Validate logLevel

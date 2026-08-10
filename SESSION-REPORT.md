@@ -5,6 +5,18 @@ every commit. Newest first.
 
 ---
 
+## 2026-08-10 — Desktop installer, Phase A: packaged mode + server bundle (branch `feat/desktop-installer`)
+
+First client install (non-dev) proved painful — manual Docker + Node + repo setup. Decision: ship a desktop installer (Tauri 2, NSIS .exe + .msi, auto-update via GitHub Releases; Mac/Linux later). Docker stays the team/server offering. Audit confirmed the architecture allows a single sidecar: generated MCP servers run in-process (Express `/mcp/...` StreamableHTTP), and the new MCP proxy is StreamableHTTP-client-only (no child processes). Plan is 3 phases: A = packageable server (this session), B = Tauri app (window/tray/sidecar), C = installer + updater + release CI.
+
+- **Packaged mode** (`CALAME_PACKAGED=1`, everything unchanged when unset): skips the pnpm-workspace root search + `process.chdir`; `CALAME_WEB_DIST` points at the built UI (monorepo-relative fallback kept); `dataDir` defaults to the platform app-data dir (`%APPDATA%\Calame`, `~/Library/Application Support/Calame`, XDG) instead of cwd, `CALAME_DATA_DIR` still wins; `/health` version falls back to `CALAME_VERSION` (bundle has no reachable package.json); demo DB now generated in-process (`src/demo-db.ts`, faithful port of `scripts/generate-demo-db.js`) instead of `execFile(process.execPath, ...)` — the script path and execPath are both invalid from a bundle.
+- **Bundle pipeline** (`pnpm bundle` → `scripts/bundle-server.mjs`): esbuild bundles `packages/cli/src/index.ts` into `dist-bundle/server.mjs` (ESM, node20, createRequire banner), externals = `better-sqlite3` + `sqlite-vec` (native prebuilds), `ssh2` (dynamic requires), `pg-native` (phantom require in pg, never installed); their dep closures are copied into `dist-bundle/node_modules` via realpath-aware resolution (pnpm symlinks + packages with no `.` export). UI copied to `dist-bundle/web`. ~57 MB total incl. 40 MB bundle + natives (`better_sqlite3.node`, `vec0.dll`).
+- **Verified like a client machine**: bundle copied to a clean dir outside the repo, run with plain `node` + the three env vars → `/health` 200 with `ragEnabled:true` (sqlite-vec native loads), UI served, `.calame-secret` + `calame.db` created in the data dir.
+
+Suite: **2035 tests** (2025 baseline → +10: packaged-config + demo-db). Both work streams written by Sonnet agents in parallel (disjoint file scopes), verified by the orchestrator (typecheck/lint/format/build/tests + out-of-repo bundle run). Note: `format:check` still flags ~23 files from the proxy branch (CRLF/autocrlf checkout noise, cosmetic — CI checks out LF). Next: Phase B (Tauri app) once `feat/mcp-proxy-adapter` merges; rebase this branch then.
+
+---
+
 ## 2026-08-10 — MCP Proxy Adapter, slices 0+1 (branch `feat/mcp-proxy-adapter`)
 
 Design-partner-driven: a prospect runs Graphiti's MCP server (temporal knowledge-graph agent memory) and wants his data usable through Calame. Rather than a Graphiti-specific connector, Calame gains **one generic adapter that fronts any external MCP server and governs it** — Graphiti is just the first upstream. Spec: `docs/mcp-proxy-adapter-spec.md` (v2 — read §Demand note: lead demos with read-unification, governance second).

@@ -195,6 +195,9 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
   const [aiSettings, setAiSettings] = useState<AiSettingOption[]>([]);
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
+  // Source currently open in the edit form (null = not editing). SourceForm
+  // switches from POST to PATCH as soon as `initial.id` is set.
+  const [editingSource, setEditingSource] = useState<RagSourceWithCounts | null>(null);
   // When true, the main view is replaced by the global sync history panel.
   // We toggle in-place (no modal) because the panel is a full content view —
   // consistent with how SourceForm is rendered above the source list.
@@ -291,6 +294,14 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
     setShowCreateForm(false);
     setSelectedSourceId(source.id);
     setActionMessage(`Source "${source.name}" enregistrée.`);
+    setTimeout(() => setActionMessage(null), 3000);
+    void refreshSources();
+  };
+
+  const handleUpdated = (source: RagSourcePublic) => {
+    setEditingSource(null);
+    setSelectedSourceId(source.id);
+    setActionMessage(`Source "${source.name}" mise à jour.`);
     setTimeout(() => setActionMessage(null), 3000);
     void refreshSources();
   };
@@ -572,7 +583,12 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
           </button>
           <button
             type="button"
-            onClick={() => setShowCreateForm((v) => !v)}
+            onClick={() => {
+              // Leave edit mode first — otherwise the create form stays hidden
+              // behind the edit form and the button looks inert.
+              setEditingSource(null);
+              setShowCreateForm((v) => !v);
+            }}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 shadow-md shadow-os-900/20 ${
               showCreateForm
                 ? 'bg-gray-700/40 hover:bg-gray-700/60 text-gray-300'
@@ -604,11 +620,24 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
         </div>
       )}
 
-      {showCreateForm && (
+      {showCreateForm && !editingSource && (
         <SourceForm
           aiSettings={aiSettings}
           onSave={handleCreated}
           onCancel={() => setShowCreateForm(false)}
+        />
+      )}
+
+      {/* Edit form. `key` forces a remount when switching from one source to
+          another — SourceForm seeds all its fields from `initial` in useState
+          initializers, which only run on mount. */}
+      {editingSource && (
+        <SourceForm
+          key={editingSource.id}
+          initial={editingSource}
+          aiSettings={aiSettings}
+          onSave={handleUpdated}
+          onCancel={() => setEditingSource(null)}
         />
       )}
 
@@ -732,6 +761,20 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
                     className="px-2 py-1 rounded text-xs text-gray-300 hover:bg-gray-700/40"
                   >
                     Ouvrir
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowCreateForm(false);
+                      setEditingSource(source);
+                    }}
+                    aria-label={`Modifier la source ${source.name}`}
+                    title="Modifier la configuration de cette source"
+                    className="px-2 py-1 rounded text-xs text-gray-300 hover:bg-gray-700/40"
+                  >
+                    Modifier
                   </button>
 
                   {/* Re-sync button */}

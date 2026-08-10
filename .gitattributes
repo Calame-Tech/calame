@@ -1,0 +1,8 @@
+# Shell scripts must keep LF endings even on Windows checkouts. With CRLF the
+# container shebang resolves to `/bin/sh\r` and Docker fails with
+# `exec /entrypoint.sh: no such file or directory`.
+*.sh text eol=lf
+entrypoint.sh text eol=lf
+Dockerfile text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf

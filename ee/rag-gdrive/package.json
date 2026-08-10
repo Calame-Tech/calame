@@ -17,17 +17,13 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@calame-ee/rag-connectors": "workspace:*",
+    "@calame-ee/rag-core": "workspace:*",
     "google-auth-library": "^9.0.0",
     "googleapis": "^144.0.0",
     "mime-types": "^2.1.35"
   },
-  "peerDependencies": {
-    "@calame-ee/rag-connectors": "workspace:*",
-    "@calame-ee/rag-core": "workspace:*"
-  },
   "devDependencies": {
-    "@calame-ee/rag-connectors": "workspace:*",
-    "@calame-ee/rag-core": "workspace:*",
     "@types/mime-types": "^2.1.4",
     "typescript": "~5.7.0",
     "vitest": "^2.1.0"

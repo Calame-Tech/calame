@@ -162,6 +162,39 @@ function resolveAdapterForSource(
     return { adapter, source };
   }
 
+  if (scope.kind === 'mcp') {
+    // MCP proxy source — Slice 0 has no dedicated persistence for non-relational
+    // sources; `rag_sources` is the only existing "unified sources" table in the
+    // codebase (see the tenant-lookup comment on `lookupSourceTenant` above), so
+    // an MCP source's encrypted config is stored there exactly like a document
+    // source's, keyed by the same `type` column (here: 'mcp').
+    if (!state.ragRuntime || !state.db) return null;
+    let mcpSourceType: string | undefined;
+    try {
+      const row = state.db.raw
+        .prepare<[string], { type: string }>('SELECT type FROM rag_sources WHERE id = ? LIMIT 1')
+        .get(sourceId);
+      mcpSourceType = row?.type;
+    } catch {
+      // Defensive: rag_sources may not exist.
+      return null;
+    }
+    if (!mcpSourceType) return null;
+    const adapter = sourceAdapterRegistry.get(mcpSourceType);
+    if (!adapter) return null;
+    const displayName = resolveSourceDisplayName(sourceId, state);
+    const source: Source = {
+      id: sourceId,
+      name: displayName,
+      type: mcpSourceType,
+      configEncrypted: '',
+      capabilities: [...adapter.capabilities],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    return { adapter, source };
+  }
+
   return null;
 }
 
@@ -186,6 +219,25 @@ function resolveAdapterConfig(
   }
 
   if (scope.kind === 'document') {
+    if (!state.ragRuntime || !state.db) return null;
+    try {
+      const row = state.db.raw
+        .prepare<
+          [string],
+          { config_encrypted: string }
+        >('SELECT config_encrypted FROM rag_sources WHERE id = ? LIMIT 1')
+        .get(sourceId);
+      if (!row) return null;
+      const decrypted = state.ragRuntime.decryptConfig(row.config_encrypted);
+      return JSON.parse(decrypted) as unknown;
+    } catch {
+      return null;
+    }
+  }
+
+  if (scope.kind === 'mcp') {
+    // Same storage/decryption path as document sources — see the matching
+    // comment in `resolveAdapterForSource` above.
     if (!state.ragRuntime || !state.db) return null;
     try {
       const row = state.db.raw
@@ -312,14 +364,19 @@ export async function registerToolsViaAdapters(opts: RegisterAdaptersOptions): P
     }
   }
 
-  // Split resolved pairs into relational and document buckets.
+  // Split resolved pairs into relational, document, and MCP-proxy buckets.
   const relationalPairs = resolvedPairs.filter((p) => p.scope.kind === 'relational');
   const documentPairs = resolvedPairs.filter((p) => p.scope.kind === 'document');
+  const mcpPairs = resolvedPairs.filter((p) => p.scope.kind === 'mcp');
 
   // Count active RELATIONAL sources only — document sources are no longer
   // namespaced (merged into a single tool set), so their count must not
   // influence the relational namespace computation.
   const relationalKindCount = relationalPairs.length;
+  // MCP proxy sources are namespaced per-source like relational ones (each
+  // upstream server exposes its own distinctly-named tools, unlike document
+  // sources which share one generic merged RAG tool set).
+  const mcpKindCount = mcpPairs.length;
 
   let anyRegistered = false;
 
@@ -586,6 +643,85 @@ export async function registerToolsViaAdapters(opts: RegisterAdaptersOptions): P
           });
         }
       }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // MCP proxy sources (Slice 0, read-only) — one call to registerMcpTools per
+  // source, same per-source pattern as relational (each upstream MCP server
+  // exposes its own distinctly-named tools, so — unlike document sources —
+  // there is no shared/generic tool surface to merge into).
+  //
+  // Slice 0 snapshots the upstream tool list live via `adapter.introspect`
+  // at registration time rather than from a persisted schema cache: there is
+  // no schema-storage column for non-relational sources yet (that would be a
+  // migration, out of scope for Slice 0 — see spec §8b "Schema staleness").
+  // A failure to reach the upstream at this point (unreachable server,
+  // timeout) skips the source gracefully rather than failing the whole MCP
+  // session, mirroring the adapter-lookup/config-resolution failure handling
+  // used for relational/document sources above.
+  // ---------------------------------------------------------------------------
+  for (const { sourceId, scope } of mcpPairs) {
+    const resolved = resolveAdapterForSource(sourceId, scope, state);
+    if (!resolved) {
+      state.logger?.warn(`No adapter found for MCP source "${sourceId}" — skipping`, {
+        component: `mcp/${profileName}`,
+      });
+      continue;
+    }
+    const { adapter, source } = resolved;
+
+    const toolNamespace = mcpKindCount >= 2 ? sanitizeToolNamespace(source.name) + '_' : '';
+
+    const config = resolveAdapterConfig(sourceId, scope, state);
+    if (config === null) {
+      state.logger?.warn(`Could not resolve config for MCP source "${sourceId}" — skipping`, {
+        component: `mcp/${profileName}`,
+      });
+      continue;
+    }
+
+    let schema: import('@calame/core').SourceSchema;
+    try {
+      const introspected = await adapter.introspect?.(config, sourceId);
+      if (!introspected) {
+        state.logger?.warn(
+          `MCP source "${sourceId}" adapter does not support introspect — skipping`,
+          {
+            component: `mcp/${profileName}`,
+          },
+        );
+        continue;
+      }
+      schema = introspected;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      state.logger?.warn(`Failed to introspect MCP source "${sourceId}": ${msg} — skipping`, {
+        component: `mcp/${profileName}`,
+      });
+      continue;
+    }
+
+    const ctx: McpRegistrationContext = {
+      server: mcpServer,
+      source,
+      config,
+      schema,
+      selection: scope,
+      profileName,
+      toolNamespace,
+      responseMode,
+      onAuditLog,
+    };
+
+    try {
+      adapter.registerMcpTools?.(ctx);
+      anyRegistered = true;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      state.logger?.warn(`registerMcpTools failed for MCP source "${sourceId}": ${msg}`, {
+        component: `mcp/${profileName}`,
+      });
     }
   }
 

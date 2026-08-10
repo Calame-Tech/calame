@@ -395,12 +395,19 @@ export function registerServeRoute(app: Express, state: AppState): void {
       // A profile is valid if it has at least one connection OR at least one document-kind scope.
       // Also check effectiveDocumentScopes so that a profile that declares RAG only via
       // Data Configurations (no direct profile.scopes document entries) is still accepted.
+      //
+      // Slice 0 (MCP Proxy Adapter): an 'mcp'-kind scope is source-of-truth-free the same
+      // way a document scope is — a profile can legitimately proxy an upstream MCP server
+      // with zero relational DB connections (the spec's "govern any MCP server" adoption
+      // path), so it must pass this gate too.
       const hasDocumentSources =
         (profile.scopes !== undefined &&
           Object.values(profile.scopes).some((s) => s.kind === 'document')) ||
         Object.keys(effectiveDocumentScopes).length > 0;
+      const hasMcpSources =
+        profile.scopes !== undefined && Object.values(profile.scopes).some((s) => s.kind === 'mcp');
 
-      if (profileConnections.length === 0 && !hasDocumentSources) {
+      if (profileConnections.length === 0 && !hasDocumentSources && !hasMcpSources) {
         res.status(500).json({ error: 'No database connection available for this profile.' });
         return;
       }

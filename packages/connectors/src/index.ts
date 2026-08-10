@@ -6,6 +6,8 @@ export { buildDatabaseSourceAdapter } from './db-adapter.js';
 export type { DatabaseAdapterConfig } from './db-adapter.js';
 export { buildHttpApiSourceAdapter } from './api-adapter.js';
 export type { HttpApiAdapterConfig } from './api-adapter.js';
+export { buildMcpProxySourceAdapter } from './mcp-proxy-adapter.js';
+export type { McpProxyAdapterConfig, McpClientTransportFactory } from './mcp-proxy-adapter.js';
 
 import type { DatabaseConnector, DatabaseType } from './types.js';
 import { PostgreSQLConnector } from './postgresql.js';
@@ -44,8 +46,10 @@ export function getAvailableConnectors(): DatabaseConnector[] {
 import { sourceAdapterRegistry } from '@calame/core';
 import { buildDatabaseSourceAdapter } from './db-adapter.js';
 import { buildHttpApiSourceAdapter } from './api-adapter.js';
+import { buildMcpProxySourceAdapter } from './mcp-proxy-adapter.js';
 
 sourceAdapterRegistry.register(buildDatabaseSourceAdapter('postgresql', 'PostgreSQL'));
 sourceAdapterRegistry.register(buildDatabaseSourceAdapter('mysql', 'MySQL'));
 sourceAdapterRegistry.register(buildDatabaseSourceAdapter('sqlite', 'SQLite'));
 sourceAdapterRegistry.register(buildHttpApiSourceAdapter());
+sourceAdapterRegistry.register(buildMcpProxySourceAdapter());

@@ -109,6 +109,23 @@ export interface OperationInfo {
   description: string;
 }
 
+/**
+ * A single tool exposed by an upstream MCP server, as reported by its
+ * `tools/list` response.
+ *
+ * `inputSchema` is the upstream's raw JSON Schema for the tool's arguments —
+ * kept as `unknown` here (not converted to a Zod schema) because JSON Schema
+ * → Zod conversion is out of scope for the read-only proxy (Slice 0); the
+ * proxy adapter registers a permissive passthrough schema instead and lets
+ * the upstream server validate the real shape.
+ */
+export interface McpToolInfo {
+  name: string;
+  description: string;
+  inputSchema: unknown;
+  isWrite: boolean;
+}
+
 export type SourceSchema =
   | { kind: 'relational'; tables: readonly TableInfo[]; relations: readonly Relation[] }
   | {
@@ -120,9 +137,33 @@ export type SourceSchema =
       kind: 'api';
       services: readonly ServiceInfo[];
       operations: readonly OperationInfo[];
+    }
+  | {
+      kind: 'mcp';
+      /** Upstream server name, when advertised during initialization. */
+      serverName?: string;
+      tools: readonly McpToolInfo[];
     };
 // TODO: future arms — uncomment when adapters are built
 // | { kind: 'stream'; topics: readonly TopicInfo[] }
+
+/**
+ * Name-based heuristic used to classify an upstream MCP tool as a write
+ * operation. Matches a leading `add_`, `create_`, `update_`, `delete_`,
+ * `set_`, `put_`, `write_`, or `remove_` verb (case-insensitive).
+ *
+ * This is intentionally conservative-by-name rather than schema-based —
+ * v1 has no way to introspect side effects, so any tool that *looks* like
+ * a write is treated as one. The MCP proxy adapter (Slice 0) never
+ * registers a tool this returns `true` for, even when it is present in an
+ * `allowedTools` allowlist — write approval is a Slice 1 concern; Slice 0
+ * fails closed instead of executing writes ungoverned.
+ */
+const WRITE_TOOL_NAME_PATTERN = /^(add|create|update|delete|set|put|write|remove)_/i;
+
+export function isWriteToolName(name: string): boolean {
+  return WRITE_TOOL_NAME_PATTERN.test(name);
+}
 
 // ---------------------------------------------------------------------------
 // ScopeSelection — per-kind allowlist
@@ -158,6 +199,18 @@ export type ScopeSelection =
        * in the source's config (`allowedHosts`).
        */
       allowedPathPrefixes?: readonly string[];
+    }
+  | {
+      kind: 'mcp';
+      /**
+       * Allowlist of upstream tool names (per `McpToolInfo.name`) the LLM may
+       * invoke via this source. A tool absent from this list is never
+       * registered. Slice 0 additionally never registers a tool for which
+       * `isWriteToolName(tool.name)` (or `McpToolInfo.isWrite`) is `true`,
+       * regardless of whether it appears here — write approval is a Slice 1
+       * concern and Slice 0 fails closed.
+       */
+      allowedTools: readonly string[];
     };
 
 // ---------------------------------------------------------------------------

@@ -289,6 +289,17 @@ export type ScopeSelection =
        * preserves them inertly through its scope-merge pattern.
        */
       allowedOperations: readonly string[];
+    }
+  | {
+      kind: 'mcp';
+      /**
+       * Allowlist of upstream MCP tool names the LLM may invoke via this
+       * source. Mirrors `packages/core/src/sources/types.ts:ScopeSelection`'s
+       * `mcp` arm (MCP Proxy Adapter, Slice 0). The web layer doesn't render
+       * MCP scopes today — `RagAccessSelector` preserves them inertly
+       * through its scope-merge pattern.
+       */
+      allowedTools: readonly string[];
     };
 
 // Serve status

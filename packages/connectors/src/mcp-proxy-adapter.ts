@@ -18,12 +18,14 @@
  *   - Trust boundary: the upstream is untrusted data. Responses are
  *     truncated and normalized to plain text — never interpreted/executed.
  *
- * Slice 0 scope (see spec §9): read-only. A tool classified as a write by
- * `isWriteToolName` is **never** registered, even when explicitly present in
- * `selection.allowedTools` — fail closed, matching the relational adapter's
- * rule for missing `onWriteRequest`. The write-approval flow (queueing an
- * `add_memory`-style call for admin approval) is Slice 1 and lives outside
- * this file.
+ * Slice 1 (see spec §5, §9) adds the approval gate: a tool classified as a
+ * write by `isWriteToolName` registers IFF `ctx.onWriteRequest` is present —
+ * fail closed otherwise, matching the relational adapter's rule for missing
+ * `onWriteRequest`. When it registers, its handler never calls upstream: it
+ * queues `{ kind: 'mcp-tool', sourceId, toolName, args }` for admin approval
+ * via `ctx.onWriteRequest` and returns immediately. The upstream call happens
+ * later, out of this file, when the write-executor forwards an APPROVED
+ * queue entry via `callUpstreamTool` (exported below).
  */
 
 import { z } from 'zod';
@@ -225,6 +227,74 @@ function truncateText(text: string, maxChars: number): { text: string; truncated
   return { text: text.slice(0, maxChars) + TRUNCATION_MARKER, truncated: true };
 }
 
+/** Result of a single forwarded upstream tool call — see `callUpstreamTool`. */
+export interface UpstreamToolCallResult {
+  /** Normalized, truncated plain-text content (see `normalizeUpstreamContent` / `truncateText`). */
+  text: string;
+  /** True when the upstream marked its own result `isError: true`. */
+  isError: boolean;
+}
+
+/**
+ * Forwards a single tool call to the upstream MCP server: connect on demand,
+ * call, close (spec §8b) — then normalize and truncate the result. This is
+ * the one place that talks to the upstream; it is shared by:
+ *   - the read-through handler registered below (unchanged behavior, now
+ *     factored through here instead of duplicating the connect/call/close), and
+ *   - the write-executor's approval path (`packages/cli/src/write-executor.ts`),
+ *     which calls this directly after resolving an approved `kind: 'mcp-tool'`
+ *     queue entry's source config by `sourceId` (spec §5/§6) — the config
+ *     never touches the queue row itself.
+ */
+export async function callUpstreamTool(
+  config: McpProxyAdapterConfig,
+  toolName: string,
+  args: Record<string, unknown>,
+  transportFactory: McpClientTransportFactory = defaultTransportFactory,
+): Promise<UpstreamToolCallResult> {
+  const upstreamResult = await withUpstreamClient(
+    config,
+    transportFactory,
+    async (client, signal) =>
+      client.callTool({ name: toolName, arguments: args }, undefined, { signal }),
+  );
+  const rawText = normalizeUpstreamContent(upstreamResult);
+  const { text } = truncateText(rawText, MAX_RESPONSE_CHARS);
+  return { text, isError: isUpstreamError(upstreamResult) };
+}
+
+/**
+ * Builds a compact, human-readable summary of a queued write for the admin
+ * approval UI: tool name + a JSON preview of its arguments, capped so a
+ * pathological payload never blows up the write_queue `description` column.
+ */
+const WRITE_SUMMARY_MAX_CHARS = 500;
+/**
+ * Map an upstream write tool's verb onto the legacy SQL operation enum so the
+ * approval UI applies the right friction: delete/remove-shaped tools get the
+ * two-step confirm (like SQL DELETE), update/set/put-shaped get the UPDATE
+ * treatment, everything else (add/create/write) is an additive one-click
+ * INSERT.
+ */
+export function operationForWriteTool(toolName: string): 'insert' | 'update' | 'delete' {
+  if (/^(delete|remove)_/i.test(toolName)) return 'delete';
+  if (/^(update|set|put)_/i.test(toolName)) return 'update';
+  return 'insert';
+}
+
+function summarizeWriteForApproval(toolName: string, args: Record<string, unknown>): string {
+  let preview: string;
+  try {
+    preview = JSON.stringify(args);
+  } catch {
+    preview = '[unserializable args]';
+  }
+  if (preview.length > WRITE_SUMMARY_MAX_CHARS) {
+    preview = preview.slice(0, WRITE_SUMMARY_MAX_CHARS) + '…';
+  }
+  return `MCP write "${toolName}" with args ${preview}`;
+}
+
 /**
  * Generates an id for audit-log entries. Uses globalThis.crypto when available
  * (Node ≥ 19, all browsers) and falls back to a Math.random hex string for the
@@ -298,7 +368,10 @@ export function buildMcpProxySourceAdapter(
 
     // -----------------------------------------------------------------------
     // registerMcpTools — registers a read-through MCP tool per allowlisted,
-    // non-write upstream tool.
+    // non-write upstream tool, plus (Slice 1) an approval-gated write tool
+    // for allowlisted tools classified as writes — but only when the host
+    // provides `ctx.onWriteRequest`; otherwise those stay unregistered,
+    // exactly like Slice 0 (fail closed).
     // -----------------------------------------------------------------------
     registerMcpTools(ctx: McpRegistrationContext<McpProxyAdapterConfig, McpSchema>): void {
       if (ctx.selection.kind !== 'mcp') {
@@ -311,6 +384,8 @@ export function buildMcpProxySourceAdapter(
       const config = ctx.config;
       const ns = ctx.toolNamespace;
       const sourceName = ctx.source.name;
+      const sourceId = ctx.source.id;
+      const onWriteRequest = ctx.onWriteRequest;
 
       const audit = (
         toolName: string,
@@ -334,11 +409,61 @@ export function buildMcpProxySourceAdapter(
 
       for (const tool of ctx.schema.tools) {
         if (!scope.allowedTools.includes(tool.name)) continue;
-        // Fail closed: Slice 0 never registers a write-classified tool, even
-        // when explicitly allowlisted. Write approval is Slice 1.
-        if (tool.isWrite) continue;
 
         const registeredName = `${ns}${tool.name}`;
+
+        // -------------------------------------------------------------------
+        // Write tool (Slice 1) — approval-gated. Fail closed: only registers
+        // when the host wired an onWriteRequest, matching the relational
+        // adapter's rule for the same missing dependency.
+        // -------------------------------------------------------------------
+        if (tool.isWrite) {
+          if (!onWriteRequest) continue;
+
+          const writeDescription =
+            (tool.description ? `${tool.description} ` : '') +
+            `Proposes a write via the proxied MCP tool "${tool.name}" from upstream source "${sourceName}". Queued for admin approval — nothing executes immediately.`;
+
+          ctx.server.registerTool(
+            registeredName,
+            {
+              description: writeDescription,
+              inputSchema: z.looseObject({}),
+              annotations: { readOnlyHint: false, destructiveHint: true },
+            },
+            (args: Record<string, unknown>) => {
+              const t0 = Date.now();
+              const id = onWriteRequest({
+                profileName: ctx.profileName,
+                description: summarizeWriteForApproval(tool.name, args),
+                // Compat values for the legacy flat PendingWriteQuery fields —
+                // see the PendingWriteAction doc comment in @calame/core:
+                // sql is empty (there is none), tableName carries the upstream
+                // tool name (keeps it visible in list views keyed on
+                // tableName). operation is derived from the tool-name verb so
+                // destructive upstream tools (delete_entity, remove_fact,
+                // update_x) inherit the UI's two-step approve confirmation
+                // exactly like SQL update/delete; additive tools map to
+                // 'insert' (one-click).
+                sql: '',
+                params: [],
+                tableName: tool.name,
+                operation: operationForWriteTool(tool.name),
+                action: { kind: 'mcp-tool', sourceId, toolName: tool.name, args },
+              });
+
+              audit(registeredName, args, 'success', `queued for approval (ID: ${id})`, t0);
+
+              const text = `Write request submitted for approval (ID: ${id}). An admin will review it.\n\nTool: ${tool.name}\nArgs: ${JSON.stringify(args)}`;
+              return { content: [{ type: 'text' as const, text }] };
+            },
+          );
+          continue;
+        }
+
+        // -------------------------------------------------------------------
+        // Read tool — forwards immediately and audits.
+        // -------------------------------------------------------------------
         const description =
           tool.description ||
           `Proxied MCP tool "${tool.name}" from upstream source "${sourceName}". Read-only.`;
@@ -358,25 +483,22 @@ export function buildMcpProxySourceAdapter(
           async (args: Record<string, unknown>) => {
             const t0 = Date.now();
             try {
-              const upstreamResult = await withUpstreamClient(
+              const { text, isError } = await callUpstreamTool(
                 config,
+                tool.name,
+                args,
                 transportFactory,
-                async (client, signal) =>
-                  client.callTool({ name: tool.name, arguments: args }, undefined, { signal }),
               );
-              const rawText = normalizeUpstreamContent(upstreamResult);
-              const { text, truncated } = truncateText(rawText, MAX_RESPONSE_CHARS);
-              const upstreamIsError = isUpstreamError(upstreamResult);
 
               audit(
                 registeredName,
                 args,
-                upstreamIsError ? 'error' : 'success',
-                `${upstreamIsError ? 'upstream error' : 'forwarded'} (${text.length} chars, truncated=${truncated})`,
+                isError ? 'error' : 'success',
+                `${isError ? 'upstream error' : 'forwarded'} (${text.length} chars)`,
                 t0,
               );
 
-              return upstreamIsError
+              return isError
                 ? { content: [{ type: 'text' as const, text }], isError: true }
                 : { content: [{ type: 'text' as const, text }] };
             } catch (err: unknown) {

@@ -712,6 +712,13 @@ export async function registerToolsViaAdapters(opts: RegisterAdaptersOptions): P
       toolNamespace,
       responseMode,
       onAuditLog,
+      // Slice 1 (MCP write-approval): wires the approval gate for write-
+      // classified upstream tools (e.g. `add_memory`) — same
+      // `createOnWriteRequest` helper the relational path uses. No
+      // connectionName/databaseType here: those are SQL-specific compat
+      // fields and an mcp-tool action carries its own `sourceId` reference
+      // instead (see PendingWriteAction in @calame/core).
+      onWriteRequest: createOnWriteRequest(state, tenantId),
     };
 
     try {

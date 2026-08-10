@@ -6,8 +6,12 @@ export { buildDatabaseSourceAdapter } from './db-adapter.js';
 export type { DatabaseAdapterConfig } from './db-adapter.js';
 export { buildHttpApiSourceAdapter } from './api-adapter.js';
 export type { HttpApiAdapterConfig } from './api-adapter.js';
-export { buildMcpProxySourceAdapter } from './mcp-proxy-adapter.js';
-export type { McpProxyAdapterConfig, McpClientTransportFactory } from './mcp-proxy-adapter.js';
+export { buildMcpProxySourceAdapter, callUpstreamTool } from './mcp-proxy-adapter.js';
+export type {
+  McpProxyAdapterConfig,
+  McpClientTransportFactory,
+  UpstreamToolCallResult,
+} from './mcp-proxy-adapter.js';
 
 import type { DatabaseConnector, DatabaseType } from './types.js';
 import { PostgreSQLConnector } from './postgresql.js';

@@ -229,6 +229,23 @@ export interface AuditLogEntry {
 }
 
 // Pending write queries
+
+// Slice 1 (MCP write-approval) — discriminated action payload, mirrors
+// PendingWriteAction in @calame/core/serve/types.ts. See that file's doc
+// comment for the compat rationale (flat fields below stay authoritative
+// for `kind: 'sql'` entries; `kind: 'mcp-tool'` entries use `action` instead).
+export type PendingWriteAction =
+  | {
+      kind: 'sql';
+      sql: string;
+      params: unknown[];
+      tableName: string;
+      operation: 'insert' | 'update' | 'delete';
+      connectionName?: string;
+      databaseType?: string;
+    }
+  | { kind: 'mcp-tool'; sourceId: string; toolName: string; args: Record<string, unknown> };
+
 export interface PendingWriteQuery {
   id: string;
   timestamp: string;
@@ -243,6 +260,8 @@ export interface PendingWriteQuery {
   approvedAt?: string;
   executionResult?: string;
   executionError?: string;
+  /** Slice 1 — present for every entry (the host always synthesizes it); optional here for older fixtures. */
+  action?: PendingWriteAction;
 }
 
 // Metrics types

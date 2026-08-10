@@ -258,4 +258,19 @@ export function runMigrations(db: CalameDatabase): void {
     }
     db.setSchemaVersion(15);
   }
+
+  if (currentVersion < 16) {
+    // Version 16: MCP write-approval (Slice 1, docs/mcp-proxy-adapter-spec.md
+    // §6/§9). Additive `action_json TEXT` column on `write_queue` — mirrors
+    // the v15 pattern exactly (guarded with `hasTable`, no row rewrites).
+    // Legacy SQL rows leave this column NULL and keep being served entirely
+    // from the existing flat columns (sql_text/params/table_name/operation/
+    // connection_name/database_type); only new `kind: 'mcp-tool'` rows write
+    // a serialized `PendingWriteAction` here. Zero risk to the existing
+    // approval path.
+    if (hasTable(db, 'write_queue')) {
+      addColumnIfMissing(db, 'write_queue', 'action_json', 'TEXT');
+    }
+    db.setSchemaVersion(16);
+  }
 }

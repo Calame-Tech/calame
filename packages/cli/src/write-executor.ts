@@ -1,5 +1,6 @@
 import type { AppState } from './state.js';
 import type { PendingWriteQuery } from '@calame/core';
+import type { McpProxyAdapterConfig } from '@calame/connectors';
 
 /**
  * Execute an APPROVED write from the queue against its target connection.
@@ -41,6 +42,51 @@ export function resolveWriteTarget(
     connectionString: state.cachedConnectionString,
     databaseType: state.cachedDatabaseType,
   };
+}
+
+/**
+ * Resolve the decrypted upstream config for an APPROVED `kind: 'mcp-tool'`
+ * write (Slice 1). The queue row never carries the upstream URL/headers —
+ * only `action.sourceId` — so approval must re-resolve `Source.configEncrypted`
+ * here, exactly the same "reference, not config" rule `resolveWriteTarget`
+ * already applies to `connectionName` for SQL writes (write-queue v15).
+ *
+ * Uses the identical storage path `registration.ts`'s `resolveAdapterConfig`
+ * uses for `scope.kind === 'mcp'`: Slice 0 has no dedicated persistence table
+ * for non-relational sources, so an MCP source's encrypted config lives in
+ * `rag_sources.config_encrypted` (the one existing "unified sources" table),
+ * decrypted via the RAG runtime's `decryptConfig`.
+ *
+ * Throws — never returns null/undefined — so the caller can fail the
+ * approval cleanly (nothing persisted, nothing executed) before ever
+ * touching the upstream. Mirrors `resolveWriteTarget`'s "target connection is
+ * gone" failure mode: this function runs BEFORE `WriteQueue.approveMcpTool`
+ * is invoked, so a thrown error here leaves the queue entry untouched at
+ * `status: 'pending'` — the admin can fix the source and retry approval.
+ */
+export function resolveMcpWriteTarget(state: AppState, sourceId: string): McpProxyAdapterConfig {
+  if (!state.ragRuntime || !state.db) {
+    throw new Error(
+      `MCP source "${sourceId}" is not available — the RAG runtime is not initialized.`,
+    );
+  }
+  let row: { config_encrypted: string } | undefined;
+  try {
+    row = state.db.raw
+      .prepare<
+        [string],
+        { config_encrypted: string }
+      >('SELECT config_encrypted FROM rag_sources WHERE id = ? LIMIT 1')
+      .get(sourceId);
+  } catch {
+    // Defensive: rag_sources may not exist (RAG schema never initialized).
+    row = undefined;
+  }
+  if (!row) {
+    throw new Error(`MCP source "${sourceId}" is gone — reconnect it before approving this write.`);
+  }
+  const decrypted = state.ragRuntime.decryptConfig(row.config_encrypted);
+  return JSON.parse(decrypted) as McpProxyAdapterConfig;
 }
 
 /** Strip the optional sqlite:// scheme, mirroring the sqlite connector's DSN parsing. */

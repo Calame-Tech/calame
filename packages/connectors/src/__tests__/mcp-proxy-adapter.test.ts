@@ -7,6 +7,8 @@ import type { ScopeSelection, McpRegistrationContext, SourceSchema } from '@cala
 import { SourceAdapterRegistry, isWriteToolName } from '@calame/core';
 import {
   buildMcpProxySourceAdapter,
+  callUpstreamTool,
+  operationForWriteTool,
   type McpProxyAdapterConfig,
   type McpClientTransportFactory,
 } from '../mcp-proxy-adapter.js';
@@ -109,6 +111,7 @@ function makeCtx(
     toolNamespace: overrides.toolNamespace ?? '',
     responseMode: 'friendly',
     onAuditLog: overrides.onAuditLog ?? vi.fn(),
+    onWriteRequest: overrides.onWriteRequest,
   };
 }
 
@@ -221,6 +224,25 @@ describe('isWriteToolName', () => {
     ['random_name', false],
   ])('%s -> %s', (name, expected) => {
     expect(isWriteToolName(name)).toBe(expected);
+  });
+});
+
+describe('operationForWriteTool', () => {
+  // Destructive/update-shaped upstream tools must inherit the approval UI's
+  // two-step confirm (keyed on operation delete/update), additive ones stay
+  // one-click inserts.
+  it.each([
+    ['delete_entity', 'delete'],
+    ['remove_fact', 'delete'],
+    ['update_record', 'update'],
+    ['set_flag', 'update'],
+    ['put_object', 'update'],
+    ['add_memory', 'insert'],
+    ['create_widget', 'insert'],
+    ['write_log', 'insert'],
+    ['DELETE_ENTITY', 'delete'], // case-insensitive
+  ] as const)('%s -> %s', (name, expected) => {
+    expect(operationForWriteTool(name)).toBe(expected);
   });
 });
 
@@ -490,6 +512,155 @@ describe('registerMcpTools — read tool call behaviour', () => {
     const result = await registered[0].handler({ query: 'alice' });
     expect(result.content[0].text.endsWith('[truncated]')).toBe(false);
     expect(result.content[0].text.length).toBe(exact);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// registerMcpTools — write tool registration + queueing (Slice 1)
+// ---------------------------------------------------------------------------
+
+describe('registerMcpTools — write tool registration (Slice 1)', () => {
+  it('registers a write tool once onWriteRequest is present (unlike Slice 0)', () => {
+    const { server, registered } = makeMcpServer();
+    const adapter = buildMcpProxySourceAdapter();
+    adapter.registerMcpTools!(
+      makeCtx({
+        server,
+        tools: readTools,
+        selection: { kind: 'mcp', allowedTools: ['add_memory'] },
+        onWriteRequest: vi.fn().mockReturnValue('queue-id-1'),
+      }),
+    );
+    expect(registered.map((r) => r.name)).toEqual(['add_memory']);
+  });
+
+  it('does not register a write tool when onWriteRequest is absent — fail-closed, unchanged from Slice 0', () => {
+    const { server, registered } = makeMcpServer();
+    // A throwing transport factory would fail loudly if the (unregistered)
+    // tool were ever somehow invoked and tried to reach the upstream.
+    const adapter = buildMcpProxySourceAdapter(
+      throwingTransportFactory('must not be called — write tool is not registered'),
+    );
+    adapter.registerMcpTools!(
+      makeCtx({
+        server,
+        tools: readTools,
+        selection: { kind: 'mcp', allowedTools: ['search_nodes', 'add_memory'] },
+      }),
+    );
+    expect(registered.map((r) => r.name)).toEqual(['search_nodes']);
+  });
+
+  it('queues the write via onWriteRequest and never calls the upstream', async () => {
+    const onWriteRequest = vi.fn().mockReturnValue('queue-id-1');
+    const onAuditLog = vi.fn();
+    const { server, registered } = makeMcpServer();
+    // Throwing transport factory: proves the handler never opens an upstream
+    // connection — the only way this test passes is if the write handler
+    // queues without ever calling `withUpstreamClient`/`callUpstreamTool`.
+    const adapter = buildMcpProxySourceAdapter(
+      throwingTransportFactory('must not be called for a queued write'),
+    );
+    adapter.registerMcpTools!(
+      makeCtx({
+        server,
+        tools: readTools,
+        selection: { kind: 'mcp', allowedTools: ['add_memory'] },
+        onWriteRequest,
+        onAuditLog,
+      }),
+    );
+
+    const result = await registered[0].handler({ fact: 'Alice likes tea' });
+
+    expect(result.isError).toBeUndefined();
+    expect(result.content[0].text).toContain(
+      'Write request submitted for approval (ID: queue-id-1)',
+    );
+
+    expect(onWriteRequest).toHaveBeenCalledOnce();
+    const query = onWriteRequest.mock.calls[0][0];
+    expect(query.action).toEqual({
+      kind: 'mcp-tool',
+      sourceId: 'src1',
+      toolName: 'add_memory',
+      args: { fact: 'Alice likes tea' },
+    });
+    // Compat flat fields (see PendingWriteAction doc comment) stay populated
+    // and readable by anything still reading the legacy shape.
+    expect(query.sql).toBe('');
+    expect(query.params).toEqual([]);
+    expect(query.tableName).toBe('add_memory');
+    expect(query.operation).toBe('insert');
+    expect(query.profileName).toBe('p1');
+    expect(query.description).toContain('add_memory');
+
+    // The queueing itself is audited (result: 'success', queued).
+    expect(onAuditLog).toHaveBeenCalledOnce();
+    const auditEntry = onAuditLog.mock.calls[0][0];
+    expect(auditEntry.result).toBe('success');
+    expect(auditEntry.resultSummary).toContain('queue-id-1');
+  });
+
+  it('applies the tool namespace prefix to a registered write tool', () => {
+    const { server, registered } = makeMcpServer();
+    const adapter = buildMcpProxySourceAdapter();
+    adapter.registerMcpTools!(
+      makeCtx({
+        server,
+        tools: readTools,
+        toolNamespace: 'graphiti_',
+        selection: { kind: 'mcp', allowedTools: ['add_memory'] },
+        onWriteRequest: vi.fn().mockReturnValue('id'),
+      }),
+    );
+    expect(registered[0].name).toBe('graphiti_add_memory');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// callUpstreamTool — the connect/call/close helper shared with the
+// write-executor's approval path.
+// ---------------------------------------------------------------------------
+
+describe('callUpstreamTool', () => {
+  it('forwards a call and returns normalized, non-error text', async () => {
+    const result = await callUpstreamTool(
+      DEFAULT_CONFIG,
+      'search_nodes',
+      { query: 'alice' },
+      fakeUpstreamTransportFactory(() => buildFakeUpstream()),
+    );
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain('nodes matching "alice"');
+  });
+
+  it('surfaces an upstream isError result', async () => {
+    const server0 = new McpServer({ name: 'fake-erroring-upstream', version: '1.0.0' });
+    server0.registerTool(
+      'add_memory',
+      { description: 'Add a fact', inputSchema: { fact: z.string() } },
+      async () => ({ content: [{ type: 'text' as const, text: 'boom' }], isError: true }),
+    );
+    const result = await callUpstreamTool(
+      DEFAULT_CONFIG,
+      'add_memory',
+      { fact: 'x' },
+      fakeUpstreamTransportFactory(() => server0),
+    );
+    expect(result.isError).toBe(true);
+    expect(result.text).toBe('boom');
+  });
+
+  it('propagates a transport failure as a rejected promise', async () => {
+    await expect(
+      callUpstreamTool(
+        DEFAULT_CONFIG,
+        'add_memory',
+        { fact: 'x' },
+        throwingTransportFactory('ECONNREFUSED'),
+      ),
+    ).rejects.toThrow(/ECONNREFUSED/);
   });
 });
 

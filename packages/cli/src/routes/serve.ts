@@ -392,16 +392,20 @@ export function registerServeRoute(app: Express, state: AppState): void {
       }
 
       // Phase 3c: allow profiles that have only document sources (no DB connections).
-      // A profile is valid if it has at least one connection OR at least one document-kind scope.
-      // Also check effectiveDocumentScopes so that a profile that declares RAG only via
-      // Data Configurations (no direct profile.scopes document entries) is still accepted.
-      const hasDocumentSources =
-        (profile.scopes !== undefined &&
-          Object.values(profile.scopes).some((s) => s.kind === 'document')) ||
+      // A profile is servable if it declares ANY source of data: a relational
+      // connection, or a scope of ANY kind (document, mcp, and every future
+      // kind — per-kind resolvability is handled downstream by the
+      // skip-with-warning logic in registration.ts). Enumerating kinds here
+      // meant every new ScopeSelection arm silently 500'd until someone
+      // remembered to add another hasXxxSources flag.
+      // effectiveDocumentScopes also counts: a profile may declare RAG only
+      // via Data Configurations, with no direct profile.scopes entries.
+      const hasAnyScope =
+        (profile.scopes !== undefined && Object.keys(profile.scopes).length > 0) ||
         Object.keys(effectiveDocumentScopes).length > 0;
 
-      if (profileConnections.length === 0 && !hasDocumentSources) {
-        res.status(500).json({ error: 'No database connection available for this profile.' });
+      if (profileConnections.length === 0 && !hasAnyScope) {
+        res.status(500).json({ error: 'No data source available for this profile.' });
         return;
       }
 

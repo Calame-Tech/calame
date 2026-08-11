@@ -132,4 +132,57 @@ describe('PendingQueries', () => {
     const el = screen.getByText('default');
     expect(el.tagName).not.toBe('BUTTON');
   });
+
+  // Slice 1 (MCP write-approval) — the details panel renders toolName + args
+  // for an mcp-tool entry instead of the SQL/Parameters block, and the
+  // operation badge shows "MCP" rather than the (compat-placeholder) INSERT.
+  it('renders an MCP badge and toolName/args (not SQL) for an mcp-tool entry', async () => {
+    const entry = makeEntry({
+      tableName: 'add_memory',
+      description: 'MCP write "add_memory" with args {"fact":"Alice likes tea"}',
+      sql: '',
+      params: [],
+      action: {
+        kind: 'mcp-tool',
+        sourceId: 'src1',
+        toolName: 'add_memory',
+        args: { fact: 'Alice likes tea' },
+      },
+    });
+    installFetch([entry]);
+    render(<PendingQueries />);
+    await waitFor(() => expect(screen.getByText('Details')).toBeTruthy());
+
+    // MCP badge instead of the SQL operation badge.
+    expect(screen.getByText('MCP')).toBeTruthy();
+
+    fireEvent.click(screen.getByText('Details'));
+    expect(screen.getByText('Tool:')).toBeTruthy();
+    // "add_memory" appears twice: the summary row's tableName span (compat
+    // field) and the details panel's Tool: value — both are expected.
+    expect(screen.getAllByText('add_memory').length).toBeGreaterThanOrEqual(2);
+    // "Alice likes tea" also appears twice: the description summary and the
+    // pretty-printed Args JSON block.
+    expect(screen.getAllByText(/Alice likes tea/).length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText('SQL:')).toBeNull();
+  });
+
+  it('still renders the SQL/Parameters block for a plain SQL entry (no action, or kind: sql)', async () => {
+    const entry = makeEntry({
+      action: {
+        kind: 'sql',
+        sql: 'INSERT INTO orders ...',
+        params: [],
+        tableName: 'orders',
+        operation: 'insert',
+      },
+    });
+    installFetch([entry]);
+    render(<PendingQueries />);
+    await waitFor(() => expect(screen.getByText('Details')).toBeTruthy());
+
+    fireEvent.click(screen.getByText('Details'));
+    expect(screen.getByText('SQL:')).toBeTruthy();
+    expect(screen.queryByText('Tool:')).toBeNull();
+  });
 });

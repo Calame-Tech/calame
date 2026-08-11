@@ -109,6 +109,47 @@ export interface OperationInfo {
   description: string;
 }
 
+/**
+ * A single tool exposed by an upstream MCP server, as reported by its
+ * `tools/list` response.
+ *
+ * `inputSchema` is the upstream's raw JSON Schema for the tool's arguments —
+ * kept as `unknown` here (not converted to a Zod schema) because JSON Schema
+ * → Zod conversion is out of scope for the read-only proxy (Slice 0); the
+ * proxy adapter registers a permissive passthrough schema instead and lets
+ * the upstream server validate the real shape.
+ */
+/**
+ * The subset of the MCP `ToolAnnotations` shape Calame reads. Upstream servers
+ * are free to send more (or none at all) — every field is optional and
+ * untrusted, so a missing/garbage value must degrade to the fail-closed
+ * default rather than to "read".
+ */
+export interface McpToolAnnotations {
+  readOnlyHint?: boolean;
+  destructiveHint?: boolean;
+  idempotentHint?: boolean;
+  openWorldHint?: boolean;
+}
+
+export interface McpToolInfo {
+  name: string;
+  description: string;
+  inputSchema: unknown;
+  /**
+   * Result of the read/write classification policy — see `classifyMcpTool` in
+   * `@calame/connectors`. `true` means the tool is approval-gated: its handler
+   * queues a `kind: 'mcp-tool'` write request instead of calling upstream.
+   */
+  isWrite: boolean;
+  /**
+   * Raw annotations as advertised by the upstream `tools/list`, when present.
+   * Preserved (rather than dropped at introspect time) because they are the
+   * highest-confidence signal the classification policy has.
+   */
+  annotations?: McpToolAnnotations;
+}
+
 export type SourceSchema =
   | { kind: 'relational'; tables: readonly TableInfo[]; relations: readonly Relation[] }
   | {
@@ -120,9 +161,52 @@ export type SourceSchema =
       kind: 'api';
       services: readonly ServiceInfo[];
       operations: readonly OperationInfo[];
+    }
+  | {
+      kind: 'mcp';
+      /** Upstream server name, when advertised during initialization. */
+      serverName?: string;
+      tools: readonly McpToolInfo[];
     };
 // TODO: future arms — uncomment when adapters are built
 // | { kind: 'stream'; topics: readonly TopicInfo[] }
+
+/**
+ * Name-based half of the MCP read/write classification policy (the other half
+ * — the upstream's own `annotations` — is applied by `classifyMcpTool` in
+ * `@calame/connectors`, which is the policy's entry point).
+ *
+ * This used to be a fail-OPEN write-verb heuristic: a leading
+ * `add_|create_|update_|delete_|set_|put_|write_|remove_` meant "write", and
+ * *everything else* meant "read". That let real, side-effecting tools through
+ * the approval gate purely because their verb was not on the list —
+ * `store_memory`, `save_report`, `append_row`, `upsert_entity`, `move_file`,
+ * `purge_cache` all classified as reads and were proxied straight through to
+ * the upstream with no admin approval.
+ *
+ * The polarity is now inverted, which is the whole point: an ALLOWLIST of
+ * unambiguously read-shaped prefixes classifies reads, and every other name —
+ * including names nobody anticipated — classifies as a write. Misclassifying a
+ * read as a write costs an admin one click in the approval queue;
+ * misclassifying a write as a read executes an ungoverned mutation on the
+ * upstream. Only the cheap mistake is allowed to happen by default.
+ */
+const READ_TOOL_NAME_PATTERN =
+  /^(search|get|list|find|query|read|fetch|count|describe|retrieve|lookup|browse)_/i;
+
+/** True when the tool name matches a known read-shaped prefix. */
+export function isReadToolName(name: string): boolean {
+  return READ_TOOL_NAME_PATTERN.test(name);
+}
+
+/**
+ * Fail-closed name classification: anything that is not recognisably a read
+ * is a write. Callers should prefer `classifyMcpTool` (connectors), which
+ * consults the upstream annotations first and only falls back to this.
+ */
+export function isWriteToolName(name: string): boolean {
+  return !isReadToolName(name);
+}
 
 // ---------------------------------------------------------------------------
 // ScopeSelection — per-kind allowlist
@@ -158,6 +242,18 @@ export type ScopeSelection =
        * in the source's config (`allowedHosts`).
        */
       allowedPathPrefixes?: readonly string[];
+    }
+  | {
+      kind: 'mcp';
+      /**
+       * Allowlist of upstream tool names (per `McpToolInfo.name`) the LLM may
+       * invoke via this source. A tool absent from this list is never
+       * registered. An allowlisted tool whose `McpToolInfo.isWrite` is `true`
+       * registers only as an approval-gated proposal (Slice 1) — and only when
+       * the host wired an `onWriteRequest`; without one it stays unregistered
+       * (fail closed).
+       */
+      allowedTools: readonly string[];
     };
 
 // ---------------------------------------------------------------------------

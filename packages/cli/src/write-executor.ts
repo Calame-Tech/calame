@@ -1,5 +1,7 @@
 import type { AppState } from './state.js';
 import type { PendingWriteQuery } from '@calame/core';
+import type { McpProxyAdapterConfig } from '@calame/connectors';
+import { lookupLiveRagSource } from './rag-source-lookup.js';
 
 /**
  * Execute an APPROVED write from the queue against its target connection.
@@ -41,6 +43,59 @@ export function resolveWriteTarget(
     connectionString: state.cachedConnectionString,
     databaseType: state.cachedDatabaseType,
   };
+}
+
+/**
+ * Resolve the decrypted upstream config for an APPROVED `kind: 'mcp-tool'`
+ * write (Slice 1). The queue row never carries the upstream URL/headers —
+ * only `action.sourceId` — so approval must re-resolve `Source.configEncrypted`
+ * here, exactly the same "reference, not config" rule `resolveWriteTarget`
+ * already applies to `connectionName` for SQL writes (write-queue v15).
+ *
+ * Goes through the shared `loadLiveRagSource` helper — the same one
+ * `routes/serve/registration.ts` uses to register the tool in the first place
+ * — so the two ends of the approval gate can never disagree on what a
+ * resolvable source is. That helper binds BOTH `tenant_id = ?` and
+ * `deleted_at IS NULL`, which means:
+ *
+ *   - `tenantId` MUST be the tenant of the QUEUE ENTRY (the route passes
+ *     `existing.tenantId ?? DEFAULT_TENANT_ID`), so an entry can only ever
+ *     execute against a source its own tenant owns — approving a foreign
+ *     source's tool is impossible even if the action payload names one;
+ *   - a soft-deleted source is no longer executable, matching the fact that
+ *     it is already hidden from every listing and skipped by the schedulers.
+ *
+ * Throws — never returns null/undefined — so the caller can fail the
+ * approval cleanly (nothing persisted, nothing executed) before ever
+ * touching the upstream. Mirrors `resolveWriteTarget`'s "target connection is
+ * gone" failure mode: this function runs BEFORE `WriteQueue.approveMcpTool`
+ * is invoked, so a thrown error here leaves the queue entry untouched at
+ * `status: 'pending'` — the admin can fix the source and retry approval.
+ */
+export function resolveMcpWriteTarget(
+  state: AppState,
+  sourceId: string,
+  tenantId: string,
+): McpProxyAdapterConfig {
+  if (!state.ragRuntime || !state.db) {
+    throw new Error(
+      `MCP source "${sourceId}" is not available — the RAG runtime is not initialized.`,
+    );
+  }
+  const lookup = lookupLiveRagSource(state.db, sourceId, tenantId);
+  if (lookup.status === 'deleted') {
+    throw new Error(
+      `MCP source "${sourceId}" has been deleted — it can no longer execute this write.`,
+    );
+  }
+  if (lookup.status !== 'ok') {
+    // 'missing' and 'foreign' collapse into one message on purpose: an admin
+    // must not be able to probe another tenant's source ids through the
+    // difference between "gone" and "not yours".
+    throw new Error(`MCP source "${sourceId}" is gone — reconnect it before approving this write.`);
+  }
+  const decrypted = state.ragRuntime.decryptConfig(lookup.source.configEncrypted);
+  return JSON.parse(decrypted) as McpProxyAdapterConfig;
 }
 
 /** Strip the optional sqlite:// scheme, mirroring the sqlite connector's DSN parsing. */

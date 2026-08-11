@@ -19,6 +19,7 @@ import {
 import { DEFAULT_TENANT_ID } from '../../tenancy.js';
 import { distinctValuesCache, distinctValuesCacheKey, getQueryTimeoutMs } from './routing.js';
 import { createOnWriteRequest } from './write-wiring.js';
+import { lookupLiveRagSource } from '../../rag-source-lookup.js';
 
 // ---------------------------------------------------------------------------
 // Phase 3c — adapter-driven tool registration
@@ -83,126 +84,105 @@ function sanitizeToolNamespace(raw: string): string {
 }
 
 /**
- * Resolve the human-readable display name for a source.
- * For DB connections: uses the connection label. For RAG sources: uses the rag_sources.name.
+ * Resolve the SourceAdapter + synthesized Source + decrypted config for a
+ * RELATIONAL source. Returns null when the connection is not live or has no
+ * registered adapter.
  */
-function resolveSourceDisplayName(sourceId: string, state: AppState): string {
-  // DB connection?
-  const connState = state.connections.get(sourceId);
-  if (connState) {
-    return connState.connection.label ?? sourceId;
-  }
-  // RAG source? Read from the rag_sources SQLite table.
-  if (state.ragRuntime && state.db) {
-    try {
-      const row = state.db.raw
-        .prepare<[string], { name: string }>('SELECT name FROM rag_sources WHERE id = ? LIMIT 1')
-        .get(sourceId);
-      if (row) return row.name;
-    } catch {
-      // Defensive: if rag_sources doesn't exist yet (no migrations run), fall through.
-    }
-  }
-  return sourceId;
-}
-
-/**
- * Resolve the SourceAdapter for a given sourceId.
- * Returns the adapter and a synthesized Source record, or null when not resolvable.
- */
-function resolveAdapterForSource(
+function resolveRelationalSource(
   sourceId: string,
-  scope: ScopeSelection,
   state: AppState,
-): { adapter: SourceAdapter; source: Source } | null {
-  if (scope.kind === 'relational') {
-    // DB source — look up the connection to get its databaseType
-    const connState = state.connections.get(sourceId);
-    if (!connState) return null;
-    const adapter = sourceAdapterRegistry.get(connState.connection.databaseType);
-    if (!adapter) return null;
-    const source: Source = {
+): { adapter: SourceAdapter; source: Source; config: unknown } | null {
+  const connState = state.connections.get(sourceId);
+  if (!connState) return null;
+  const adapter = sourceAdapterRegistry.get(connState.connection.databaseType);
+  if (!adapter) return null;
+  const now = new Date().toISOString();
+  return {
+    adapter,
+    source: {
       id: sourceId,
       name: connState.connection.label ?? sourceId,
       type: connState.connection.databaseType,
       configEncrypted: '',
       capabilities: [...adapter.capabilities],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    return { adapter, source };
-  }
-
-  if (scope.kind === 'document') {
-    // RAG document source — look up the type from rag_sources
-    if (!state.ragRuntime || !state.db) return null;
-    let ragSourceType: string | undefined;
-    try {
-      const row = state.db.raw
-        .prepare<[string], { type: string }>('SELECT type FROM rag_sources WHERE id = ? LIMIT 1')
-        .get(sourceId);
-      ragSourceType = row?.type;
-    } catch {
-      // Defensive: rag_sources may not exist.
-      return null;
-    }
-    if (!ragSourceType) return null;
-    const adapter = sourceAdapterRegistry.get(ragSourceType);
-    if (!adapter) return null;
-    const displayName = resolveSourceDisplayName(sourceId, state);
-    const source: Source = {
-      id: sourceId,
-      name: displayName,
-      type: ragSourceType,
-      configEncrypted: '',
-      capabilities: [...adapter.capabilities],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    return { adapter, source };
-  }
-
-  return null;
-}
-
-/**
- * Build a decrypted adapter config for a source.
- * For DB sources: synthesizes a DatabaseAdapterConfig from the ConnectionState.
- * For RAG document sources: decrypts from rag_sources.config_encrypted.
- */
-function resolveAdapterConfig(
-  sourceId: string,
-  scope: ScopeSelection,
-  state: AppState,
-): unknown | null {
-  if (scope.kind === 'relational') {
-    const connState = state.connections.get(sourceId);
-    if (!connState) return null;
-    return {
+      createdAt: now,
+      updatedAt: now,
+    },
+    config: {
       connectionString: connState.connection.connectionString,
       ssl: connState.connection.sslConfig,
       ssh: connState.connection.sshConfig,
+    },
+  };
+}
+
+/**
+ * Resolve the SourceAdapter + synthesized Source + decrypted config for a
+ * NON-relational source (`kind: 'document'` and `kind: 'mcp'` alike).
+ *
+ * Both kinds share one storage path — `rag_sources`, the only unified-sources
+ * table in the codebase (see `source-lookup.ts`) — so they share one resolver
+ * here too. Merging them is what makes the tenant + soft-delete filters
+ * impossible to forget for a new kind: everything non-relational goes through
+ * `lookupLiveRagSource`, which binds `tenant_id = ?` and `deleted_at IS NULL`.
+ *
+ * Failure is reported as a human-readable `reason` so the calling loop can
+ * warn precisely (a cross-tenant reference is not the same event as a missing
+ * adapter) without re-querying the table.
+ */
+function resolveRagSourceForTenant(
+  sourceId: string,
+  state: AppState,
+  tenantId: string,
+):
+  | { ok: true; adapter: SourceAdapter; source: Source; config: unknown }
+  | { ok: false; reason: string } {
+  if (!state.ragRuntime || !state.db) {
+    return { ok: false, reason: 'cannot be resolved — the RAG runtime is not initialized' };
+  }
+
+  const lookup = lookupLiveRagSource(state.db, sourceId, tenantId);
+  if (lookup.status === 'foreign') {
+    return {
+      ok: false,
+      reason: `belongs to tenant "${lookup.tenantId}" but the request is for tenant "${tenantId}" — excluding from tool registration`,
     };
   }
-
-  if (scope.kind === 'document') {
-    if (!state.ragRuntime || !state.db) return null;
-    try {
-      const row = state.db.raw
-        .prepare<
-          [string],
-          { config_encrypted: string }
-        >('SELECT config_encrypted FROM rag_sources WHERE id = ? LIMIT 1')
-        .get(sourceId);
-      if (!row) return null;
-      const decrypted = state.ragRuntime.decryptConfig(row.config_encrypted);
-      return JSON.parse(decrypted) as unknown;
-    } catch {
-      return null;
-    }
+  if (lookup.status === 'deleted') {
+    return { ok: false, reason: 'has been deleted — excluding from tool registration' };
+  }
+  if (lookup.status === 'missing') {
+    return { ok: false, reason: 'was not found in rag_sources' };
   }
 
-  return null;
+  const live = lookup.source;
+  const adapter = sourceAdapterRegistry.get(live.type);
+  if (!adapter) {
+    return { ok: false, reason: `has no registered adapter for type "${live.type}"` };
+  }
+
+  let config: unknown;
+  try {
+    config = JSON.parse(state.ragRuntime.decryptConfig(live.configEncrypted)) as unknown;
+  } catch {
+    return { ok: false, reason: 'has an unreadable configuration' };
+  }
+
+  const now = new Date().toISOString();
+  return {
+    ok: true,
+    adapter,
+    source: {
+      id: sourceId,
+      name: live.name,
+      type: live.type,
+      configEncrypted: '',
+      capabilities: [...adapter.capabilities],
+      createdAt: now,
+      updatedAt: now,
+    },
+    config,
+  };
 }
 
 /**
@@ -312,14 +292,19 @@ export async function registerToolsViaAdapters(opts: RegisterAdaptersOptions): P
     }
   }
 
-  // Split resolved pairs into relational and document buckets.
+  // Split resolved pairs into relational, document, and MCP-proxy buckets.
   const relationalPairs = resolvedPairs.filter((p) => p.scope.kind === 'relational');
   const documentPairs = resolvedPairs.filter((p) => p.scope.kind === 'document');
+  const mcpPairs = resolvedPairs.filter((p) => p.scope.kind === 'mcp');
 
   // Count active RELATIONAL sources only — document sources are no longer
   // namespaced (merged into a single tool set), so their count must not
   // influence the relational namespace computation.
   const relationalKindCount = relationalPairs.length;
+  // MCP proxy sources are namespaced per-source like relational ones (each
+  // upstream server exposes its own distinctly-named tools, unlike document
+  // sources which share one generic merged RAG tool set).
+  const mcpKindCount = mcpPairs.length;
 
   let anyRegistered = false;
 
@@ -348,8 +333,11 @@ export async function registerToolsViaAdapters(opts: RegisterAdaptersOptions): P
   // ---------------------------------------------------------------------------
   // Relational sources — EXACT previous behavior, one call per source.
   // ---------------------------------------------------------------------------
-  for (const { sourceId, scope } of relationalPairs) {
-    const resolved = resolveAdapterForSource(sourceId, scope, state);
+  // `scope` is intentionally unused here: the effective relational selection is
+  // rebuilt below from `effectiveSelectedTables` (already narrowed by the
+  // user-restriction block upstream), not from the raw profile scope.
+  for (const { sourceId } of relationalPairs) {
+    const resolved = resolveRelationalSource(sourceId, state);
     if (!resolved) {
       state.logger?.warn(`No adapter found for relational source "${sourceId}" — skipping`, {
         component: `mcp/${profileName}`,
@@ -357,20 +345,10 @@ export async function registerToolsViaAdapters(opts: RegisterAdaptersOptions): P
       continue;
     }
 
-    const { adapter, source } = resolved;
+    const { adapter, source, config } = resolved;
 
     // Compute toolNamespace: empty when only one relational source, prefixed otherwise.
     const toolNamespace = relationalKindCount >= 2 ? sanitizeToolNamespace(source.name) + '_' : '';
-
-    // Build the adapter config.
-    const config = resolveAdapterConfig(sourceId, scope, state);
-    if (config === null) {
-      state.logger?.warn(
-        `Could not resolve config for relational source "${sourceId}" — skipping`,
-        { component: `mcp/${profileName}` },
-      );
-      continue;
-    }
 
     const connState = state.connections.get(sourceId);
     // Apply user-level table restrictions to the scope selection before passing in.
@@ -514,56 +492,24 @@ export async function registerToolsViaAdapters(opts: RegisterAdaptersOptions): P
       const mergedSources: MergedSourceEntry[] = [];
 
       for (const { sourceId, scope } of documentPairs) {
-        // Cross-tenant isolation guard: verify that the RAG source actually
-        // belongs to the tenant resolved from the MCP URL before handing it
-        // to registerMergedDocumentRagTools. A mis-attributed source ID (e.g.
-        // a config that references a source owned by a different tenant) is
-        // silently excluded here — it can never leak data because it never
-        // reaches the RAG runtime. In normal operation every source passes.
-        if (state.db) {
-          let sourceTenantId: string | undefined;
-          try {
-            const row = state.db.raw
-              .prepare<
-                [string],
-                { tenant_id: string }
-              >('SELECT tenant_id FROM rag_sources WHERE id = ?')
-              .get(sourceId);
-            sourceTenantId = row?.tenant_id;
-          } catch {
-            // Defensive: if rag_sources doesn't exist yet (no migration run),
-            // fall through and let resolveAdapterForSource handle it.
-          }
-          if (sourceTenantId !== undefined && sourceTenantId !== tenantId) {
-            state.logger?.warn(
-              `Document source "${sourceId}" belongs to tenant "${sourceTenantId}" but request is for tenant "${tenantId}" — excluding from tool registration`,
-              { component: `mcp/${profileName}` },
-            );
-            continue;
-          }
-        }
-
-        const resolved = resolveAdapterForSource(sourceId, scope, state);
-        if (!resolved) {
-          state.logger?.warn(`No adapter found for document source "${sourceId}" — skipping`, {
+        // Cross-tenant isolation + soft-delete guard, applied inside
+        // `resolveRagSourceForTenant`: a source owned by another tenant (e.g.
+        // a config that references a foreign source id) or one that has been
+        // soft-deleted is excluded here with a warn — it never reaches the RAG
+        // runtime, so it can never leak data. In normal operation every source
+        // passes.
+        const resolved = resolveRagSourceForTenant(sourceId, state, tenantId);
+        if (!resolved.ok) {
+          state.logger?.warn(`Document source "${sourceId}" ${resolved.reason} — skipping`, {
             component: `mcp/${profileName}`,
           });
-          continue;
-        }
-
-        const config = resolveAdapterConfig(sourceId, scope, state);
-        if (config === null) {
-          state.logger?.warn(
-            `Could not resolve config for document source "${sourceId}" — skipping`,
-            { component: `mcp/${profileName}` },
-          );
           continue;
         }
 
         mergedSources.push({
           source: resolved.source,
           selection: scope as Extract<ScopeSelection, { kind: 'document' }>,
-          config,
+          config: resolved.config,
         });
       }
 
@@ -586,6 +532,87 @@ export async function registerToolsViaAdapters(opts: RegisterAdaptersOptions): P
           });
         }
       }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // MCP proxy sources (Slice 0, read-only) — one call to registerMcpTools per
+  // source, same per-source pattern as relational (each upstream MCP server
+  // exposes its own distinctly-named tools, so — unlike document sources —
+  // there is no shared/generic tool surface to merge into).
+  //
+  // Slice 0 snapshots the upstream tool list live via `adapter.introspect`
+  // at registration time rather than from a persisted schema cache: there is
+  // no schema-storage column for non-relational sources yet (that would be a
+  // migration, out of scope for Slice 0 — see spec §8b "Schema staleness").
+  // A failure to reach the upstream at this point (unreachable server,
+  // timeout) skips the source gracefully rather than failing the whole MCP
+  // session, mirroring the adapter-lookup/config-resolution failure handling
+  // used for relational/document sources above.
+  // ---------------------------------------------------------------------------
+  for (const { sourceId, scope } of mcpPairs) {
+    // Identical guard to the document loop above — same helper, so an MCP
+    // source owned by another tenant (or soft-deleted) is excluded BEFORE its
+    // credentials are ever decrypted or its upstream ever contacted.
+    const resolved = resolveRagSourceForTenant(sourceId, state, tenantId);
+    if (!resolved.ok) {
+      state.logger?.warn(`MCP source "${sourceId}" ${resolved.reason} — skipping`, {
+        component: `mcp/${profileName}`,
+      });
+      continue;
+    }
+    const { adapter, source, config } = resolved;
+
+    const toolNamespace = mcpKindCount >= 2 ? sanitizeToolNamespace(source.name) + '_' : '';
+
+    let schema: import('@calame/core').SourceSchema;
+    try {
+      const introspected = await adapter.introspect?.(config, sourceId);
+      if (!introspected) {
+        state.logger?.warn(
+          `MCP source "${sourceId}" adapter does not support introspect — skipping`,
+          {
+            component: `mcp/${profileName}`,
+          },
+        );
+        continue;
+      }
+      schema = introspected;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      state.logger?.warn(`Failed to introspect MCP source "${sourceId}": ${msg} — skipping`, {
+        component: `mcp/${profileName}`,
+      });
+      continue;
+    }
+
+    const ctx: McpRegistrationContext = {
+      server: mcpServer,
+      source,
+      config,
+      schema,
+      selection: scope,
+      profileName,
+      toolNamespace,
+      responseMode,
+      onAuditLog,
+      // Slice 1 (MCP write-approval): wires the approval gate for write-
+      // classified upstream tools (e.g. `add_memory`) — same
+      // `createOnWriteRequest` helper the relational path uses. No
+      // connectionName/databaseType here: those are SQL-specific compat
+      // fields and an mcp-tool action carries its own `sourceId` reference
+      // instead (see PendingWriteAction in @calame/core).
+      onWriteRequest: createOnWriteRequest(state, tenantId),
+    };
+
+    try {
+      adapter.registerMcpTools?.(ctx);
+      anyRegistered = true;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      state.logger?.warn(`registerMcpTools failed for MCP source "${sourceId}": ${msg}`, {
+        component: `mcp/${profileName}`,
+      });
     }
   }
 

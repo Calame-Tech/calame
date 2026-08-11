@@ -250,6 +250,11 @@ function relationalScope(
   return { kind: 'relational', selectedTables: tables };
 }
 
+/** MCP proxy scope (Slice 0). */
+function mcpScope(allowedTools: string[] = ['search_nodes']): ScopeSelection {
+  return { kind: 'mcp', allowedTools };
+}
+
 /** Document scope (allowAll). */
 function documentScope(mode: 'allowAll' | 'allowList' = 'allowAll'): ScopeSelection {
   return {
@@ -1021,5 +1026,145 @@ describe('serve route — Phase 4 adapter-driven tool registration', () => {
       expect(sel.mode).toBe('allowAll');
       expect([...sel.allowedFolders]).toEqual([]);
     }
+  });
+
+  // -------------------------------------------------------------------------
+  // Test 13: MCP proxy source (Slice 0) — resolveAdapterForSource /
+  // resolveAdapterConfig / registerToolsViaAdapters all gain an 'mcp' branch
+  // that mirrors the 'document' branch (same `rag_sources` unified-sources
+  // table for encrypted config), but registration is per-source like
+  // relational (one registerMcpTools call per MCP source, since each
+  // upstream server has its own distinctly-named tools).
+  // -------------------------------------------------------------------------
+  it('mcp proxy source: registerMcpTools called once with introspected schema and decrypted config', async () => {
+    const state = new AppState();
+
+    const mcpAdapterMock = {
+      type: 'mcp',
+      displayName: 'MCP server (proxy)',
+      capabilities: ['tools'],
+      introspect: vi.fn().mockResolvedValue({
+        kind: 'mcp',
+        tools: [
+          { name: 'search_nodes', description: 'Search nodes', inputSchema: {}, isWrite: false },
+          { name: 'add_memory', description: 'Add a fact', inputSchema: {}, isWrite: true },
+        ],
+      }),
+      registerMcpTools: vi.fn(),
+    };
+    registeredAdapters.set('mcp', mcpAdapterMock);
+
+    const mockDb = makeRagDb({ graphiti1: { type: 'mcp', name: 'Graphiti' } });
+    state.db = mockDb as unknown as typeof state.db;
+    state.ragRuntime = makeRagRuntime(mockDb) as unknown as typeof state.ragRuntime;
+
+    state.serveProfiles = {
+      withMcp: {
+        name: 'withMcp',
+        label: 'With MCP',
+        sources: ['graphiti1'],
+        scopes: { graphiti1: mcpScope(['search_nodes']) },
+      },
+    };
+    state.activeProfileNames.add('withMcp');
+
+    const app = makeApp(state);
+    const res = await postInitialize(app, 'withMcp');
+    expect(res.status).toBe(200);
+
+    expect(mcpAdapterMock.introspect).toHaveBeenCalledOnce();
+    expect(mcpAdapterMock.registerMcpTools).toHaveBeenCalledOnce();
+
+    const ctx = mcpAdapterMock.registerMcpTools.mock.calls[0][0] as McpRegistrationContext;
+    expect(ctx.source.id).toBe('graphiti1');
+    expect(ctx.profileName).toBe('withMcp');
+    // Single MCP source of its kind → no namespace prefix (mirrors relational).
+    expect(ctx.toolNamespace).toBe('');
+    expect(ctx.selection).toEqual(mcpScope(['search_nodes']));
+    // Config comes through the same decrypt path as document sources.
+    expect(ctx.config).toEqual({ root: '/docs' });
+    // The live-introspected schema (not a stale/persisted snapshot) is
+    // threaded through to the adapter.
+    const schema = ctx.schema as { kind: string; tools: ReadonlyArray<{ name: string }> };
+    expect(schema.kind).toBe('mcp');
+    expect(schema.tools.map((t) => t.name)).toEqual(['search_nodes', 'add_memory']);
+  });
+
+  it('two mcp proxy sources: registerMcpTools called twice with sanitized namespace', async () => {
+    const state = new AppState();
+
+    const mcpAdapterMock = {
+      type: 'mcp',
+      displayName: 'MCP server (proxy)',
+      capabilities: ['tools'],
+      introspect: vi.fn().mockResolvedValue({ kind: 'mcp', tools: [] }),
+      registerMcpTools: vi.fn(),
+    };
+    registeredAdapters.set('mcp', mcpAdapterMock);
+
+    const mockDb = makeRagDb({
+      graphiti1: { type: 'mcp', name: 'Graphiti Prod' },
+      graphiti2: { type: 'mcp', name: 'Graphiti Staging' },
+    });
+    state.db = mockDb as unknown as typeof state.db;
+    state.ragRuntime = makeRagRuntime(mockDb) as unknown as typeof state.ragRuntime;
+
+    state.serveProfiles = {
+      dualMcp: {
+        name: 'dualMcp',
+        label: 'Dual MCP',
+        sources: ['graphiti1', 'graphiti2'],
+        scopes: {
+          graphiti1: mcpScope(),
+          graphiti2: mcpScope(),
+        },
+      },
+    };
+    state.activeProfileNames.add('dualMcp');
+
+    const app = makeApp(state);
+    const res = await postInitialize(app, 'dualMcp');
+    expect(res.status).toBe(200);
+
+    expect(mcpAdapterMock.registerMcpTools).toHaveBeenCalledTimes(2);
+    const ctx1 = mcpAdapterMock.registerMcpTools.mock.calls[0][0] as McpRegistrationContext;
+    const ctx2 = mcpAdapterMock.registerMcpTools.mock.calls[1][0] as McpRegistrationContext;
+    expect(ctx1.toolNamespace).toBe('graphiti_prod_');
+    expect(ctx2.toolNamespace).toBe('graphiti_staging_');
+  });
+
+  it('mcp source is skipped gracefully when the upstream introspect fails', async () => {
+    const state = new AppState();
+
+    const mcpAdapterMock = {
+      type: 'mcp',
+      displayName: 'MCP server (proxy)',
+      capabilities: ['tools'],
+      introspect: vi.fn().mockRejectedValue(new Error('upstream unreachable')),
+      registerMcpTools: vi.fn(),
+    };
+    registeredAdapters.set('mcp', mcpAdapterMock);
+
+    const mockDb = makeRagDb({ graphiti1: { type: 'mcp', name: 'Graphiti' } });
+    state.db = mockDb as unknown as typeof state.db;
+    state.ragRuntime = makeRagRuntime(mockDb) as unknown as typeof state.ragRuntime;
+
+    state.serveProfiles = {
+      unreachable: {
+        name: 'unreachable',
+        label: 'Unreachable',
+        sources: ['graphiti1'],
+        scopes: { graphiti1: mcpScope() },
+      },
+    };
+    state.activeProfileNames.add('unreachable');
+
+    const app = makeApp(state);
+    // The MCP session initializes successfully even though the one source it
+    // references is unreachable — the session must not fail outright.
+    const res = await postInitialize(app, 'unreachable');
+    expect(res.status).toBe(200);
+
+    expect(mcpAdapterMock.registerMcpTools).not.toHaveBeenCalled();
   });
 });

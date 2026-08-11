@@ -4,6 +4,18 @@ Dated log of dev sessions so other devs can catch up quickly without reading
 every commit. Newest first.
 
 ---
+
+## 2026-08-10 — MCP Proxy Adapter, slices 0+1 (branch `feat/mcp-proxy-adapter`)
+
+Design-partner-driven: a prospect runs Graphiti's MCP server (temporal knowledge-graph agent memory) and wants his data usable through Calame. Rather than a Graphiti-specific connector, Calame gains **one generic adapter that fronts any external MCP server and governs it** — Graphiti is just the first upstream. Spec: `docs/mcp-proxy-adapter-spec.md` (v2 — read §Demand note: lead demos with read-unification, governance second).
+
+- **`d9ef669` spec v2** — slicing aligned to the prospect's actual ask (performance/unification); queue rows store a `sourceId` reference resolved at execution (v15 lesson), additive `action_json` migration decided, upstream client lifecycle (on-demand + 10s timeout), placement core-vs-ee deferred (§12).
+- **`7d1a4bc` slice 0 — read-only proxy**: new `'mcp'` SourceAdapter (`packages/connectors/src/mcp-proxy-adapter.ts`), `{kind:'mcp'}` arms on SourceSchema/ScopeSelection, serve-registration branch (follows the document-branch precedent: `rag_sources` + EE decrypt — same pre-existing gap as the never-wired `api` adapter, flagged for hardening). Only allowlisted non-write tools register (fail-closed); every call audited; 100KB response cap; injectable transport factory → 41 tests against an in-memory fake upstream.
+- **`a9b8782` slice 1 — approval gate**: `PendingWriteQuery.action` discriminated union (flat SQL fields untouched, sql rows synthesize at read), migration v16 (`action_json`, additive), write tools register iff `onWriteRequest` wired and queue WITHOUT contacting upstream (proven by throwing-transport test), approval resolves source by `sourceId` at execution (vanished source → entry stays pending, nothing executes), PendingQueries renders Tool+Args with MCP badge. Review fix on top of the agent's work: `operationForWriteTool` maps tool verbs (delete_/remove_→delete, update_/set_/put_→update) so destructive upstream tools inherit the two-step approve confirm.
+
+Suite: **2006 tests** (1941 baseline → +65). Both slices written by Sonnet agents against the spec, reviewed/amended/committed by the orchestrator. Next: seed script + local Graphiti for the prospect demo; hardening list in spec §7/§8b (persistence off `rag_sources`, SSRF, persisted schema snapshot, admin UI for source creation + tool allowlist).
+
+---
 ## 2026-07-07/08 — Full UX overhaul (branch `feat/ux-overhaul`, 6 lots)
 
 Triggered by a UX audit (3 parallel agents + architecture pass, ~50 code-verified findings, 6 root causes) after three real frictions in user testing: approval queue unfindable, write tool inconfigurable, AI provider opaque. Six lots, each verified (build/typecheck/lint/tests) and committed:

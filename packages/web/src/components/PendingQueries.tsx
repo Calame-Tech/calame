@@ -141,6 +141,19 @@ export default function PendingQueries({
     );
   };
 
+  // Slice 1 (MCP write-approval): an mcp-tool entry has no meaningful SQL
+  // operation — its compat `operation` field is a fixed 'insert' placeholder
+  // (see PendingWriteAction in @calame/core) — so the badge shows the tool
+  // kind instead of a misleading INSERT.
+  const mcpBadge = (toolName: string) => (
+    <span
+      title={`MCP tool call — "${toolName}", forwarded to the upstream MCP server on approval.`}
+      className="px-2 py-0.5 rounded-full text-xs font-medium uppercase bg-purple-600/20 text-purple-400"
+    >
+      MCP
+    </span>
+  );
+
   const operationBadge = (op: PendingWriteQuery['operation']) => {
     const opInfo: Record<PendingWriteQuery['operation'], { classes: string; tooltip: string }> = {
       insert: {
@@ -226,7 +239,9 @@ export default function PendingQueries({
               {/* Header row */}
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3 min-w-0">
-                  {operationBadge(entry.operation)}
+                  {entry.action?.kind === 'mcp-tool'
+                    ? mcpBadge(entry.action.toolName)
+                    : operationBadge(entry.operation)}
                   {statusBadge(entry.status)}
                   <span className="text-sm font-mono text-os-400 shrink-0">{entry.tableName}</span>
                   <span className="text-sm text-gray-400 truncate">{entry.description}</span>
@@ -293,19 +308,38 @@ export default function PendingQueries({
               {/* Expanded details */}
               {expandedId === entry.id && (
                 <div className="mt-3 pt-3 border-t border-white/5 space-y-2">
-                  <div>
-                    <span className="text-xs text-gray-500">SQL:</span>
-                    <pre className="mt-1 p-2 rounded bg-gray-900 border border-gray-700 text-xs text-gray-300 font-mono overflow-x-auto whitespace-pre-wrap">
-                      {entry.sql}
-                    </pre>
-                  </div>
-                  {entry.params && entry.params.length > 0 && (
-                    <div>
-                      <span className="text-xs text-gray-500">Parameters:</span>
-                      <pre className="mt-1 p-2 rounded bg-gray-900 border border-gray-700 text-xs text-gray-300 font-mono overflow-x-auto">
-                        {JSON.stringify(entry.params, null, 2)}
-                      </pre>
-                    </div>
+                  {entry.action?.kind === 'mcp-tool' ? (
+                    <>
+                      <div>
+                        <span className="text-xs text-gray-500">Tool:</span>
+                        <p className="mt-1 text-sm text-gray-300 font-mono">
+                          {entry.action.toolName}
+                        </p>
+                      </div>
+                      <div>
+                        <span className="text-xs text-gray-500">Args:</span>
+                        <pre className="mt-1 p-2 rounded bg-gray-900 border border-gray-700 text-xs text-gray-300 font-mono overflow-x-auto whitespace-pre-wrap">
+                          {JSON.stringify(entry.action.args, null, 2)}
+                        </pre>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div>
+                        <span className="text-xs text-gray-500">SQL:</span>
+                        <pre className="mt-1 p-2 rounded bg-gray-900 border border-gray-700 text-xs text-gray-300 font-mono overflow-x-auto whitespace-pre-wrap">
+                          {entry.sql}
+                        </pre>
+                      </div>
+                      {entry.params && entry.params.length > 0 && (
+                        <div>
+                          <span className="text-xs text-gray-500">Parameters:</span>
+                          <pre className="mt-1 p-2 rounded bg-gray-900 border border-gray-700 text-xs text-gray-300 font-mono overflow-x-auto">
+                            {JSON.stringify(entry.params, null, 2)}
+                          </pre>
+                        </div>
+                      )}
+                    </>
                   )}
                   {entry.approvedAt && (
                     <p className="text-xs text-gray-500">

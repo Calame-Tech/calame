@@ -225,6 +225,33 @@ export interface AuditLogEntry {
   durationMs: number;
 }
 
+/**
+ * Slice 1 (MCP write-approval) — discriminated payload describing what an
+ * approved write actually does. Kept separate from the legacy flat fields on
+ * `PendingWriteQuery` below (`sql`, `params`, `tableName`, `operation`,
+ * `connectionName`, `databaseType`) for backward compatibility: too much
+ * existing code/UI reads those directly to fold them away in this slice.
+ *
+ * - `kind: 'sql'` mirrors the flat fields 1:1 — the write executor's existing
+ *   pg/mysql/sqlite path is untouched and keeps reading the flat fields.
+ * - `kind: 'mcp-tool'` stores a *reference* (`sourceId`), never upstream
+ *   config/credentials: the write executor re-resolves `Source.configEncrypted`
+ *   at approval time, exactly like `connectionName` resolution for SQL writes
+ *   (write-queue v15) — a vanished/disabled source fails the approval cleanly
+ *   without executing. See docs/mcp-proxy-adapter-spec.md §6.
+ */
+export type PendingWriteAction =
+  | {
+      kind: 'sql';
+      sql: string;
+      params: unknown[];
+      tableName: string;
+      operation: 'insert' | 'update' | 'delete';
+      connectionName?: string;
+      databaseType?: string;
+    }
+  | { kind: 'mcp-tool'; sourceId: string; toolName: string; args: Record<string, unknown> };
+
 export interface PendingWriteQuery {
   id: string;
   timestamp: string;
@@ -245,4 +272,23 @@ export interface PendingWriteQuery {
   approvedAt?: string;
   executionResult?: string;
   executionError?: string;
+  /**
+   * Slice 1 — discriminated action payload. Absent, or `{kind:'sql',...}`
+   * synthesized at read time from the flat fields above, for legacy/SQL
+   * entries; `{kind:'mcp-tool',...}` for a proxied upstream MCP tool call
+   * awaiting approval. The host-side `WriteQueue` (packages/cli) always
+   * populates this on read — optional here only so in-memory test fixtures
+   * that predate Slice 1 keep compiling.
+   */
+  action?: PendingWriteAction;
+  /**
+   * `true` when the row's persisted `action_json` (or `params`) could not be
+   * parsed. The entry stays LISTABLE — one corrupt row must not 500 the whole
+   * Pending view — with a `kind: 'sql'` action synthesized from the flat
+   * columns and a `[corrupt action]` marker on `description`, but it is NOT
+   * executable: the approval route refuses it outright so an empty/partial
+   * payload can never reach an executor. Rejecting it stays possible; that is
+   * the admin's way out.
+   */
+  actionCorrupt?: boolean;
 }

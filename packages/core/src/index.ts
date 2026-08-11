@@ -28,6 +28,7 @@ export type {
   ServeConfiguration,
   AuditLogEntry,
   PendingWriteQuery,
+  PendingWriteAction,
   NamedConnection,
   DataScopeRule,
   UserIdentity,

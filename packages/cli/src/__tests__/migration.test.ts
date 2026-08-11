@@ -206,3 +206,97 @@ describe('host migration v12 — tenant_id foundation', () => {
     }
   });
 });
+
+describe('host migration v16 — write_queue action_json (MCP write-approval, Slice 1)', () => {
+  it('adds an action_json column to write_queue on a fresh DB', () => {
+    const { db, cleanup } = makeFreshDb();
+    try {
+      expect(hasColumn(db, 'write_queue', 'action_json')).toBe(true);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('is additive — a legacy SQL row is untouched and action_json is NULL for it', () => {
+    const { db, cleanup } = makeFreshDb();
+    try {
+      db.raw
+        .prepare(
+          `INSERT INTO write_queue (id, timestamp, profile_name, sql_text, params, table_name, operation, description, status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+        )
+        .run(
+          'wq-legacy',
+          new Date().toISOString(),
+          'p1',
+          'INSERT INTO t (a) VALUES (?)',
+          '[1]',
+          't',
+          'insert',
+          'legacy row',
+        );
+      const row = db.raw
+        .prepare('SELECT sql_text, action_json FROM write_queue WHERE id = ?')
+        .get('wq-legacy') as { sql_text: string; action_json: string | null } | undefined;
+      expect(row?.sql_text).toBe('INSERT INTO t (a) VALUES (?)');
+      expect(row?.action_json).toBeNull();
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('is idempotent — re-running runMigrations does not duplicate the column', async () => {
+    const { db, cleanup } = makeFreshDb();
+    try {
+      const { runMigrations } = await import('../migration.js');
+      expect(() => runMigrations(db)).not.toThrow();
+      const cols = tableInfo(db, 'write_queue');
+      expect(cols.filter((c) => c.name === 'action_json')).toHaveLength(1);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('running the migration when write_queue does not exist does not throw (hasTable guard)', async () => {
+    const { runMigrations } = await import('../migration.js');
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'calame-pre-v16-no-wq-'));
+    const dbPath = path.join(tmpDir, 'calame.db');
+    const raw = new Database(dbPath);
+    try {
+      raw.exec(`
+        CREATE TABLE _migrations (
+          version INTEGER PRIMARY KEY,
+          applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        INSERT INTO _migrations (version)
+          VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9), (10), (11), (12), (13), (14), (15);
+      `);
+      // Deliberately no write_queue table — simulates an install where it
+      // was never created; the v16 migration must skip it gracefully rather
+      // than throwing on `ALTER TABLE write_queue ...`.
+      const dbShim = {
+        raw,
+        getSchemaVersion: (): number => {
+          const row = raw.prepare('SELECT MAX(version) AS v FROM _migrations').get() as
+            | { v: number | null }
+            | undefined;
+          return row?.v ?? 0;
+        },
+        setSchemaVersion: (v: number): void => {
+          raw
+            .prepare('INSERT OR REPLACE INTO _migrations (version, applied_at) VALUES (?, ?)')
+            .run(v, new Date().toISOString());
+        },
+      } as unknown as Parameters<typeof runMigrations>[0];
+
+      expect(() => runMigrations(dbShim)).not.toThrow();
+      const row = raw.prepare('SELECT MAX(version) AS v FROM _migrations').get() as {
+        v: number;
+      };
+      expect(row.v).toBe(16);
+    } finally {
+      raw.close();
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+});

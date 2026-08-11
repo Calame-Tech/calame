@@ -38,10 +38,19 @@
     ],
     "externalBin": ["binaries/node"],
     "resources": ["resources/server"],
+    "createUpdaterArtifacts": true,
     "windows": {
       "nsis": {
         "installMode": "currentUser"
       }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/Calame-Tech/calame/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEM2OERENEM2RkRBQkVCMkMKUldRczY2djl4dFNOeG5HUVkxWW1rM3dyejdpZUtKUjNsRjFIZmU4N0lrR0RpcnZyZElBUHQzRGkK"
     }
   }
 }

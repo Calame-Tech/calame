@@ -5,6 +5,18 @@ every commit. Newest first.
 
 ---
 
+## 2026-08-11 — Desktop installer, Phase C: installers + auto-update + release CI (branch `feat/desktop-installer`)
+
+The installer plan is now feature-complete end to end.
+
+- **Auto-update** (`src/updater.rs` + `tauri-plugin-updater`/`-process`): silent check at startup (fails soft in dev — no dialog), tray item "Vérifier les mises à jour" (interactive: also dialogs "à jour"/errors), French dialogs with real Installer/Plus tard and Redémarrer/Plus tard buttons (orchestrator fix — the agent's OK-only dialogs gave no way to decline), download progress into the existing LogRing, relaunch on confirm. Endpoint: GitHub Releases `latest/download/latest.json`; `bundle.createUpdaterArtifacts: true`. **Signing keypair** generated with no password: private key at `~\.tauri\calame_updater.key` (NEVER in the repo — verified), public key in `tauri.conf.json`.
+- **Release CI** (`.github/workflows/release.yml`): on `v*` tag (or workflow_dispatch), windows-latest builds and attaches NSIS + MSI + `.sig`s + a hand-built `latest.json` to a **draft** GitHub Release (publishing it is what ships the update to clients). Deliberate design: plain `pnpm -C apps/desktop tauri:build` + `softprops/action-gh-release`, NOT tauri-action (its package-manager detection needs a lockfile in projectPath — pnpm monorepos have it at the root; tauri#11859/#12706). Guard step fails fast if the pushed tag ≠ root package.json version; Node pinned 22.18.0 in CI (sidecar ABI); single-entry matrix with documented instructions for adding macOS/Linux (latest.json must then be merged across jobs).
+- **Verified end to end on a real install**: local signed `tauri build` → `Calame_0.1.0_x64-setup.exe` (33 MB) + MSI (47 MB) + both `.sig`; silent install (`/S`, per-user, no admin) into `%LOCALAPPDATA%\Calame`; the **installed** app spawns the **installed** sidecar (`%LOCALAPPDATA%\Calame\node.exe` + `resources\server\server.mjs`), `/health` 200 `version=0.1.0` `ragEnabled=true`; data lands in `%APPDATA%\Calame` (.calame-secret + calame.db); silent uninstall removes the app and **preserves user data**.
+
+To ship a first release: (1) add repo secret `TAURI_SIGNING_PRIVATE_KEY` = content of `~\.tauri\calame_updater.key` (password is empty, hardcoded `''` in the workflow); (2) tag `v0.1.0` on the release commit; (3) review + publish the draft release. Remaining backlog: OS code-signing certificate (SmartScreen), real icons, Job-Objects hardening for force-kill orphans, macOS/Linux targets, rebase onto main once `feat/mcp-proxy-adapter` merges.
+
+---
+
 ## 2026-08-11 — Desktop installer, Phase B: Tauri app (branch `feat/desktop-installer`)
 
 The desktop shell around the Phase A bundle. New workspace member `apps/desktop` (Tauri 2, `apps/*` added to pnpm-workspace): a Rust app that spawns the packaged server as a sidecar and shows the web UI in a native window.

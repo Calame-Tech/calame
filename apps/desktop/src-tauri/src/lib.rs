@@ -1,15 +1,17 @@
 //! Tauri application entry point (see [`run`]). Ties together:
-//!   - the shell/dialog/single-instance plugins,
+//!   - the shell/dialog/single-instance/updater/process plugins,
 //!   - the [`state::AppState`] shared with the tray and server modules,
 //!   - the sidecar lifecycle in [`server`] (spawn on startup, poll for
 //!     health, navigate the splash window over once ready),
 //!   - the tray icon in [`tray`],
+//!   - the silent startup update check in [`updater`],
 //!   - hide-instead-of-quit window behaviour, and
 //!   - killing the sidecar on every exit path.
 
 mod server;
 mod state;
 mod tray;
+mod updater;
 
 use tauri::{RunEvent, WindowEvent};
 
@@ -23,10 +25,18 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(AppState::default())
         .setup(|app| {
             tray::build(app.handle())?;
             server::launch(app.handle().clone());
+            // Silent check: only surfaces a dialog if an update is actually
+            // found (see `updater::check_for_updates`). Runs after the
+            // server launch call, but doesn't block on it — the sidecar
+            // spawn and health poll proceed independently on their own
+            // threads.
+            updater::check_for_updates(app.handle().clone(), false);
             Ok(())
         })
         .on_window_event(|window, event| {

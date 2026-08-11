@@ -21,3 +21,7 @@ CLAUDE.md
 firestore-debug.log
 firebase-debug.log
 ui-debug.log
+
+# Desktop app build artifacts (staged by scripts/prepare-desktop.mjs — not source)
+apps/desktop/src-tauri/binaries/
+apps/desktop/src-tauri/resources/server/

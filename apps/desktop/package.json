@@ -1,0 +1,15 @@
+{
+  "name": "@calame/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Calame desktop application (Tauri shell around the packaged Calame server).",
+  "type": "module",
+  "scripts": {
+    "dev": "tauri dev",
+    "tauri:build": "tauri build",
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

@@ -1,0 +1,29 @@
+[package]
+name = "calame-desktop"
+version = "0.1.0"
+description = "Calame desktop application"
+authors = ["Calame Contributors"]
+edition = "2021"
+rust-version = "1.77"
+
+# See https://v2.tauri.app/reference/config/#cargo-workspace-considerations
+[lib]
+name = "calame_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# `tray-icon` is required to build a system tray with a menu (Ouvrir /
+# Redémarrer / Quitter) — it is not enabled by the crate's default features.
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-shell = "2"
+tauri-plugin-single-instance = "2"
+# Native error dialog shown if the sidecar never becomes healthy.
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Small, synchronous HTTP client used to poll the sidecar's /health endpoint
+# from a background thread — avoids pulling in a full async HTTP stack.
+ureq = "2"

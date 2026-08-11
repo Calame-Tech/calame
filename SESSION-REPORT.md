@@ -5,6 +5,20 @@ every commit. Newest first.
 
 ---
 
+## 2026-08-11 — Desktop installer, Phase B: Tauri app (branch `feat/desktop-installer`)
+
+The desktop shell around the Phase A bundle. New workspace member `apps/desktop` (Tauri 2, `apps/*` added to pnpm-workspace): a Rust app that spawns the packaged server as a sidecar and shows the web UI in a native window.
+
+- **Rust app** (`src-tauri/src/{lib,server,state,tray}.rs`): port pick (4567 → ephemeral fallback), sidecar spawn via `tauri-plugin-shell` (`binaries/node` + `resources/server/server.mjs`, envs CALAME_PACKAGED/CALAME_WEB_DIST/CALAME_VERSION), 30s `/health` poll then splash→UI navigation, startup-failure dialog fed by a 50-line stdout/stderr ring buffer, tray (Ouvrir / Redémarrer le serveur / Quitter), close-to-tray, single-instance, sidecar killed on all handled exit paths. `cargo check` + clippy clean.
+- **Asset staging** (`pnpm desktop:prepare` → `scripts/prepare-desktop.mjs`): downloads portable Node **pinned v22.18.0** (must match the ABI of the natives in dist-bundle — prebuilds come from the dev machine's runtime), stages it as the Tauri sidecar binary + mirrors dist-bundle into `resources/server/` (both gitignored). `pnpm desktop:dev` / `desktop:build` wrap prepare + tauri.
+- **Verified live** (`tauri dev`): window opens, sidecar spawns as a child of the app, `/health` 200 on 4567 with `version:"0.1.0"` (CALAME_VERSION wired) and `ragEnabled:true`, UI served. Suite still green (2025 tests), root `pnpm build`/`lint`/`typecheck` unaffected.
+- **Orchestrator fixes on top of agent work**: `src-tauri/.gitignore` was missing (`/target` = GBs would have been committed); `apps/desktop`'s `build` script renamed → `tauri:build` (a root `pnpm build` does `pnpm -r run build` and would have run a full Tauri release build in CI, which has no Rust); reverted an unneeded `husky || true`; killed a leftover verification server from an interrupted agent.
+- Toolchain installed on the dev machine along the way: rustup (cargo 1.97.1 stable-msvc) + VS "Desktop development with C++" workload (MSVC 14.51, Windows SDK 10.0.26100).
+
+Known limits, deliberate: force-kill of the app (Task Manager) orphans the node sidecar — handled exit paths cover tray-Quit/logoff; Job-Objects hardening can come with Phase C. Icons are generated placeholders. Next: **Phase C** — NSIS/MSI bundling (config already in tauri.conf.json), `tauri-plugin-updater` on GitHub Releases, release CI; rebase once `feat/mcp-proxy-adapter` merges.
+
+---
+
 ## 2026-08-10 — Desktop installer, Phase A: packaged mode + server bundle (branch `feat/desktop-installer`)
 
 First client install (non-dev) proved painful — manual Docker + Node + repo setup. Decision: ship a desktop installer (Tauri 2, NSIS .exe + .msi, auto-update via GitHub Releases; Mac/Linux later). Docker stays the team/server offering. Audit confirmed the architecture allows a single sidecar: generated MCP servers run in-process (Express `/mcp/...` StreamableHTTP), and the new MCP proxy is StreamableHTTP-client-only (no child processes). Plan is 3 phases: A = packageable server (this session), B = Tauri app (window/tray/sidecar), C = installer + updater + release CI.

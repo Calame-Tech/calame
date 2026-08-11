@@ -5,6 +5,44 @@ every commit. Newest first.
 
 ---
 
+## 2026-08-11 — Desktop installer, Phase C: installers + auto-update + release CI (branch `feat/desktop-installer`)
+
+The installer plan is now feature-complete end to end.
+
+- **Auto-update** (`src/updater.rs` + `tauri-plugin-updater`/`-process`): silent check at startup (fails soft in dev — no dialog), tray item "Vérifier les mises à jour" (interactive: also dialogs "à jour"/errors), French dialogs with real Installer/Plus tard and Redémarrer/Plus tard buttons (orchestrator fix — the agent's OK-only dialogs gave no way to decline), download progress into the existing LogRing, relaunch on confirm. Endpoint: GitHub Releases `latest/download/latest.json`; `bundle.createUpdaterArtifacts: true`. **Signing keypair** generated with no password: private key at `~\.tauri\calame_updater.key` (NEVER in the repo — verified), public key in `tauri.conf.json`.
+- **Release CI** (`.github/workflows/release.yml`): on `v*` tag (or workflow_dispatch), windows-latest builds and attaches NSIS + MSI + `.sig`s + a hand-built `latest.json` to a **draft** GitHub Release (publishing it is what ships the update to clients). Deliberate design: plain `pnpm -C apps/desktop tauri:build` + `softprops/action-gh-release`, NOT tauri-action (its package-manager detection needs a lockfile in projectPath — pnpm monorepos have it at the root; tauri#11859/#12706). Guard step fails fast if the pushed tag ≠ root package.json version; Node pinned 22.18.0 in CI (sidecar ABI); single-entry matrix with documented instructions for adding macOS/Linux (latest.json must then be merged across jobs).
+- **Verified end to end on a real install**: local signed `tauri build` → `Calame_0.1.0_x64-setup.exe` (33 MB) + MSI (47 MB) + both `.sig`; silent install (`/S`, per-user, no admin) into `%LOCALAPPDATA%\Calame`; the **installed** app spawns the **installed** sidecar (`%LOCALAPPDATA%\Calame\node.exe` + `resources\server\server.mjs`), `/health` 200 `version=0.1.0` `ragEnabled=true`; data lands in `%APPDATA%\Calame` (.calame-secret + calame.db); silent uninstall removes the app and **preserves user data**.
+
+To ship a first release: (1) add repo secret `TAURI_SIGNING_PRIVATE_KEY` = content of `~\.tauri\calame_updater.key` (password is empty, hardcoded `''` in the workflow); (2) tag `v0.1.0` on the release commit; (3) review + publish the draft release. Remaining backlog: OS code-signing certificate (SmartScreen), real icons, Job-Objects hardening for force-kill orphans, macOS/Linux targets, rebase onto main once `feat/mcp-proxy-adapter` merges.
+
+---
+
+## 2026-08-11 — Desktop installer, Phase B: Tauri app (branch `feat/desktop-installer`)
+
+The desktop shell around the Phase A bundle. New workspace member `apps/desktop` (Tauri 2, `apps/*` added to pnpm-workspace): a Rust app that spawns the packaged server as a sidecar and shows the web UI in a native window.
+
+- **Rust app** (`src-tauri/src/{lib,server,state,tray}.rs`): port pick (4567 → ephemeral fallback), sidecar spawn via `tauri-plugin-shell` (`binaries/node` + `resources/server/server.mjs`, envs CALAME_PACKAGED/CALAME_WEB_DIST/CALAME_VERSION), 30s `/health` poll then splash→UI navigation, startup-failure dialog fed by a 50-line stdout/stderr ring buffer, tray (Ouvrir / Redémarrer le serveur / Quitter), close-to-tray, single-instance, sidecar killed on all handled exit paths. `cargo check` + clippy clean.
+- **Asset staging** (`pnpm desktop:prepare` → `scripts/prepare-desktop.mjs`): downloads portable Node **pinned v22.18.0** (must match the ABI of the natives in dist-bundle — prebuilds come from the dev machine's runtime), stages it as the Tauri sidecar binary + mirrors dist-bundle into `resources/server/` (both gitignored). `pnpm desktop:dev` / `desktop:build` wrap prepare + tauri.
+- **Verified live** (`tauri dev`): window opens, sidecar spawns as a child of the app, `/health` 200 on 4567 with `version:"0.1.0"` (CALAME_VERSION wired) and `ragEnabled:true`, UI served. Suite still green (2025 tests), root `pnpm build`/`lint`/`typecheck` unaffected.
+- **Orchestrator fixes on top of agent work**: `src-tauri/.gitignore` was missing (`/target` = GBs would have been committed); `apps/desktop`'s `build` script renamed → `tauri:build` (a root `pnpm build` does `pnpm -r run build` and would have run a full Tauri release build in CI, which has no Rust); reverted an unneeded `husky || true`; killed a leftover verification server from an interrupted agent.
+- Toolchain installed on the dev machine along the way: rustup (cargo 1.97.1 stable-msvc) + VS "Desktop development with C++" workload (MSVC 14.51, Windows SDK 10.0.26100).
+
+Known limits, deliberate: force-kill of the app (Task Manager) orphans the node sidecar — handled exit paths cover tray-Quit/logoff; Job-Objects hardening can come with Phase C. Icons are generated placeholders. Next: **Phase C** — NSIS/MSI bundling (config already in tauri.conf.json), `tauri-plugin-updater` on GitHub Releases, release CI; rebase once `feat/mcp-proxy-adapter` merges.
+
+---
+
+## 2026-08-10 — Desktop installer, Phase A: packaged mode + server bundle (branch `feat/desktop-installer`)
+
+First client install (non-dev) proved painful — manual Docker + Node + repo setup. Decision: ship a desktop installer (Tauri 2, NSIS .exe + .msi, auto-update via GitHub Releases; Mac/Linux later). Docker stays the team/server offering. Audit confirmed the architecture allows a single sidecar: generated MCP servers run in-process (Express `/mcp/...` StreamableHTTP), and the new MCP proxy is StreamableHTTP-client-only (no child processes). Plan is 3 phases: A = packageable server (this session), B = Tauri app (window/tray/sidecar), C = installer + updater + release CI.
+
+- **Packaged mode** (`CALAME_PACKAGED=1`, everything unchanged when unset): skips the pnpm-workspace root search + `process.chdir`; `CALAME_WEB_DIST` points at the built UI (monorepo-relative fallback kept); `dataDir` defaults to the platform app-data dir (`%APPDATA%\Calame`, `~/Library/Application Support/Calame`, XDG) instead of cwd, `CALAME_DATA_DIR` still wins; `/health` version falls back to `CALAME_VERSION` (bundle has no reachable package.json); demo DB now generated in-process (`src/demo-db.ts`, faithful port of `scripts/generate-demo-db.js`) instead of `execFile(process.execPath, ...)` — the script path and execPath are both invalid from a bundle.
+- **Bundle pipeline** (`pnpm bundle` → `scripts/bundle-server.mjs`): esbuild bundles `packages/cli/src/index.ts` into `dist-bundle/server.mjs` (ESM, node20, createRequire banner), externals = `better-sqlite3` + `sqlite-vec` (native prebuilds), `ssh2` (dynamic requires), `pg-native` (phantom require in pg, never installed); their dep closures are copied into `dist-bundle/node_modules` via realpath-aware resolution (pnpm symlinks + packages with no `.` export). UI copied to `dist-bundle/web`. ~57 MB total incl. 40 MB bundle + natives (`better_sqlite3.node`, `vec0.dll`).
+- **Verified like a client machine**: bundle copied to a clean dir outside the repo, run with plain `node` + the three env vars → `/health` 200 with `ragEnabled:true` (sqlite-vec native loads), UI served, `.calame-secret` + `calame.db` created in the data dir.
+
+Suite: **2035 tests** (2025 baseline → +10: packaged-config + demo-db). Both work streams written by Sonnet agents in parallel (disjoint file scopes), verified by the orchestrator (typecheck/lint/format/build/tests + out-of-repo bundle run). Note: `format:check` still flags ~23 files from the proxy branch (CRLF/autocrlf checkout noise, cosmetic — CI checks out LF). Next: Phase B (Tauri app) once `feat/mcp-proxy-adapter` merges; rebase this branch then.
+
+---
+
 ## 2026-08-10 — MCP Proxy Adapter, slices 0+1 (branch `feat/mcp-proxy-adapter`)
 
 Design-partner-driven: a prospect runs Graphiti's MCP server (temporal knowledge-graph agent memory) and wants his data usable through Calame. Rather than a Graphiti-specific connector, Calame gains **one generic adapter that fronts any external MCP server and governs it** — Graphiti is just the first upstream. Spec: `docs/mcp-proxy-adapter-spec.md` (v2 — read §Demand note: lead demos with read-unification, governance second).

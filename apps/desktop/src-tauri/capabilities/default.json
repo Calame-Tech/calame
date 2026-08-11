@@ -1,0 +1,22 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Capabilities for the main Calame window: core window/webview APIs, permission to spawn the bundled Node sidecar that runs the Calame server, and permission to check/install app updates and relaunch afterwards.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "dialog:default",
+    "updater:default",
+    "process:default",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "name": "binaries/node",
+          "sidecar": true,
+          "args": true
+        }
+      ]
+    }
+  ]
+}

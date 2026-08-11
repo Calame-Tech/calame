@@ -13,7 +13,7 @@ import { AppState } from './state.js';
 import { CalameDatabase } from './database.js';
 import { AiSettingsManager } from './ai-config.js';
 import { runMigrations } from './migration.js';
-import { loadConfig, validateConfig } from './config.js';
+import { loadConfig, validateConfig, isPackagedMode } from './config.js';
 import { createLogger } from './logger.js';
 import { gracefulShutdown } from './shutdown.js';
 import { initRagRuntime } from './rag-runtime.js';
@@ -31,8 +31,15 @@ function findProjectRoot(startDir: string): string {
   }
   return startDir;
 }
-const projectRoot = findProjectRoot(__dirname);
-process.chdir(projectRoot);
+
+// In packaged mode there is no pnpm-workspace.yaml around the bundled server, and the bundle
+// may not even live inside a writable/relevant directory tree — skip the search and leave the
+// process cwd untouched (the Tauri sidecar sets it up, or it simply doesn't matter since every
+// path Calame needs is resolved via env vars / config in packaged mode).
+if (!isPackagedMode()) {
+  const projectRoot = findProjectRoot(__dirname);
+  process.chdir(projectRoot);
+}
 
 // Parse CLI args
 function parsePort(args: string[]): number | undefined {
@@ -111,8 +118,11 @@ await initRagRuntime(appState, appState.db, appState.aiSettingsManager, {
 
 const app = createApp({ state: appState, config, logger });
 
-// Serve the frontend static files
-const staticPath = path.join(__dirname, '../../web/dist');
+// Serve the frontend static files. In packaged mode `__dirname` points at the bundle's
+// location (e.g. a Tauri resources dir), not the monorepo layout, so CALAME_WEB_DIST is the
+// primary mechanism there; the relative path remains the fallback for the monorepo dev/prod
+// layout where this file always sits at packages/cli/dist/index.js.
+const staticPath = config.webDistPath ?? path.join(__dirname, '../../web/dist');
 
 if (config.basePath !== '/') {
   // Mount under base path

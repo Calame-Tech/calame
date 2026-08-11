@@ -11,12 +11,15 @@ let cachedVersion: string | null = null;
 
 function getVersion(): string {
   if (cachedVersion) return cachedVersion;
+  // In a packaged/bundled server, `__dirname` points at the bundle location, so the relative
+  // path to package.json no longer resolves — fall back to CALAME_VERSION (baked in by the
+  // packaging step), then to 'unknown'. Never throw: /health must always respond.
   try {
     const pkgPath = path.resolve(__dirname, '../../package.json');
     const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
-    cachedVersion = pkg.version ?? 'unknown';
+    cachedVersion = pkg.version ?? process.env.CALAME_VERSION ?? 'unknown';
   } catch {
-    cachedVersion = 'unknown';
+    cachedVersion = process.env.CALAME_VERSION ?? 'unknown';
   }
   return cachedVersion!;
 }

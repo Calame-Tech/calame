@@ -19,12 +19,17 @@
     "typecheck": "tsc -b --noEmit",
     "dev": "pnpm --filter calame run dev",
     "start": "pnpm build && pnpm dev",
-    "prepare": "husky || true"
+    "bundle": "node scripts/bundle-server.mjs",
+    "desktop:prepare": "node scripts/prepare-desktop.mjs",
+    "desktop:dev": "pnpm desktop:prepare && pnpm -C apps/desktop dev",
+    "desktop:build": "pnpm desktop:prepare && pnpm -C apps/desktop tauri:build",
+    "prepare": "husky"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",
     "@vitest/coverage-v8": "^2.1.0",
+    "esbuild": "^0.28.2",
     "eslint": "^8.57.0",
     "husky": "^9.1.7",
     "lint-staged": "^15.2.10",

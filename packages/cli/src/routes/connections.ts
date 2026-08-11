@@ -1,7 +1,5 @@
 import { existsSync } from 'fs';
 import { join } from 'path';
-import { execFile } from 'child_process';
-import { promisify } from 'util';
 import type { Express } from 'express';
 import type { AppState } from '../state.js';
 import type { NamedConnection } from '@calame/core';
@@ -15,8 +13,7 @@ import type { SshTunnelConfig } from '../ssh-tunnel.js';
 import { resolveSecret } from '../secrets.js';
 import { redactSecrets } from '../sanitize.js';
 import { parseCookies } from '../utils/cookies.js';
-
-const execFileAsync = promisify(execFile);
+import { generateDemoDb } from '../demo-db.js';
 
 /** SSH config shape as stored in the DB / sent over the API. */
 export interface SshConfig {
@@ -303,20 +300,11 @@ export function registerConnectionsRoute(app: Express, state: AppState): void {
       const dataDir = state.config?.dataDir ?? process.cwd();
       const demoDbPath = join(dataDir, 'demo-logistique-v2.db');
 
-      // Generate the demo DB if it doesn't exist
+      // Generate the demo DB if it doesn't exist. Generated in-process (no child_process, no
+      // script path lookup) so this also works from a packaged/bundled server with no
+      // monorepo checkout around it.
       if (!existsSync(demoDbPath)) {
-        // Look for the generation script relative to the project root
-        const scriptPath = join(process.cwd(), 'scripts', 'generate-demo-db.js');
-        if (!existsSync(scriptPath)) {
-          res.status(404).json({
-            success: false,
-            message: `Demo database not found at ${demoDbPath}. Run: node scripts/generate-demo-db.js`,
-          });
-          return;
-        }
-        await execFileAsync(process.execPath, [scriptPath], {
-          env: { ...process.env, DEMO_DB_PATH: demoDbPath },
-        });
+        generateDemoDb(demoDbPath);
       }
 
       const connector = getConnector('sqlite');

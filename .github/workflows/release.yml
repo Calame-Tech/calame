@@ -1,0 +1,223 @@
+name: Release desktop app
+
+# Builds the Tauri desktop installers and attaches them to a (draft) GitHub
+# Release. Two ways to run it:
+#   - push a tag matching v* (e.g. v0.1.0) — the normal release flow.
+#   - workflow_dispatch — build+publish on demand from any branch, without
+#     having pushed a tag first (useful to retry a failed release build).
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+# One release build per ref at a time. Two pushes of the *same* tag (rare,
+# e.g. re-pushing after deleting it) queue instead of racing on the same
+# GitHub Release; different tags/branches get independent groups and run in
+# parallel.
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      # Single entry today (Windows only, matching the desktop app's current
+      # support). Add macOS/Linux later by appending more objects here, e.g.:
+      #   - os: macos-latest
+      #     updater_platform: darwin-aarch64
+      #   - os: ubuntu-latest
+      #     updater_platform: linux-x86_64
+      # NOTE: once this matrix has more than one entry, the "Build updater
+      # manifest" step below needs to change too — each job would only see
+      # its own platform's installer, so latest.json (which must list every
+      # platform) can no longer be written independently per job. At that
+      # point, either add a final job that downloads every matrix job's
+      # manifest fragment and merges them, or switch this workflow to
+      # tauri-apps/tauri-action (see the comment above the build step for why
+      # it isn't used today).
+      matrix:
+        include:
+          - os: windows-latest
+            updater_platform: windows-x86_64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Resolves the tag this run publishes to, and — for an actual tag push —
+      # fails fast if the pushed tag disagrees with the version that will be
+      # baked into the app (tauri.conf.json's "version" field points at this
+      # same root package.json), so a mislabeled release can't slip through.
+      # Runs before pnpm/action-setup: GitHub-hosted runners ship a system
+      # Node already on PATH, which is enough for this one `node -p` read.
+      - name: Resolve release tag
+        id: tag
+        shell: bash
+        # Context values are passed through env rather than interpolated into
+        # the script body, so a crafted ref name can't inject shell syntax
+        # (yaml.github-actions.security.run-shell-injection).
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          if [ "$EVENT_NAME" = "push" ]; then
+            TAG="$REF_NAME"
+            if [ "$TAG" != "v$PKG_VERSION" ]; then
+              echo "::error::Pushed tag '$TAG' does not match root package.json version 'v$PKG_VERSION'. Bump the version before tagging a release."
+              exit 1
+            fi
+          else
+            # workflow_dispatch: no tag was pushed. Derive one from the
+            # current version; the release step below creates this tag
+            # (pointing at the commit checked out above) if it doesn't exist.
+            TAG="v$PKG_VERSION"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Pinned to the exact Node build the sidecar runtime and the
+          # native addons in dist-bundle/node_modules (better-sqlite3,
+          # sqlite-vec) must ABI-match — see the NODE_VERSION comment in
+          # scripts/prepare-desktop.mjs. Unlike ci.yml's node-version matrix,
+          # this is not a free choice: whatever Node runs `pnpm bundle` here
+          # must be this version, or the packaged app fails to boot.
+          node-version: 22.18.0
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # `pnpm bundle` (invoked by desktop:prepare below) esbuild-bundles
+      # packages/cli/src/index.ts, which imports several @calame(-ee)/*
+      # workspace packages by their package name — resolved via each
+      # package.json's "main": "./dist/index.js". On a fresh checkout dist/
+      # doesn't exist yet, so it must be built first. This is a full clean
+      # build rather than ci.yml's incremental tsc cache on purpose: a
+      # release artifact should come from a from-scratch build, not a
+      # potentially-stale restored .tsbuildinfo.
+      - name: Build workspace packages
+        run: pnpm build
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        # windows-latest ships the MSVC build tools Tauri needs; nothing else to install.
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+
+      # Builds dist-bundle/ (web UI + esbuild server bundle) and stages it,
+      # plus the pinned portable Node sidecar, under apps/desktop/src-tauri/.
+      - name: Prepare desktop assets (server bundle + sidecar Node runtime)
+        run: pnpm desktop:prepare
+
+      # DESIGN CHOICE — plain `tauri build` + softprops/action-gh-release,
+      # not tauri-apps/tauri-action:
+      # tauri-action (and the Tauri CLI's own package-manager detection)
+      # picks npm/yarn/pnpm by looking for a lockfile in `projectPath`
+      # itself. apps/desktop has no lockfile of its own — this is a pnpm
+      # workspace, with the single pnpm-lock.yaml at the repo root — so
+      # tauri-action would misdetect npm and mismanage the install/build
+      # here (a known limitation: tauri-apps/tauri#11859, #12706). Since
+      # `pnpm desktop:prepare` already did every step tauri-action would
+      # otherwise run before building (install, web build, server bundle,
+      # sidecar staging), and tauri.conf.json has no beforeBuildCommand,
+      # calling the Tauri CLI directly is simpler and avoids that whole
+      # class of failure — no framework guessing which package manager or
+      # build steps to (re-)run.
+      - name: Build Tauri installers
+        run: pnpm -C apps/desktop tauri:build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
+
+      # Because tauri-action isn't driving the build (see above), its
+      # includeUpdaterJson convenience isn't available either — construct
+      # latest.json ourselves. Only produces it once the updater plugin is
+      # actually wired up (createUpdaterArtifacts: true + a signing key), so
+      # this workflow keeps working — installers still get released, just
+      # without an update manifest — even before that lands.
+      - name: Build updater manifest (latest.json)
+        uses: actions/github-script@v7
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+          UPDATER_PLATFORM: ${{ matrix.updater_platform }}
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            const bundleDir = 'apps/desktop/src-tauri/target/release/bundle/nsis';
+            const tag = process.env.TAG;
+            const platformKey = process.env.UPDATER_PLATFORM;
+
+            let entries;
+            try {
+              entries = fs.readdirSync(bundleDir);
+            } catch (err) {
+              core.warning(`NSIS bundle directory not found (${bundleDir}): ${err.message}`);
+              return;
+            }
+
+            const installer = entries.find((f) => f.endsWith('.exe') && !f.endsWith('.exe.sig'));
+            if (!installer) {
+              core.warning(`No NSIS installer found in ${bundleDir} — skipping updater manifest.`);
+              return;
+            }
+
+            const sigPath = path.join(bundleDir, `${installer}.sig`);
+            if (!fs.existsSync(sigPath)) {
+              core.warning(
+                `No signature file at ${sigPath} — the updater plugin/signing key isn't wired up yet ` +
+                  '(bundle.createUpdaterArtifacts + TAURI_SIGNING_PRIVATE_KEY). Skipping latest.json; ' +
+                  'installers are still attached to the release.',
+              );
+              return;
+            }
+
+            const version = require(path.join(process.cwd(), 'package.json')).version;
+            const signature = fs.readFileSync(sigPath, 'utf-8').trim();
+            const url = `https://github.com/${context.repo.owner}/${context.repo.repo}/releases/download/${tag}/${installer}`;
+
+            const manifest = {
+              version,
+              notes: `See https://github.com/${context.repo.owner}/${context.repo.repo}/releases/tag/${tag}`,
+              pub_date: new Date().toISOString(),
+              platforms: {
+                [platformKey]: { signature, url },
+              },
+            };
+
+            fs.writeFileSync('latest.json', JSON.stringify(manifest, null, 2));
+            core.info(`Wrote latest.json for ${installer}`);
+
+      # Draft so a human reviews/publishes it. fail_on_unmatched_files stays
+      # false (its default) on purpose: *.sig and latest.json only exist once
+      # the updater signing key is configured (see the step above) — until
+      # then this still releases the plain installers.
+      - name: Create/update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: Calame ${{ steps.tag.outputs.tag }}
+          draft: true
+          prerelease: false
+          fail_on_unmatched_files: false
+          files: |
+            apps/desktop/src-tauri/target/release/bundle/nsis/*.exe
+            apps/desktop/src-tauri/target/release/bundle/nsis/*.exe.sig
+            apps/desktop/src-tauri/target/release/bundle/msi/*.msi
+            apps/desktop/src-tauri/target/release/bundle/msi/*.msi.sig
+            latest.json

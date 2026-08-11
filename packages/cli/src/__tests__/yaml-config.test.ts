@@ -66,6 +66,8 @@ function makeConfig(): AppConfig {
     llmClassifierApiKey: null,
     llmClassifierEndpoint: null,
     llmRouterInjectionThreshold: 0.8,
+    packaged: false,
+    webDistPath: null,
   };
 }
 

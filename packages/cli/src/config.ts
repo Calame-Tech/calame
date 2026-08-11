@@ -107,6 +107,17 @@ export interface AppConfig {
    * Claude Desktop config.
    */
   claudeDesktopConfigDir: string | null;
+
+  // "Expose for Copilot / ChatGPT" tunnel (cloudflared quick tunnel)
+  /**
+   * Absolute path to the `cloudflared` binary. Set via CALAME_CLOUDFLARED_PATH —
+   * the Tauri desktop app sets this to the resource path it bundled
+   * `cloudflared.exe` at (see `apps/desktop/src-tauri/src/server.rs`). When
+   * unset, `tunnel/cloudflared-resolve.ts` falls back to a packaged-mode
+   * sibling of the bundled server, then a dev-mode cache dir staged by
+   * `scripts/prepare-desktop.mjs`.
+   */
+  cloudflaredPath: string | null;
 }
 
 const LOG_LEVELS: LogLevel[] = ['debug', 'info', 'warn', 'error'];
@@ -221,6 +232,7 @@ export function loadConfig(overrides?: Partial<AppConfig>): AppConfig {
     packaged,
     webDistPath: envString('CALAME_WEB_DIST'),
     claudeDesktopConfigDir: envString('CALAME_CLAUDE_DESKTOP_CONFIG_DIR'),
+    cloudflaredPath: envString('CALAME_CLOUDFLARED_PATH'),
   };
 
   // Validate logLevel

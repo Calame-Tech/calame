@@ -8,7 +8,13 @@
  *     — a portable Node runtime, named per Tauri's sidecar convention
  *       (basename "node" + the Rust target triple of the host).
  *   apps/desktop/src-tauri/resources/server/
- *     — a full copy of dist-bundle/ (server.mjs, node_modules/, web/, README.md).
+ *     — a full copy of dist-bundle/ (server.mjs, node_modules/, web/, README.md),
+ *       plus cloudflared[.exe] (the "Expose for Copilot / ChatGPT" tunnel
+ *       binary — see packages/cli/src/tunnel/*).
+ *   node_modules/.cache/calame-desktop/cloudflared[.exe]
+ *     — same cloudflared binary, at the fixed name
+ *       `tunnel/cloudflared-resolve.ts` looks for in DEV mode (no Tauri
+ *       packaging involved), so `pnpm dev` can exercise the tunnel feature too.
  *
  * Usage: pnpm desktop:prepare   (or: node scripts/prepare-desktop.mjs [--fresh])
  *   --fresh   force a `pnpm bundle` rebuild even if dist-bundle/server.mjs exists.
@@ -97,6 +103,58 @@ const NODE_DIST_TARGETS = {
 
 function archiveUrl(target) {
   return `https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-${target.nodeDist}${target.archiveExt}`;
+}
+
+// ---------------------------------------------------------------------------
+// Pinned cloudflared version — powers the "Expose for Copilot / ChatGPT"
+// tunnel feature (packages/cli/src/tunnel/*).
+// ---------------------------------------------------------------------------
+//
+// Latest stable tag on https://github.com/cloudflare/cloudflared/releases at
+// the time this was pinned (checked via the GitHub releases API). cloudflared
+// has no ABI/native-addon coupling to our Node version (unlike NODE_VERSION
+// above) — it's a fully standalone Go binary — so bumping this later is just
+// a version string change, no rebuild of anything else required.
+const CLOUDFLARED_VERSION = '2026.7.3';
+
+const CLOUDFLARED_RELEASES_BASE = `https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}`;
+
+/**
+ * Per-target-triple release asset, keyed by the same Rust target triples as
+ * NODE_DIST_TARGETS. Only 'x86_64-pc-windows-msvc' is wired up end-to-end
+ * today (a direct single-file .exe download, no extraction needed); the
+ * darwin/linux entries are inert data for whoever adds them next:
+ *   - darwin targets ship a .tgz (tar.gz) archive with `cloudflared` at its
+ *     root — needs tar.gz extraction (kind 'tar.gz', not implemented).
+ *   - the linux target is a direct executable like Windows (kind 'exe'), but
+ *     needs a post-download `chmod +x` this script doesn't do yet.
+ */
+const CLOUDFLARED_DIST_TARGETS = {
+  'x86_64-pc-windows-msvc': {
+    assetName: 'cloudflared-windows-amd64.exe',
+    kind: 'exe',
+  },
+  'x86_64-apple-darwin': {
+    assetName: 'cloudflared-darwin-amd64.tgz',
+    kind: 'tar.gz',
+  },
+  'aarch64-apple-darwin': {
+    assetName: 'cloudflared-darwin-arm64.tgz',
+    kind: 'tar.gz',
+  },
+  'x86_64-unknown-linux-gnu': {
+    assetName: 'cloudflared-linux-amd64',
+    kind: 'exe',
+  },
+};
+
+function cloudflaredAssetUrl(assetName) {
+  return `${CLOUDFLARED_RELEASES_BASE}/${assetName}`;
+}
+
+/** Fixed binary name `tunnel/cloudflared-resolve.ts` looks for — see its module docstring. */
+function cloudflaredBinaryName(triple) {
+  return triple.includes('windows') ? 'cloudflared.exe' : 'cloudflared';
 }
 
 /**
@@ -248,6 +306,53 @@ async function ensureNodeRuntime(target) {
   return extractedBinary;
 }
 
+/**
+ * Ensure the pinned cloudflared binary for `target.triple` (a
+ * NODE_DIST_TARGETS entry, reused so platform/arch detection isn't
+ * duplicated) is downloaded into the cache dir, reusing it if already
+ * present. Returns the absolute path to the downloaded binary.
+ *
+ * Only 'exe' (direct single-file executable, no archive) is implemented —
+ * matches the one target this script's platform gate (win32/x64) can ever
+ * hit today. See CLOUDFLARED_DIST_TARGETS for the darwin/'tar.gz' TODO.
+ */
+async function ensureCloudflaredBinary(target) {
+  const cloudflaredTarget = CLOUDFLARED_DIST_TARGETS[target.triple];
+  if (!cloudflaredTarget) {
+    throw new Error(
+      `No cloudflared release asset mapped for target triple "${target.triple}". ` +
+        `Add an entry to CLOUDFLARED_DIST_TARGETS first.`,
+    );
+  }
+  if (cloudflaredTarget.kind !== 'exe') {
+    throw new Error(
+      `cloudflared target "${target.triple}" needs kind "${cloudflaredTarget.kind}" handling, ` +
+        `which is not implemented yet (only "exe" direct-binary download is). Add it first.`,
+    );
+  }
+
+  // Versioned cache filename (mirrors the Node archive caching above) so
+  // bumping CLOUDFLARED_VERSION later re-downloads automatically instead of
+  // silently reusing a stale binary.
+  const versionedPath = path.join(
+    CACHE_DIR,
+    `cloudflared-v${CLOUDFLARED_VERSION}-${cloudflaredTarget.assetName}`,
+  );
+
+  if (isValidCachedFile(versionedPath, MIN_VALID_ARCHIVE_BYTES)) {
+    log(`  Cache hit: cloudflared already downloaded at ${versionedPath}`);
+  } else {
+    fs.mkdirSync(CACHE_DIR, { recursive: true });
+    await downloadFile(cloudflaredAssetUrl(cloudflaredTarget.assetName), versionedPath);
+    if (!isValidCachedFile(versionedPath, MIN_VALID_ARCHIVE_BYTES)) {
+      throw new Error(
+        `Downloaded cloudflared binary ${versionedPath} is suspiciously small — download likely failed.`,
+      );
+    }
+  }
+  return versionedPath;
+}
+
 async function main() {
   const fresh = process.argv.includes('--fresh');
   log('== Calame desktop asset preparation ==\n');
@@ -285,16 +390,37 @@ async function main() {
   fs.cpSync(DIST_BUNDLE_DIR, RESOURCES_SERVER_DIR, { recursive: true, dereference: true });
   log(`Mirrored dist-bundle/ -> ${RESOURCES_SERVER_DIR}`);
 
-  // Step 5: summary.
+  // Step 5: resolve + stage cloudflared for the "Expose for Copilot / ChatGPT"
+  // tunnel feature. Must run AFTER step 4 — that step wipes and recreates
+  // resources/server/ from scratch, which would otherwise delete this.
+  log('');
+  log(`Resolving cloudflared v${CLOUDFLARED_VERSION} for ${target.triple}...`);
+  const downloadedCloudflaredPath = await ensureCloudflaredBinary(target);
+  const cloudflaredBinaryFileName = cloudflaredBinaryName(target.triple);
+  // Ship in the installer.
+  const cloudflaredResourcePath = path.join(RESOURCES_SERVER_DIR, cloudflaredBinaryFileName);
+  fs.copyFileSync(downloadedCloudflaredPath, cloudflaredResourcePath);
+  log(`Staged cloudflared (packaged mode) -> ${cloudflaredResourcePath}`);
+  // Fixed-name "current version" pointer — this is what
+  // packages/cli/src/tunnel/cloudflared-resolve.ts looks for in dev mode
+  // (CACHE_DIR is shared with the Node runtime cache above).
+  const cloudflaredDevCachePath = path.join(CACHE_DIR, cloudflaredBinaryFileName);
+  fs.copyFileSync(downloadedCloudflaredPath, cloudflaredDevCachePath);
+  log(`Staged cloudflared (dev mode cache) -> ${cloudflaredDevCachePath}`);
+
+  // Step 6: summary.
   const nodeBinarySize = fs.statSync(sidecarPath).size;
   const resourcesSize = dirSizeBytes(RESOURCES_SERVER_DIR);
+  const cloudflaredSize = fs.statSync(cloudflaredResourcePath).size;
 
   log('\n== Summary ==');
   log(`  Node runtime embedded : v${NODE_VERSION} (${target.triple})`);
   log(`  binaries/${target.sidecarBinaryName} : ${formatBytes(nodeBinarySize)}`);
   log(`  resources/server/                     : ${formatBytes(resourcesSize)}`);
+  log(`  cloudflared embedded  : v${CLOUDFLARED_VERSION} (${formatBytes(cloudflaredSize)})`);
   log(`  -> ${sidecarPath}`);
   log(`  -> ${RESOURCES_SERVER_DIR}`);
+  log(`  -> ${cloudflaredResourcePath}`);
   log('\nDone.');
 }
 

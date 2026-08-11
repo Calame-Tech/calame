@@ -5,6 +5,18 @@ every commit. Newest first.
 
 ---
 
+## 2026-08-12 — "Expose for Copilot / ChatGPT" tunnel (branch `feat/tunnel-expose`, stacked on claude-desktop-connect)
+
+Driven by a real prospect case: a non-dev employee with only an M365 Copilot license wants Calame on his own PC feeding his documents to Copilot. Microsoft (like OpenAI) only connects to MCP servers over public HTTPS through their cloud — no local config file exists. Answer: an embedded Cloudflare **quick tunnel** (zero-account, Apache-2.0 so redistributable — ngrok was ruled out: proprietary binary, account required, free-tier interstitials).
+
+- **Backend** (`tunnel/{manager,url-parser,cloudflared-resolve}.ts` + `routes/tunnel.ts`): admin-authed `GET status` / `POST start` / `POST stop`; TunnelManager spawns `cloudflared tunnel --url http://127.0.0.1:<port> --no-autoupdate`, parses the `https://*.trycloudflare.com` URL (30s timeout → kill + output tail), idempotent start with in-flight coalescing, killed on graceful shutdown (shutdown.ts step 4). Binary resolution: `CALAME_CLOUDFLARED_PATH` (set by the Tauri app) → packaged sibling → dev cache. `prepare-desktop.mjs` downloads pinned **cloudflared 2026.7.3** (54 MB) and stages it into the installer resources.
+- **Frontend** (`ExposeTunnel.tsx`, below ConnectClaudeDesktop on McpDetailPage): Expose button with 30s spinner state, copyable public MCP URL, Stop, honest caveats always visible (URL rotates per session, machine must stay on, evaluation-mode), and two collapsed step-by-step guides — Copilot Studio (API key / Query / param `token`) and ChatGPT connectors (`?token=` appended).
+- **Verified end to end in packaged mode, playing Microsoft/OpenAI's role**: bundled server + staged binary → `POST /api/tunnel/start` → real trycloudflare URL → MCP `initialize` **through the tunnel** succeeds BOTH with `Authorization: Bearer` (ChatGPT mode) AND with `?token=` (Copilot Studio API-key mode — validates the UI guide literally), and **401 without a token** (the tunnel changes reachability, not auth). `stop` leaves zero cloudflared processes.
+
+Suite: **2131 tests** (+47). Both agents' work reviewed; no blocking defects this time (one style note: `cloudflared.exe` hardcoded in server.rs — fine while Windows-only, per-target constants already exist in the prepare script). Next: PR once #35 (its base) merges, or as a stacked PR.
+
+---
+
 ## 2026-08-11 — One-click "Connect to Claude Desktop" (branch `feat/claude-desktop-connect`)
 
 Last-mile UX after the installer shipped (v0.2.0 published): a non-dev user could install Calame but still faced JSON/terminal work to point Claude Desktop at it (and believed ngrok was required — it isn't for local use). Now: one button.

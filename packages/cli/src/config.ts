@@ -96,6 +96,17 @@ export interface AppConfig {
    * unset, which only resolves correctly inside the monorepo layout.
    */
   webDistPath: string | null;
+
+  // Claude Desktop integration
+  /**
+   * Override for the directory the "Connect to Claude Desktop" integration
+   * reads/writes `claude_desktop_config.json` in. Set via
+   * CALAME_CLAUDE_DESKTOP_CONFIG_DIR. When unset, the platform default is
+   * used (see `routes/claude-desktop/paths.ts`). Exists primarily so tests
+   * can point at a throwaway temp directory instead of the real per-user
+   * Claude Desktop config.
+   */
+  claudeDesktopConfigDir: string | null;
 }
 
 const LOG_LEVELS: LogLevel[] = ['debug', 'info', 'warn', 'error'];
@@ -209,6 +220,7 @@ export function loadConfig(overrides?: Partial<AppConfig>): AppConfig {
     })(),
     packaged,
     webDistPath: envString('CALAME_WEB_DIST'),
+    claudeDesktopConfigDir: envString('CALAME_CLAUDE_DESKTOP_CONFIG_DIR'),
   };
 
   // Validate logLevel

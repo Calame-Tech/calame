@@ -63,6 +63,7 @@ function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     llmRouterInjectionThreshold: 0.8,
     packaged: false,
     webDistPath: null,
+    claudeDesktopConfigDir: null,
     ...overrides,
   };
 }

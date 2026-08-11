@@ -11,7 +11,12 @@ import { loadConfig, isPackagedMode, getPackagedDataDir } from '../config.js';
 // server), the default switches to the platform app-data directory instead —
 // unless CALAME_DATA_DIR is explicitly set, which always keeps priority.
 
-const ENV_KEYS = ['CALAME_PACKAGED', 'CALAME_DATA_DIR', 'CALAME_WEB_DIST'] as const;
+const ENV_KEYS = [
+  'CALAME_PACKAGED',
+  'CALAME_DATA_DIR',
+  'CALAME_WEB_DIST',
+  'CALAME_CLAUDE_DESKTOP_CONFIG_DIR',
+] as const;
 
 describe('packaged mode config', () => {
   let saved: Partial<Record<(typeof ENV_KEYS)[number], string | undefined>>;
@@ -86,5 +91,14 @@ describe('packaged mode config', () => {
     process.env.CALAME_WEB_DIST = '/opt/calame/web-dist';
     const overriddenConfig = loadConfig();
     expect(overriddenConfig.webDistPath).toBe('/opt/calame/web-dist');
+  });
+
+  it('claudeDesktopConfigDir defaults to null and is overridable via CALAME_CLAUDE_DESKTOP_CONFIG_DIR', () => {
+    const defaultConfig = loadConfig();
+    expect(defaultConfig.claudeDesktopConfigDir).toBeNull();
+
+    process.env.CALAME_CLAUDE_DESKTOP_CONFIG_DIR = '/tmp/claude-config';
+    const overriddenConfig = loadConfig();
+    expect(overriddenConfig.claudeDesktopConfigDir).toBe('/tmp/claude-config');
   });
 });

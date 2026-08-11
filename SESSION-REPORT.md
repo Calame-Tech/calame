@@ -5,6 +5,20 @@ every commit. Newest first.
 
 ---
 
+## 2026-08-11 — One-click "Connect to Claude Desktop" (branch `feat/claude-desktop-connect`)
+
+Last-mile UX after the installer shipped (v0.2.0 published): a non-dev user could install Calame but still faced JSON/terminal work to point Claude Desktop at it (and believed ngrok was required — it isn't for local use). Now: one button.
+
+- **Backend** (`routes/claude-desktop.ts` + `routes/claude-desktop/*`): admin-authed `GET status` (Claude Desktop detected? which `calame-*` entries exist?), `POST connect` (mints a dedicated revocable token `claude-desktop:<profile>` via the existing TokenManager — hashed store, so always mint fresh; merges the entry into `claude_desktop_config.json` non-destructively with timestamped `.bak`; 400-without-touching on corrupt JSON; 404/400 on missing/inactive profile), `GET snippet` (manual npx config for other machines, placeholders only). Entry = `process.execPath` (the installed sidecar node) + vendored `mcp-remote.mjs` + `--header Authorization: Bearer <token>`.
+- **Vendored bridge**: `mcp-remote` bundled by esbuild → `dist-bundle/mcp-remote.mjs` (2.9 MB, pure JS), flows into the Tauri resources via the existing prepare step — the client machine needs nothing beyond Calame.
+- **Frontend** (`ConnectClaudeDesktop.tsx` on McpDetailPage's default tab): Connect button / "Already connected" + Reconfigure / not-detected empty state / collapsed "Other clients / another machine" snippet with copy.
+- **Orchestrator catch**: the agent's `import { createRequire } from 'module'` collided with the esbuild banner's own `createRequire` declaration → **the bundled server wouldn't boot at all** (agent had tested `mcp-remote.mjs` alone but never re-started the bundled server). Aliased the import; full E2E re-run.
+- **Verified end to end, playing Claude Desktop's role**: packaged server in a scratch env → auth setup/login → demo connection → profile → serve → `POST connect` → config file exactly right → spawned the config's literal command and ran a real MCP stdio handshake through the vendored bridge: `initialize` OK, `tools/list` OK (bearer accepted, StreamableHTTP proxied). Suite: **2084 tests** (+52).
+
+Note for a future hardening pass: `connect` writes to the filesystem of the machine running the server — correct for the desktop app (same machine as the user), harmless-but-pointless on a hosted deployment; could be gated to packaged mode if it ever confuses anyone.
+
+---
+
 ## 2026-08-11 — Desktop installer, Phase C: installers + auto-update + release CI (branch `feat/desktop-installer`)
 
 The installer plan is now feature-complete end to end.

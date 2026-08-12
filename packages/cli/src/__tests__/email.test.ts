@@ -64,6 +64,7 @@ function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     packaged: false,
     webDistPath: null,
     claudeDesktopConfigDir: null,
+    cloudflaredPath: null,
     ...overrides,
   };
 }

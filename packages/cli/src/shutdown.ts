@@ -59,7 +59,18 @@ export async function gracefulShutdown(
     log.error('Error closing SSH tunnels', { error: String(err) });
   }
 
-  // 4. Close internal SQLite database
+  // 4. Stop the cloudflared quick tunnel ("Expose for Copilot / ChatGPT"), if running —
+  // never leave an orphaned cloudflared.exe behind after the server exits.
+  try {
+    if (state?.tunnelManager) {
+      await state.tunnelManager.stop();
+      log.info('Cloudflared tunnel stopped');
+    }
+  } catch (err) {
+    log.error('Error stopping cloudflared tunnel', { error: String(err) });
+  }
+
+  // 5. Close internal SQLite database
   try {
     state?.db?.close();
     log.info('Internal database closed');

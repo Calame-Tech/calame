@@ -16,6 +16,7 @@ import type { EmailService } from './email.js';
 import type { SecretsProvider } from './secrets.js';
 import type { LlmRouter } from './llm-router.js';
 import type { RagRuntime } from './rag-runtime.js';
+import type { TunnelManager } from './tunnel/manager.js';
 import { TokenRateLimiter } from './rate-limiter.js';
 
 export interface ConnectionState {
@@ -51,6 +52,7 @@ export class AppState {
   private _ragDisabledReason: string | null = null;
   private _ssoRuntime: SsoRuntime | undefined = undefined;
   private _ssoDisabledReason: string | null = null;
+  private _tunnelManager: TunnelManager | null = null;
 
   // --- Multi-connection API ---
 
@@ -404,5 +406,16 @@ export class AppState {
 
   set ssoDisabledReason(value: string | null) {
     this._ssoDisabledReason = value;
+  }
+
+  // --- Cloudflared quick tunnel ("Expose for Copilot / ChatGPT") ---
+
+  /** Lazily created by `../routes/tunnel.ts`; `null` before the tunnel routes have run once. */
+  get tunnelManager(): TunnelManager | null {
+    return this._tunnelManager;
+  }
+
+  set tunnelManager(value: TunnelManager | null) {
+    this._tunnelManager = value;
   }
 }

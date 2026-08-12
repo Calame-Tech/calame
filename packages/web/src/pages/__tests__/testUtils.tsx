@@ -92,6 +92,16 @@ export function installFetchMock() {
         entries: [],
       });
     }
+    if (url.includes('/api/tunnel/status')) {
+      return jsonResponse({
+        success: true,
+        running: false,
+        url: null,
+        startedAt: null,
+        available: true,
+        unavailableReason: null,
+      });
+    }
     if (url.includes('/api/tokens')) return jsonResponse({ success: true, tokens: [] });
     if (url.includes('/api/audit')) return jsonResponse({ success: true, entries: [] });
     return jsonResponse({ success: true });

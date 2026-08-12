@@ -69,6 +69,7 @@ function makeConfig(): AppConfig {
     packaged: false,
     webDistPath: null,
     claudeDesktopConfigDir: null,
+    cloudflaredPath: null,
   };
 }
 

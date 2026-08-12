@@ -139,6 +139,13 @@ export default function ExposeTunnel({ profileName }: ExposeTunnelProps) {
         connected for it to keep working. Intended for evaluation — use a server deployment of
         Calame for production.
       </p>
+      <p className="text-xs text-gray-600 mb-3">
+        Privacy: your files and database never leave this machine — only the content of MCP requests
+        and responses transits, encrypted, through Cloudflare&apos;s network (and every endpoint
+        still requires your API token). For a setup where traffic terminates on your own
+        infrastructure, use a server deployment. See docs/security-tunnel.md for the full threat
+        model.
+      </p>
 
       {statusLoading ? (
         <p className="text-sm text-gray-500">Checking tunnel status…</p>

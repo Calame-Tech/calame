@@ -83,6 +83,25 @@ export function installFetchMock() {
     }
     if (url.includes('/api/rag/sources')) return jsonResponse({ sources: [] });
     if (url.includes('/api/connections')) return jsonResponse({ success: true, connections: {} });
+    if (url.includes('/api/integrations/claude-desktop/status')) {
+      return jsonResponse({
+        success: true,
+        supported: false,
+        detected: false,
+        configPath: null,
+        entries: [],
+      });
+    }
+    if (url.includes('/api/tunnel/status')) {
+      return jsonResponse({
+        success: true,
+        running: false,
+        url: null,
+        startedAt: null,
+        available: true,
+        unavailableReason: null,
+      });
+    }
     if (url.includes('/api/tokens')) return jsonResponse({ success: true, tokens: [] });
     if (url.includes('/api/audit')) return jsonResponse({ success: true, entries: [] });
     return jsonResponse({ success: true });

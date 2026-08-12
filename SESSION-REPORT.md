@@ -5,6 +5,32 @@ every commit. Newest first.
 
 ---
 
+## 2026-08-12 — "Expose for Copilot / ChatGPT" tunnel (branch `feat/tunnel-expose`, stacked on claude-desktop-connect)
+
+Driven by a real prospect case: a non-dev employee with only an M365 Copilot license wants Calame on his own PC feeding his documents to Copilot. Microsoft (like OpenAI) only connects to MCP servers over public HTTPS through their cloud — no local config file exists. Answer: an embedded Cloudflare **quick tunnel** (zero-account, Apache-2.0 so redistributable — ngrok was ruled out: proprietary binary, account required, free-tier interstitials).
+
+- **Backend** (`tunnel/{manager,url-parser,cloudflared-resolve}.ts` + `routes/tunnel.ts`): admin-authed `GET status` / `POST start` / `POST stop`; TunnelManager spawns `cloudflared tunnel --url http://127.0.0.1:<port> --no-autoupdate`, parses the `https://*.trycloudflare.com` URL (30s timeout → kill + output tail), idempotent start with in-flight coalescing, killed on graceful shutdown (shutdown.ts step 4). Binary resolution: `CALAME_CLOUDFLARED_PATH` (set by the Tauri app) → packaged sibling → dev cache. `prepare-desktop.mjs` downloads pinned **cloudflared 2026.7.3** (54 MB) and stages it into the installer resources.
+- **Frontend** (`ExposeTunnel.tsx`, below ConnectClaudeDesktop on McpDetailPage): Expose button with 30s spinner state, copyable public MCP URL, Stop, honest caveats always visible (URL rotates per session, machine must stay on, evaluation-mode), and two collapsed step-by-step guides — Copilot Studio (API key / Query / param `token`) and ChatGPT connectors (`?token=` appended).
+- **Verified end to end in packaged mode, playing Microsoft/OpenAI's role**: bundled server + staged binary → `POST /api/tunnel/start` → real trycloudflare URL → MCP `initialize` **through the tunnel** succeeds BOTH with `Authorization: Bearer` (ChatGPT mode) AND with `?token=` (Copilot Studio API-key mode — validates the UI guide literally), and **401 without a token** (the tunnel changes reachability, not auth). `stop` leaves zero cloudflared processes.
+
+Suite: **2131 tests** (+47). Both agents' work reviewed; no blocking defects this time (one style note: `cloudflared.exe` hardcoded in server.rs — fine while Windows-only, per-target constants already exist in the prepare script). Next: PR once #35 (its base) merges, or as a stacked PR.
+
+---
+
+## 2026-08-11 — One-click "Connect to Claude Desktop" (branch `feat/claude-desktop-connect`)
+
+Last-mile UX after the installer shipped (v0.2.0 published): a non-dev user could install Calame but still faced JSON/terminal work to point Claude Desktop at it (and believed ngrok was required — it isn't for local use). Now: one button.
+
+- **Backend** (`routes/claude-desktop.ts` + `routes/claude-desktop/*`): admin-authed `GET status` (Claude Desktop detected? which `calame-*` entries exist?), `POST connect` (mints a dedicated revocable token `claude-desktop:<profile>` via the existing TokenManager — hashed store, so always mint fresh; merges the entry into `claude_desktop_config.json` non-destructively with timestamped `.bak`; 400-without-touching on corrupt JSON; 404/400 on missing/inactive profile), `GET snippet` (manual npx config for other machines, placeholders only). Entry = `process.execPath` (the installed sidecar node) + vendored `mcp-remote.mjs` + `--header Authorization: Bearer <token>`.
+- **Vendored bridge**: `mcp-remote` bundled by esbuild → `dist-bundle/mcp-remote.mjs` (2.9 MB, pure JS), flows into the Tauri resources via the existing prepare step — the client machine needs nothing beyond Calame.
+- **Frontend** (`ConnectClaudeDesktop.tsx` on McpDetailPage's default tab): Connect button / "Already connected" + Reconfigure / not-detected empty state / collapsed "Other clients / another machine" snippet with copy.
+- **Orchestrator catch**: the agent's `import { createRequire } from 'module'` collided with the esbuild banner's own `createRequire` declaration → **the bundled server wouldn't boot at all** (agent had tested `mcp-remote.mjs` alone but never re-started the bundled server). Aliased the import; full E2E re-run.
+- **Verified end to end, playing Claude Desktop's role**: packaged server in a scratch env → auth setup/login → demo connection → profile → serve → `POST connect` → config file exactly right → spawned the config's literal command and ran a real MCP stdio handshake through the vendored bridge: `initialize` OK, `tools/list` OK (bearer accepted, StreamableHTTP proxied). Suite: **2084 tests** (+52).
+
+Note for a future hardening pass: `connect` writes to the filesystem of the machine running the server — correct for the desktop app (same machine as the user), harmless-but-pointless on a hosted deployment; could be gated to packaged mode if it ever confuses anyone.
+
+---
+
 ## 2026-08-11 — Desktop installer, Phase C: installers + auto-update + release CI (branch `feat/desktop-installer`)
 
 The installer plan is now feature-complete end to end.

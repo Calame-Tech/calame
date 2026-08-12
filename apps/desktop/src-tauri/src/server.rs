@@ -66,6 +66,17 @@ fn spawn_sidecar(app: &AppHandle, port: u16) -> Result<CommandChild, String> {
     let (server_js, web_dist) = resolve_server_paths(app)?;
     let version = app.package_info().version.to_string();
 
+    // "Expose for Copilot / ChatGPT" tunnel: tells the sidecar where the
+    // bundled cloudflared binary lives, staged by scripts/prepare-desktop.mjs
+    // at resources/server/cloudflared.exe (see
+    // packages/cli/src/tunnel/cloudflared-resolve.ts).
+    let cloudflared_path = app
+        .path()
+        .resolve("resources/server/cloudflared.exe", BaseDirectory::Resource)
+        .map_err(|err| format!("resolving resources/server/cloudflared.exe: {err}"))?
+        .to_string_lossy()
+        .into_owned();
+
     let command = app
         .shell()
         .sidecar("node")
@@ -73,7 +84,8 @@ fn spawn_sidecar(app: &AppHandle, port: u16) -> Result<CommandChild, String> {
         .args([server_js, "--port".to_string(), port.to_string()])
         .env("CALAME_PACKAGED", "1")
         .env("CALAME_WEB_DIST", web_dist)
-        .env("CALAME_VERSION", version);
+        .env("CALAME_VERSION", version)
+        .env("CALAME_CLOUDFLARED_PATH", cloudflared_path);
 
     let (mut rx, child) = command
         .spawn()

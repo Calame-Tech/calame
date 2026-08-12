@@ -28,6 +28,11 @@ const WEB_DIST = path.join(WEB_DIR, 'dist');
 const OUT_DIR = path.join(REPO_ROOT, 'dist-bundle');
 const OUT_FILE = path.join(OUT_DIR, 'server.mjs');
 const OUT_NODE_MODULES = path.join(OUT_DIR, 'node_modules');
+// mcp-remote's stdio<->HTTP proxy CLI, bundled as a sibling of server.mjs so
+// the "Connect to Claude Desktop" integration can launch it with nothing but
+// `node <this file> <url> --header ...` — no node_modules tree on the client
+// machine. See packages/cli/src/routes/claude-desktop/mcp-remote-resolve.ts.
+const MCP_REMOTE_OUT_FILE = path.join(OUT_DIR, 'mcp-remote.mjs');
 
 // Packages esbuild must leave untouched:
 //   - better-sqlite3, sqlite-vec: ship prebuilt native addons (.node/.dll) —
@@ -209,6 +214,32 @@ async function main() {
     logLevel: 'info',
   });
 
+  // 3b. Bundle mcp-remote's CLI proxy entry (`mcp-remote/dist/proxy.js`) —
+  // the process Claude Desktop actually launches to bridge its stdio MCP
+  // transport to Calame's HTTP endpoint. Pure JS (express/open/undici/
+  // strict-url-sanitise — no native addons), so unlike ESBUILD_EXTERNAL
+  // above this bundles cleanly standalone with no external/copy step.
+  log("\nBundling mcp-remote's proxy entry with esbuild...");
+  const mcpRemoteDir = resolvePackageDir('mcp-remote', CLI_DIR);
+  const mcpRemoteEntry = path.join(mcpRemoteDir, 'dist/proxy.js');
+  await esbuild.build({
+    entryPoints: [mcpRemoteEntry],
+    outfile: MCP_REMOTE_OUT_FILE,
+    bundle: true,
+    platform: 'node',
+    format: 'esm',
+    target: 'node20',
+    sourcemap: false,
+    // mcp-remote pulls in express (for its local OAuth callback listener),
+    // whose CJS dependency tree (body-parser, depd, ...) calls require() at
+    // runtime for lookups esbuild can't statically resolve into the ESM
+    // output. Same shim as the server.mjs bundle above.
+    banner: {
+      js: "import { createRequire } from 'node:module';\nconst require = createRequire(import.meta.url);",
+    },
+    logLevel: 'info',
+  });
+
   // 4. Copy the packages esbuild left external, plus their dependency
   // closure, so the bundle's require()/import() of them resolves.
   log('\nCopying native/external packages into dist-bundle/node_modules...');
@@ -264,14 +295,18 @@ SQLite database and secret file are stored.
 
   // 7. Summary.
   const bundleSize = fs.statSync(OUT_FILE).size;
+  const mcpRemoteSize = fs.statSync(MCP_REMOTE_OUT_FILE).size;
   const nodeModulesSize = dirSizeBytes(OUT_NODE_MODULES);
   const webSize = dirSizeBytes(path.join(OUT_DIR, 'web'));
 
   log('\n== Summary ==');
   log(`  server.mjs        : ${formatBytes(bundleSize)}`);
+  log(`  mcp-remote.mjs     : ${formatBytes(mcpRemoteSize)}`);
   log(`  node_modules/      : ${formatBytes(nodeModulesSize)} (${copied.length} packages)`);
   log(`  web/                : ${formatBytes(webSize)}`);
-  log(`  total dist-bundle/  : ${formatBytes(bundleSize + nodeModulesSize + webSize)}`);
+  log(
+    `  total dist-bundle/  : ${formatBytes(bundleSize + mcpRemoteSize + nodeModulesSize + webSize)}`,
+  );
   log('\n  Native/external packages copied:');
   for (const { name, to } of copied) {
     const binaries = findNativeBinaries(to);

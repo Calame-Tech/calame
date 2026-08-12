@@ -10,6 +10,8 @@ import { buildMcpPath } from '../lib/mcp-url.js';
 import { Breadcrumb } from '../components/ui/index.js';
 import HelpTip from '../components/HelpTip.js';
 import AiSettingsAssignment from '../components/AiSettingsAssignment.js';
+import ConnectClaudeDesktop from '../components/ConnectClaudeDesktop.js';
+import ExposeTunnel from '../components/ExposeTunnel.js';
 import TokenManager from '../components/TokenManager.js';
 import AuditLogViewer from '../components/AuditLogViewer.js';
 import McpUsers from '../components/McpUsers.js';
@@ -1150,6 +1152,12 @@ function McpDetailView({
       {/* Section content */}
       {activeSection === 'tables' && (
         <div className="space-y-4">
+          {/* Connect to Claude Desktop (or grab a manual snippet for other clients) */}
+          <ConnectClaudeDesktop profileName={profile.name} />
+
+          {/* Expose this server to cloud AIs (Copilot Studio, ChatGPT connectors) via a tunnel */}
+          <ExposeTunnel profileName={profile.name} />
+
           {/* AI settings assignment */}
           <AiSettingsAssignment
             selected={profile.aiSettingNames ?? []}

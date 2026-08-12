@@ -55,6 +55,8 @@ import { registerBrandingRoutes } from './routes/branding.js';
 import { registerMetricsRoute } from './routes/metrics.js';
 import { registerProfileScopesRoute } from './routes/profile-scopes.js';
 import { registerTenantsRoutes } from './routes/tenants.js';
+import { registerClaudeDesktopRoute } from './routes/claude-desktop.js';
+import { registerTunnelRoute } from './routes/tunnel.js';
 import { legacyPathDeprecationMiddleware } from './routes/source-aliases.js';
 import { TokenRateLimiter } from './rate-limiter.js';
 import { createSecretsProvider } from './secrets.js';
@@ -293,6 +295,8 @@ export function createApp(
   registerMetricsRoute(app, appState);
   registerProfilePreviewRoute(app, appState);
   registerTenantsRoutes(app, appState);
+  registerClaudeDesktopRoute(app, appState);
+  registerTunnelRoute(app, appState);
 
   // Optional RAG routes — only registered when the EE rag-core package is
   // installed AND `initRagRuntime` has been called against this state. The

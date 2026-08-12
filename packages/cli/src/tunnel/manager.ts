@@ -42,7 +42,7 @@ function defaultSpawnFn(command: string, args: string[]): SpawnedTunnelProcess {
   // (CALAME_CLOUDFLARED_PATH set by the desktop app / packaged sibling / dev
   // cache — see ./cloudflared-resolve.ts), and `args` is a fixed template around
   // the numeric server port. No HTTP request input ever reaches this call.
-  // nosemgrep: javascript.lang.security.detect-child-process
+  // nosemgrep: javascript.lang.security.detect-child-process.detect-child-process
   return nodeSpawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
 }
 

@@ -181,8 +181,10 @@ server.listen(config.port, () => {
     component: 'server',
   });
 
-  // Only open browser in development
-  if (process.env.NODE_ENV !== 'production') {
+  // Only open a browser in standalone development. Never in packaged desktop
+  // mode: the Tauri window already displays the UI, so auto-opening the
+  // system browser would pop a redundant second window on every launch.
+  if (process.env.NODE_ENV !== 'production' && !isPackagedMode()) {
     import('open').then((mod) => mod.default(`http://localhost:${config.port}${config.basePath}`));
   }
 });

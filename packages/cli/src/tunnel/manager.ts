@@ -37,6 +37,12 @@ export interface SpawnedTunnelProcess {
 export type TunnelSpawnFn = (command: string, args: string[]) => SpawnedTunnelProcess;
 
 function defaultSpawnFn(command: string, args: string[]): SpawnedTunnelProcess {
+  // `command` is never user-controllable: the only caller is TunnelManager.start(),
+  // which passes the cloudflared binary path resolved from local configuration
+  // (CALAME_CLOUDFLARED_PATH set by the desktop app / packaged sibling / dev
+  // cache — see ./cloudflared-resolve.ts), and `args` is a fixed template around
+  // the numeric server port. No HTTP request input ever reaches this call.
+  // nosemgrep: javascript.lang.security.detect-child-process
   return nodeSpawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
 }
 

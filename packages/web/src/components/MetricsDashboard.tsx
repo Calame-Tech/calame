@@ -428,6 +428,7 @@ function PoolStatBar({
           style={{ transform: `scaleX(${pct / 100})`, transition: 'transform 600ms cubic-bezier(0.16, 1, 0.3, 1)' }}
           role="progressbar"
           aria-valuenow={value}
+          aria-valuemin={0}
           aria-valuemax={total}
           aria-label={`${label}: ${value}`}
         />

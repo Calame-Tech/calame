@@ -29,7 +29,7 @@
   /* Browser surfaces carry the design too: selection and caret follow the
      workspace accent instead of shipping browser defaults. */
   ::selection {
-    background: rgb(var(--color-os-500) / 0.35);
+    background-color: rgb(var(--color-os-500) / 0.35);
   }
   input,
   textarea {

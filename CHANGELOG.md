@@ -7,6 +7,26 @@ root `package.json` version flows to the Docker image and `create-calame`).
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-08-14
+
+### Changed
+
+- UI craft pass on the web app, identity unchanged: four small labels raised
+  above the WCAG AA contrast floor (schema tool badge, "+ PII" button, user
+  delete button, dashboard OFF pill); chat typing indicator replaced with a
+  soft staggered pulse honoring `prefers-reduced-motion`; Metrics progress
+  bars now animate on `transform: scaleX` (GPU) instead of `width`; text
+  selection, input caret, and placeholders themed from the workspace accent.
+
+### Added
+
+- `docs/RELEASE.md`: step-by-step guide for shipping a desktop release
+  (version bump, tagging, CI build, draft publication).
+- Impeccable design-detector config (`packages/web/.impeccable/config.json`)
+  so UI edits are scanned automatically with vetted ignores.
+
+## [0.2.0] to [0.4.0] (consolidated, recorded late)
+
 ### Added
 
 - Per-tenant branding: custom logo and favicon, configurable from

@@ -170,7 +170,7 @@ export default function DashboardPage({
                       </span>
                     </div>
                     <span
-                      className={`font-mono-plex text-[10px] px-2 py-0.5 rounded-full flex-shrink-0 ${pActive ? 'bg-emerald-400/10 text-emerald-400 ring-1 ring-emerald-400/20' : 'bg-white/5 text-gray-600'}`}
+                      className={`font-mono-plex text-[10px] px-2 py-0.5 rounded-full flex-shrink-0 ${pActive ? 'bg-emerald-400/10 text-emerald-400 ring-1 ring-emerald-400/20' : 'bg-white/5 text-gray-400'}`}
                     >
                       {pActive ? 'ON' : 'OFF'}
                     </span>

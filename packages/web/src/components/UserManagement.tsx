@@ -1194,7 +1194,7 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
                       <button
                         onClick={() => handleDelete(user.id)}
                         title="Permanently delete this user and all their access. This action is irreversible."
-                        className="px-2 py-1 bg-gray-700 hover:bg-red-900 text-gray-400 hover:text-red-300 text-xs rounded transition-colors"
+                        className="px-2 py-1 bg-gray-700 hover:bg-red-900 text-gray-300 hover:text-red-300 text-xs rounded transition-colors"
                       >
                         Delete
                       </button>

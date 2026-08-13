@@ -26,6 +26,16 @@
     font-family: var(--font-sans);
   }
 
+  /* Browser surfaces carry the design too: selection and caret follow the
+     workspace accent instead of shipping browser defaults. */
+  ::selection {
+    background: rgb(var(--color-os-500) / 0.35);
+  }
+  input,
+  textarea {
+    caret-color: rgb(var(--color-os-400));
+  }
+
   /* Dark theme scrollbar */
   ::-webkit-scrollbar {
     width: 8px;
@@ -97,7 +107,7 @@
 
   /* --- Inputs editorial --- */
   .input-editorial {
-    @apply bg-black/30 border border-white/10 rounded-lg px-4 py-2 transition-all duration-200 text-gray-100 placeholder-gray-600;
+    @apply bg-black/30 border border-white/10 rounded-lg px-4 py-2 transition-all duration-200 text-gray-100 placeholder-gray-500;
     font-family: 'IBM Plex Mono', monospace;
   }
   .input-editorial:focus {
@@ -134,5 +144,28 @@
   }
   .animate-fade-in-up {
     animation: fade-in-up 0.3s ease-out;
+  }
+
+  /* Streaming typing indicator: soft staggered pulse instead of bounce. */
+  @keyframes typing-pulse {
+    0%,
+    60%,
+    100% {
+      opacity: 0.25;
+      transform: translateY(0);
+    }
+    30% {
+      opacity: 1;
+      transform: translateY(-2px);
+    }
+  }
+  .typing-dot {
+    animation: typing-pulse 1.2s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .typing-dot {
+      animation: none;
+      opacity: 0.6;
+    }
   }
 }

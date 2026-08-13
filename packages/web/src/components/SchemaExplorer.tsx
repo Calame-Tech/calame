@@ -230,7 +230,7 @@ export default function SchemaExplorer({
       <span
         title={`Tools: ${enabledTools.join(', ')}`}
         className={`flex-shrink-0 text-[9px] px-1 py-0.5 rounded font-bold ${
-          hasWrite ? 'bg-amber-500/20 text-amber-400' : 'bg-gray-700/60 text-gray-500'
+          hasWrite ? 'bg-amber-500/20 text-amber-400' : 'bg-gray-700/60 text-gray-300'
         }`}
       >
         {hasWrite ? 'W' : 'R'}

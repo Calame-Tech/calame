@@ -211,7 +211,7 @@ export default function TableOptionsCard({
                               matchedBy: 'manual',
                             })
                           }
-                          className="text-[10px] px-1.5 py-0.5 rounded-md font-medium ring-1 bg-gray-700/30 text-gray-500 ring-gray-600/30 hover:text-indigo-400 hover:ring-indigo-500/30 hover:bg-indigo-500/10 transition-colors cursor-pointer"
+                          className="text-[10px] px-1.5 py-0.5 rounded-md font-medium ring-1 bg-gray-700/30 text-gray-400 ring-gray-600/30 hover:text-indigo-400 hover:ring-indigo-500/30 hover:bg-indigo-500/10 transition-colors cursor-pointer"
                         >
                           + PII
                         </button>

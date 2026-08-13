@@ -182,9 +182,9 @@ export default function UserChatPanel({ profiles }: UserChatPanelProps) {
                   <>
                     {msg.streaming && !msg.content ? (
                       <span className="inline-flex gap-1 items-center h-4">
-                        <span className="w-1 h-1 rounded-full bg-gray-400 animate-bounce [animation-delay:-0.3s]" />
-                        <span className="w-1 h-1 rounded-full bg-gray-400 animate-bounce [animation-delay:-0.15s]" />
-                        <span className="w-1 h-1 rounded-full bg-gray-400 animate-bounce" />
+                        <span className="w-1 h-1 rounded-full bg-gray-400 typing-dot [animation-delay:-0.4s]" />
+                        <span className="w-1 h-1 rounded-full bg-gray-400 typing-dot [animation-delay:-0.2s]" />
+                        <span className="w-1 h-1 rounded-full bg-gray-400 typing-dot" />
                       </span>
                     ) : (
                       <MarkdownMessage content={msg.content} />

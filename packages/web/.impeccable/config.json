@@ -1,0 +1,44 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "gray-on-color",
+        "value": "text-gray-300 on bg-amber-500",
+        "createdAt": "2026-08-13T21:46:16.840Z",
+        "reason": "false pairing: gray text and amber bg are opposite ternary branches (SchemaExplorer badge), never co-rendered; gray-300 on gray-700/60 is 6.3:1"
+      },
+      {
+        "rule": "gray-on-color",
+        "value": "text-gray-400 on bg-indigo-500",
+        "createdAt": "2026-08-13T21:46:16.942Z",
+        "reason": "false pairing: indigo bg is the hover state which also swaps text to indigo-400 (TableOptionsCard + PII), never co-rendered"
+      },
+      {
+        "rule": "gray-on-color",
+        "value": "text-gray-300 on bg-red-900",
+        "createdAt": "2026-08-13T21:46:17.046Z",
+        "reason": "false pairing: red-900 bg is the hover state which also swaps text to red-300 (UserManagement delete), never co-rendered"
+      },
+      {
+        "rule": "gray-on-color",
+        "value": "text-gray-400 on bg-emerald-400",
+        "createdAt": "2026-08-13T21:46:17.151Z",
+        "reason": "false pairing: emerald bg is the opposite ternary branch (DashboardPage ON pill), OFF renders gray-400 on white/5 at 7.6:1"
+      },
+      {
+        "rule": "gray-on-color",
+        "value": "text-gray-500 on bg-red-500",
+        "createdAt": "2026-08-13T22:01:02.301Z",
+        "reason": "false pairing: red-500/10 bg is the hover state which also swaps icon to red-400 (delete icon buttons), never co-rendered; gray-500 icon on gray-950 is 4.9:1"
+      },
+      {
+        "rule": "gray-on-color",
+        "value": "text-gray-500 on bg-rose-500",
+        "createdAt": "2026-08-13T22:01:02.395Z",
+        "reason": "false pairing: rose-500/10 bg is the hover state which also swaps icon to rose-400 (ConfigurationDetailPage delete), never co-rendered"
+      }
+    ]
+  }
+}

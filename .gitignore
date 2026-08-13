@@ -25,3 +25,4 @@ ui-debug.log
 # Desktop app build artifacts (staged by scripts/prepare-desktop.mjs — not source)
 apps/desktop/src-tauri/binaries/
 apps/desktop/src-tauri/resources/server/
+.impeccable/hook.cache.json

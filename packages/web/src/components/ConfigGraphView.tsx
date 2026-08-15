@@ -351,7 +351,6 @@ export default function ConfigGraphView({
     posRef.current = next;
     layout(springNextLayoutRef.current);
     springNextLayoutRef.current = false;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodes, edges, order]);
 
   // Resize handling + staged reveal on mount.
@@ -373,7 +372,6 @@ export default function ConfigGraphView({
       cancelAnimationFrame(raf);
       clearTimeout(settleTimer);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Spring back to slot, only for the released node.
@@ -489,7 +487,6 @@ export default function ConfigGraphView({
       if ((down.has(a) && down.has(b)) || (up.has(a) && up.has(b))) hotEdges.add(i);
     });
     return { hotNodes, hotEdges };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeId, edges]);
 
   const chip = activeId ? chips.get(activeId) : undefined;

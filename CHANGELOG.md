@@ -7,6 +7,28 @@ root `package.json` version flows to the Docker image and `create-calame`).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-15
+
+### Added
+
+- Redesigned Dashboard: a Sources → Data Configurations → MCP Servers
+  pipeline strip with per-item drill-down, an activity chart aggregated
+  from the audit log (DST-safe), a needs-attention column surfacing
+  pending writes, a real masked-columns PII card, and a servers table
+  with trend sparklines — all with an orchestrated construction
+  animation honoring `prefers-reduced-motion`.
+- Data Configurations page: List | Graph toggle. The new graph view
+  shows servers, configurations and sources as three aligned layers
+  with lineage highlighting (hover any node to trace the full data
+  path), click-to-pin details, and drag-to-reorder persisted locally
+  with a Reset layout control. List cards now show per-source chips
+  and which servers mount each configuration.
+- Access visibility: pinning a server in the graph lists the users
+  granted access; the Users page gains an "Access matrix" tab (users ×
+  servers with R / R+W badges and table-restriction markers).
+- ADR 0003: domain terminology decision (Sources, Data Profiles,
+  MCP Servers) with a progressive migration plan.
+
 ## [0.4.1] - 2026-08-14
 
 ### Changed

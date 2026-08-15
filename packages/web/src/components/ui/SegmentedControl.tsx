@@ -33,6 +33,7 @@ export function SegmentedControl<T extends string>({
         return (
           <button
             key={opt.value}
+            type="button"
             onClick={() => onChange(opt.value)}
             title={opt.description}
             aria-pressed={active}

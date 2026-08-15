@@ -79,8 +79,12 @@
   }
 
   /* --- Hairline divider --- */
-  .hairline { @apply border-t border-white/5; }
-  .hairline-b { @apply border-b border-white/5; }
+  .hairline {
+    @apply border-t border-white/5;
+  }
+  .hairline-b {
+    @apply border-b border-white/5;
+  }
 
   /* --- Cards ---
      No backdrop-blur on purpose. A backdrop-filter re-rasterizes its blur on
@@ -115,9 +119,15 @@
   }
 
   /* --- Display headings (font-display already defined = Plex Sans 300 tight) --- */
-  .heading-xl { @apply font-display text-5xl text-gray-100; }
-  .heading-lg { @apply font-display text-3xl text-gray-100; }
-  .heading-md { @apply font-display text-2xl text-gray-100; }
+  .heading-xl {
+    @apply font-display text-5xl text-gray-100;
+  }
+  .heading-lg {
+    @apply font-display text-3xl text-gray-100;
+  }
+  .heading-md {
+    @apply font-display text-2xl text-gray-100;
+  }
 }
 
 @layer utilities {
@@ -167,5 +177,152 @@
       animation: none;
       opacity: 0.6;
     }
+  }
+
+  /* --- Dashboard construction sequence (transform/opacity/dashoffset only,
+     never width/height — see the perf note above .card-primary). Delays are
+     set inline per element so the whole page reads as one orchestrated
+     reveal: pipeline rises, the chart line draws, bars and gauge grow,
+     sparklines draw last. --- */
+  @keyframes rise-in {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  .anim-rise-in {
+    animation: rise-in 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  @keyframes grow-x {
+    from {
+      transform: scaleX(0);
+    }
+  }
+  .anim-grow-x {
+    transform-origin: left;
+    animation: grow-x 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  /* Line drawing for SVG paths normalized with pathLength="100". */
+  @keyframes line-draw {
+    to {
+      stroke-dashoffset: 0;
+    }
+  }
+  .anim-line-draw {
+    stroke-dasharray: 100;
+    stroke-dashoffset: 100;
+    animation: line-draw 1s cubic-bezier(0.4, 0, 0.2, 1) both;
+  }
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  .anim-fade-in {
+    animation: fade-in 0.6s ease-out both;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .anim-rise-in,
+    .anim-grow-x,
+    .anim-fade-in {
+      animation: none;
+    }
+    .anim-line-draw {
+      animation: none;
+      stroke-dashoffset: 0;
+    }
+  }
+
+  /* --- Data Configurations graph (ConfigGraphView) ---
+     Staged reveal: servers (.l2), then configs (.l1), then sources (.l0),
+     links fading in last. `.settled` (set ~1s after mount) freezes everything
+     at the final state so lineage focus/unfocus never replays the reveal.
+     Lineage highlighting dims non-related nodes/links via `.focused`/`.hot`
+     — opacity only, positions are driven imperatively via transforms. */
+  .cfg-graph .lk {
+    fill: none;
+    stroke: rgba(255, 255, 255, 0.11);
+    stroke-width: 1.3;
+    transition:
+      stroke 0.15s ease,
+      opacity 0.15s ease;
+    opacity: 0;
+  }
+  .cfg-graph .nd {
+    cursor: grab;
+    opacity: 0;
+    /* Pointer-event drag owns the gesture — without this, touch-drag fights
+       native scroll and the browser may cancel the pointer mid-drag. */
+    touch-action: none;
+  }
+  .cfg-graph .nd:active {
+    cursor: grabbing;
+  }
+  .cfg-graph .nd .shape {
+    transition:
+      filter 0.2s ease,
+      opacity 0.15s ease;
+  }
+  .cfg-graph .nd:hover .shape {
+    filter: drop-shadow(0 0 6px rgb(var(--color-os-500) / 0.4));
+  }
+  .cfg-graph .nd.stopped .shape {
+    stroke-dasharray: 4 3;
+  }
+  .cfg-graph.ready .lk {
+    animation: fade-in 0.5s ease-out 0.5s both;
+  }
+  .cfg-graph.ready .nd {
+    animation: fade-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .cfg-graph.ready .nd.l1 {
+    animation-delay: 0.12s;
+  }
+  .cfg-graph.ready .nd.l0 {
+    animation-delay: 0.24s;
+  }
+  .cfg-graph.settled .lk,
+  .cfg-graph.settled .nd {
+    animation: none;
+    opacity: 1;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .cfg-graph .lk,
+    .cfg-graph .nd {
+      animation: none !important;
+      opacity: 1;
+    }
+  }
+  .cfg-graph.focused .lk {
+    opacity: 0.08;
+  }
+  .cfg-graph.focused .nd {
+    opacity: 0.25;
+  }
+  .cfg-graph.ready.focused .lk,
+  .cfg-graph.ready.focused .nd {
+    animation: none;
+  }
+  .cfg-graph.focused .lk.hot {
+    opacity: 1;
+    stroke: rgb(var(--color-os-400));
+    stroke-width: 1.8;
+  }
+  .cfg-graph.focused .nd.hot {
+    opacity: 1;
+  }
+  .cfg-graph.focused .nd.hot .shape {
+    filter: drop-shadow(0 0 7px rgb(var(--color-os-500) / 0.35));
   }
 }

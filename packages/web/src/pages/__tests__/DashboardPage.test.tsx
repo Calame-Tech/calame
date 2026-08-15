@@ -44,10 +44,7 @@ function renderPage(setView = vi.fn(), pendingWriteCount = 0) {
       recentActivity={recentActivity}
       activeMcpCount={0}
       totalMcpCount={1}
-      hasActiveMcp={false}
       connectedCount={0}
-      totalConnCount={1}
-      hasConnections={true}
       pendingWriteCount={pendingWriteCount}
     />,
   );
@@ -64,17 +61,29 @@ describe('DashboardPage', () => {
     vi.unstubAllGlobals();
   });
 
-  it('renders the dashboard overview with KPI sections and recent activity', () => {
+  it('renders the dashboard overview with pipeline stages and recent activity', () => {
     renderPage();
     expect(screen.getByText('Dashboard')).toBeTruthy();
+    // Pipeline stage labels (Sources → Data Configurations → MCP Servers)
     expect(screen.getByText('MCP SERVERS')).toBeTruthy();
     expect(screen.getByText('DATA CONFIGURATIONS')).toBeTruthy();
-    expect(screen.getByText('DATABASES')).toBeTruthy();
-    expect(screen.getByText('RECENT ACTIVITY')).toBeTruthy();
+    expect(screen.getByText('SOURCES')).toBeTruthy();
+    expect(screen.getByText('Recent activity')).toBeTruthy();
     expect(screen.getByText('query_users')).toBeTruthy();
-    // Profile and configuration entries from the KPI card footers
+    // Profile and configuration entries from the pipeline stage footers
     expect(screen.getByText('Sales')).toBeTruthy();
     expect(screen.getByText('Main DB')).toBeTruthy();
+  });
+
+  it('navigates per item from the pipeline stage footers', () => {
+    const setView = renderPage();
+    // Server item → mcp-detail (label also appears in the bars/servers table,
+    // the first occurrence is the pipeline stage footer)
+    fireEvent.click(screen.getAllByText('Default')[0]);
+    expect(setView).toHaveBeenCalledWith({ page: 'mcp-detail', profileName: 'default' });
+    // Configuration item → config-detail
+    fireEvent.click(screen.getByText('Sales'));
+    expect(setView).toHaveBeenCalledWith({ page: 'config-detail', configName: 'sales' });
   });
 
   it('navigates to the MCP list when clicking "New MCP server"', () => {

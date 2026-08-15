@@ -81,10 +81,7 @@ export default function App() {
     allProfileNames,
     totalMcpCount,
     activeMcpCount,
-    hasActiveMcp,
-    totalConnCount,
     connectedCount,
-    hasConnections,
     handlePiiOverride,
     handleScanPii,
     handleGlobalMaskingRulesChange,
@@ -222,10 +219,7 @@ export default function App() {
                 recentActivity={recentActivity}
                 activeMcpCount={activeMcpCount}
                 totalMcpCount={totalMcpCount}
-                hasActiveMcp={hasActiveMcp}
                 connectedCount={connectedCount}
-                totalConnCount={totalConnCount}
-                hasConnections={hasConnections}
                 pendingWriteCount={pendingWriteCount}
               />
             )}
@@ -259,6 +253,9 @@ export default function App() {
                 setConfigurations={setConfigurations}
                 handleConfigurationSave={handleConfigurationSave}
                 handleConfigurationDelete={handleConfigurationDelete}
+                connections={connections}
+                profiles={profiles}
+                serveStatus={serveStatus}
               />
             )}
 

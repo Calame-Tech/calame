@@ -3,10 +3,14 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import ConfigurationsPage from '../ConfigurationsPage.js';
-import type { Configuration } from '../../types/schema.js';
+import { makeProfile, makeServeStatus } from './testUtils.js';
+import type { Configuration, NamedConnection, Profile } from '../../types/schema.js';
 
 function renderPage({
   configurations = [] as Configuration[],
+  connections = [] as NamedConnection[],
+  profiles = [] as Profile[],
+  serveStatus = makeServeStatus(),
   setView = vi.fn(),
   setConfigurations = vi.fn(),
   handleConfigurationSave = vi.fn(async () => true),
@@ -19,6 +23,9 @@ function renderPage({
       setConfigurations={setConfigurations}
       handleConfigurationSave={handleConfigurationSave}
       handleConfigurationDelete={handleConfigurationDelete}
+      connections={connections}
+      profiles={profiles}
+      serveStatus={serveStatus}
     />,
   );
   return { setView, setConfigurations, handleConfigurationSave, handleConfigurationDelete };
@@ -82,6 +89,27 @@ describe('ConfigurationsPage', () => {
 
     expect(screen.getByText(/write on 1 table/)).toBeTruthy();
     expect(screen.getByText(/1 masked column/)).toBeTruthy();
+  });
+
+  it('shows which servers mount a configuration', () => {
+    renderPage({
+      configurations: [{ name: 'sales', label: 'Sales' }],
+      profiles: [makeProfile({ configurations: ['sales'] })],
+    });
+    expect(screen.getByText(/Mounted by/)).toBeTruthy();
+    expect(screen.getByText('Default')).toBeTruthy();
+  });
+
+  it('switches to the Graph view via the List | Graph toggle', () => {
+    renderPage({
+      configurations: [{ name: 'sales', label: 'Sales' }],
+      profiles: [makeProfile({ configurations: ['sales'] })],
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Graph' }));
+    // Graph legend replaces the card grid
+    expect(screen.getByText('dashed = stopped')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'List' }));
+    expect(screen.queryByText('dashed = stopped')).toBeNull();
   });
 
   it('creates a new data profile and navigates to its detail view', () => {

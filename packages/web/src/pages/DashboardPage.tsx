@@ -1,10 +1,18 @@
-// Dashboard page (Phase 3 #14). JSX moved verbatim from the
-// `view.page === 'dashboard'` branch of App.tsx.
+// Dashboard page — pipeline-first redesign. The page reads as the system in
+// one line (Sources → Data Configurations → MCP Servers), followed by the
+// activity charts, the governance column (needs attention / PII / feed) and
+// the servers table. Chart data is aggregated client-side from the
+// recent-activity feed (no daily-series endpoint exists).
 
+import { useEffect, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
-import { Button, PageHeader, Eyebrow, KpiCard } from '../components/ui/index.js';
-import HelpTip from '../components/HelpTip.js';
-import { getConfigurationTableNames } from '../lib/configuration-accessors.js';
+import { Button, PageHeader } from '../components/ui/index.js';
+import PipelineStrip from '../components/dashboard/PipelineStrip.js';
+import QueriesCard from '../components/dashboard/QueriesCard.js';
+import ServersTable from '../components/dashboard/ServersTable.js';
+import { timeAgo } from '../components/dashboard/activity-stats.js';
+import { getConfigurationColumnMasking } from '../lib/configuration-accessors.js';
+import { apiFetch } from '../lib/api.js';
 import type {
   DatabaseSchema,
   Configuration,
@@ -26,12 +34,30 @@ interface DashboardPageProps {
   recentActivity: AuditLogEntry[];
   activeMcpCount: number;
   totalMcpCount: number;
-  hasActiveMcp: boolean;
   connectedCount: number;
-  totalConnCount: number;
-  hasConnections: boolean;
   pendingWriteCount: number;
 }
+
+const QUICK_NAV = [
+  {
+    label: 'USERS',
+    description: 'Manage user accounts and permissions',
+    dot: 'bg-purple-500',
+    page: 'users' as const,
+  },
+  {
+    label: 'SETTINGS',
+    description: 'AI, email, SSO, branding & notifications',
+    dot: 'bg-amber-500',
+    page: 'settings' as const,
+  },
+  {
+    label: 'METRICS',
+    description: 'Usage analytics and performance',
+    dot: 'bg-cyan-500',
+    page: 'metrics' as const,
+  },
+];
 
 export default function DashboardPage({
   setView,
@@ -43,24 +69,49 @@ export default function DashboardPage({
   recentActivity,
   activeMcpCount,
   totalMcpCount,
-  hasActiveMcp,
   connectedCount,
-  totalConnCount,
-  hasConnections,
   pendingWriteCount,
 }: DashboardPageProps) {
-  const { setShowOnboarding } = useSession();
+  const { setShowOnboarding, ragEnabled } = useSession();
+
+  // Knowledge-base sources count — SQL connections arrive via props, RAG
+  // sources only exist behind /api/rag/sources (EE capability). Fetched here
+  // so the "Sources" pipeline stage counts both kinds.
+  const [ragSourceCount, setRagSourceCount] = useState(0);
+  useEffect(() => {
+    if (!ragEnabled) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiFetch('/api/rag/sources', { credentials: 'include' });
+        if (!res.ok) return;
+        const data = (await res.json()) as { sources?: unknown[] };
+        if (!cancelled) setRagSourceCount(data.sources?.length ?? 0);
+      } catch {
+        // capability probe only — ignore
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [ragEnabled]);
+
+  // PII protection numbers — no masked-fields runtime metric exists, so show
+  // what the configurations actually declare: masked columns across configs.
+  const maskedColumnsPerConfig = configurations.map((cfg) =>
+    Object.values(getConfigurationColumnMasking(cfg)).reduce(
+      (sum, cols) => sum + Object.values(cols).filter((m) => m.maskingMode !== 'none').length,
+      0,
+    ),
+  );
+  const totalMaskedColumns = maskedColumnsPerConfig.reduce((a, b) => a + b, 0);
+  const configsWithMasking = maskedColumnsPerConfig.filter((n) => n > 0).length;
+  const maskingShare = configurations.length > 0 ? configsWithMasking / configurations.length : 0;
+
+  const attentionCount = pendingWriteCount > 0 ? 1 : 0;
 
   return (
-    <div className="relative space-y-4">
-      {/* Fixed background blobs */}
-      <div className="fixed inset-0 -z-10 pointer-events-none overflow-hidden" aria-hidden="true">
-        <div className="absolute -top-40 -left-40 w-[500px] h-[500px] bg-os-900/20 rounded-full blur-3xl" />
-        <div className="absolute top-1/3 -right-40 w-[400px] h-[400px] bg-indigo-900/15 rounded-full blur-3xl" />
-        <div className="absolute -bottom-40 left-1/3 w-[450px] h-[450px] bg-os-800/10 rounded-full blur-3xl" />
-      </div>
-
-      {/* Page header */}
+    <div className="space-y-4">
       <PageHeader
         title="Dashboard"
         description="Overview of your MCP servers, sources, and activity."
@@ -76,267 +127,180 @@ export default function DashboardPage({
         }
       />
 
-      {/* Pending approvals banner — only shown when writes are awaiting review.
-          Surfaces the governance queue right at the top so it can't be missed. */}
-      {pendingWriteCount > 0 && (
-        <div
-          className="rounded-xl border border-amber-700/30 bg-amber-900/10 p-4 flex items-center justify-between gap-3 animate-fade-in-up"
-          style={{ animationDelay: '0ms' }}
-        >
-          <p className="text-sm text-amber-300">
-            {pendingWriteCount} write request{pendingWriteCount !== 1 ? 's' : ''} awaiting your
-            approval
-          </p>
-          <Button variant="secondary" onClick={() => setView({ page: 'pending-writes' })}>
-            Review &rarr;
-          </Button>
+      {/* The system in one line — the pipeline is the structure of the page */}
+      <PipelineStrip
+        setView={setView}
+        connections={connections}
+        connectionSchemas={connectionSchemas}
+        configurations={configurations}
+        profiles={profiles}
+        serveStatus={serveStatus}
+        connectedCount={connectedCount}
+        ragSourceCount={ragSourceCount}
+        activeMcpCount={activeMcpCount}
+        totalMcpCount={totalMcpCount}
+      />
+
+      {/* Main grid: charts + servers on the left, governance column right */}
+      <div className="grid grid-cols-1 md:grid-cols-[1.7fr_1fr] gap-4 items-start">
+        <div className="space-y-4 min-w-0">
+          <QueriesCard
+            recentActivity={recentActivity}
+            profiles={profiles}
+            serveStatus={serveStatus}
+          />
+          <ServersTable
+            setView={setView}
+            profiles={profiles}
+            serveStatus={serveStatus}
+            recentActivity={recentActivity}
+          />
         </div>
-      )}
 
-      {/* Status ribbon */}
-      <div
-        className="card-primary rounded-full px-4 py-2 flex flex-wrap items-center gap-3 animate-fade-in-up"
-        style={{ animationDelay: '0ms' }}
-      >
-        <Eyebrow live>
-          {activeMcpCount} server{activeMcpCount !== 1 ? 's' : ''} running
-        </Eyebrow>
-        <span className="eyebrow text-gray-700">·</span>
-        <Eyebrow>
-          {connectedCount} database{connectedCount !== 1 ? 's' : ''} connected
-        </Eyebrow>
-        <span className="eyebrow text-gray-700">·</span>
-        <Eyebrow>
-          {profiles.length} MCP Server{profiles.length !== 1 ? 's' : ''}
-        </Eyebrow>
-        {recentActivity.length > 0 &&
-          (() => {
-            const last = recentActivity[0];
-            const diffMs = Date.now() - new Date(last.timestamp).getTime();
-            const diffMin = Math.floor(diffMs / 60000);
-            const diffHour = Math.floor(diffMs / 3600000);
-            const ago =
-              diffMin < 1 ? 'just now' : diffMin < 60 ? `${diffMin}m ago` : `${diffHour}h ago`;
-            return (
-              <>
-                <span className="eyebrow text-gray-700">·</span>
-                <Eyebrow>last activity {ago}</Eyebrow>
-              </>
-            );
-          })()}
-      </div>
-
-      {/* Resources grid: MCP Servers / Data Configurations / Databases */}
-      <div
-        className="grid grid-cols-1 md:grid-cols-3 gap-4 animate-fade-in-up"
-        style={{ animationDelay: '80ms' }}
-      >
-        {/* MCP Servers */}
-        <KpiCard
-          accent="indigo"
-          onClick={() => setView({ page: 'mcp-list' })}
-          eyebrow={
-            <Eyebrow dotColor={hasActiveMcp ? 'bg-emerald-400' : 'bg-gray-600'}>
-              MCP SERVERS
-              <HelpTip
-                content="Start, stop and manage your MCP servers exposed to AI clients"
-                position="bottom"
-              />
-            </Eyebrow>
-          }
-          value={
-            <>
-              <span className="text-3xl">{activeMcpCount}</span>
-              <span className="text-lg text-gray-500">/{totalMcpCount}</span>
-            </>
-          }
-          footer={
-            <div className="space-y-0 max-h-40 overflow-y-auto">
-              {profiles.slice(0, 4).map((p) => {
-                const pStatus = serveStatus.profileStatuses?.[p.name];
-                const pActive = pStatus?.active === true;
-                return (
-                  <button
-                    key={p.name}
-                    onClick={() => setView({ page: 'mcp-detail', profileName: p.name })}
-                    className="w-full flex items-center justify-between px-2 py-1 rounded-md hover:bg-white/[0.02] transition-all duration-200 text-left"
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <div
-                        className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${pActive ? 'bg-emerald-400' : 'bg-gray-600'}`}
-                      />
-                      <span className="font-mono-plex text-xs text-gray-300 truncate">
-                        {p.label || p.name}
-                      </span>
-                    </div>
-                    <span
-                      className={`font-mono-plex text-[10px] px-2 py-0.5 rounded-full flex-shrink-0 ${pActive ? 'bg-emerald-400/10 text-emerald-400 ring-1 ring-emerald-400/20' : 'bg-white/5 text-gray-400'}`}
-                    >
-                      {pActive ? 'ON' : 'OFF'}
-                    </span>
-                  </button>
-                );
-              })}
-              {profiles.length === 0 && (
-                <p className="text-[10px] text-gray-600 text-center py-2 eyebrow">No servers</p>
-              )}
-              <button
-                onClick={() => setView({ page: 'mcp-list' })}
-                className="mt-1 w-full text-left"
-              >
-                <span className="eyebrow-accent hover:text-os-300 transition-colors">
-                  View all &rarr;
+        <div className="space-y-4 min-w-0">
+          {/* Needs attention */}
+          <div
+            className={`card-primary p-4 anim-rise-in ${attentionCount > 0 ? 'border-amber-700/30' : ''}`}
+            style={{ animationDelay: '160ms' }}
+          >
+            <h2 className="text-sm font-semibold text-gray-100">Needs attention</h2>
+            <p className="font-mono-plex text-[11px] text-gray-500 mb-2">
+              {attentionCount} item{attentionCount !== 1 ? 's' : ''}
+            </p>
+            {pendingWriteCount > 0 ? (
+              <div className="flex items-start gap-2.5 py-1 text-sm">
+                <span
+                  className="flex-none w-[18px] h-[18px] rounded-md bg-rose-400/10 flex items-center justify-center mt-0.5"
+                  aria-hidden="true"
+                >
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                    <path
+                      d="M5 1v5M5 8.6v.4"
+                      stroke="rgb(251 113 133)"
+                      strokeWidth="1.6"
+                      strokeLinecap="round"
+                    />
+                  </svg>
                 </span>
-              </button>
-            </div>
-          }
-        />
-
-        {/* Data Configurations */}
-        <KpiCard
-          accent="blue"
-          onClick={() => setView({ page: 'configurations' })}
-          eyebrow={
-            <Eyebrow dotColor={configurations.length > 0 ? 'bg-blue-400' : 'bg-gray-600'}>
-              DATA CONFIGURATIONS
-              <HelpTip
-                content="Configure which tables and columns from your databases are exposed to AI clients"
-                position="bottom"
-              />
-            </Eyebrow>
-          }
-          value={<span className="text-3xl">{configurations.length}</span>}
-          footer={
-            <div className="space-y-0 max-h-40 overflow-y-auto">
-              {configurations.slice(0, 4).map((cfg) => {
-                const tCount = getConfigurationTableNames(cfg).length;
-                return (
-                  <button
-                    key={cfg.name}
-                    onClick={() => setView({ page: 'config-detail', configName: cfg.name })}
-                    className="w-full flex items-center justify-between px-2 py-1 rounded-md hover:bg-white/[0.02] transition-all duration-200 text-left"
-                  >
-                    <span className="font-mono-plex text-xs text-gray-300 truncate">
-                      {cfg.label}
-                    </span>
-                    <span className="font-mono-plex text-[10px] text-gray-500 flex-shrink-0">
-                      {tCount} table{tCount !== 1 ? 's' : ''}
-                    </span>
-                  </button>
-                );
-              })}
-              {configurations.length === 0 && (
-                <p className="text-[10px] text-gray-600 text-center py-2 eyebrow">
-                  No Data Configurations
+                <p className="text-amber-300 leading-snug">
+                  {pendingWriteCount} write request{pendingWriteCount !== 1 ? 's' : ''} awaiting
+                  your approval
                 </p>
-              )}
-              <button
-                onClick={() => setView({ page: 'configurations' })}
-                className="mt-1 w-full text-left"
-              >
-                <span className="eyebrow-accent hover:text-os-300 transition-colors">
-                  View all &rarr;
-                </span>
-              </button>
-            </div>
-          }
-        />
+                <button
+                  type="button"
+                  onClick={() => setView({ page: 'pending-writes' })}
+                  className="ml-auto flex-none font-semibold text-[11px] text-os-300 bg-os-500/10 hover:bg-os-500/20 rounded-md px-2.5 py-1 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-os-500/40"
+                >
+                  Review
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 py-1 text-sm text-gray-500">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" aria-hidden="true" />
+                All clear — nothing needs your attention.
+              </div>
+            )}
+          </div>
 
-        {/* Databases */}
-        <KpiCard
-          accent="emerald"
-          onClick={() => setView({ page: 'connections' })}
-          eyebrow={
-            <Eyebrow dotColor={hasConnections ? 'bg-emerald-400' : 'bg-gray-600'}>
-              DATABASES
-              <HelpTip
-                content="Manage sources connecting to PostgreSQL, MySQL or SQLite databases"
-                position="bottom"
-              />
-            </Eyebrow>
-          }
-          value={
-            <>
-              <span className="text-3xl">{connectedCount}</span>
-              <span className="text-lg text-gray-500">/{totalConnCount}</span>
-            </>
-          }
-          footer={
-            <div className="space-y-0 max-h-40 overflow-y-auto">
-              {connections.slice(0, 4).map((conn) => {
-                const hasSchema = !!connectionSchemas[conn.name];
-                return (
-                  <div key={conn.name} className="flex items-center justify-between px-2 py-1">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <div
-                        className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${hasSchema ? 'bg-emerald-400' : 'bg-gray-600'}`}
-                        title={hasSchema ? 'Connected and schema loaded' : 'Not connected'}
-                      />
-                      <span className="font-mono-plex text-xs text-gray-300 truncate">
-                        {conn.label || conn.name}
-                      </span>
-                    </div>
+          {/* PII protection */}
+          <div className="card-primary p-4 anim-rise-in" style={{ animationDelay: '220ms' }}>
+            <h2 className="text-sm font-semibold text-gray-100">PII protection</h2>
+            <p className="font-mono-plex text-[11px] text-gray-500 mb-2">column masking</p>
+            {configurations.length > 0 ? (
+              <>
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="font-display font-light text-4xl tracking-tight text-gray-100 tabular-nums">
+                    {totalMaskedColumns}
+                  </span>
+                  <span className="text-xs text-gray-500 text-right leading-relaxed">
+                    masked column{totalMaskedColumns !== 1 ? 's' : ''} across
+                    <br />
+                    {configsWithMasking} of {configurations.length} configuration
+                    {configurations.length !== 1 ? 's' : ''}
+                  </span>
+                </div>
+                <div
+                  className="mt-2.5 h-1 rounded-sm bg-white/5 overflow-hidden"
+                  role="img"
+                  aria-label={`${configsWithMasking} of ${configurations.length} configurations use masking`}
+                >
+                  <div
+                    className="h-full rounded-sm bg-purple-400 anim-grow-x"
+                    style={{ transform: `scaleX(${maskingShare})`, animationDelay: '900ms' }}
+                  />
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-gray-500">
+                No Data Configurations yet — masking is set per configuration.
+              </p>
+            )}
+          </div>
+
+          {/* Recent activity */}
+          {recentActivity.length > 0 && (
+            <div className="card-primary p-4 anim-rise-in" style={{ animationDelay: '280ms' }}>
+              <div className="flex items-baseline justify-between">
+                <h2 className="text-sm font-semibold text-gray-100">Recent activity</h2>
+                <span className="font-mono-plex text-[11px] text-gray-500">
+                  {recentActivity.length} events
+                </span>
+              </div>
+              <p className="font-mono-plex text-[11px] text-gray-500 mb-1.5">audit log</p>
+              <div>
+                {recentActivity.slice(0, 8).map((entry) => (
+                  <div
+                    key={entry.id}
+                    className="py-1.5 border-b border-white/5 last:border-0 flex items-center gap-2.5"
+                  >
                     <span
-                      className={`font-mono-plex text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 ${
-                        conn.databaseType === 'postgresql'
-                          ? 'text-blue-300 bg-blue-500/10'
-                          : conn.databaseType === 'mysql'
-                            ? 'text-orange-300 bg-orange-500/10'
-                            : 'text-emerald-300 bg-emerald-500/10'
+                      className={`flex-shrink-0 w-1.5 h-1.5 rounded-full ${
+                        entry.result === 'success' ? 'bg-emerald-400' : 'bg-rose-400'
                       }`}
-                    >
-                      {conn.databaseType === 'postgresql'
-                        ? 'PG'
-                        : conn.databaseType === 'mysql'
-                          ? 'MySQL'
-                          : 'SQLite'}
+                      title={entry.result === 'success' ? 'Success' : 'Error'}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-mono-plex text-xs text-gray-200 truncate">
+                          {entry.toolName}
+                        </span>
+                        <span className="font-mono-plex text-[10px] px-2 py-0.5 rounded-full bg-os-500/10 text-os-300 ring-1 ring-os-500/20 flex-shrink-0">
+                          {entry.profileName}
+                        </span>
+                      </div>
+                      {entry.resultSummary && (
+                        <p className="text-xs text-gray-500 truncate mt-0.5">
+                          {entry.resultSummary}
+                        </p>
+                      )}
+                    </div>
+                    <span className="font-mono-plex text-[11px] text-gray-600 flex-shrink-0 whitespace-nowrap">
+                      {timeAgo(entry.timestamp)}
                     </span>
                   </div>
-                );
-              })}
-              {connections.length === 0 && (
-                <p className="text-[10px] text-gray-600 text-center py-2 eyebrow">No databases</p>
-              )}
+                ))}
+              </div>
               <button
-                onClick={() => setView({ page: 'connections' })}
-                className="mt-1 w-full text-left"
+                type="button"
+                onClick={() => setView({ page: 'audit-log' })}
+                className="mt-2 text-xs text-os-300 hover:underline focus:outline-none focus-visible:ring-1 focus-visible:ring-os-500/40 rounded"
               >
-                <span className="eyebrow-accent hover:text-os-300 transition-colors">
-                  View all &rarr;
-                </span>
+                Open audit log
               </button>
             </div>
-          }
-        />
+          )}
+        </div>
       </div>
 
-      {/* Governance tiles: Users / Settings / Metrics */}
+      {/* Quick nav: Users / Settings / Metrics */}
       <div
-        className="grid grid-cols-1 md:grid-cols-3 gap-3 animate-fade-in-up"
-        style={{ animationDelay: '160ms' }}
+        className="grid grid-cols-1 md:grid-cols-3 gap-3 anim-rise-in"
+        style={{ animationDelay: '320ms' }}
       >
-        {[
-          {
-            label: 'USERS',
-            description: 'Manage user accounts and permissions',
-            dot: 'bg-purple-500',
-            page: 'users' as const,
-          },
-          {
-            label: 'SETTINGS',
-            description: 'AI, email, SSO, branding & notifications',
-            dot: 'bg-amber-500',
-            page: 'settings' as const,
-          },
-          {
-            label: 'METRICS',
-            description: 'Usage analytics and performance',
-            dot: 'bg-cyan-500',
-            page: 'metrics' as const,
-          },
-        ].map((tile) => (
+        {QUICK_NAV.map((tile) => (
           <button
             key={tile.page}
+            type="button"
             onClick={() => setView({ page: tile.page })}
             className="card-interactive group p-3 flex items-center gap-3 text-left"
           >
@@ -351,67 +315,6 @@ export default function DashboardPage({
           </button>
         ))}
       </div>
-
-      {/* Recent Activity */}
-      {recentActivity.length > 0 && (
-        <div
-          className="card-primary overflow-hidden animate-fade-in-up"
-          style={{ animationDelay: '240ms' }}
-        >
-          <div className="flex items-center justify-between px-4 py-2 hairline-b">
-            <Eyebrow accent live>
-              RECENT ACTIVITY
-            </Eyebrow>
-            <Eyebrow>{recentActivity.length} events</Eyebrow>
-          </div>
-          <div>
-            {recentActivity.slice(0, 8).map((entry) => {
-              const time = new Date(entry.timestamp);
-              const diffMs = Date.now() - time.getTime();
-              const diffMin = Math.floor(diffMs / 60000);
-              const diffHour = Math.floor(diffMs / 3600000);
-              const timeAgo =
-                diffMin < 1
-                  ? 'just now'
-                  : diffMin < 60
-                    ? `${diffMin}m ago`
-                    : diffHour < 24
-                      ? `${diffHour}h ago`
-                      : time.toLocaleDateString();
-
-              return (
-                <div
-                  key={entry.id}
-                  className="px-4 py-1.5 border-b border-white/5 last:border-0 flex items-center gap-3"
-                >
-                  <span
-                    className={`flex-shrink-0 w-1.5 h-1.5 rounded-full ${
-                      entry.result === 'success' ? 'bg-emerald-400' : 'bg-rose-400'
-                    }`}
-                    title={entry.result === 'success' ? 'Success' : 'Error'}
-                  />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-mono-plex text-sm text-gray-200 truncate">
-                        {entry.toolName}
-                      </span>
-                      <span className="font-mono-plex text-[10px] px-2 py-0.5 rounded-full bg-os-500/10 text-os-300 ring-1 ring-os-500/20 flex-shrink-0">
-                        {entry.profileName}
-                      </span>
-                    </div>
-                    {entry.resultSummary && (
-                      <p className="text-xs text-gray-500 truncate mt-0.5">{entry.resultSummary}</p>
-                    )}
-                  </div>
-                  <span className="font-mono-plex text-xs text-gray-600 flex-shrink-0 whitespace-nowrap">
-                    {timeAgo}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

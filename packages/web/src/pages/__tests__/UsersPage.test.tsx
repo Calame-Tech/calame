@@ -34,4 +34,16 @@ describe('UsersPage', () => {
     expect(setView).toHaveBeenCalledWith({ page: 'dashboard' });
     await flushEffects();
   });
+
+  it('switches between the Users and Access matrix tabs', async () => {
+    renderPage();
+    await flushEffects();
+    fireEvent.click(screen.getByRole('button', { name: 'Access matrix' }));
+    await flushEffects();
+    // Matrix rendered (fetch mock returns zero users → its empty state)
+    expect(screen.getByText('No users yet')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Users' }));
+    await flushEffects();
+    expect(screen.queryByText('No users yet')).toBeNull();
+  });
 });

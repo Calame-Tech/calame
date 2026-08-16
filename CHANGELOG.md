@@ -7,6 +7,17 @@ root `package.json` version flows to the Docker image and `create-calame`).
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-08-16
+
+### Fixed
+
+- Dashboard activity chart could stay stuck on its empty state: the app
+  fetched only the 10 most recent audit entries, so as soon as one server
+  had been used that day the 7-day aggregation window collapsed to a
+  single day. The dashboard now aggregates over the last 250 entries
+  (the activity feed still shows 8).
+- Lint: removed disable comments referencing an unconfigured ESLint rule.
+
 ## [0.5.0] - 2026-08-15
 
 ### Added

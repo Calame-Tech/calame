@@ -5,6 +5,33 @@ every commit. Newest first.
 
 ---
 
+## 2026-08-14 → 16 — UI craft pass, releases 0.4.1 & 0.5.0, dashboard + data-config redesign (merged to `main`)
+
+Design-tooling session driven from Claude Code with the newly installed skills (impeccable, design-taste-frontend, dataviz — audited before install, see memory notes).
+
+### Release 0.4.1 (published as part of 0.5.0 notes)
+- **UI craft pass, identity unchanged**: 4 sub-AA contrasts raised (schema badge, "+ PII", user delete, OFF pill); chat typing dots `animate-bounce` → soft staggered pulse honoring `prefers-reduced-motion`; Metrics bars `width` → `transform: scaleX` (GPU); `::selection`/caret themed to the workspace accent; placeholder contrast lifted.
+- `docs/RELEASE.md` added: step-by-step desktop release guide (bump 4 files, tag `vX.Y.Z`, CI drafts, human publishes). CHANGELOG backfilled: the old "Unreleased" block actually shipped in 0.2.0–0.4.0 (now labeled as consolidated).
+- Gotchas hit: Prettier CI failure was one over-long inline style (plus local CRLF noise — local `format:check` unreliable on Windows); npm/Docker publish workflows fail **since v0.2.0** (missing secrets — still open).
+
+### Redesign shipped in 0.5.0 (branch `feat/dashboard-dataconfig-redesign`)
+Mockups iterated as Claude artifacts (galaxy concept rejected → lineage access-map rejected → final direction validated), then implemented + code-reviewed:
+- **Dashboard rewrite**: Sources → Data Configurations → MCP Servers pipeline strip with per-item drill-down (KPI-card footers preserved); activity chart aggregated client-side from the audit log (`components/dashboard/activity-stats.ts` — **calendar-day bucketing, DST-safe, unit-tested**); needs-attention column (pending writes first); real masked-columns PII card (no invented %); servers table with sparklines; orchestrated construction animation (transform/opacity/dashoffset only). Dropped deliberately: bg blur-blobs, status ribbon (data lives in the pipeline), 24h/7d/30d toggle (no backing data).
+- **ConfigurationsPage**: List | Graph toggle. `ConfigGraphView` (SVG): three aligned layers, barycenter-ordered slots, curved links, directional lineage highlight, click-to-pin chip, **drag-to-reorder persisted** in localStorage (`lib/graph-order.ts`, reconciled against live model) + Reset layout.
+- **Access visibility**: pinned server chip lists granted users; Users page gains an **Access matrix** tab (`UserAccessMatrix`: R / R+W badges, `*` = table-restricted, sticky first column).
+- **ADR 0003** (`docs/adr/`): terminology decision — Sources / **Data Profiles** (= code `Configuration`) / **MCP Servers** (= code `Profile`), 5-step no-big-bang migration plan. UI rename not started.
+- Review findings fixed pre-merge: DST bucketing, missing `pointercancel`, missing `touch-action`, stale pin reconciliation. Post-merge lint fix: dropped `eslint-disable react-hooks/exhaustive-deps` comments (plugin not configured → hard lint error).
+- **207 web tests** (was 182), typecheck/prettier/impeccable-detector green.
+
+### Releases
+- **v0.5.0 published** (installers + latest.json → auto-update live). v0.4.1 draft left unpublished (superseded; its notes are inside 0.5.0's).
+
+### State / next
+- Impeccable design hook now scans UI edits automatically (`packages/web/.impeccable/config.json` committed, ignores empty).
+- Open: npm/Docker publish secrets; ADR 0003 step 1 (UI label sweep "Data Configurations" → "Data Profiles"); follow-ups R-6/R-7/R-8 (shared source-color constant, shared RAG fetch, graph chip aria-live); coverage climb to 70%.
+
+---
+
 ## 2026-08-12 — "Expose for Copilot / ChatGPT" tunnel (branch `feat/tunnel-expose`, stacked on claude-desktop-connect)
 
 Driven by a real prospect case: a non-dev employee with only an M365 Copilot license wants Calame on his own PC feeding his documents to Copilot. Microsoft (like OpenAI) only connects to MCP servers over public HTTPS through their cloud — no local config file exists. Answer: an embedded Cloudflare **quick tunnel** (zero-account, Apache-2.0 so redistributable — ngrok was ruled out: proprietary binary, account required, free-tier interstitials).

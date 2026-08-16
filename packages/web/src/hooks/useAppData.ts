@@ -267,7 +267,12 @@ export function useAppData(isUserPage: boolean) {
     if (!authenticated || isUserPage) return;
     const fetchRecent = async () => {
       try {
-        const res = await apiFetch('/api/audit?limit=10&offset=0', { credentials: 'include' });
+        // 250 entries, not 10: the dashboard aggregates this list into a
+        // 7-day activity series and per-server 24h counts — a 10-entry
+        // window collapses to a single day as soon as one server is used,
+        // which permanently blanks the chart. The feed itself still renders
+        // only the first 8 entries.
+        const res = await apiFetch('/api/audit?limit=250&offset=0', { credentials: 'include' });
         const data = await res.json();
         if (data.success !== false && data.entries) {
           const entries = data.entries as AuditLogEntry[];

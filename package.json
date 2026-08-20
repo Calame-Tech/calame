@@ -20,6 +20,7 @@
     "dev": "pnpm --filter calame run dev",
     "start": "pnpm build && pnpm dev",
     "bundle": "node scripts/bundle-server.mjs",
+    "model:fetch": "node scripts/fetch-embedding-model.mjs",
     "desktop:prepare": "node scripts/prepare-desktop.mjs",
     "desktop:dev": "pnpm desktop:prepare && pnpm -C apps/desktop dev",
     "desktop:build": "pnpm desktop:prepare && pnpm -C apps/desktop tauri:build",

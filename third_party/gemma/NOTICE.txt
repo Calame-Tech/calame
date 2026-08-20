@@ -1,0 +1,12 @@
+Gemma is provided under and subject to the Gemma Terms of Use found at
+ai.google.dev/gemma/terms
+
+This distribution includes EmbeddingGemma (embeddinggemma-300m), one of the
+models covered by that Agreement. A copy of the Agreement is included
+alongside this notice as LICENSE-gemma.txt.
+
+Use of EmbeddingGemma in this product is subject to the Gemma Prohibited Use
+Policy at ai.google.dev/gemma/prohibited_use_policy (incorporated by
+reference into the Gemma Terms of Use, Section 3.2). That policy is not
+reproduced here — Google may update it, and the version at the URL above is
+always the authoritative one.

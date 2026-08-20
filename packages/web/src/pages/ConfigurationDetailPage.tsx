@@ -807,7 +807,7 @@ function ConfigurationDetailView({
 
       {/* --- KNOWLEDGE TAB --- */}
       {activeConfigTab === 'knowledge' && ragEnabled && (
-        <div className="card-primary">
+        <div className="card-primary p-4">
           {/*
            * NOTE: `profileName` below is intentionally `configName` — RagAccessSelector
            * uses this value only as an identifier label and as part of the default POST

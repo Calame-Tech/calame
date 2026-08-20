@@ -149,7 +149,7 @@ function MinusIcon() {
 function ChevronIcon({ open }: { open: boolean }) {
   return (
     <svg
-      className={`w-3 h-3 text-gray-500 transition-transform duration-150 flex-shrink-0 ${open ? 'rotate-90' : ''}`}
+      className={`w-4 h-4 text-gray-400 transition-transform duration-150 flex-shrink-0 ${open ? 'rotate-90' : ''}`}
       fill="none"
       stroke="currentColor"
       strokeWidth={2}
@@ -586,6 +586,7 @@ function SourceRow({
           className="flex-shrink-0 p-0.5 hover:text-gray-300 transition-colors"
           aria-label={node.expanded ? 'Réduire la source' : 'Développer la source'}
           aria-expanded={node.expanded}
+          title="Parcourir les dossiers et fichiers de cette source"
         >
           {node.loading ? <SpinnerIcon /> : <ChevronIcon open={node.expanded} />}
         </button>
@@ -1198,7 +1199,9 @@ export default function RagAccessSelector({
           Scopes RAG — profile <span className="text-os-400 font-mono">"{profileName}"</span>
         </h3>
         <p className="text-xs text-gray-500 mt-0.5">
-          Sélectionnez les bases de connaissance et dossiers accessibles pour ce profile.
+          Sélectionnez les bases de connaissance et dossiers accessibles pour ce profile. Cliquez
+          sur <span className="text-gray-400">▸</span> pour parcourir le contenu d'une base et
+          choisir des dossiers ou fichiers précis plutôt que tout inclure.
         </p>
         <label className="flex items-start gap-2 mt-2 cursor-pointer group">
           <input

@@ -7,6 +7,8 @@ root `package.json` version flows to the Docker image and `create-calame`).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-20
+
 ### Added
 
 - Bundled local embedding model (EmbeddingGemma-300M, q4 ONNX) for RAG:
@@ -20,6 +22,30 @@ root `package.json` version flows to the Docker image and `create-calame`).
   by purging and re-ingesting under the new model. See
   `third_party/NOTICES.md` for the bundled model's license (Gemma Terms of
   Use).
+- Native OS folder-browse dialog when configuring a local-folder RAG source.
+- Animated Metrics dashboard: KPI counters, bar chart, and donut/pool rings
+  now tween instead of snapping, with a coherent staged reveal on load.
+
+### Fixed
+
+- RAG search results now expose a true, query-comparable `similarity`
+  score alongside the existing internal ranking `score`, plus an optional
+  `minSimilarity` cutoff — the ranking score alone couldn't distinguish a
+  weak match from a real one.
+- PDF documents are now chunked per page instead of as a single block,
+  matching how other formats are chunked.
+- `rag_list_documents` now recognizes `.` as a root-folder synonym and
+  returns an explicit error for a genuinely unknown folder (across every
+  source in a multi-source call), instead of silently returning an empty
+  list indistinguishable from "this folder is really empty".
+- `rag_list_sources` now reports `indexedDocumentCount` separately from
+  `documentCount`, so a caller can tell "not indexed yet" from "missing
+  access" when a discovered file produced no searchable chunks.
+- The sync status badge could get stuck on "in progress" and the source
+  list could keep showing a stale "never synced" after a successful sync.
+- `resolveAiSetting` could hand back an embeddings-only setting for a chat
+  turn; saving an AI setting with reranking enabled was silently dropped.
+- Stale claude.ai custom-connector setup instructions in the token manager.
 
 ## [0.5.1] - 2026-08-16
 

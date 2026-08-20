@@ -5,6 +5,51 @@ every commit. Newest first.
 
 ---
 
+## 2026-08-19 — RAG : modèle d'embedding local embarqué, activé par défaut (9 phases, uncommitted)
+
+Point de départ : activer le RAG exigeait de configurer à la main un provider d'embeddings distant — les users non-dev ne savaient pas ce que c'était, et le texte brut partait chez un tiers à chaque ingestion *et* chaque recherche, contredisant la promesse « vos données restent sur votre PC ». Décision utilisateur explicite : lancer maintenant (« la promesse du produit n'est pas tenue »), local par défaut mais providers distants conservés comme choix.
+
+- **Modèle** : EmbeddingGemma-300M (Google), q4 ONNX, via `@huggingface/transformers`. Choisi après audit perf/poids/qualité (#1 MTEB multilingue < 500M params).
+- **Phase 0 (dérisquage)** : validé cosine=1.00000 vs référence croisée Python/Node (poids originaux gated sur HF, contournés via l'artefact ONNX communautaire non gated) ; `onnxruntime-web`+DirectML élagables sans casser l'inférence → fermeture finale ~275 Mo (65 Mo JS + 210 Mo poids), pas besoin du plan B.
+- **Phases 1-2** : script de fetch avec SHA épinglé + vérif taille/hash, packaging esbuild avec élagage `onnxruntime-node`, `LocalOnnxEmbeddingClient` (AutoModel + lecture directe `sentence_embedding`, jamais de pooling manuel — piège identifié en amont).
+- **Phase 3-4** : préfixes requête/document asymétriques câblés via `embedQuery()` optionnel (pas un paramètre `mode` — casserait silencieusement les mocks existants) ; bug latent corrigé : l'ingestion ignorait `embedding_setting_name` de la source (seule la recherche l'honorait) — invisible tant qu'une seule dimension existait process-wide, devenu réel dès que « local + distant coexistent ».
+- **Phase 5-6** : provider `local` côté host (validation, résolution de chemin type `cloudflared-resolve.ts`), réglage intégré semé par migration + auto-guéri au boot (ligne DB réelle, pas un réglage virtuel — évite d'intercepter 8 méthodes d'`AiSettingsManager`), défaut 768 dims sur install neuve tout en préservant les installs existantes à 1536.
+- **Phase 7** : UI (`AiSettings.tsx` anglais, `SourceForm.tsx` français) — vérifiée en pilotant un vrai serveur de dev via Playwright (Chromium installé à la volée en scratchpad, pas d'outil browser dispo dans l'environnement), ingestion de bout en bout réussie.
+- **Phase 8** : flow de ré-indexation pour les installs existantes bloquées sur une autre dimension (`POST /api/rag/reindex` : purge → reconfigure → reconstruit l'index vectoriel → attend un redémarrage → reprend au boot) — la table `rag_chunks_vec` a une dimension fixe unique process-wide, pas de bascule à chaud possible (routes capturées par valeur à l'enregistrement). **Vérifié contre un vrai serveur relancé** (pas juste des tests unitaires) : install 1536 seedée → migration → redémarrage réel du process → reprise + re-sync confirmés en log → précondition 409 multi-tenant confirmée.
+- **Phase 9** : métrage (chip verte « local · gratuit », distingue gratuit-connu d'inconnu), licences (liens in-app vers les Gemma Terms, `third_party/NOTICES.md`), ADR 0004, README/CHANGELOG.
+- **Vert** : 1306 tests `packages/cli`+`ee/rag-core` (2255 tout le monorepo), lint + typecheck propres partout, aucune régression sur l'ensemble des 9 phases.
+- **Pas committé** — travail volumineux (~45 fichiers modifiés + ~15 nouveaux), en attente de revue/découpage avant commit.
+
+---
+
+## 2026-08-18 — Site: pivot « Logogramme » (Arrival ink) VALIDÉ et porté (repo `Calame-website`, uncommitted)
+
+L'utilisateur a rejeté la V1 dark-IBM-Plex ("trop IA"), puis co-construit la direction finale via l'artifact « Encres de Calame » (comps itérées en live) : logogrammes d'encre circulaires façon *Premier Contact*, typo d'origine restaurée (Fraunces + accents italiques JAMAIS colorés, Inter, JetBrains Mono), indigo réservé à l'interactif, boutons cartouches nets (radius 2px), canvas #05070d.
+
+- **Encres réelles** : l'utilisateur a généré 17 JPG via Gemini (dossier `logo/`, prompts fournis en session) ; pipeline Python (recadrage auto, teinte ivoire, alpha par densité) → `public/ink/*.png` (108 KB). Hero+filigrane CTA = anneau « 6brsem », sections = n11/n2/n12, diagramme = n8, logo nav = n12.
+- **Hero** : texte à gauche, logogramme géant à droite qui respire (filtre turbulence global `#ink-wobble` dans layout.tsx, animé SMIL) et se diffuse à l'arrivée (`.ink-load`, flou→net). Plus de scène pipeline (déplacée).
+- **Diagramme de flux** ressuscité de l'ancien site : Databases/Documents → **l'anneau d'encre** (Calame en Fraunces italique + profiles/auth/pii mask/audit) → Your AI ; gouttes SMIL rondes (zero-length stroke + non-scaling-stroke, astuce contre l'étirement du viewBox), la sortante est indigo = donnée gouvernée. Fond pointillé masqué (canvas de schéma).
+- **Système** : gray-950 redéfini → #05070d ; h1-h3 serif via base layer (les overrides de poids/tracking retirés partout, sweep agent sur 11 fichiers) ; `glow-os` supprimé des pages (l'encre est la seule décoration) ; interlude Craft supprimée ; Button = cartouches. PRODUCT.md et DESIGN.md régénérés.
+- Vert : typecheck, eslint, build (14 routes). Piège headless documenté : viewport Edge min ~500px et étirement vh — les captures « mobiles » et pleines pages ne sont pas fiables, valider au navigateur.
+- **Retouches post-validation (même jour, retours utilisateur en live)** : trait séparateur du CTA final supprimé (« trait chelou ») ; trame pointillée du diagramme déplacée sur son propre calque (son masque de fondu grisait les cartes aux bords) ; filigrane logogramme ajouté derrière l'en-tête /contact ; utilitaire `.glow-os` mort supprimé ; doc synchronisée (README « Logogramme », PRODUCT.md principes/anti-références, DESIGN.md filigranes).
+
+---
+
+## 2026-08-17 — Marketing site redesign (repo `Calame-website`, separate from this one; uncommitted, awaiting review)
+
+Full redesign of calame.dev driven with the impeccable skill, on user request: align the site with the app's identity, add download links, refresh content to v0.5.x.
+
+- **Identity switch**: light "ink on paper" moss palette → the app's own language (gray-950 canvas, IBM Plex Sans light + Plex Mono, brandable indigo `--color-os-*` #5c7cfa, translucent rounded-2xl cards, hairline white/5 borders, no backdrop-blur). Fonts swapped in `layout.tsx`, tokens rebuilt in `globals.css`. `PRODUCT.md` (register: brand) + `DESIGN.md` written for future sessions.
+- **New `/download` page** + nav/footer entries: pinned v0.5.1 GitHub release links (.exe 46 MB / .msi 65 MB, verified published 2026-08-17), install facts (per-user, tray, auto-update, %APPDATA% survival, `/S` silent), SmartScreen warning callout, Docker + source paths. Version bump = one constant in `src/lib/site.ts` (artifact filenames embed the version; no stable "latest" URL exists).
+- **Content refresh**: hero repositioned on governance ("Plug your AI into your data. Keep control."), features bento with product-true demo tiles (PII masking table, write-approval queue, profiles, MCP proxy), clients section now shows one-click Claude Desktop connect + Copilot/ChatGPT tunnel, RAG sources (Notion, SharePoint, Drive, S3) surfaced.
+- **Motion**: expo-out entrance choreography on heroes (pure CSS, no JS gate), IntersectionObserver `Reveal` (progressive enhancement, visible-by-default), `line-draw` SVG connectors, all with `prefers-reduced-motion` fallbacks.
+- **Bugs fixed along the way**: dead duplicate `components/` tree at repo root deleted (stale amber-palette copy); responsive grids missing a base template (`grid` without `grid-cols-1` → implicit auto column sized to content → mobile overflow) fixed in 13 files; header buttons "hidden md:inline-flex" unreliable because Button's base classes carry `inline-flex` (equal specificity) → wrapped in responsive spans; `Callout` side-stripe border removed.
+- **Flagged for human review**: pricing/license wording was contradictory between pages (old "free internal use of ee/" vs new "Pro unlocks ee/ on one instance"); aligned on the latter, needs a licensing read. Verified green: typecheck, eslint, build (14 routes), screenshots desktop + narrow viewport. NOT committed.
+- **Editorial pass (2026-08-18, user: "comme Hermès, go")**: section rhythm raised (py-24/36, hero pt-28/44); new `sections/craft.tsx` interlude ("Named after the first pen", mono intro line, narrow prose column, full-width drawn calligraphic stroke ending at a reed-pen nib in light ink); FinalCTA rebuilt as an open composition (no card: type + bloom + drawn rule + three quiet mono install paths). Root fix on `line-draw`: strokes now drawn by default and only animate `from` hidden when the animation actually plays (no-JS/print/unfired reveals always see the finished drawing).
+- **Motion + de-template pass (2026-08-18, user feedback "pas assez d'animation / trop IA")**: hero PipelineScene is now a 9s CSS-only live loop (audit line cycles 3 governed events, pulses travel the connectors, queued write flips to approved); demo tiles choreograph their content on reveal (`.reveal-in .m-rise/.m-wipe/.m-attention`, ticks draw via `line-draw`); one calligraphic "calame stroke" underline in the hero (the single flourish); announcement pill → plain mono version line; section-name eyebrows removed (kept only info-bearing ones: docs breadcrumb, download version); section header alignment now alternates (SectionHeader `mx-auto` fixed for `align="left"`); whole-section `Reveal` fade wrappers removed in favor of sibling staggers; buttons got press feedback, nav links an animated ink underline. DESIGN.md motion section updated.
+
+---
+
 ## 2026-08-14 → 16 — UI craft pass, releases 0.4.1 & 0.5.0, dashboard + data-config redesign (merged to `main`)
 
 Design-tooling session driven from Claude Code with the newly installed skills (impeccable, design-taste-frontend, dataviz — audited before install, see memory notes).

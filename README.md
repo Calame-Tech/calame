@@ -82,6 +82,15 @@ environment to reuse an existing secret.
   - **OpenRouter** (Claude, GPT, Gemini, Llama, …)
   - **Custom OpenAI-compatible** — self-hosted **Ollama**, vLLM, LM Studio
 
+### Knowledge base (RAG)
+- Connect document sources (local folders, S3, Google Drive/Sheets, Notion,
+  SharePoint, Git) and search over them from chat
+- **Local embeddings by default** — documents and search queries are embedded
+  on-device (EmbeddingGemma-300M, bundled) with zero configuration; nothing
+  leaves the machine. Remote embedding providers remain available as an
+  explicit choice.
+- PII masking, hybrid (vector + keyword) search, per-profile scoping
+
 ### Operations
 - Email invitations (SMTP), user management, metrics dashboard
 - HashiCorp Vault integration for secrets

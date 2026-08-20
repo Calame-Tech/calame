@@ -7,6 +7,20 @@ root `package.json` version flows to the Docker image and `create-calame`).
 
 ## [Unreleased]
 
+### Added
+
+- Bundled local embedding model (EmbeddingGemma-300M, q4 ONNX) for RAG:
+  documents and search queries are now embedded entirely on-device by
+  default, with zero configuration and no data leaving the machine. Remote
+  providers (OpenRouter, custom OpenAI-compatible endpoints) remain fully
+  available as an explicit choice. Existing installs configured with a
+  remote embedding provider are unaffected; a new dimension-migration flow
+  (`POST /api/rag/reindex`, surfaced in the UI when switching providers
+  would otherwise conflict with already-indexed content) lets them opt in
+  by purging and re-ingesting under the new model. See
+  `third_party/NOTICES.md` for the bundled model's license (Gemma Terms of
+  Use).
+
 ## [0.5.1] - 2026-08-16
 
 ### Fixed

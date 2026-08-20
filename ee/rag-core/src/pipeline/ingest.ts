@@ -21,8 +21,27 @@ export interface IngestionPipelineDeps {
   db: BetterSqlite3Database;
   /** Vector store (typically a {@link SqliteVecStore}) sharing the same DB. */
   vectorStore: VectorStore;
-  /** Embedding client used to produce vectors for new chunks. */
+  /**
+   * Embedding client used to produce vectors for new chunks when
+   * {@link resolveEmbeddingClient} is absent, or when it's present but the
+   * source's `embeddingSettingName` fails to resolve (e.g. the referenced AI
+   * setting was deleted) — see the doc comment on that field.
+   */
   embeddingClient: EmbeddingClient;
+  /**
+   * Resolves an AI setting name to its {@link EmbeddingClient}, so each
+   * document is embedded with the client its OWN source is configured for
+   * (`input.source.embeddingSettingName`) rather than always the process-wide
+   * default `embeddingClient`. Optional and falls back to `embeddingClient`
+   * when absent, so every caller that constructs a pipeline with a single
+   * fixed client (mostly tests) keeps working unchanged.
+   *
+   * Before this existed, ingestion silently used `embeddingClient` for every
+   * source regardless of what `embedding_setting_name` said — masked by the
+   * mono-dimension-per-store invariant, but a real bug: a source explicitly
+   * configured for one provider would get indexed with a different one.
+   */
+  resolveEmbeddingClient?: (settingName: string) => EmbeddingClient;
   /** Optional chunker overrides (maxTokens / overlap / minTokens). */
   chunkOptions?: ChunkOptions;
   /**
@@ -128,6 +147,9 @@ export class IngestionPipeline {
   private readonly db: BetterSqlite3Database;
   private readonly vectorStore: VectorStore;
   private readonly embeddingClient: EmbeddingClient;
+  private readonly resolveEmbeddingClient:
+    | ((settingName: string) => EmbeddingClient)
+    | undefined;
   private readonly chunkOptions: ChunkOptions | undefined;
   private readonly onTokensEmbedded: ((count: number) => void) | undefined;
   private readonly capConfig: EmbeddingCapConfig | undefined;
@@ -136,9 +158,29 @@ export class IngestionPipeline {
     this.db = deps.db;
     this.vectorStore = deps.vectorStore;
     this.embeddingClient = deps.embeddingClient;
+    this.resolveEmbeddingClient = deps.resolveEmbeddingClient;
     this.chunkOptions = deps.chunkOptions;
     this.onTokensEmbedded = deps.onTokensEmbedded;
     this.capConfig = deps.capConfig;
+  }
+
+  /**
+   * Resolve the client to embed `source`'s documents with: the source's own
+   * `embeddingSettingName` when a resolver was supplied, else the process-
+   * wide default. Deliberately does NOT fall back to the default when the
+   * named setting fails to resolve (e.g. its AI setting was deleted) —
+   * silently embedding under a DIFFERENT model than the source is configured
+   * for could corrupt the index without any error (dimensions might
+   * coincidentally match while the embedding space doesn't). The caller
+   * (`runSyncJob` in routes/rag-index.ts) already catches per-document
+   * ingestion errors, logs them, and continues with the rest of the sync —
+   * failing loud here surfaces a clear, actionable error for just this one
+   * document instead.
+   */
+  private resolveClientForSource(source: RagSource): EmbeddingClient {
+    return this.resolveEmbeddingClient
+      ? this.resolveEmbeddingClient(source.embeddingSettingName)
+      : this.embeddingClient;
   }
 
   /**
@@ -180,23 +222,50 @@ export class IngestionPipeline {
     });
     const chunks = chunker(parsed.text, this.chunkOptions);
 
+    // Resolve the client for THIS source before the cap gate — the gate
+    // itself is conditional on billability (below), and the client is also
+    // what the dimension guard right after it checks against.
+    const client = this.resolveClientForSource(input.source);
+
+    // Fail fast with a clear error instead of a length-mismatch surfacing
+    // deep inside SqliteVecStore.upsert(). RagSource itself doesn't carry
+    // embeddingDimensions (only the DB row does), so read it directly —
+    // cheap, indexed lookup by primary key.
+    if (chunks.length > 0) {
+      const sourceRow = this.db
+        .prepare<[string], { embedding_dimensions: number }>(
+          `SELECT embedding_dimensions FROM rag_sources WHERE id = ?`,
+        )
+        .get(sourceId);
+      if (sourceRow && sourceRow.embedding_dimensions !== client.dimensions) {
+        throw new Error(
+          `IngestionPipeline: source "${sourceId}" is configured for ` +
+            `${sourceRow.embedding_dimensions} dimensions, but its resolved embedding client ` +
+            `("${client.modelName}") produces ${client.dimensions}. Re-index the source with a ` +
+            `matching embedding configuration.`,
+        );
+      }
+    }
+
     // Monthly embedding-cap gate. Runs BEFORE the provider call so we
     // never pay for tokens we're about to refuse to persist. The chunker
     // has already computed `tokenCount` for every chunk via
     // gpt-tokenizer — accurate enough for cap accounting (the cap is a
     // kill-switch, not invoice reconciliation). When `capConfig` is
     // undefined or `monthlyTokenCap <= 0`, `assertWithinCap` is a no-op.
+    // Skipped when the resolved client is explicitly non-billable (e.g. the
+    // bundled local model) — free embeddings shouldn't burn a paid budget.
     // Defensive tenant fallback mirrors the one below (line ~182) so a
     // caller that built `RagSource` before Phase A still gates against
     // 'default'.
-    if (this.capConfig && chunks.length > 0) {
+    if (this.capConfig && chunks.length > 0 && client.billable !== false) {
       const attempted = chunks.reduce((sum, c) => sum + c.tokenCount, 0);
       const tenantForCap: string = input.source.tenantId ?? 'default';
       assertWithinCap({ db: this.db, config: this.capConfig }, tenantForCap, attempted);
     }
 
     const embeddings: number[][] =
-      chunks.length > 0 ? await this.embeddingClient.embed(chunks.map((c) => c.text)) : [];
+      chunks.length > 0 ? await client.embed(chunks.map((c) => c.text)) : [];
 
     if (embeddings.length !== chunks.length) {
       throw new Error(
@@ -204,7 +273,7 @@ export class IngestionPipeline {
       );
     }
 
-    const dimensions = this.embeddingClient.dimensions;
+    const dimensions = client.dimensions;
     const now = new Date().toISOString();
     // Phase A multi-tenancy — the document inherits the parent source's
     // tenant. Defensive fallback to `'default'` covers callers (mostly

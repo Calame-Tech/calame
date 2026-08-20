@@ -3,9 +3,25 @@
 // and the rerank-capability lookup live alongside each other.
 
 import type { EmbeddingClient, ResolvedEmbeddingSetting, RateLimiter } from '@calame-ee/rag-core';
-import type { AiSettingsManager } from '../ai-config.js';
+import type { AiSetting, AiSettingsManager } from '../ai-config.js';
 import { settingSupports } from '../ai-config.js';
 import type { RagLogger } from './types.js';
+
+/**
+ * Cheap fingerprint of the AiSetting fields that change what
+ * `createEmbeddingClient` builds. Used to invalidate the memoized client
+ * cache in {@link buildEmbeddingResolvers} when a setting is edited, without
+ * comparing full object identity or deep-equality.
+ */
+function fingerprintSetting(setting: AiSetting): string {
+  return [
+    setting.provider,
+    setting.baseUrl ?? '',
+    setting.embeddingModel ?? '',
+    setting.embeddingDimensions ?? '',
+    setting.apiKey.length,
+  ].join('|');
+}
 
 /** The pair of resolvers the runtime exposes for embedding settings. */
 export interface EmbeddingResolvers {
@@ -20,10 +36,18 @@ export interface EmbeddingResolvers {
  * AI settings manager. Both throw with an actionable message when the named
  * setting is missing, lacks the `embeddings` capability, or was saved before
  * embedding-dimension auto-detection.
+ *
+ * @param opts.localModelsRootDir  resolved once at boot by
+ *   `rag-runtime.ts` via `local-model-resolve.ts` — threaded through to
+ *   `createEmbeddingClient` for the `local` provider branch. `undefined` when
+ *   the bundled model isn't staged; `resolveEmbeddingClient` then throws
+ *   `LocalEmbeddingUnavailableError` only if/when a `local` setting is
+ *   actually referenced, not at boot.
  */
 export function buildEmbeddingResolvers(
   ragCore: typeof import('@calame-ee/rag-core'),
   aiSettingsManager: AiSettingsManager,
+  opts?: { localModelsRootDir?: string },
 ): EmbeddingResolvers {
   // Resolver: AI setting name → (embeddingModel, dimensions).
   const resolveEmbeddingSetting = (settingName: string): ResolvedEmbeddingSetting => {
@@ -51,6 +75,17 @@ export function buildEmbeddingResolvers(
     return { embeddingModel: setting.embeddingModel, dimensions: setting.embeddingDimensions };
   };
 
+  // Memoized by setting name + a cheap field fingerprint (see
+  // fingerprintSetting) — resolveEmbeddingClient is called once per document
+  // during ingestion (see IngestionPipeline.resolveClientForSource), so
+  // without this, a large sync would rebuild a fresh client per document.
+  // Harmless for today's OpenAI-compatible clients (a few plain fields), but
+  // load-bearing for the bundled local model: LocalOnnxEmbeddingClient lazily
+  // loads its own ONNX session on first use and keeps it for the life of the
+  // instance — rebuilding a NEW instance per document would reload that
+  // session (~2s+) on every single document instead of once per process.
+  const clientCache = new Map<string, { fingerprint: string; client: EmbeddingClient }>();
+
   const resolveEmbeddingClient = (settingName: string): EmbeddingClient => {
     const setting = aiSettingsManager.getSetting(settingName);
     if (!setting) {
@@ -61,8 +96,15 @@ export function buildEmbeddingResolvers(
         `AI setting "${settingName}" does not advertise the "embeddings" capability.`,
       );
     }
+
+    const fingerprint = fingerprintSetting(setting);
+    const cached = clientCache.get(settingName);
+    if (cached && cached.fingerprint === fingerprint) {
+      return cached.client;
+    }
+
     const { dimensions } = resolveEmbeddingSetting(settingName);
-    return ragCore.createEmbeddingClient(
+    const client = ragCore.createEmbeddingClient(
       {
         provider: setting.provider,
         apiKey: setting.apiKey,
@@ -70,7 +112,10 @@ export function buildEmbeddingResolvers(
         embeddingModel: setting.embeddingModel,
       },
       dimensions,
+      { localModelsRootDir: opts?.localModelsRootDir },
     );
+    clientCache.set(settingName, { fingerprint, client });
+    return client;
   };
 
   return { resolveEmbeddingSetting, resolveEmbeddingClient };

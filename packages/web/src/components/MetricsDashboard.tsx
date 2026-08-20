@@ -5,6 +5,7 @@ import HelpTip from './HelpTip.js';
 import { Eyebrow } from './ui/Eyebrow.js';
 import { SegmentedControl } from './ui/SegmentedControl.js';
 import { KpiCard } from './ui/KpiCard.js';
+import { AnimatedNumber, useAnimatedNumber, prefersReducedMotion } from './ui/AnimatedNumber.js';
 
 type Period = '24h' | '7d' | '30d';
 
@@ -22,6 +23,29 @@ function poolUtilizationColor(active: number, total: number): string {
   if (ratio > 0.95) return '#fb7185'; // rose-400
   if (ratio > 0.8) return '#fbbf24'; // amber-400
   return '#34d399'; // emerald-400
+}
+
+/**
+ * True once the initial paint has settled — gates one-time entrance reveals
+ * (donut arcs drawing in, mini-bars growing in) so they animate from a
+ * hidden state on mount instead of appearing already-formed, joining the
+ * same construction sequence the bar chart and sparklines already play.
+ * Skips straight to revealed under prefers-reduced-motion.
+ */
+function useMountReveal(): boolean {
+  const [revealed, setRevealed] = useState(() => prefersReducedMotion());
+  useEffect(() => {
+    if (revealed) return undefined;
+    let timeoutId: number;
+    const rafId = requestAnimationFrame(() => {
+      timeoutId = window.setTimeout(() => setRevealed(true), 20);
+    });
+    return () => {
+      cancelAnimationFrame(rafId);
+      window.clearTimeout(timeoutId);
+    };
+  }, []);
+  return revealed;
 }
 
 /** Aggregates requestsByHour into a per-bucket total for the bar chart */
@@ -113,6 +137,7 @@ function BarChart({ bars }: { bars: Array<{ label: string; count: number }> }) {
           const y = chartHeight - barH;
           const isHovered = hoverIndex === i;
           const opacity = hoverIndex === null ? 0.85 : isHovered ? 1 : 0.35;
+          const tooltipY = Math.max(2, y - 24);
           return (
             <g
               key={bar.label}
@@ -128,33 +153,44 @@ function BarChart({ bars }: { bars: Array<{ label: string; count: number }> }) {
                 fill="url(#bar-gradient)"
                 opacity={opacity}
                 rx={2}
-                style={{ transition: 'opacity 150ms ease' }}
+                className="anim-grow-y"
+                style={{
+                  transition: 'opacity 150ms ease',
+                  transformBox: 'fill-box',
+                  animationDelay: `${Math.min(i * 12, 400)}ms`,
+                }}
               />
-              {/* Hover tooltip */}
-              {isHovered && (
-                <g>
-                  <rect
-                    x={x + barWidth / 2 - 22}
-                    y={Math.max(2, y - 24)}
-                    width={44}
-                    height={18}
-                    rx={4}
-                    fill="rgba(15,15,20,0.92)"
-                    stroke="rgba(255,255,255,0.08)"
-                    strokeWidth="1"
-                  />
-                  <text
-                    x={x + barWidth / 2}
-                    y={Math.max(14, y - 11)}
-                    textAnchor="middle"
-                    fontSize={9}
-                    fill="#a5b4fc"
-                    fontFamily="'IBM Plex Mono', monospace"
-                  >
-                    {bar.count}
-                  </text>
-                </g>
-              )}
+              {/* Hover tooltip — always mounted, opacity-toggled so it fades
+                  instead of snapping in/out (immediate-feedback band: ~120ms). */}
+              <g
+                style={{
+                  opacity: isHovered ? 1 : 0,
+                  transform: isHovered ? 'translateY(0)' : 'translateY(2px)',
+                  transition: 'opacity 120ms ease, transform 120ms ease',
+                  pointerEvents: 'none',
+                }}
+              >
+                <rect
+                  x={x + barWidth / 2 - 22}
+                  y={tooltipY}
+                  width={44}
+                  height={18}
+                  rx={4}
+                  fill="rgba(15,15,20,0.92)"
+                  stroke="rgba(255,255,255,0.08)"
+                  strokeWidth="1"
+                />
+                <text
+                  x={x + barWidth / 2}
+                  y={Math.max(14, y - 11)}
+                  textAnchor="middle"
+                  fontSize={9}
+                  fill="#a5b4fc"
+                  fontFamily="'IBM Plex Mono', monospace"
+                >
+                  {bar.count}
+                </text>
+              </g>
               {/* X-axis label */}
               {bars.length <= 24 && (
                 <text
@@ -184,40 +220,120 @@ function HorizontalBar({
   max,
   rank,
   gradientId,
+  revealed,
+  delayMs = 0,
+  large = false,
 }: {
   label: string;
   count: number;
   max: number;
   rank?: number;
   gradientId: string;
+  revealed: boolean;
+  delayMs?: number;
+  large?: boolean;
 }) {
   const pct = max > 0 ? Math.max(2, Math.round((count / max) * 100)) : 2;
   const total = max;
   const countPct = total > 0 ? ((count / total) * 100).toFixed(0) : '0';
   return (
-    <div className="flex items-center gap-3 py-1.5">
+    <div
+      className={`flex items-center gap-3 -mx-2 px-2 rounded-lg transition-colors hover:bg-white/[0.04] ${
+        large ? 'py-3' : 'py-1.5'
+      }`}
+    >
       {rank !== undefined && (
-        <span className="font-mono-plex text-os-400/60 text-xs w-5 shrink-0 text-right">
+        <span
+          className={`font-mono-plex text-os-400/60 shrink-0 text-right ${
+            large ? 'text-sm w-6' : 'text-xs w-5'
+          }`}
+        >
           {rank}.
         </span>
       )}
-      <span className="w-36 text-sm text-gray-200 font-medium truncate shrink-0" title={label}>
+      <span
+        className={`text-gray-200 font-medium truncate shrink-0 ${
+          large ? 'w-auto flex-1 text-base' : 'w-36 text-sm'
+        }`}
+        title={label}
+      >
         {label}
       </span>
-      <div className="flex-1 bg-white/5 rounded-full h-1.5 overflow-hidden">
+      <div
+        className={`bg-white/5 rounded-full overflow-hidden ${large ? 'h-2 flex-[2]' : 'flex-1 h-1.5'}`}
+      >
         <div
-          className={`h-1.5 rounded-full ${gradientId}`}
-          style={{ width: `${pct}%` }}
+          className={`h-full w-full origin-left rounded-full ${gradientId}`}
+          style={{
+            transform: `scaleX(${revealed ? pct / 100 : 0})`,
+            transition: `transform 600ms cubic-bezier(0.16, 1, 0.3, 1) ${delayMs}ms`,
+          }}
           role="progressbar"
           aria-valuenow={count}
           aria-valuemax={max}
           aria-label={`${label}: ${count}`}
         />
       </div>
-      <div className="text-right shrink-0 w-16">
-        <span className="font-mono-plex text-sm text-gray-300">{count}</span>
+      <div className={`text-right shrink-0 ${large ? 'w-20' : 'w-16'}`}>
+        <span className={`font-mono-plex text-gray-300 ${large ? 'text-lg' : 'text-sm'}`}>
+          <AnimatedNumber value={count} />
+        </span>
         <p className="font-mono-plex text-[10px] text-gray-600">{countPct}%</p>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Ranked list of HorizontalBars with a staggered grow-in on mount. When the
+ * list is sparse (1-2 entries) it renders a "large" variant and centers
+ * vertically instead of clumping at the top — the card is grid-stretched to
+ * match its taller siblings, and a short list left top-anchored there just
+ * reads as broken/empty rather than intentional.
+ */
+function RankedList({
+  items,
+  max,
+  gradientId,
+  emptyLabel,
+}: {
+  items: Array<{ key: string; label: string; count: number }>;
+  max: number;
+  gradientId: string;
+  emptyLabel: string;
+}) {
+  const revealed = useMountReveal();
+
+  if (items.length === 0) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <p className="text-gray-600 text-sm text-center py-4">{emptyLabel}</p>
+      </div>
+    );
+  }
+
+  const sparse = items.length <= 2;
+  return (
+    <div
+      className={
+        sparse
+          ? 'flex-1 flex flex-col justify-center gap-1'
+          : 'flex-1 space-y-0.5 max-h-64 overflow-y-auto pr-1'
+      }
+    >
+      {items.map((item, i) => (
+        <HorizontalBar
+          key={item.key}
+          label={item.label}
+          count={item.count}
+          max={max}
+          rank={i + 1}
+          gradientId={gradientId}
+          revealed={revealed}
+          delayMs={Math.min(i * 50, 250)}
+          large={sparse}
+        />
+      ))}
     </div>
   );
 }
@@ -234,11 +350,11 @@ function DonutChart({
   successCount: number;
   errorCount: number;
 }) {
-  const size = 120;
+  const size = 148;
   const cx = size / 2;
   const cy = size / 2;
-  const r = 44;
-  const strokeWidth = 14;
+  const r = 54;
+  const strokeWidth = 18;
   const circumference = 2 * Math.PI * r;
 
   const successRatio = parseFloat(successPct) / 100;
@@ -249,8 +365,18 @@ function DonutChart({
   // Start from top (rotate -90deg)
   const errorOffset = circumference - successDash;
 
+  // Draws the ring in from empty on mount, then ticks alongside the arc's
+  // own CSS transition (below) on every later value change.
+  const revealed = useMountReveal();
+  const drawnSuccessDash = revealed ? successDash : 0;
+  const drawnErrorDash = revealed ? errorDash : 0;
+
+  // Ticks alongside the arc's own CSS transition (above) instead of
+  // snapping straight to the new percentage.
+  const animatedSuccessPct = useAnimatedNumber(successRatio * 100, 700);
+
   return (
-    <div className="flex flex-col items-center gap-4">
+    <div className="flex flex-col items-center gap-5">
       <div className="relative">
         <svg
           width={size}
@@ -276,10 +402,14 @@ function DonutChart({
               fill="none"
               stroke="#fb7185"
               strokeWidth={strokeWidth}
-              strokeDasharray={`${errorDash} ${circumference - errorDash}`}
+              strokeDasharray={`${drawnErrorDash} ${circumference - drawnErrorDash}`}
               strokeDashoffset={-errorOffset + circumference / 4}
               strokeLinecap="round"
               transform={`rotate(-90 ${cx} ${cy})`}
+              style={{
+                transition:
+                  'stroke-dasharray 700ms cubic-bezier(0.16, 1, 0.3, 1), stroke-dashoffset 700ms cubic-bezier(0.16, 1, 0.3, 1)',
+              }}
             />
           )}
           {/* Success arc */}
@@ -291,30 +421,35 @@ function DonutChart({
               fill="none"
               stroke="#34d399"
               strokeWidth={strokeWidth}
-              strokeDasharray={`${successDash} ${circumference - successDash}`}
+              strokeDasharray={`${drawnSuccessDash} ${circumference - drawnSuccessDash}`}
               strokeDashoffset={circumference / 4}
               strokeLinecap="round"
+              style={{
+                transition:
+                  'stroke-dasharray 700ms cubic-bezier(0.16, 1, 0.3, 1), stroke-dashoffset 700ms cubic-bezier(0.16, 1, 0.3, 1)',
+              }}
               transform={`rotate(-90 ${cx} ${cy})`}
             />
           )}
           {/* Center label */}
           <text
             x={cx}
-            y={cy - 4}
+            y={cy - 5}
             textAnchor="middle"
             dominantBaseline="middle"
-            fontSize={20}
+            fontSize={30}
             fontWeight={300}
             fill="white"
             fontFamily="'IBM Plex Sans', system-ui, sans-serif"
           >
-            {successPct}%
+            {animatedSuccessPct.toFixed(0)}%
           </text>
           <text
             x={cx}
-            y={cy + 14}
+            y={cy + 17}
             textAnchor="middle"
-            fontSize={8}
+            fontSize={9}
+            letterSpacing={1.5}
             fill="#6b7280"
             fontFamily="'IBM Plex Mono', monospace"
           >
@@ -322,8 +457,8 @@ function DonutChart({
           </text>
         </svg>
       </div>
-      <div className="space-y-1.5 w-full">
-        <div className="flex items-center justify-between text-sm">
+      <div className="space-y-1 w-full">
+        <div className="flex items-center justify-between text-sm rounded-lg -mx-2 px-2 py-1.5 transition-colors hover:bg-white/[0.04]">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" aria-hidden="true" />
             <span className="text-gray-300 text-xs">Success</span>
@@ -335,7 +470,7 @@ function DonutChart({
             <span className="text-gray-600 font-mono-plex text-[10px] ml-2">{successCount}</span>
           </div>
         </div>
-        <div className="flex items-center justify-between text-sm">
+        <div className="flex items-center justify-between text-sm rounded-lg -mx-2 px-2 py-1.5 transition-colors hover:bg-white/[0.04]">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-rose-400 inline-block" aria-hidden="true" />
             <span className="text-gray-300 text-xs">Error</span>
@@ -361,6 +496,7 @@ function PoolRing({ active, total }: { active: number; total: number }) {
   const ratio = total > 0 ? Math.min(active / total, 1) : 0;
   const dash = ratio * circumference;
   const color = poolUtilizationColor(active, total);
+  const animatedPct = useAnimatedNumber(total > 0 ? ratio * 100 : 0, 600);
 
   return (
     <svg width={size} height={size} aria-label={`${active} active of ${total} total`} role="img">
@@ -397,7 +533,7 @@ function PoolRing({ active, total }: { active: number; total: number }) {
         fill="white"
         fontFamily="'IBM Plex Mono', monospace"
       >
-        {total > 0 ? Math.round(ratio * 100) : 0}%
+        {Math.round(animatedPct)}%
       </text>
     </svg>
   );
@@ -613,7 +749,7 @@ export default function MetricsDashboard() {
             <KpiCard
               accent="indigo"
               eyebrow="Total Requests"
-              value={totalRequests.toLocaleString()}
+              value={<AnimatedNumber value={totalRequests} />}
               hint="over selected period"
               decoration={
                 sparklineData.length > 1 ? (
@@ -634,6 +770,8 @@ export default function MetricsDashboard() {
                       strokeWidth="1.5"
                       strokeLinejoin="round"
                       strokeLinecap="round"
+                      pathLength={100}
+                      className="anim-line-draw"
                     />
                   </svg>
                 ) : undefined
@@ -653,7 +791,11 @@ export default function MetricsDashboard() {
                         : 'text-rose-400'
                   }
                 >
-                  {successPct}%
+                  <AnimatedNumber
+                    value={parseFloat(successPct)}
+                    format={(n) => n.toFixed(1)}
+                  />
+                  %
                 </span>
               }
               hint={`${successCount.toLocaleString()} successful calls`}
@@ -665,7 +807,7 @@ export default function MetricsDashboard() {
               value={
                 avgResponseMs !== null ? (
                   <span className={responseTimeColor(avgResponseMs)}>
-                    {avgResponseMs}
+                    <AnimatedNumber value={avgResponseMs} />
                     <span className="font-mono-plex text-lg text-gray-500 ml-1">ms</span>
                   </span>
                 ) : (
@@ -710,7 +852,7 @@ export default function MetricsDashboard() {
             style={{ animationDelay: '240ms' }}
           >
             {/* Success vs Errors */}
-            <div className="card-primary p-6">
+            <div className="card-primary p-6 flex flex-col">
               <h3 className="flex items-center gap-2 font-mono-plex uppercase tracking-widest text-[10px] text-gray-500 mb-5">
                 Success vs Errors
                 <HelpTip
@@ -720,20 +862,22 @@ export default function MetricsDashboard() {
                   size="xs"
                 />
               </h3>
-              {totalRequests === 0 ? (
-                <p className="text-gray-600 text-sm text-center py-4">No requests recorded.</p>
-              ) : (
-                <DonutChart
-                  successPct={successPct}
-                  errorPct={errorPct}
-                  successCount={successCount}
-                  errorCount={errorCount}
-                />
-              )}
+              <div className="flex-1 flex items-center justify-center">
+                {totalRequests === 0 ? (
+                  <p className="text-gray-600 text-sm text-center py-4">No requests recorded.</p>
+                ) : (
+                  <DonutChart
+                    successPct={successPct}
+                    errorPct={errorPct}
+                    successCount={successCount}
+                    errorCount={errorCount}
+                  />
+                )}
+              </div>
             </div>
 
             {/* Top Tools */}
-            <div className="card-primary p-6">
+            <div className="card-primary p-6 flex flex-col">
               <h3 className="flex items-center gap-2 font-mono-plex uppercase tracking-widest text-[10px] text-gray-500 mb-5">
                 Top Tools
                 <HelpTip
@@ -743,26 +887,20 @@ export default function MetricsDashboard() {
                   size="xs"
                 />
               </h3>
-              {!metrics || metrics.topTools.length === 0 ? (
-                <p className="text-gray-600 text-sm text-center py-4">No tool usage recorded.</p>
-              ) : (
-                <div className="space-y-0.5 max-h-64 overflow-y-auto pr-1">
-                  {metrics.topTools.map((t, i) => (
-                    <HorizontalBar
-                      key={t.toolName}
-                      label={t.toolName}
-                      count={t.count}
-                      max={maxToolCount}
-                      rank={i + 1}
-                      gradientId="bg-gradient-to-r from-os-600 to-os-400"
-                    />
-                  ))}
-                </div>
-              )}
+              <RankedList
+                items={(metrics?.topTools ?? []).map((t) => ({
+                  key: t.toolName,
+                  label: t.toolName,
+                  count: t.count,
+                }))}
+                max={maxToolCount}
+                gradientId="bg-gradient-to-r from-os-600 to-os-400"
+                emptyLabel="No tool usage recorded."
+              />
             </div>
 
             {/* Top API Keys */}
-            <div className="card-primary p-6">
+            <div className="card-primary p-6 flex flex-col">
               <h3 className="flex items-center gap-2 font-mono-plex uppercase tracking-widest text-[10px] text-gray-500 mb-5">
                 Top API Keys
                 <HelpTip
@@ -772,24 +910,16 @@ export default function MetricsDashboard() {
                   size="xs"
                 />
               </h3>
-              {!metrics || metrics.topTokens.length === 0 ? (
-                <p className="text-gray-600 text-sm text-center py-4">
-                  No API key activity recorded.
-                </p>
-              ) : (
-                <div className="space-y-0.5 max-h-64 overflow-y-auto pr-1">
-                  {metrics.topTokens.map((t, i) => (
-                    <HorizontalBar
-                      key={t.tokenLabel}
-                      label={t.tokenLabel}
-                      count={t.count}
-                      max={maxTokenCount}
-                      rank={i + 1}
-                      gradientId="bg-gradient-to-r from-fuchsia-600 to-pink-500"
-                    />
-                  ))}
-                </div>
-              )}
+              <RankedList
+                items={(metrics?.topTokens ?? []).map((t) => ({
+                  key: t.tokenLabel,
+                  label: t.tokenLabel,
+                  count: t.count,
+                }))}
+                max={maxTokenCount}
+                gradientId="bg-gradient-to-r from-fuchsia-600 to-pink-500"
+                emptyLabel="No API key activity recorded."
+              />
             </div>
           </div>
 
@@ -850,7 +980,7 @@ export default function MetricsDashboard() {
                                 <span
                                   className={`font-display text-2xl ${responseTimeColor(row.avgMs)}`}
                                 >
-                                  {Math.round(row.avgMs)}
+                                  <AnimatedNumber value={row.avgMs} />
                                 </span>
                                 <span className="font-mono-plex text-xs text-gray-500 ml-1">
                                   ms
@@ -858,8 +988,11 @@ export default function MetricsDashboard() {
                               </div>
                               <div className="w-20 h-[3px] bg-white/5 rounded-full overflow-hidden">
                                 <div
-                                  className={`h-[3px] rounded-full ${barColor}`}
-                                  style={{ width: `${barWidthPct}%` }}
+                                  className={`h-[3px] w-full origin-left rounded-full ${barColor}`}
+                                  style={{
+                                    transform: `scaleX(${barWidthPct / 100})`,
+                                    transition: 'transform 600ms cubic-bezier(0.16, 1, 0.3, 1)',
+                                  }}
                                   aria-hidden="true"
                                 />
                               </div>
@@ -867,7 +1000,7 @@ export default function MetricsDashboard() {
                           </td>
                           <td className="py-4 text-right">
                             <span className="font-mono-plex text-xs bg-white/5 px-2 py-0.5 rounded-full text-gray-400">
-                              {row.count}
+                              <AnimatedNumber value={row.count} />
                             </span>
                           </td>
                         </tr>

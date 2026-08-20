@@ -55,3 +55,5 @@ export type { SegmentOption } from './SegmentedControl.js';
 
 export { KpiCard } from './KpiCard.js';
 export type {} from './KpiCard.js';
+
+export { AnimatedNumber, useAnimatedNumber, prefersReducedMotion } from './AnimatedNumber.js';

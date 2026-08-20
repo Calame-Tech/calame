@@ -153,7 +153,13 @@
     }
   }
   .animate-fade-in-up {
-    animation: fade-in-up 0.3s ease-out;
+    /* `both`, not the bare duration: without it, an element with
+       `animationDelay` renders fully visible during its delay window, then
+       snaps to the "from" state the instant the animation starts — a visible
+       flash right before the fade-in, worst on pages that stagger several of
+       these (e.g. MetricsDashboard's row-by-row reveal). `both` holds the
+       "from" state through the delay instead. */
+    animation: fade-in-up 0.3s ease-out both;
   }
 
   /* Streaming typing indicator: soft staggered pulse instead of bounce. */
@@ -208,6 +214,21 @@
     animation: grow-x 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
   }
 
+  /* Vertical counterpart of grow-x — bar charts growing from their baseline.
+     Requires `transform-box: fill-box` on SVG rects (set inline) so
+     `transform-origin: bottom` resolves against the shape's own box instead
+     of the SVG viewport. Scale only, per the rule above: never animate the
+     rect's height/y attributes directly. */
+  @keyframes grow-y {
+    from {
+      transform: scaleY(0);
+    }
+  }
+  .anim-grow-y {
+    transform-origin: bottom;
+    animation: grow-y 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
   /* Line drawing for SVG paths normalized with pathLength="100". */
   @keyframes line-draw {
     to {
@@ -235,6 +256,7 @@
   @media (prefers-reduced-motion: reduce) {
     .anim-rise-in,
     .anim-grow-x,
+    .anim-grow-y,
     .anim-fade-in {
       animation: none;
     }

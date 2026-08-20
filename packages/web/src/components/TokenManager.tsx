@@ -213,7 +213,8 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                   <>
                     <div className="mt-3">
                       <p className="text-xs text-gray-400 mb-1">
-                        claude.ai (paste this URL in Settings &gt; Integrations):
+                        claude.ai (paste this URL in Customize &gt; Connectors — Organization
+                        settings &gt; Connectors for Team/Enterprise):
                       </p>
                       <div className="flex items-center gap-2">
                         <code className="flex-1 px-3 py-2 rounded bg-gray-900 border border-gray-700 text-xs text-os-400 font-mono truncate">

@@ -231,7 +231,7 @@ export default function EmbeddingUsageCard({
               <li key={p.model} className="flex items-center justify-between text-xs gap-2">
                 <span className="text-gray-300 truncate font-mono-plex" title={p.model}>
                   {p.model || '(modèle inconnu)'}
-                  {!p.known && (
+                  {!p.local && !p.known && (
                     <span
                       className="ml-1 text-yellow-500/70"
                       title="Tarif inconnu — coût non estimé"
@@ -242,7 +242,16 @@ export default function EmbeddingUsageCard({
                 </span>
                 <span className="text-gray-400 flex-shrink-0">
                   {compactNumber(p.tokens)}{' '}
-                  <span className="text-gray-500">({formatUsd(p.costUsd)})</span>
+                  {p.local ? (
+                    <span
+                      className="text-green-400 bg-green-950/40 border border-green-800/50 rounded px-1.5 py-0.5"
+                      title="Traité sur cette machine — aucun coût d'API"
+                    >
+                      local · gratuit
+                    </span>
+                  ) : (
+                    <span className="text-gray-500">({formatUsd(p.costUsd)})</span>
+                  )}
                 </span>
               </li>
             ))}

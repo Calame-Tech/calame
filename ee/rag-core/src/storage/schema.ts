@@ -13,7 +13,7 @@ export interface RagMigrationDb {
   raw: BetterSqlite3Database;
 }
 
-const CURRENT_RAG_SCHEMA_VERSION = 9;
+const CURRENT_RAG_SCHEMA_VERSION = 10;
 
 /**
  * Default tenant id used by Phase A of the multi-tenancy rollout. The column is
@@ -414,6 +414,43 @@ export function runRagMigrations(db: RagMigrationDb): void {
       addColumnIfMissing(raw, 'rag_documents', 'ingest_error', 'TEXT');
     }
     setRagSchemaVersion(raw, 9);
+  }
+
+  if (current < 10) {
+    // v10 — dimension-migration orchestration (bundled local embedding
+    // model default, see docs/adr/0004-bundled-local-embeddings.md).
+    //
+    // Tracks a tenant-wide switch of embedding provider/dimension across
+    // ALL of a tenant's sources at once — e.g. an existing 1536-dim
+    // (OpenAI) install adopting the 768-dim bundled local model. A
+    // SEPARATE table rather than reusing `rag_jobs`: that table's FK
+    // points at a single `source_id`, but a dimension migration spans
+    // every source for a tenant in one logical operation.
+    //
+    // `phase` values: 'purging' | 'rebuilding-index' | 'awaiting-restart' |
+    // 'resyncing'. `status` values: 'running' | 'awaiting-restart' |
+    // 'resyncing' | 'completed' | 'failed'. See routes/rag-reindex.ts for
+    // the state machine.
+    raw.exec(`CREATE TABLE IF NOT EXISTS rag_reindex_jobs (
+			id TEXT PRIMARY KEY,
+			tenant_id TEXT NOT NULL DEFAULT '${DEFAULT_TENANT_ID}',
+			status TEXT NOT NULL,
+			phase TEXT NOT NULL,
+			target_setting_name TEXT NOT NULL,
+			target_dimension INTEGER NOT NULL,
+			previous_dimension INTEGER,
+			total_sources INTEGER NOT NULL DEFAULT 0,
+			processed_sources INTEGER NOT NULL DEFAULT 0,
+			total_documents INTEGER NOT NULL DEFAULT 0,
+			processed_documents INTEGER NOT NULL DEFAULT 0,
+			error TEXT,
+			started_at TEXT NOT NULL DEFAULT (datetime('now')),
+			finished_at TEXT
+		)`);
+    raw.exec(
+      `CREATE INDEX IF NOT EXISTS idx_rag_reindex_jobs_tenant_started ON rag_reindex_jobs(tenant_id, started_at)`,
+    );
+    setRagSchemaVersion(raw, 10);
   }
 
   // Future migrations slot here, each gated on `current < N`.

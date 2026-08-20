@@ -10,4 +10,5 @@ export { default as DocumentUploader } from './DocumentUploader.js';
 export { default as IngestionStatusCard } from './IngestionStatusCard.js';
 export { default as SyncHistoryPanel } from './SyncHistoryPanel.js';
 export { default as EmbeddingUsageCard } from './EmbeddingUsageCard.js';
+export { default as ReindexDialog } from './ReindexDialog.js';
 export type * from './api.js';

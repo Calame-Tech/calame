@@ -49,6 +49,7 @@ import { registerOnboardingRoute } from './routes/onboarding.js';
 import { registerChatProfileRoute } from './routes/chat-profile.js';
 import { registerChatAuthRoute } from './routes/chat-auth.js';
 import { registerAiSettingsRoute } from './routes/ai-settings.js';
+import { registerSystemRoute } from './routes/system.js';
 import { registerSmtpSettingsRoute } from './routes/smtp-settings.js';
 import { registerHealthRoute } from './routes/health.js';
 import { registerBrandingRoutes } from './routes/branding.js';
@@ -288,6 +289,7 @@ export function createApp(
   registerNotificationsRoute(app, appState);
   registerUsersRoute(app, appState);
   registerAiSettingsRoute(app, appState);
+  registerSystemRoute(app, appState);
   registerSmtpSettingsRoute(app, appState);
   if (appState.ssoRuntime) {
     appState.ssoRuntime.registerOidcSettingsRoute(app, appState, ssoDeps);

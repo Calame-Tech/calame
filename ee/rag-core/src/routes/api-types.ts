@@ -48,3 +48,25 @@ export interface RagSourcePublic {
    */
   deletedAt: string | null;
 }
+
+/**
+ * Public projection of a tenant-wide embedding-dimension migration job —
+ * see routes/rag-reindex.ts. Tracks purging + reconfiguring every source for
+ * a tenant when switching to an embedding provider with a different vector
+ * dimension (e.g. an existing 1536-dim install adopting the bundled 768-dim
+ * local model).
+ */
+export interface RagReindexJobPublic {
+  id: string;
+  tenantId: string;
+  status: 'running' | 'awaiting-restart' | 'resyncing' | 'completed' | 'failed';
+  phase: 'purging' | 'rebuilding-index' | 'awaiting-restart' | 'resyncing';
+  targetSettingName: string;
+  targetDimension: number;
+  previousDimension: number | null;
+  totalSources: number;
+  processedSources: number;
+  error: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+}

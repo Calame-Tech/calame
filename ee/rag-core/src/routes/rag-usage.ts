@@ -4,7 +4,7 @@
 
 import type { Express, Request, Response } from 'express';
 import type { RagRouteDeps } from './types.js';
-import { estimateCostUsd, isKnownEmbeddingModel } from '../pricing.js';
+import { estimateCostUsd, isKnownEmbeddingModel, isLocalEmbeddingModel } from '../pricing.js';
 import {
   getCurrentMonthTokens,
   resolveWarningThreshold,
@@ -26,6 +26,8 @@ export interface RagUsageResponse {
     costUsd: number;
     /** True when the model appears in `pricing.ts`; false → costUsd will be 0. */
     known: boolean;
+    /** True for the bundled on-device model — UI shows "local · gratuit" instead of a $ figure. */
+    local: boolean;
   }>;
   perSource: Array<{
     sourceId: string;
@@ -158,6 +160,7 @@ export function registerRagUsageRoutes(app: Express, deps: RagRouteDeps): void {
             tokens,
             costUsd: estimateCostUsd(r.model, tokens),
             known: isKnownEmbeddingModel(r.model),
+            local: isLocalEmbeddingModel(r.model),
           };
         })
         .filter((p) => p.tokens > 0)

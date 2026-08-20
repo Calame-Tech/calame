@@ -2,9 +2,23 @@ import { useState, useEffect, useCallback } from 'react';
 import { apiFetch } from '../lib/api.js';
 import HelpTip from './HelpTip.js';
 
-type Provider = 'anthropic' | 'openrouter' | 'custom';
+type Provider = 'anthropic' | 'openrouter' | 'custom' | 'local';
 type ClassifierProvider = 'anthropic' | 'openrouter' | 'custom';
 type AiCapability = 'chat' | 'embeddings' | 'rerank';
+
+/**
+ * The bundled local embedding model's fixed identity — mirrors
+ * packages/cli/src/rag/local-embedding-meta.ts. Never user-editable: the
+ * backend's PUT guard for provider==='local' only accepts label changes and
+ * silently ignores everything else (see routes/ai-settings.ts), so the form
+ * shows this as read-only rather than a text input a user could "change"
+ * with no effect.
+ */
+const LOCAL_MODEL_INFO = {
+  embeddingModel: 'embeddinggemma-300m-q4',
+  dimensions: 768,
+  maxTokens: 2048,
+};
 
 interface MaskedAiSetting {
   name: string;
@@ -17,6 +31,9 @@ interface MaskedAiSetting {
   capabilities?: AiCapability[];
   embeddingModel?: string;
   rerankModel?: string;
+  embeddingDimensions?: number;
+  /** Only present for provider==='local' — whether the bundled model files are actually staged on disk. */
+  localModelAvailable?: boolean;
 }
 
 interface AiConfigDisplay {
@@ -45,6 +62,7 @@ const emptyPerProvider = (): Record<Provider, PerProviderFields> => ({
   anthropic: { ...emptyFields },
   openrouter: { ...emptyFields },
   custom: { ...emptyFields },
+  local: { ...emptyFields },
 });
 
 /** Sentinel value for `editingName` meaning "create a new setting". */
@@ -95,6 +113,14 @@ export default function AiSettings() {
   const baseUrl = perProvider[provider].baseUrl;
 
   const isCreating = editingName === NEW_SENTINEL;
+  // The setting currently open for editing (undefined while creating or when
+  // nothing is open). Used to detect "this is a provider:'local' row" so the
+  // form can visually reflect the backend's read-only-except-label guard
+  // (see routes/ai-settings.ts's PUT handler) instead of showing controls
+  // that would silently no-op on save.
+  const editingSetting =
+    editingName && !isCreating ? settings.find((s) => s.name === editingName) : undefined;
+  const isEditingLocalSetting = editingSetting?.provider === 'local';
 
   const updateField = (field: keyof PerProviderFields, value: string) => {
     setPerProvider((prev) => ({
@@ -213,7 +239,7 @@ export default function AiSettings() {
         return;
       }
     }
-    if (provider !== 'custom' && !apiKey) {
+    if (provider !== 'custom' && provider !== 'local' && !apiKey) {
       setFormError('API key is required for this provider.');
       return;
     }
@@ -325,7 +351,11 @@ export default function AiSettings() {
             baseUrl: baseUrl || undefined,
           }),
         });
-        const res = await apiFetch('/api/ai-settings/test', {
+        // Test the setting we just wrote by name ('default') — NOT the
+        // no-name legacy `/test` endpoint, which picks `listSettings()[0]`.
+        // That's always the built-in `local` setting (seeded first on every
+        // install), so it used to silently test the wrong provider here.
+        const res = await apiFetch('/api/ai-settings/default/test', {
           method: 'POST',
           credentials: 'include',
         });
@@ -414,6 +444,11 @@ export default function AiSettings() {
   }
 
   const providers: { value: Provider; label: string; desc: string }[] = [
+    {
+      value: 'local',
+      label: 'Local (included)',
+      desc: 'Runs on this PC — no API key, nothing leaves your machine',
+    },
     { value: 'anthropic', label: 'Anthropic', desc: 'Claude API' },
     { value: 'openrouter', label: 'OpenRouter', desc: 'Multi-model gateway' },
     { value: 'custom', label: 'Custom', desc: 'OpenAI-compatible (Ollama, vLLM...)' },
@@ -465,17 +500,32 @@ export default function AiSettings() {
         <div className="flex items-center gap-1.5 mb-2">
           <label className="text-sm text-gray-400">Provider</label>
           <HelpTip
-            content="LLM provider used for chat. Anthropic provides direct access to Claude models. OpenRouter is a multi-model gateway. Custom lets you use a local OpenAI-compatible server such as Ollama or vLLM."
+            content="Local runs the bundled EmbeddingGemma model on this machine for RAG — no API key, nothing leaves your PC. Anthropic provides direct access to Claude models for chat. OpenRouter is a multi-model gateway. Custom lets you use a local OpenAI-compatible server such as Ollama or vLLM."
             position="right"
             maxWidth={320}
           />
         </div>
-        <div className="flex gap-3">
+        {isEditingLocalSetting && (
+          <p className="text-xs text-gray-500 mb-2">
+            This is the built-in local provider — only the label can be changed.
+          </p>
+        )}
+        <div className="grid grid-cols-2 gap-3">
           {providers.map((p) => (
             <button
               key={p.value}
-              onClick={() => setProvider(p.value)}
-              className={`flex-1 px-4 py-3 rounded-lg border text-left transition-all duration-200 ${
+              disabled={isEditingLocalSetting}
+              onClick={() => {
+                setProvider(p.value);
+                if (p.value === 'local') {
+                  setCapChat(false);
+                  setCapEmbeddings(true);
+                  setCapRerank(false);
+                  setEmbeddingModel(LOCAL_MODEL_INFO.embeddingModel);
+                  setRerankModel('');
+                }
+              }}
+              className={`px-4 py-3 rounded-lg border text-left transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed ${
                 provider === p.value
                   ? 'border-os-500 bg-os-700/20'
                   : 'border-white/5 bg-gray-900/40 hover:border-white/10'
@@ -510,10 +560,14 @@ export default function AiSettings() {
               type="checkbox"
               checked={capChat}
               onChange={(e) => setCapChat(e.target.checked)}
-              className="mt-0.5 rounded border-gray-600 bg-gray-700 text-os-500 focus:ring-os-500/30"
+              disabled={provider === 'local'}
+              className="mt-0.5 rounded border-gray-600 bg-gray-700 text-os-500 focus:ring-os-500/30 disabled:opacity-40 disabled:cursor-not-allowed"
             />
             <div className="flex-1">
-              <label htmlFor="cap-chat" className="text-sm text-gray-200 cursor-pointer">
+              <label
+                htmlFor="cap-chat"
+                className={`text-sm cursor-pointer ${provider === 'local' ? 'text-gray-500' : 'text-gray-200'}`}
+              >
                 Chat
               </label>
               {capChat && (
@@ -548,7 +602,7 @@ export default function AiSettings() {
                   setCapEmbeddings(e.target.checked);
                   if (!e.target.checked) setEmbeddingModel('');
                 }}
-                disabled={provider === 'anthropic'}
+                disabled={provider === 'anthropic' || provider === 'local'}
                 className="rounded border-gray-600 bg-gray-700 text-os-500 focus:ring-os-500/30 disabled:opacity-40 disabled:cursor-not-allowed"
               />
             </div>
@@ -568,8 +622,44 @@ export default function AiSettings() {
                     Not available
                   </span>
                 )}
+                {provider === 'local' && (
+                  <span
+                    className="text-xs text-green-400 cursor-default"
+                    title="Always on — runs on this machine, no configuration needed"
+                  >
+                    Always on
+                  </span>
+                )}
               </div>
-              {capEmbeddings && provider !== 'anthropic' && (
+              {capEmbeddings && provider === 'local' && (
+                <div className="mt-1">
+                  <label className="text-xs text-gray-400">Embeddings model</label>
+                  <div className="input-editorial w-full text-sm mt-1 opacity-70 cursor-default select-none">
+                    {LOCAL_MODEL_INFO.embeddingModel} · {LOCAL_MODEL_INFO.dimensions} dims ·{' '}
+                    {LOCAL_MODEL_INFO.maxTokens} tokens · 100+ languages
+                  </div>
+                  {editingSetting?.localModelAvailable === false && (
+                    <p className="text-xs text-amber-400 mt-1">
+                      Model files not found on disk. Run <code>pnpm model:fetch</code>, or reinstall
+                      the app.
+                    </p>
+                  )}
+                  <p className="text-xs text-gray-600 mt-1">
+                    Documents and search queries are embedded on this machine. Nothing is sent to any
+                    third-party service.
+                  </p>
+                  <a
+                    href="https://ai.google.dev/gemma/terms"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-gray-500 hover:text-gray-300 underline underline-offset-2 mt-1 inline-block"
+                    title="EmbeddingGemma is distributed under the Gemma Terms of Use — see third_party/NOTICES.md in the installation for the full list of bundled licenses"
+                  >
+                    Third-party licenses
+                  </a>
+                </div>
+              )}
+              {capEmbeddings && provider !== 'anthropic' && provider !== 'local' && (
                 <div className="mt-1">
                   <label className="text-xs text-gray-400">
                     Embeddings model <span className="text-red-400">*</span>
@@ -597,12 +687,16 @@ export default function AiSettings() {
                   setCapRerank(e.target.checked);
                   if (!e.target.checked) setRerankModel('');
                 }}
-                className="rounded border-gray-600 bg-gray-700 text-os-500 focus:ring-os-500/30"
+                disabled={provider === 'local'}
+                className="rounded border-gray-600 bg-gray-700 text-os-500 focus:ring-os-500/30 disabled:opacity-40 disabled:cursor-not-allowed"
               />
             </div>
             <div className="flex-1">
               <div className="flex items-center gap-2">
-                <label htmlFor="cap-rerank" className="text-sm text-gray-200 cursor-pointer">
+                <label
+                  htmlFor="cap-rerank"
+                  className={`text-sm cursor-pointer ${provider === 'local' ? 'text-gray-500' : 'text-gray-200'}`}
+                >
                   Rerank
                 </label>
               </div>
@@ -639,7 +733,7 @@ export default function AiSettings() {
       {/* The model field is now embedded inside the Chat capability section above. */}
 
       {/* API Key */}
-      {provider !== 'custom' && (
+      {provider !== 'custom' && provider !== 'local' && (
         <div>
           <label className="text-sm text-gray-400">
             {provider === 'openrouter' ? 'OpenRouter API Key' : 'Anthropic API Key'}{' '}
@@ -803,9 +897,17 @@ export default function AiSettings() {
                   </div>
                   <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                     <span className="text-xs text-gray-500">
-                      {s.provider}
+                      {s.provider === 'local' ? 'local' : s.provider}
                       {s.model ? ` · ${s.model}` : ''}
                     </span>
+                    {s.provider === 'local' && (
+                      <span
+                        className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-500/10 text-green-400 ring-1 ring-green-500/20"
+                        title="Bundled with Calame — runs on this machine, cannot be deleted"
+                      >
+                        Built-in
+                      </span>
+                    )}
                     {/* Capability badges */}
                     {(() => {
                       const caps = s.capabilities ?? ['chat'];
@@ -817,8 +919,15 @@ export default function AiSettings() {
                       if (hasEmb) parts.push('Embeddings');
                       if (hasRerank) parts.push('Rerank');
                       const label = parts.length > 0 ? parts.join(' + ') : 'Chat';
+                      const isLocal = s.provider === 'local';
                       return (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-os-500/10 text-os-300 ring-1 ring-os-500/20">
+                        <span
+                          className={`text-[10px] px-1.5 py-0.5 rounded-full ring-1 ${
+                            isLocal
+                              ? 'bg-green-500/10 text-green-400 ring-green-500/20'
+                              : 'bg-os-500/10 text-os-300 ring-os-500/20'
+                          }`}
+                        >
                           {label}
                         </span>
                       );
@@ -841,7 +950,9 @@ export default function AiSettings() {
                       e.stopPropagation();
                       handleDelete(s);
                     }}
-                    className="px-2 py-1 rounded text-xs text-red-400 hover:bg-red-950/40"
+                    disabled={s.provider === 'local'}
+                    title={s.provider === 'local' ? 'The built-in local provider cannot be deleted' : undefined}
+                    className="px-2 py-1 rounded text-xs text-red-400 hover:bg-red-950/40 disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed"
                   >
                     Delete
                   </button>

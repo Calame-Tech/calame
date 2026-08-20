@@ -3,7 +3,7 @@
 // See ee/LICENSE.BUSL at the root of the ee/ directory for terms.
 
 import type { RagFolder, RagDocument, RagJob, RagSearchResult } from '../types.js';
-import type { RagSourcePublic } from '../routes/api-types.js';
+import type { RagSourcePublic, RagReindexJobPublic } from '../routes/api-types.js';
 import type { RagUsageResponse } from '../routes/rag-usage.js';
 
 /**
@@ -33,44 +33,49 @@ function withTenantHeader(init?: RequestInit): RequestInit {
 /**
  * Thrown when an API call returns a non-2xx response. Carries the HTTP status
  * so callers can render specific UX (e.g. 401 → re-auth) and a human message
- * extracted from the JSON body when available.
+ * extracted from the JSON body when available. `code` carries the optional
+ * machine-readable `{code: '...'}` some routes (e.g. rag-reindex.ts) attach
+ * alongside `error` for callers that need to branch on more than the message text.
  */
 export class ApiError extends Error {
   readonly status: number;
+  readonly code?: string;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, code?: string) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
+    this.code = code;
   }
 }
 
 /**
  * Best-effort error extraction. Backends in this project return either
  * `{ message: '...' }` or `{ error: '...' }` — accept both, fall back to the
- * raw text or the HTTP status line.
+ * raw text or the HTTP status line. Also captures an optional `code` field.
  */
-async function readError(res: Response): Promise<string> {
+async function readError(res: Response): Promise<{ message: string; code?: string }> {
   try {
-    const data = (await res.clone().json()) as { message?: unknown; error?: unknown };
-    if (typeof data.message === 'string' && data.message.length > 0) return data.message;
-    if (typeof data.error === 'string' && data.error.length > 0) return data.error;
+    const data = (await res.clone().json()) as { message?: unknown; error?: unknown; code?: unknown };
+    const code = typeof data.code === 'string' ? data.code : undefined;
+    if (typeof data.message === 'string' && data.message.length > 0) return { message: data.message, code };
+    if (typeof data.error === 'string' && data.error.length > 0) return { message: data.error, code };
   } catch {
     // Fall through to text.
   }
   try {
     const text = await res.text();
-    if (text.length > 0) return text;
+    if (text.length > 0) return { message: text };
   } catch {
     // Ignore.
   }
-  return `HTTP ${res.status}`;
+  return { message: `HTTP ${res.status}` };
 }
 
 async function parseJson<T>(res: Response): Promise<T> {
   if (!res.ok) {
-    const message = await readError(res);
-    throw new ApiError(res.status, message);
+    const { message, code } = await readError(res);
+    throw new ApiError(res.status, message, code);
   }
   // Tolerate empty bodies (e.g. 204) — return undefined-cast-as-T.
   const text = await res.text();
@@ -173,3 +178,15 @@ export type RagSearchResponse = RagSearchResult;
 // Re-export the usage shape so the EmbeddingUsageCard can import it from the
 // web-layer barrel without reaching across the routes directory.
 export type { RagUsageResponse };
+
+// Re-export so ReindexDialog can import from the web-layer barrel without
+// reaching across the routes directory.
+export type { RagReindexJobPublic };
+
+export interface RagReindexStatusResponse {
+  job: RagReindexJobPublic | null;
+}
+
+export type RagReindexStartResponse =
+  | { reindexed: false; message: string }
+  | { reindexed: true; requiresRestart: true; job: RagReindexJobPublic | null };

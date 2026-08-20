@@ -6,6 +6,7 @@ import { useMemo, useState } from 'react';
 import type { RagSourceType } from '../types.js';
 import type { RagSourcePublic } from '../routes/api-types.js';
 import { apiPost, apiPatch, ApiError } from './api.js';
+import ReindexDialog from './ReindexDialog.js';
 
 /**
  * Minimal projection of `AiSetting` needed by the embeddings dropdown. The
@@ -17,6 +18,11 @@ export interface AiSettingOption {
   label: string;
   capabilities?: string[];
   embeddingModel?: string;
+  /** 'local' identifies the bundled, zero-config embedding provider — see the dropdown below. */
+  provider?: string;
+  embeddingDimensions?: number;
+  /** Only meaningful when provider === 'local' — whether the bundled model files are staged on disk. */
+  localModelAvailable?: boolean;
 }
 
 interface SourceFormProps {
@@ -264,8 +270,13 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
   // ---- shared fields ----
   const [name, setName] = useState(initial?.name ?? '');
   const [type, setType] = useState<RagSourceType>(initial?.type ?? 'local');
+  // Defaults to the bundled local embedding provider on a NEW source (not
+  // editing) — this single default is what makes RAG usable without any
+  // configuration: a non-technical user creating their first source never
+  // has to know what an "embedding provider" is. Editing an existing source
+  // always keeps its own recorded setting.
   const [embeddingSettingName, setEmbeddingSettingName] = useState(
-    initial?.embeddingSettingName ?? '',
+    () => initial?.embeddingSettingName ?? aiSettings.find((s) => s.provider === 'local')?.name ?? '',
   );
   // Polling interval — null means "manual sync only". Pre-fill from the
   // existing source on edit so the dropdown shows the saved cadence rather
@@ -432,6 +443,9 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
+  const [showReindexDialog, setShowReindexDialog] = useState(false);
+  const [browsingFolder, setBrowsingFolder] = useState(false);
+  const [browseError, setBrowseError] = useState<string | null>(null);
 
   const embeddingsCapableSettings = useMemo(
     () => aiSettings.filter((s) => s.capabilities?.includes('embeddings')),
@@ -798,34 +812,13 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
     }
     setTesting(true);
     try {
-      if (isEditing && initial?.id) {
-        // Save current values first so the test runs against them.
-        await apiPatch<RagSourcePublic>(
-          `/api/rag/sources/${encodeURIComponent(initial.id)}`,
-          buildPayload(),
-        );
-        await apiPost(`/api/rag/sources/${encodeURIComponent(initial.id)}/test`, {});
-        setTestResult({ success: true, message: 'Connexion validée.' });
-      } else {
-        // For a new source there is no id yet; create-then-test.
-        const created = await apiPost<RagSourcePublic>('/api/rag/sources', buildPayload());
-        try {
-          await apiPost(`/api/rag/sources/${encodeURIComponent(created.id)}/test`, {});
-          setTestResult({ success: true, message: 'Source créée et connexion validée.' });
-        } catch (testErr) {
-          const message =
-            testErr instanceof ApiError
-              ? testErr.message
-              : testErr instanceof Error
-                ? testErr.message
-                : 'Échec du test.';
-          setTestResult({
-            success: false,
-            message: `Source créée, mais test échoué : ${message}`,
-          });
-        }
-        onSave(created);
-      }
+      // Stateless dry-run — validates the connector config as currently
+      // drafted in the form, WITHOUT creating or saving anything. Testing
+      // used to create (or silently overwrite, when editing) the source as a
+      // side effect just to have something to test against — surprising when
+      // the user only wanted to check the config before committing to it.
+      await apiPost('/api/rag/sources/test-config', { type, config: buildConfig() });
+      setTestResult({ success: true, message: 'Connexion validée.' });
     } catch (err) {
       const message =
         err instanceof ApiError
@@ -836,6 +829,33 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
       setTestResult({ success: false, message });
     } finally {
       setTesting(false);
+    }
+  };
+
+  /**
+   * Open a native OS folder-browse dialog on the machine running the Calame
+   * server (see routes/system.ts for why this isn't the Tauri JS dialog
+   * plugin). Only meaningful for `type === 'local'` — the only source type
+   * with a filesystem path field. Fails gracefully (e.g. headless server
+   * deployment with no display): shows an inline message and leaves the
+   * manual text field as the fallback, which already works either way.
+   */
+  const handleBrowseFolder = async () => {
+    setBrowseError(null);
+    setBrowsingFolder(true);
+    try {
+      const result = await apiPost<{ path: string | null }>('/api/system/pick-folder', {});
+      if (result.path) setRootPath(result.path);
+    } catch (err) {
+      const message =
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : 'Sélecteur de dossier indisponible.';
+      setBrowseError(message);
+    } finally {
+      setBrowsingFolder(false);
     }
   };
 
@@ -918,6 +938,15 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
             />
             <button
               type="button"
+              onClick={() => void handleBrowseFolder()}
+              disabled={browsingFolder || saving}
+              title="Ouvrir le sélecteur de dossier natif sur la machine du serveur"
+              className="px-3 py-2 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-300 text-sm font-medium transition-all duration-200 disabled:opacity-50"
+            >
+              {browsingFolder ? 'Ouverture…' : 'Parcourir…'}
+            </button>
+            <button
+              type="button"
               onClick={() => void handleTest()}
               disabled={testing || saving}
               className="px-3 py-2 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-300 text-sm font-medium transition-all duration-200 disabled:opacity-50"
@@ -929,6 +958,11 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
             Le serveur doit pouvoir lire ce chemin. Les fichiers ajoutés ultérieurement sont indexés
             à la prochaine synchronisation.
           </HelperText>
+          {browseError && (
+            <p className="text-xs text-amber-400 mt-1">
+              {browseError} Vous pouvez toujours saisir le chemin manuellement.
+            </p>
+          )}
         </div>
       )}
 
@@ -2000,8 +2034,8 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
         </FieldLabel>
         {aiSettings.length === 0 ? (
           <p className="text-xs text-amber-400 mt-1">
-            Aucune configuration IA enregistrée. Créez-en une dans la section "AI Settings" avec la
-            capacité <span className="font-mono-plex">embeddings</span>.
+            Le fournisseur local intégré est indisponible — vérifiez l'installation ou configurez un
+            fournisseur distant dans la section "AI Settings".
           </p>
         ) : (
           <select
@@ -2013,25 +2047,37 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
             <option value="" className="bg-gray-800">
               Sélectionner une configuration IA…
             </option>
-            {aiSettings.map((s) => {
-              const supports = s.capabilities?.includes('embeddings');
-              return (
-                <option
-                  key={s.name}
-                  value={s.name}
-                  disabled={!supports}
-                  title={supports ? undefined : 'Cette config IA ne supporte pas les embeddings'}
-                  className="bg-gray-800"
-                >
-                  {s.label}
-                  {supports
-                    ? s.embeddingModel
-                      ? ` — ${s.embeddingModel}`
-                      : ''
-                    : ' — embeddings non supportés'}
-                </option>
-              );
-            })}
+            {/* Le fournisseur local trie en premier — c'est ce qui rend le RAG
+                utilisable sans configuration : la plupart des utilisateurs
+                n'ont jamais besoin d'ouvrir cette liste. */}
+            {[...aiSettings]
+              .sort((a, b) => (a.provider === 'local' ? -1 : b.provider === 'local' ? 1 : 0))
+              .map((s) => {
+                const supports = s.capabilities?.includes('embeddings');
+                const isLocal = s.provider === 'local';
+                let label = s.label;
+                if (supports) {
+                  if (isLocal) {
+                    label += ' — inclus, 100 % local';
+                    if (s.embeddingDimensions !== undefined) label += ` (${s.embeddingDimensions} dims)`;
+                  } else if (s.embeddingModel) {
+                    label += ` — ${s.embeddingModel}`;
+                  }
+                } else {
+                  label += ' — embeddings non supportés';
+                }
+                return (
+                  <option
+                    key={s.name}
+                    value={s.name}
+                    disabled={!supports}
+                    title={supports ? undefined : 'Cette config IA ne supporte pas les embeddings'}
+                    className="bg-gray-800"
+                  >
+                    {label}
+                  </option>
+                );
+              })}
           </select>
         )}
         {embeddingsCapableSettings.length === 0 && aiSettings.length > 0 && (
@@ -2041,22 +2087,53 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
           </p>
         )}
         {selectedSetting && selectedSettingSupportsEmbeddings && (
-          <div className="flex items-center gap-4 mt-1">
-            <p className="text-xs text-gray-500">
-              Modèle :{' '}
-              <span className="font-mono-plex text-gray-400">
-                {selectedSetting.embeddingModel ?? '(non spécifié)'}
-              </span>
-            </p>
-            {initial?.embeddingDimensions !== undefined && (
+          <>
+            <div className="flex items-center gap-4 mt-1">
               <p className="text-xs text-gray-500">
-                Dimension :{' '}
+                Modèle :{' '}
                 <span className="font-mono-plex text-gray-400">
-                  {initial.embeddingDimensions} tokens
+                  {selectedSetting.embeddingModel ?? '(non spécifié)'}
                 </span>
               </p>
+              {(selectedSetting.embeddingDimensions ?? initial?.embeddingDimensions) !== undefined && (
+                <p className="text-xs text-gray-500">
+                  Dimensions :{' '}
+                  <span className="font-mono-plex text-gray-400">
+                    {selectedSetting.embeddingDimensions ?? initial?.embeddingDimensions}
+                  </span>
+                </p>
+              )}
+            </div>
+            {selectedSetting.provider === 'local' ? (
+              <>
+                <p className="text-xs text-gray-500 mt-1">
+                  Traitement 100 % local — vos documents et vos requêtes ne quittent jamais cet
+                  ordinateur. Pour un corpus très volumineux ou une qualité maximale, vous pouvez
+                  configurer votre propre fournisseur d'embeddings dans « AI Settings ».
+                </p>
+                {selectedSetting.localModelAvailable === false && (
+                  <p className="text-xs text-red-400 mt-1">
+                    Modèle local introuvable sur le disque. Réinstallez l'application ou contactez
+                    votre administrateur.
+                  </p>
+                )}
+                <a
+                  href="https://ai.google.dev/gemma/terms"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-gray-600 hover:text-gray-400 underline underline-offset-2 mt-1 inline-block"
+                  title="EmbeddingGemma est distribué sous les Gemma Terms of Use — voir third_party/NOTICES.md dans l'installation pour la liste complète des licences tierces"
+                >
+                  Licences tierces
+                </a>
+              </>
+            ) : (
+              <p className="text-xs text-gray-500 mt-1">
+                Les documents et les requêtes de recherche sont envoyés à ce fournisseur pour être
+                convertis en vecteurs.
+              </p>
             )}
-          </div>
+          </>
         )}
       </div>
 
@@ -2095,6 +2172,15 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
         <div className="p-2.5 rounded-lg text-sm bg-red-950/30 border border-red-800/50 text-red-400 space-y-1">
           <p>{error}</p>
           {serverError && <p className="text-xs text-red-300 opacity-80">{serverError}</p>}
+          {serverError && embeddingSettingName && (
+            <button
+              type="button"
+              onClick={() => setShowReindexDialog(true)}
+              className="mt-1 px-3 py-1.5 rounded-lg bg-red-900/40 hover:bg-red-900/60 border border-red-800/50 text-red-200 text-xs font-medium transition-all duration-200"
+            >
+              Migrer les sources existantes vers ce modèle…
+            </button>
+          )}
         </div>
       )}
       {testResult && (
@@ -2126,6 +2212,18 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
           Annuler
         </button>
       </div>
+
+      {showReindexDialog && (
+        <ReindexDialog
+          targetSettingName={embeddingSettingName}
+          targetLabel={selectedSetting?.label}
+          onClose={() => setShowReindexDialog(false)}
+          onStarted={() => {
+            setError(null);
+            setServerError(null);
+          }}
+        />
+      )}
     </div>
   );
 }

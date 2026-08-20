@@ -72,6 +72,12 @@ const sourceCreateSchema = z.object({
 
 const sourcePatchSchema = sourceCreateSchema.partial();
 
+/** Body shape for POST /test-config — no name/embeddingSettingName/polling needed, just what the connector itself validates. */
+const sourceTestConfigSchema = z.object({
+  type: z.enum(SOURCE_TYPES as [RagSourceType, ...RagSourceType[]]),
+  config: z.record(z.string(), z.unknown()),
+});
+
 interface SourceRow {
   id: string;
   name: string;
@@ -277,7 +283,8 @@ export function registerRagSourcesRoutes(app: Express, deps: RagRouteDeps): void
     if (currentDim !== null && currentDim !== resolved.dimensions) {
       const message =
         `All RAG sources must use embedding models with the same dimension; ` +
-        `existing sources use ${currentDim} dims, this would use ${resolved.dimensions}.`;
+        `existing sources use ${currentDim} dims, this would use ${resolved.dimensions}. ` +
+        `Use POST /api/rag/reindex to migrate every existing source to the new dimension.`;
       audit(deps, {
         type: 'rag.sources.create.failed',
         payload: { error: message, embeddingSettingName: parsed.data.embeddingSettingName },
@@ -365,6 +372,38 @@ export function registerRagSourcesRoutes(app: Express, deps: RagRouteDeps): void
     }
   });
 
+  /**
+   * POST /api/rag/sources/test-config — validate a connector config WITHOUT
+   * persisting anything. Lets the UI's "Test" button check a config while
+   * it's still being drafted, before the user has decided to save/create the
+   * source — unlike POST /:id/test, which requires an already-saved row, and
+   * unlike POST / (create), which persists as a side effect of validating.
+   */
+  app.post('/api/rag/sources/test-config', async (req: Request, res: Response) => {
+    const parsed = sourceTestConfigSchema.safeParse(req.body);
+    if (!parsed.success) {
+      sendError(res, 400, parsed.error.issues.map((i) => i.message).join('; '));
+      return;
+    }
+    const connector = deps.resolveConnector?.(parsed.data.type);
+    if (!connector) {
+      sendError(
+        res,
+        501,
+        `Source type "${parsed.data.type}" is not yet supported. Install the corresponding connector or wait until it lands.`,
+      );
+      return;
+    }
+    try {
+      await connector.testConnection(parsed.data.config);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(400).json({ ok: false, error: message });
+      return;
+    }
+    res.json({ ok: true });
+  });
+
   app.patch('/api/rag/sources/:id', (req: Request, res: Response) => {
     const id = String(req.params['id'] ?? '');
     const parsed = sourcePatchSchema.safeParse(req.body);
@@ -419,7 +458,8 @@ export function registerRagSourcesRoutes(app: Express, deps: RagRouteDeps): void
         if (currentDim !== null && currentDim !== resolved.dimensions) {
           const message =
             `All RAG sources must use embedding models with the same dimension; ` +
-            `existing sources use ${currentDim} dims, this would use ${resolved.dimensions}.`;
+            `existing sources use ${currentDim} dims, this would use ${resolved.dimensions}. ` +
+            `Use POST /api/rag/reindex to migrate every existing source to the new dimension.`;
           audit(deps, { type: 'rag.sources.update.failed', payload: { id, error: message } });
           sendError(res, 409, message);
           return;

@@ -491,10 +491,10 @@ describe('schema migration — v4 idempotence', () => {
       version: number;
     };
     // v5 added the FTS5 mirror, v6 added tenant_id, v7 added
-    // tokens_embedded, v8 added deleted_at, v9 added ingest_error — the
-    // migrations are no-op on this fixture's tables that aren't seeded,
-    // but the version still advances to head.
-    expect(ver.version).toBe(9);
+    // tokens_embedded, v8 added deleted_at, v9 added ingest_error, v10
+    // added rag_reindex_jobs — the migrations are no-op on this fixture's
+    // tables that aren't seeded, but the version still advances to head.
+    expect(ver.version).toBe(10);
   });
 });
 
@@ -620,7 +620,7 @@ describe('schema migration — v6 tenant_id', () => {
     const ver = db.prepare(`SELECT version FROM rag_schema_version WHERE key = 'rag'`).get() as {
       version: number;
     };
-    expect(ver.version).toBe(9);
+    expect(ver.version).toBe(10);
   });
 
   it('is idempotent — re-running runRagMigrations does not duplicate the column or throw', () => {
@@ -866,7 +866,7 @@ describe('schema migration — v8 deleted_at', () => {
     const ver = db.prepare(`SELECT version FROM rag_schema_version WHERE key = 'rag'`).get() as {
       version: number;
     };
-    expect(ver.version).toBe(9);
+    expect(ver.version).toBe(10);
   });
 
   it('is idempotent — re-running runRagMigrations does not duplicate the column or throw', () => {
@@ -1429,5 +1429,85 @@ describe('registerRagSourcesRoutes — Phase B tenant isolation', () => {
     expect(body.sources).toHaveLength(1);
     expect(body.sources[0]!.name).toBe('Default source');
     expect(body.sources[0]!.tenantId).toBe('default');
+  });
+});
+
+describe('POST /api/rag/sources/test-config', () => {
+  let db: BetterSqlite3Database;
+  let captured: CapturedApp;
+  let testConnection: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    db = makeDb();
+    captured = makeCapturedApp();
+    testConnection = vi.fn(async () => undefined);
+    const { deps } = makeDeps(db);
+    deps.resolveConnector = vi.fn(() => ({
+      type: 'local',
+      testConnection,
+      listFolders: vi.fn(async () => []),
+      listDocuments: vi.fn(async () => []),
+      fetchDocument: vi.fn(async () => {
+        throw new Error('not implemented in this fixture');
+      }),
+    }));
+    registerRagSourcesRoutes(captured.app, deps);
+  });
+
+  it('validates a config WITHOUT creating a source row', async () => {
+    const res = makeRes();
+    await captured.post('/api/rag/sources/test-config')(
+      makeReq({ body: { type: 'local', config: { rootPath: '/tmp/x' } } }),
+      res.res,
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toEqual({ ok: true });
+    expect(testConnection).toHaveBeenCalledWith({ rootPath: '/tmp/x' });
+
+    const count = db.prepare(`SELECT COUNT(*) AS n FROM rag_sources`).get() as { n: number };
+    expect(count.n).toBe(0);
+  });
+
+  it('returns 400 with the connector error when the config is invalid', async () => {
+    testConnection.mockRejectedValueOnce(new Error('folder does not exist'));
+
+    const res = makeRes();
+    await captured.post('/api/rag/sources/test-config')(
+      makeReq({ body: { type: 'local', config: { rootPath: '/nope' } } }),
+      res.res,
+    );
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toEqual({ ok: false, error: 'folder does not exist' });
+
+    const count = db.prepare(`SELECT COUNT(*) AS n FROM rag_sources`).get() as { n: number };
+    expect(count.n).toBe(0);
+  });
+
+  it('returns 501 for a source type with no connector installed', async () => {
+    const { deps } = makeDeps(db);
+    deps.resolveConnector = vi.fn(() => null);
+    const noConnectorApp = makeCapturedApp();
+    registerRagSourcesRoutes(noConnectorApp.app, deps);
+
+    const res = makeRes();
+    await noConnectorApp.post('/api/rag/sources/test-config')(
+      makeReq({ body: { type: 's3', config: {} } }),
+      res.res,
+    );
+
+    expect(res.statusCode).toBe(501);
+  });
+
+  it('returns 400 on a malformed body (invalid type)', async () => {
+    const res = makeRes();
+    await captured.post('/api/rag/sources/test-config')(
+      makeReq({ body: { type: 'not-a-real-type', config: {} } }),
+      res.res,
+    );
+
+    expect(res.statusCode).toBe(400);
+    expect(testConnection).not.toHaveBeenCalled();
   });
 });

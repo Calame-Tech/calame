@@ -293,6 +293,40 @@ describe('registerRagUsageRoutes', () => {
     });
   });
 
+  it('marks the bundled local model as local + known + free, distinct from an unknown model', async () => {
+    const srcId = insertSource(db, { name: 'Local src', model: 'embeddinggemma-300m-q4' });
+    insertJob(db, { sourceId: srcId, tokens: 1_000_000 });
+
+    const handler = captured.getUsage();
+    const res = makeRes();
+    await handler(makeReq(), res.res);
+
+    const body = res.body as RagUsageResponse;
+    expect(body.totalCostUsd).toBe(0);
+    expect(body.perProvider).toHaveLength(1);
+    expect(body.perProvider[0]).toMatchObject({
+      model: 'embeddinggemma-300m-q4',
+      tokens: 1_000_000,
+      costUsd: 0,
+      known: true,
+      local: true,
+    });
+  });
+
+  it('reports local:false for cloud providers, including unknown ones', async () => {
+    const s1 = insertSource(db, { name: 'OpenAI src', model: 'text-embedding-3-small' });
+    const s2 = insertSource(db, { name: 'Mystery src', model: 'private-embedding-v999' });
+    insertJob(db, { sourceId: s1, tokens: 1_000 });
+    insertJob(db, { sourceId: s2, tokens: 1_000 });
+
+    const handler = captured.getUsage();
+    const res = makeRes();
+    await handler(makeReq(), res.res);
+
+    const body = res.body as RagUsageResponse;
+    expect(body.perProvider.every((p) => p.local === false)).toBe(true);
+  });
+
   it('excludes non-completed jobs (pending / failed) from the rollup', async () => {
     const srcId = insertSource(db, { name: 'Src', model: 'text-embedding-3-small' });
     insertJob(db, { sourceId: srcId, tokens: 500, status: 'completed' });
@@ -495,7 +529,7 @@ describe('schema migration — v7 tokens_embedded', () => {
     const ver = db.prepare(`SELECT version FROM rag_schema_version WHERE key = 'rag'`).get() as {
       version: number;
     };
-    expect(ver.version).toBe(9);
+    expect(ver.version).toBe(10);
   });
 });
 

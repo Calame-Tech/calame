@@ -34,7 +34,27 @@ export const EMBEDDING_PRICES_PER_1M_TOKENS: Record<string, number> = {
   'voyage-3': 0.06,
   'voyage-3-lite': 0.02,
   'voyage-3-large': 0.18,
+  // Bundled local model — runs on-device, no API cost. Listed at 0 (not
+  // simply left out of the table) so isKnownEmbeddingModel() is still true
+  // for it: an unlisted model reads as "unpriced" (shows a "?" in the UI),
+  // while this one is a deliberately-known $0.
+  'embeddinggemma-300m-q4': 0,
 };
+
+/**
+ * Embedding model identifiers that run entirely on-device (see
+ * `LOCAL_EMBEDDING_MODEL_ID` in packages/cli/src/rag/local-embedding-meta.ts
+ * — kept as a plain string set here, not an import, since rag-core cannot
+ * depend on the host's `packages/cli` tree). Distinct from "free" in the
+ * price-table sense: this drives UI copy ("local · gratuit" instead of "$0"),
+ * not just the cost figure.
+ */
+export const LOCAL_EMBEDDING_MODELS: ReadonlySet<string> = new Set(['embeddinggemma-300m-q4']);
+
+/** Whether an embedding model identifier is the bundled local model. */
+export function isLocalEmbeddingModel(model: string): boolean {
+  return LOCAL_EMBEDDING_MODELS.has(model);
+}
 
 /**
  * Estimate USD cost for an embedding job given a model identifier and the

@@ -366,6 +366,24 @@ export function registerAiSettingsRoute(app: Express, state: AppState): void {
 
     const body = (req.body ?? {}) as SettingPayload;
 
+    // The built-in local setting's provider/model/dimensions are fixed by
+    // the bundled model, not user-configurable — only its display label can
+    // change. Short-circuits the rest of this handler (provider/capability
+    // validation, dimension re-probing) entirely rather than trying to make
+    // that logic a no-op for this case.
+    if (existing.provider === 'local') {
+      try {
+        mgr.updateSetting(req.params.name, { label: body.label ?? existing.label }, tenantId);
+        res.json({ success: true, setting: mgr.getMaskedSetting(req.params.name, tenantId) });
+      } catch (error: unknown) {
+        res.status(500).json({
+          success: false,
+          message: error instanceof Error ? error.message : 'Failed to update setting.',
+        });
+      }
+      return;
+    }
+
     const fieldError = validateProviderFields(body);
     if (fieldError) {
       res.status(400).json({ success: false, message: fieldError });
@@ -437,8 +455,16 @@ export function registerAiSettingsRoute(app: Express, state: AppState): void {
       return;
     }
     const tenantId = getTenantId(req);
-    if (!mgr.getSetting(req.params.name, tenantId)) {
+    const existing = mgr.getSetting(req.params.name, tenantId);
+    if (!existing) {
       res.status(404).json({ success: false, message: 'Setting not found.' });
+      return;
+    }
+    if (existing.provider === 'local') {
+      res.status(400).json({
+        success: false,
+        message: 'Le fournisseur local intégré ne peut pas être supprimé.',
+      });
       return;
     }
     mgr.deleteSetting(req.params.name, tenantId);

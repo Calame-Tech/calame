@@ -198,4 +198,54 @@ describe('ai-settings routes — local provider + rerank threading', () => {
       expect(putRes.body.setting.rerankModel).toBe('rerank-english-v3.0');
     });
   });
+
+  describe('built-in local setting (migration v17) — protected from deletion/modification', () => {
+    it('already exists on a fresh DB with the expected shape', async () => {
+      const res = await request(app).get('/api/ai-settings/local').set('Cookie', cookie).expect(200);
+      expect(res.body.setting.provider).toBe('local');
+      expect(res.body.setting.embeddingDimensions).toBe(768);
+      expect(res.body.setting.configured).toBe(true);
+    });
+
+    it('DELETE is rejected with 400', async () => {
+      const res = await request(app)
+        .delete('/api/ai-settings/local')
+        .set('Cookie', cookie)
+        .expect(400);
+      expect(res.body.success).toBe(false);
+      expect(res.body.message).toContain('ne peut pas être supprimé');
+
+      // Still there afterwards.
+      await request(app).get('/api/ai-settings/local').set('Cookie', cookie).expect(200);
+    });
+
+    it('PUT changes only the label — every other field is silently ignored, not erroring', async () => {
+      const res = await request(app)
+        .put('/api/ai-settings/local')
+        .set('Cookie', cookie)
+        .send({
+          label: 'Mon modèle local',
+          provider: 'openrouter', // attempted hijack
+          apiKey: 'sk-should-be-ignored',
+          capabilities: ['chat'],
+          embeddingModel: 'something-else',
+        })
+        .expect(200);
+
+      expect(res.body.setting.label).toBe('Mon modèle local');
+      expect(res.body.setting.provider).toBe('local');
+      expect(res.body.setting.apiKey).toBe('');
+      expect(res.body.setting.capabilities).toEqual(['embeddings']);
+      expect(res.body.setting.embeddingModel).toBe('embeddinggemma-300m-q4');
+    });
+
+    it('PUT with no label keeps the existing one', async () => {
+      const res = await request(app)
+        .put('/api/ai-settings/local')
+        .set('Cookie', cookie)
+        .send({})
+        .expect(200);
+      expect(res.body.setting.label).toBe('Embeddings locaux (inclus)');
+    });
+  });
 });

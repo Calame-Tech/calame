@@ -11,7 +11,7 @@ import { fileURLToPath } from 'url';
 import { createApp } from './app.js';
 import { AppState } from './state.js';
 import { CalameDatabase } from './database.js';
-import { AiSettingsManager } from './ai-config.js';
+import { AiSettingsManager, ensureBuiltInSettings } from './ai-config.js';
 import { runMigrations } from './migration.js';
 import { loadConfig, validateConfig, isPackagedMode } from './config.js';
 import { createLogger } from './logger.js';
@@ -95,6 +95,13 @@ try {
 const appState = new AppState();
 appState.db = new CalameDatabase(config.dataDir);
 runMigrations(appState.db);
+
+// Self-heals the built-in local embedding AI setting on EVERY boot (not just
+// once via migration v17) — recovers a user who deleted the row via direct
+// SQL access outside the app. See ensureBuiltInSettings's doc comment.
+ensureBuiltInSettings(appState.db, {
+  warn: (msg: string) => logger.warn(msg, { component: 'ai-config' }),
+});
 
 // AiSettingsManager must exist before initRagRuntime so RAG can resolve
 // embedding settings. Pre-create it here; createApp will reuse the instance.

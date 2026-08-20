@@ -1,5 +1,6 @@
 import type { CalameDatabase } from './database.js';
 import { DEFAULT_TENANT_ID } from './tenancy.js';
+import { ensureBuiltInSettings } from './ai-config.js';
 
 /**
  * Placeholder for future schema migrations.
@@ -272,5 +273,20 @@ export function runMigrations(db: CalameDatabase): void {
       addColumnIfMissing(db, 'write_queue', 'action_json', 'TEXT');
     }
     db.setSchemaVersion(16);
+  }
+
+  if (currentVersion < 17) {
+    // Version 17: seed the built-in "local" AI setting for the bundled
+    // EmbeddingGemma-300M embedding model, so RAG works out of the box with
+    // zero configuration and without any document text leaving the machine.
+    // The actual INSERT OR IGNORE logic lives in ai-config.ts
+    // (ensureBuiltInSettings/seedBuiltInLocalSetting) — shared with the
+    // boot-time self-heal call in index.ts, which is what recovers a user
+    // who deletes this row via direct SQL after this migration has already
+    // run once (this schema-version guard means v17 itself never re-fires).
+    if (hasTable(db, 'ai_settings')) {
+      ensureBuiltInSettings(db);
+    }
+    db.setSchemaVersion(17);
   }
 }

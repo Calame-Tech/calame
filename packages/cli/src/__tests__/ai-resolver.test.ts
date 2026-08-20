@@ -46,27 +46,13 @@ function createChatSetting(name: string): void {
   });
 }
 
-// Simulates the embeddings-only "local" fixture these tests are about.
-// TODO(Phase 6): once migration v17 unconditionally seeds this same row on
-// every CalameDatabase construction, this manual creation becomes redundant
-// (and would collide with the auto-seeded one) — drop it then.
-function createLocalSetting(): void {
-  manager.createSetting({
-    name: 'local',
-    label: 'Embeddings locaux (inclus)',
-    provider: 'local',
-    apiKey: '',
-    capabilities: ['embeddings'],
-    embeddingModel: 'embeddinggemma-300m-q4',
-    embeddingDimensions: 768,
-  });
-}
-
 describe('resolveAiSetting', () => {
-  beforeEach(() => {
-    createLocalSetting();
-  });
-
+  // Note: a real CalameDatabase runs migrations on construction (see
+  // beforeEach above), and migration v17 (Phase 6) unconditionally seeds the
+  // built-in "local" setting — embeddings-only by construction — so every
+  // test in this file already has exactly the embeddings-only fixture these
+  // tests are about, with NO need to create one by hand (and doing so would
+  // now collide with it: "local" already exists).
 
   it('returns 503 when the only chat-relevant setting is the built-in embeddings-only "local" one', () => {
     const result = resolveAiSetting(state, undefined);

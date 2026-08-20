@@ -1,6 +1,11 @@
 import type { Database, Statement } from 'better-sqlite3';
 import type { CalameDatabase } from './database.js';
 import { DEFAULT_TENANT_ID } from './tenancy.js';
+import {
+  LOCAL_EMBEDDING_MODEL_ID,
+  LOCAL_EMBEDDING_DIMENSIONS,
+  LOCAL_EMBEDDING_DEFAULT_LABEL,
+} from './rag/local-embedding-meta.js';
 
 export type AiProvider = 'anthropic' | 'openrouter' | 'custom' | 'local';
 
@@ -313,4 +318,97 @@ export class AiSettingsManager {
 /** @deprecated Use AiSettingsManager directly. Kept as an alias for transitional code. */
 export const AiConfigManager = AiSettingsManager;
 export type AiConfigManagerType = AiSettingsManager;
+
+// ---------------------------------------------------------------------------
+// Built-in local embedding setting — seeds the bundled EmbeddingGemma-300M
+// provider so RAG works with zero configuration. See migration v17 in
+// migration.ts (runs once per DB, on upgrade/fresh-install) and
+// ensureBuiltInSettings below (runs on every boot, unconditionally, so a
+// user who deletes the row via direct SQL access outside the app gets it
+// back).
+// ---------------------------------------------------------------------------
+
+/** Preferred name for the built-in local setting — see seedBuiltInLocalSetting for the fallback. */
+export const BUILT_IN_LOCAL_SETTING_NAME = 'local';
+/** Used instead when a pre-existing row is already named 'local' with a different provider. */
+export const BUILT_IN_LOCAL_SETTING_FALLBACK_NAME = 'calame-local';
+
+/**
+ * Idempotently INSERT the built-in local embedding setting if it (or a
+ * same-named conflicting row) isn't already present for `tenantId`. Shared by
+ * migration v17 and {@link ensureBuiltInSettings} so both stay in lockstep —
+ * there is exactly one place this row's shape is defined.
+ *
+ * Never overwrites an existing row: if a row named 'local' already exists
+ * with a DIFFERENT provider (a user could plausibly have named their own
+ * custom setting 'local' before this feature existed), the built-in setting
+ * is seeded under {@link BUILT_IN_LOCAL_SETTING_FALLBACK_NAME} instead. Every
+ * consumer must therefore resolve the built-in row by `provider === 'local'`
+ * (see {@link findBuiltInLocalSetting}), never by assuming the literal name
+ * 'local'.
+ *
+ * Single-tenant only by construction — `ai_settings`'s primary key is `name`
+ * alone (even after the v12 tenant_id column, whose index is non-unique), so
+ * only one row of a given name can exist process-wide regardless of tenant.
+ * Seeding for every tenant would collide. Acceptable today: the desktop
+ * product this feature ships for is single-tenant. TODO: revisit once/if the
+ * PK is promoted to `(tenant_id, name)`.
+ */
+function seedBuiltInLocalSetting(
+  raw: Database,
+  tenantId: string,
+  log?: { warn: (msg: string) => void },
+): void {
+  const existing = raw
+    .prepare(`SELECT provider FROM ai_settings WHERE name = ? AND tenant_id = ?`)
+    .get(BUILT_IN_LOCAL_SETTING_NAME, tenantId) as { provider: string } | undefined;
+
+  const conflicting = existing !== undefined && existing.provider !== 'local';
+  const name = conflicting ? BUILT_IN_LOCAL_SETTING_FALLBACK_NAME : BUILT_IN_LOCAL_SETTING_NAME;
+  if (conflicting) {
+    log?.warn(
+      `A pre-existing "ai_settings" row named "${BUILT_IN_LOCAL_SETTING_NAME}" ` +
+        `(provider="${existing.provider}") already exists — seeding the built-in local embedding ` +
+        `setting under "${name}" instead. Your existing setting was not modified.`,
+    );
+  }
+
+  raw
+    .prepare(
+      `INSERT OR IGNORE INTO ai_settings
+       (name, label, provider, api_key, model, base_url, capabilities,
+        embedding_model, embedding_dimensions, rerank_model, tenant_id)
+       VALUES (?, ?, 'local', '', NULL, NULL, '["embeddings"]', ?, ?, NULL, ?)`,
+    )
+    .run(name, LOCAL_EMBEDDING_DEFAULT_LABEL, LOCAL_EMBEDDING_MODEL_ID, LOCAL_EMBEDDING_DIMENSIONS, tenantId);
+}
+
+/**
+ * Ensure the built-in local embedding setting exists for the default tenant.
+ * Two call sites share this one idempotent function:
+ *  1. Migration v17 (migration.ts) — schema-version-gated, runs once per DB.
+ *  2. Every boot, unconditionally (index.ts, after `new CalameDatabase(...)`
+ *     — which already ran migrations) — recovers a user who deleted the row
+ *     via direct SQL access outside the app; v17 alone can't catch this
+ *     since its schema-version guard means it never runs a second time.
+ * Cheap (one indexed SELECT + one INSERT OR IGNORE) — safe to call on every boot.
+ */
+export function ensureBuiltInSettings(
+  db: CalameDatabase,
+  log?: { warn: (msg: string) => void },
+): void {
+  seedBuiltInLocalSetting(db.raw, DEFAULT_TENANT_ID, log);
+}
+
+/**
+ * Resolve the built-in local setting by PROVIDER, never by its literal name —
+ * see {@link seedBuiltInLocalSetting}'s fallback-name note for why the name
+ * alone isn't a safe assumption.
+ */
+export function findBuiltInLocalSetting(
+  mgr: AiSettingsManager,
+  tenantId: string = DEFAULT_TENANT_ID,
+): AiSetting | null {
+  return mgr.listSettings(tenantId).find((s) => s.provider === 'local') ?? null;
+}
 

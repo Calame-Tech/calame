@@ -154,7 +154,13 @@ describe('host migration v12 — tenant_id foundation', () => {
           name TEXT PRIMARY KEY,
           label TEXT NOT NULL,
           provider TEXT NOT NULL,
-          api_key TEXT NOT NULL
+          api_key TEXT NOT NULL,
+          model TEXT,
+          base_url TEXT,
+          capabilities TEXT,
+          embedding_model TEXT,
+          embedding_dimensions INTEGER,
+          rerank_model TEXT
         );
         CREATE TABLE users (
           id TEXT PRIMARY KEY,
@@ -293,7 +299,9 @@ describe('host migration v16 — write_queue action_json (MCP write-approval, Sl
       const row = raw.prepare('SELECT MAX(version) AS v FROM _migrations').get() as {
         v: number;
       };
-      expect(row.v).toBe(16);
+      // v17 also has a hasTable guard (ai_settings, absent here too) and
+      // must skip gracefully the same way v16 does for write_queue.
+      expect(row.v).toBe(17);
     } finally {
       raw.close();
       fs.rmSync(tmpDir, { recursive: true, force: true });

@@ -7,14 +7,31 @@ import type { Database as BetterSqlite3Database } from 'better-sqlite3';
 import type { VectorStore } from '@calame-ee/rag-core';
 import type { CalameDatabase } from '../database.js';
 import type { RagLogger } from './types.js';
+import { LOCAL_EMBEDDING_DIMENSIONS } from './local-embedding-meta.js';
 
-/** Default vector dimension used when bootstrapping the vec0 table eagerly.
+/**
+ * Default vector dimension used when bootstrapping the vec0 table eagerly,
+ * on a fresh install with no `rag_sources` yet.
  *
- * Phase 1 limitation: the sqlite-vec virtual table has a fixed dimension at
- * create time. We default to 1536 (OpenAI text-embedding-3-small) so the
- * default install works out of the box. Operators that want a different
- * dimension must drop the table and restart — see routes/rag-sources.ts. */
-export const DEFAULT_DIMENSION = 1536;
+ * The sqlite-vec virtual table has a fixed dimension at create time. Default
+ * is the bundled local embedding model's dimension (768 — EmbeddingGemma-
+ * 300M) so a fresh install works fully offline with zero configuration. Was
+ * 1536 (OpenAI text-embedding-3-small) before the local provider existed —
+ * changing this is SAFE for existing installs: {@link readExistingDimension}
+ * always wins when any source already exists, so an install that has ever
+ * created a source keeps its dimension untouched (see store-init tests).
+ * Override via CALAME_RAG_DEFAULT_DIMENSION for operators who want a
+ * from-scratch install to default to something else.
+ */
+export const DEFAULT_DIMENSION = readDefaultDimensionEnv();
+
+function readDefaultDimensionEnv(): number {
+  const raw = process.env['CALAME_RAG_DEFAULT_DIMENSION'];
+  if (!raw) return LOCAL_EMBEDDING_DIMENSIONS;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isInteger(parsed) || parsed <= 0) return LOCAL_EMBEDDING_DIMENSIONS;
+  return parsed;
+}
 
 /** Read the dimension already in use by existing rag_sources, or null when empty. */
 export function readExistingDimension(raw: BetterSqlite3Database): number | null {

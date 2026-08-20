@@ -87,7 +87,10 @@ async function testConnection(
 
     if (setting.provider === 'local') {
       if (!hasEmbeddings) {
-        return { ok: false, message: 'Le fournisseur local ne prend en charge que les embeddings.' };
+        return {
+          ok: false,
+          message: 'Le fournisseur local ne prend en charge que les embeddings.',
+        };
       }
       if (!ragRuntime) {
         return { ok: false, message: "Le runtime RAG n'est pas initialisé." };
@@ -230,7 +233,9 @@ export function registerAiSettingsRoute(app: Express, state: AppState): void {
     // Phase B multi-tenancy — thread the resolved tenant through every
     // manager call so the listing is scoped to the caller.
     const tenantId = getTenantId(req);
-    const settings = mgr.listMaskedSettings(tenantId).map((s) => withLocalModelAvailability(s, state));
+    const settings = mgr
+      .listMaskedSettings(tenantId)
+      .map((s) => withLocalModelAvailability(s, state));
     // Backward-compat: also expose `config` (first setting) for older callers.
     res.json({ success: true, settings, config: settings[0] ?? null });
   });

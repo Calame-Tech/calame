@@ -645,8 +645,8 @@ export default function AiSettings() {
                     </p>
                   )}
                   <p className="text-xs text-gray-600 mt-1">
-                    Documents and search queries are embedded on this machine. Nothing is sent to any
-                    third-party service.
+                    Documents and search queries are embedded on this machine. Nothing is sent to
+                    any third-party service.
                   </p>
                   <a
                     href="https://ai.google.dev/gemma/terms"
@@ -951,7 +951,11 @@ export default function AiSettings() {
                       handleDelete(s);
                     }}
                     disabled={s.provider === 'local'}
-                    title={s.provider === 'local' ? 'The built-in local provider cannot be deleted' : undefined}
+                    title={
+                      s.provider === 'local'
+                        ? 'The built-in local provider cannot be deleted'
+                        : undefined
+                    }
                     className="px-2 py-1 rounded text-xs text-red-400 hover:bg-red-950/40 disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed"
                   >
                     Delete

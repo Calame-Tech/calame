@@ -80,7 +80,7 @@ describe('ensureBuiltInSettings', () => {
     mgr.deleteSetting(BUILT_IN_LOCAL_SETTING_NAME);
     mgr.createSetting({
       name: BUILT_IN_LOCAL_SETTING_NAME,
-      label: "My Own Setting Called Local",
+      label: 'My Own Setting Called Local',
       provider: 'custom',
       apiKey: 'sk-user',
       baseUrl: 'http://localhost:11434/v1',

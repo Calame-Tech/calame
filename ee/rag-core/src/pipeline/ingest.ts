@@ -147,9 +147,7 @@ export class IngestionPipeline {
   private readonly db: BetterSqlite3Database;
   private readonly vectorStore: VectorStore;
   private readonly embeddingClient: EmbeddingClient;
-  private readonly resolveEmbeddingClient:
-    | ((settingName: string) => EmbeddingClient)
-    | undefined;
+  private readonly resolveEmbeddingClient: ((settingName: string) => EmbeddingClient) | undefined;
   private readonly chunkOptions: ChunkOptions | undefined;
   private readonly onTokensEmbedded: ((count: number) => void) | undefined;
   private readonly capConfig: EmbeddingCapConfig | undefined;
@@ -233,9 +231,10 @@ export class IngestionPipeline {
     // cheap, indexed lookup by primary key.
     if (chunks.length > 0) {
       const sourceRow = this.db
-        .prepare<[string], { embedding_dimensions: number }>(
-          `SELECT embedding_dimensions FROM rag_sources WHERE id = ?`,
-        )
+        .prepare<
+          [string],
+          { embedding_dimensions: number }
+        >(`SELECT embedding_dimensions FROM rag_sources WHERE id = ?`)
         .get(sourceId);
       if (sourceRow && sourceRow.embedding_dimensions !== client.dimensions) {
         throw new Error(

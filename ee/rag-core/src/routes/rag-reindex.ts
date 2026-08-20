@@ -209,11 +209,25 @@ export function registerRagReindexRoutes(app: Express, deps: RagRouteDeps): void
           previous_dimension, total_sources, processed_sources, started_at)
          VALUES (?, ?, 'running', 'purging', ?, ?, ?, ?, 0, ?)`,
       )
-      .run(jobId, tenantId, body.targetSettingName, targetDimension, currentDimension, activeSources.length, now);
+      .run(
+        jobId,
+        tenantId,
+        body.targetSettingName,
+        targetDimension,
+        currentDimension,
+        activeSources.length,
+        now,
+      );
 
     deps.onAudit?.({
       type: 'rag.reindex.started',
-      payload: { jobId, tenantId, targetSettingName: body.targetSettingName, targetDimension, currentDimension },
+      payload: {
+        jobId,
+        tenantId,
+        targetSettingName: body.targetSettingName,
+        targetDimension,
+        currentDimension,
+      },
       timestamp: now,
     });
 
@@ -239,7 +253,12 @@ export function registerRagReindexRoutes(app: Express, deps: RagRouteDeps): void
            SET embedding_setting_name = ?, embedding_model_version = ?, embedding_dimensions = ?
            WHERE tenant_id = ? AND deleted_at IS NULL`,
         )
-        .run(body.targetSettingName, targetSetting.embeddingModel, targetSetting.dimensions, tenantId);
+        .run(
+          body.targetSettingName,
+          targetSetting.embeddingModel,
+          targetSetting.dimensions,
+          tenantId,
+        );
 
       deps.db
         .prepare(`UPDATE rag_reindex_jobs SET phase = 'rebuilding-index' WHERE id = ?`)
@@ -254,7 +273,9 @@ export function registerRagReindexRoutes(app: Express, deps: RagRouteDeps): void
           `Vector table still reports ${resetResult.chunkCount} chunk(s) after purging every ` +
           `active source — the migration cannot proceed safely. This should not happen; please report it.`;
         deps.db
-          .prepare(`UPDATE rag_reindex_jobs SET status = 'failed', error = ?, finished_at = ? WHERE id = ?`)
+          .prepare(
+            `UPDATE rag_reindex_jobs SET status = 'failed', error = ?, finished_at = ? WHERE id = ?`,
+          )
           .run(message, new Date().toISOString(), jobId);
         deps.onAudit?.({
           type: 'rag.reindex.failed',
@@ -287,7 +308,9 @@ export function registerRagReindexRoutes(app: Express, deps: RagRouteDeps): void
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       deps.db
-        .prepare(`UPDATE rag_reindex_jobs SET status = 'failed', error = ?, finished_at = ? WHERE id = ?`)
+        .prepare(
+          `UPDATE rag_reindex_jobs SET status = 'failed', error = ?, finished_at = ? WHERE id = ?`,
+        )
         .run(message, new Date().toISOString(), jobId);
       deps.onAudit?.({
         type: 'rag.reindex.failed',
@@ -358,7 +381,9 @@ export function resumeReindexJobs(
     )
     .run('Interrupted by a server restart — re-run the migration.', now);
   if (orphaned.changes > 0) {
-    log?.warn(`RAG reindex: marked ${orphaned.changes} orphaned job(s) as failed (server restart recovery).`);
+    log?.warn(
+      `RAG reindex: marked ${orphaned.changes} orphaned job(s) as failed (server restart recovery).`,
+    );
   }
 
   const pending = db
@@ -369,7 +394,9 @@ export function resumeReindexJobs(
     .all(liveDimension);
 
   for (const job of pending) {
-    db.prepare(`UPDATE rag_reindex_jobs SET status = 'resyncing', phase = 'resyncing' WHERE id = ?`).run(job.id);
+    db.prepare(
+      `UPDATE rag_reindex_jobs SET status = 'resyncing', phase = 'resyncing' WHERE id = ?`,
+    ).run(job.id);
 
     const sources = db
       .prepare<
@@ -383,10 +410,9 @@ export function resumeReindexJobs(
       if (triggerSync(source.id) !== null) triggered++;
     }
 
-    db.prepare(`UPDATE rag_reindex_jobs SET status = 'completed', finished_at = ? WHERE id = ?`).run(
-      new Date().toISOString(),
-      job.id,
-    );
+    db.prepare(
+      `UPDATE rag_reindex_jobs SET status = 'completed', finished_at = ? WHERE id = ?`,
+    ).run(new Date().toISOString(), job.id);
     log?.info(
       `RAG reindex: resumed job ${job.id} after restart — triggered re-sync for ${triggered}/${sources.length} source(s).`,
     );

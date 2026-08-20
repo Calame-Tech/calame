@@ -690,7 +690,8 @@ export function registerMergedDocumentRagTools(opts: RegisterMergedDocumentRagTo
           // with no real folder chain (root-level) still gets a single
           // synthetic ancestor entry rather than an empty chain, so both
           // tools evaluate root documents identically.
-          const effectiveChain = chain.length > 0 ? chain : [{ id: d.folderId ?? '', path: args.folder }];
+          const effectiveChain =
+            chain.length > 0 ? chain : [{ id: d.folderId ?? '', path: args.folder }];
           if (!isDocumentAllowedByChain(d.id, d.path, effectiveChain, scope)) continue;
           allDocuments.push({
             id: d.id,

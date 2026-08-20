@@ -15,14 +15,22 @@ vi.mock('@huggingface/transformers', () => {
   throw new Error('simulated onnxruntime load failure');
 });
 
-const { createEmbeddingClient, EmbeddingNotSupportedError, EmbeddingModelMissingError, OpenAiCompatibleEmbeddingClient } =
-  await import('../openai-client.js');
-const { LocalEmbeddingUnavailableError, LocalOnnxEmbeddingClient } = await import('../local-onnx-client.js');
+const {
+  createEmbeddingClient,
+  EmbeddingNotSupportedError,
+  EmbeddingModelMissingError,
+  OpenAiCompatibleEmbeddingClient,
+} = await import('../openai-client.js');
+const { LocalEmbeddingUnavailableError, LocalOnnxEmbeddingClient } =
+  await import('../local-onnx-client.js');
 
 describe('createEmbeddingClient — local provider', () => {
   it('throws LocalEmbeddingUnavailableError when no localModelsRootDir is provided', () => {
     expect(() =>
-      createEmbeddingClient({ provider: 'local', apiKey: '', embeddingModel: 'embeddinggemma-300m-q4' }, 768),
+      createEmbeddingClient(
+        { provider: 'local', apiKey: '', embeddingModel: 'embeddinggemma-300m-q4' },
+        768,
+      ),
     ).toThrow(LocalEmbeddingUnavailableError);
   });
 
@@ -56,11 +64,12 @@ describe('createEmbeddingClient — local provider', () => {
     // And it actually still embeds — proves the isolation holds at runtime,
     // not just at construction.
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = vi.fn(async () =>
-      new Response(JSON.stringify({ data: [{ index: 0, embedding: [0.1, 0.2] }] }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      }),
+    globalThis.fetch = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ data: [{ index: 0, embedding: [0.1, 0.2] }] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
     ) as typeof fetch;
     try {
       const vectors = await openrouterClient.embed(['hello']);
@@ -82,14 +91,19 @@ describe('createEmbeddingClient — local provider', () => {
       { localModelsRootDir: stageModelDir() },
     );
     await expect(localClient.embed(['hello'])).rejects.toThrow(/failed to load the ONNX runtime/);
-    await expect(localClient.embed(['hello'])).rejects.toBeInstanceOf(LocalEmbeddingUnavailableError);
+    await expect(localClient.embed(['hello'])).rejects.toBeInstanceOf(
+      LocalEmbeddingUnavailableError,
+    );
   });
 });
 
 describe('createEmbeddingClient — existing providers unaffected', () => {
   it('anthropic still throws EmbeddingNotSupportedError', () => {
     expect(() =>
-      createEmbeddingClient({ provider: 'anthropic', apiKey: 'x', embeddingModel: 'claude-embed' }, 1536),
+      createEmbeddingClient(
+        { provider: 'anthropic', apiKey: 'x', embeddingModel: 'claude-embed' },
+        1536,
+      ),
     ).toThrow(EmbeddingNotSupportedError);
   });
 

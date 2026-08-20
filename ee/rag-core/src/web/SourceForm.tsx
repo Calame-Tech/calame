@@ -276,7 +276,8 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
   // has to know what an "embedding provider" is. Editing an existing source
   // always keeps its own recorded setting.
   const [embeddingSettingName, setEmbeddingSettingName] = useState(
-    () => initial?.embeddingSettingName ?? aiSettings.find((s) => s.provider === 'local')?.name ?? '',
+    () =>
+      initial?.embeddingSettingName ?? aiSettings.find((s) => s.provider === 'local')?.name ?? '',
   );
   // Polling interval — null means "manual sync only". Pre-fill from the
   // existing source on edit so the dropdown shows the saved cadence rather
@@ -2059,7 +2060,8 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                 if (supports) {
                   if (isLocal) {
                     label += ' — inclus, 100 % local';
-                    if (s.embeddingDimensions !== undefined) label += ` (${s.embeddingDimensions} dims)`;
+                    if (s.embeddingDimensions !== undefined)
+                      label += ` (${s.embeddingDimensions} dims)`;
                   } else if (s.embeddingModel) {
                     label += ` — ${s.embeddingModel}`;
                   }
@@ -2095,7 +2097,8 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                   {selectedSetting.embeddingModel ?? '(non spécifié)'}
                 </span>
               </p>
-              {(selectedSetting.embeddingDimensions ?? initial?.embeddingDimensions) !== undefined && (
+              {(selectedSetting.embeddingDimensions ?? initial?.embeddingDimensions) !==
+                undefined && (
                 <p className="text-xs text-gray-500">
                   Dimensions :{' '}
                   <span className="font-mono-plex text-gray-400">

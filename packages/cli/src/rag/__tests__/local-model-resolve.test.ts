@@ -80,7 +80,11 @@ describe('resolveLocalModelDir', () => {
     });
 
     it("defaults the base dir to this module's own directory when packagedBaseDir is omitted", () => {
-      const result = resolveLocalModelDir({ packaged: true, platform: 'linux', existsFn: () => false });
+      const result = resolveLocalModelDir({
+        packaged: true,
+        platform: 'linux',
+        existsFn: () => false,
+      });
       expect(result.available).toBe(false);
       expect(result.unavailableReason).toContain(MODEL_FOLDER);
     });
@@ -121,8 +125,10 @@ describe('resolveLocalModelDir', () => {
         packaged: false,
         devCacheDir: '/cache',
         platform: 'linux',
-        readdirFn: (dir) => (dir === path.posix.join('/cache', 'models') ? ['stale-rev', 'good-rev'] : []),
-        existsFn: (p) => p === path.posix.join('/cache', 'models', 'good-rev', MODEL_FOLDER, 'config.json'),
+        readdirFn: (dir) =>
+          dir === path.posix.join('/cache', 'models') ? ['stale-rev', 'good-rev'] : [],
+        existsFn: (p) =>
+          p === path.posix.join('/cache', 'models', 'good-rev', MODEL_FOLDER, 'config.json'),
       });
       expect(result.available).toBe(true);
       expect(result.path).toBe(path.posix.join('/cache', 'models', 'good-rev'));

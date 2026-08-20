@@ -12,7 +12,10 @@ import type { ExecFileFn } from '../system.js';
 // style for the same reason).
 // ---------------------------------------------------------------------------
 
-function makeCapturedApp(): { app: Express; post: Map<string, (req: Request, res: Response) => unknown> } {
+function makeCapturedApp(): {
+  app: Express;
+  post: Map<string, (req: Request, res: Response) => unknown>;
+} {
   const post = new Map<string, (req: Request, res: Response) => unknown>();
   const app = {
     post: vi.fn((path: string, handler: (req: Request, res: Response) => unknown) =>

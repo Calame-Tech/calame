@@ -7,7 +7,11 @@ import Database from 'better-sqlite3';
 import type { Database as BetterSqlite3Database } from 'better-sqlite3';
 
 import { runRagMigrations } from '../../storage/schema.js';
-import { HybridSearchIndex, escapeFtsQuery, l2DistanceToCosineSimilarity } from '../hybrid-search.js';
+import {
+  HybridSearchIndex,
+  escapeFtsQuery,
+  l2DistanceToCosineSimilarity,
+} from '../hybrid-search.js';
 import type { EmbeddingClient, VectorStore } from '../../types.js';
 
 // ---------------------------------------------------------------------------
@@ -199,7 +203,12 @@ describe('HybridSearchIndex', () => {
     const vectorStore = makeMockVectorStore(['c-1']);
     const embed = vi.fn().mockResolvedValue([[0.1, 0.2, 0.3]]);
     const embedQuery = vi.fn().mockResolvedValue([[0.4, 0.5, 0.6]]);
-    const client: EmbeddingClient = { dimensions: 3, modelName: 'mock-asymmetric', embed, embedQuery };
+    const client: EmbeddingClient = {
+      dimensions: 3,
+      modelName: 'mock-asymmetric',
+      embed,
+      embedQuery,
+    };
 
     const index = new HybridSearchIndex({
       db,
@@ -539,7 +548,12 @@ describe('HybridSearchIndex', () => {
     it('a lower vector rank (larger distance) gets a strictly lower similarity — not inflated by RRF', async () => {
       insertDocument(db, { id: 'doc-1', sourceId: 'src-1', path: 'a.md', name: 'a.md' });
       insertChunk(db, { chunkId: 'c-near', documentId: 'doc-1', text: 'near match one' });
-      insertChunk(db, { chunkId: 'c-far', documentId: 'doc-1', text: 'far match two', position: 1 });
+      insertChunk(db, {
+        chunkId: 'c-far',
+        documentId: 'doc-1',
+        text: 'far match two',
+        position: 1,
+      });
 
       // rank 0 → distance 0/100=0 ; rank 1 → distance 1/100=0.01
       const vectorStore = makeMockVectorStore(['c-near', 'c-far']);
@@ -550,7 +564,9 @@ describe('HybridSearchIndex', () => {
       });
 
       const result = await index.search('src-1', 'zzz_no_keyword_match_zzz', { topK: 5 });
-      const near = result.chunks.find((c) => c.documentId === 'doc-1' && c.text === 'near match one');
+      const near = result.chunks.find(
+        (c) => c.documentId === 'doc-1' && c.text === 'near match one',
+      );
       const far = result.chunks.find((c) => c.text === 'far match two');
       expect(near!.similarity).not.toBeNull();
       expect(far!.similarity).not.toBeNull();

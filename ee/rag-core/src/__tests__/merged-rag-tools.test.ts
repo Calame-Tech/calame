@@ -854,7 +854,9 @@ describe('registerMergedDocumentRagTools', () => {
         getDocumentFolderChain: vi.fn().mockResolvedValue(chain),
         // The folder is real (just not allowlisted) — existence must pass
         // so the allowlist filter is what produces the empty result.
-        listFolders: vi.fn().mockResolvedValue([makeFolder({ id: 'folder-secret', path: 'private' })]),
+        listFolders: vi
+          .fn()
+          .mockResolvedValue([makeFolder({ id: 'folder-secret', path: 'private' })]),
       });
       const opts = makeOpts({
         deps: makeDeps({ storage }),
@@ -959,19 +961,30 @@ describe('registerMergedDocumentRagTools', () => {
     });
 
     it('a multi-source call still succeeds when the folder matches at least one fanned-out source', async () => {
-      const doc = makeDocument({ id: 'doc-in-kb2', sourceId: 'src-2', folderId: 'f-2', path: 'shared/a.txt' });
+      const doc = makeDocument({
+        id: 'doc-in-kb2',
+        sourceId: 'src-2',
+        folderId: 'f-2',
+        path: 'shared/a.txt',
+      });
       const storage = makeStorage({
-        listDocuments: vi.fn().mockImplementation((sourceId: string) =>
-          sourceId === 'src-2' ? Promise.resolve([doc]) : Promise.resolve([]),
-        ),
+        listDocuments: vi
+          .fn()
+          .mockImplementation((sourceId: string) =>
+            sourceId === 'src-2' ? Promise.resolve([doc]) : Promise.resolve([]),
+          ),
         getDocumentFolderChain: vi.fn().mockResolvedValue([]),
         // "shared" only exists in KB2 — KB1 must be silently skipped for it,
         // not treated as proof the token is unknown everywhere.
-        listFolders: vi.fn().mockImplementation((sourceId: string) =>
-          sourceId === 'src-2'
-            ? Promise.resolve([makeFolder({ id: 'f-2', sourceId: 'src-2', path: 'shared', name: 'shared' })])
-            : Promise.resolve([]),
-        ),
+        listFolders: vi
+          .fn()
+          .mockImplementation((sourceId: string) =>
+            sourceId === 'src-2'
+              ? Promise.resolve([
+                  makeFolder({ id: 'f-2', sourceId: 'src-2', path: 'shared', name: 'shared' }),
+                ])
+              : Promise.resolve([]),
+          ),
       });
       const opts = makeOpts({
         deps: makeDeps({ storage }),

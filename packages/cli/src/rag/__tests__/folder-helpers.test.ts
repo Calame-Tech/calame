@@ -49,7 +49,9 @@ describe('normaliseFolderArg', () => {
 });
 
 describe('resolveFolderId', () => {
-  function makeFakeDb(rows: Array<{ id: string; source_id: string; path: string }>): FolderResolverDb {
+  function makeFakeDb(
+    rows: Array<{ id: string; source_id: string; path: string }>,
+  ): FolderResolverDb {
     return {
       prepare: (_sql: string) => ({
         get: (...params: unknown[]) => {

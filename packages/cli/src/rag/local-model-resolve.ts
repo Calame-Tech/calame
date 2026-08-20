@@ -112,7 +112,8 @@ export function resolveLocalModelDir(opts: ResolveLocalModelDirOptions): LocalMo
   const joiner = platform === 'win32' ? path.win32 : path.posix;
 
   if (opts.overridePath) {
-    if (hasModel(opts.overridePath, modelFolderName, existsFn, joiner)) return found(opts.overridePath);
+    if (hasModel(opts.overridePath, modelFolderName, existsFn, joiner))
+      return found(opts.overridePath);
     return notFound(
       `CALAME_LOCAL_EMBEDDING_MODEL_DIR is set to "${opts.overridePath}", but ` +
         `"${modelFolderName}/config.json" was not found there.`,

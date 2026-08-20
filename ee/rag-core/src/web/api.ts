@@ -56,10 +56,16 @@ export class ApiError extends Error {
  */
 async function readError(res: Response): Promise<{ message: string; code?: string }> {
   try {
-    const data = (await res.clone().json()) as { message?: unknown; error?: unknown; code?: unknown };
+    const data = (await res.clone().json()) as {
+      message?: unknown;
+      error?: unknown;
+      code?: unknown;
+    };
     const code = typeof data.code === 'string' ? data.code : undefined;
-    if (typeof data.message === 'string' && data.message.length > 0) return { message: data.message, code };
-    if (typeof data.error === 'string' && data.error.length > 0) return { message: data.error, code };
+    if (typeof data.message === 'string' && data.message.length > 0)
+      return { message: data.message, code };
+    if (typeof data.error === 'string' && data.error.length > 0)
+      return { message: data.error, code };
   } catch {
     // Fall through to text.
   }

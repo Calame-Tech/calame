@@ -53,7 +53,9 @@
       "brace-expansion@1.1.12": "^5.0.9",
       "brace-expansion@5.0.4": "^5.0.9",
       "ip-address@10.x": "^10.3.1",
-      "nanoid@5.x": "^5.1.16"
+      "nanoid@5.x": "^5.1.16",
+      "adm-zip": ">=0.6.0",
+      "sharp": ">=0.35.0"
     }
   }
 }

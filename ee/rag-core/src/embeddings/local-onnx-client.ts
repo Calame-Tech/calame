@@ -212,7 +212,9 @@ export class LocalOnnxEmbeddingClient implements EmbeddingClient {
     }
     const [n, dims] = tensor.dims;
     if (n === undefined || dims === undefined) {
-      throw new Error(`LocalOnnxEmbeddingClient: unexpected sentence_embedding dims ${tensor.dims}`);
+      throw new Error(
+        `LocalOnnxEmbeddingClient: unexpected sentence_embedding dims ${tensor.dims}`,
+      );
     }
     if (dims !== this.dimensions) {
       throw new Error(
@@ -248,9 +250,7 @@ export class LocalOnnxEmbeddingClient implements EmbeddingClient {
   private async load(): Promise<LoadedModel> {
     const configPath = path.join(this.modelsRootDir, this.modelFolderName, 'config.json');
     if (!fs.existsSync(configPath)) {
-      throw new LocalEmbeddingUnavailableError(
-        `expected ${configPath} to exist but it does not.`,
-      );
+      throw new LocalEmbeddingUnavailableError(`expected ${configPath} to exist but it does not.`);
     }
 
     // Isolated on purpose: packages/cli/src/rag/bootstrap.ts wraps the whole

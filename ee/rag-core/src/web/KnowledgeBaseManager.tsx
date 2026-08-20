@@ -301,9 +301,7 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
     const currentlyActive = new Set(
       [...jobMap.entries()].filter(([, info]) => info.activeJob !== null).map(([id]) => id),
     );
-    const justFinished = [...previouslyActiveIdsRef.current].some(
-      (id) => !currentlyActive.has(id),
-    );
+    const justFinished = [...previouslyActiveIdsRef.current].some((id) => !currentlyActive.has(id));
     previouslyActiveIdsRef.current = currentlyActive;
     if (justFinished) {
       void refreshSources();

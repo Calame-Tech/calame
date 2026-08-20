@@ -201,7 +201,10 @@ describe('ai-settings routes — local provider + rerank threading', () => {
 
   describe('built-in local setting (migration v17) — protected from deletion/modification', () => {
     it('already exists on a fresh DB with the expected shape', async () => {
-      const res = await request(app).get('/api/ai-settings/local').set('Cookie', cookie).expect(200);
+      const res = await request(app)
+        .get('/api/ai-settings/local')
+        .set('Cookie', cookie)
+        .expect(200);
       expect(res.body.setting.provider).toBe('local');
       expect(res.body.setting.embeddingDimensions).toBe(768);
       expect(res.body.setting.configured).toBe(true);

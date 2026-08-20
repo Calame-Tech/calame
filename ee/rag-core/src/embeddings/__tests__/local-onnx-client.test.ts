@@ -25,7 +25,6 @@ vi.mock('@huggingface/transformers', () => ({
 const { LocalOnnxEmbeddingClient, LocalEmbeddingUnavailableError, EMBEDDING_GEMMA_PREFIXES } =
   await import('../local-onnx-client.js');
 
-
 const DIMS = 4; // small, arbitrary — irrelevant to what's being tested here
 
 /** A fake tokenizer call: returns dims reflecting [batchLen, seqLen]. Records every call. */

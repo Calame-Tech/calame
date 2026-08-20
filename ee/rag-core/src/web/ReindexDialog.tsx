@@ -143,14 +143,16 @@ export default function ReindexDialog({
         {step.kind === 'confirm' && (
           <div className="space-y-4">
             <p className="text-sm text-gray-300">
-              Toutes les sources RAG existantes doivent utiliser le même modèle d'embeddings.
-              Passer à <span className="font-medium text-gray-100">{label}</span> nécessite de{' '}
+              Toutes les sources RAG existantes doivent utiliser le même modèle d'embeddings. Passer
+              à <span className="font-medium text-gray-100">{label}</span> nécessite de{' '}
               <span className="font-medium text-red-400">purger et ré-indexer</span> l'intégralité
               des documents déjà indexés.
             </p>
             <ul className="text-xs text-gray-500 list-disc pl-4 space-y-1">
               <li>Les sources elles-mêmes (config, nom, planification) sont conservées.</li>
-              <li>Leur contenu indexé (documents, chunks) est effacé puis ré-ingéré depuis zéro.</li>
+              <li>
+                Leur contenu indexé (documents, chunks) est effacé puis ré-ingéré depuis zéro.
+              </li>
               <li>Un redémarrage de Calame sera nécessaire pour terminer la migration.</li>
               <li>La ré-indexation complète peut prendre plusieurs minutes selon le volume.</li>
             </ul>

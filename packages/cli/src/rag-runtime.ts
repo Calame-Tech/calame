@@ -134,7 +134,9 @@ export async function initRagRuntime(
     packaged: localModelConfig?.packaged ?? false,
   });
   if (!localModelResolution.available) {
-    log.info(`RAG: bundled local embedding model not staged (${localModelResolution.unavailableReason})`);
+    log.info(
+      `RAG: bundled local embedding model not staged (${localModelResolution.unavailableReason})`,
+    );
   }
 
   const { resolveEmbeddingSetting, resolveEmbeddingClient } = buildEmbeddingResolvers(

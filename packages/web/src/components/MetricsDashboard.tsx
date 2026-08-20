@@ -791,11 +791,7 @@ export default function MetricsDashboard() {
                         : 'text-rose-400'
                   }
                 >
-                  <AnimatedNumber
-                    value={parseFloat(successPct)}
-                    format={(n) => n.toFixed(1)}
-                  />
-                  %
+                  <AnimatedNumber value={parseFloat(successPct)} format={(n) => n.toFixed(1)} />%
                 </span>
               }
               hint={`${successCount.toLocaleString()} successful calls`}

@@ -19,7 +19,11 @@ import type { RagRouteDeps, ResolvedEmbeddingSetting } from '../types.js';
 
 type Handler = (req: Request, res: Response) => void | Promise<void>;
 
-function makeCapturedApp(): { app: Express; post: Map<string, Handler>; get: Map<string, Handler> } {
+function makeCapturedApp(): {
+  app: Express;
+  post: Map<string, Handler>;
+  get: Map<string, Handler>;
+} {
   const post = new Map<string, Handler>();
   const get = new Map<string, Handler>();
   const app = {
@@ -89,7 +93,11 @@ function insertSource(
   return id;
 }
 
-function insertDocWithChunk(db: BetterSqlite3Database, sourceId: string, tenantId = 'default'): string {
+function insertDocWithChunk(
+  db: BetterSqlite3Database,
+  sourceId: string,
+  tenantId = 'default',
+): string {
   const docId = nanoid();
   const chunkId = nanoid();
   db.prepare(
@@ -105,13 +113,12 @@ function insertDocWithChunk(db: BetterSqlite3Database, sourceId: string, tenantI
 }
 
 function makeDeps(db: BetterSqlite3Database, overrides: Partial<RagRouteDeps> = {}): RagRouteDeps {
-  const resolveEmbeddingSetting = vi.fn(
-    (name: string): ResolvedEmbeddingSetting => {
-      if (name === 'new-local-setting') return { embeddingModel: 'embeddinggemma-300m-q4', dimensions: 768 };
-      if (name === 'old-setting') return { embeddingModel: 'old-model', dimensions: 1536 };
-      throw new Error(`unknown setting: ${name}`);
-    },
-  );
+  const resolveEmbeddingSetting = vi.fn((name: string): ResolvedEmbeddingSetting => {
+    if (name === 'new-local-setting')
+      return { embeddingModel: 'embeddinggemma-300m-q4', dimensions: 768 };
+    if (name === 'old-setting') return { embeddingModel: 'old-model', dimensions: 1536 };
+    throw new Error(`unknown setting: ${name}`);
+  });
   return {
     db,
     pipeline: {} as RagRouteDeps['pipeline'],
@@ -128,7 +135,8 @@ function makeDeps(db: BetterSqlite3Database, overrides: Partial<RagRouteDeps> = 
     syncQueue: {} as RagRouteDeps['syncQueue'],
     pollScheduler: {} as RagRouteDeps['pollScheduler'],
     watchManager: {} as RagRouteDeps['watchManager'],
-    getTenantId: (req?: Request) => (req as unknown as { _tenantId?: string } | undefined)?._tenantId ?? 'default',
+    getTenantId: (req?: Request) =>
+      (req as unknown as { _tenantId?: string } | undefined)?._tenantId ?? 'default',
     onAudit: vi.fn(),
     ...overrides,
   };
@@ -181,7 +189,11 @@ describe('POST /api/rag/reindex', () => {
     insertDocWithChunk(db, otherSourceId, 'tenant-b');
 
     const deps = makeDeps(db);
-    const res = await callReindex(deps, { targetSettingName: 'new-local-setting', confirm: true }, 'tenant-a');
+    const res = await callReindex(
+      deps,
+      { targetSettingName: 'new-local-setting', confirm: true },
+      'tenant-a',
+    );
     expect(res.statusCode).toBe(409);
     expect((res.body as { code: string }).code).toBe('other-tenants-have-chunks');
   });
@@ -195,7 +207,11 @@ describe('POST /api/rag/reindex', () => {
     const res = await callReindex(deps, { targetSettingName: 'new-local-setting', confirm: true });
 
     expect(res.statusCode).toBe(200);
-    const body = res.body as { reindexed: boolean; requiresRestart: boolean; job: { status: string } };
+    const body = res.body as {
+      reindexed: boolean;
+      requiresRestart: boolean;
+      job: { status: string };
+    };
     expect(body.reindexed).toBe(true);
     expect(body.requiresRestart).toBe(true);
     expect(body.job.status).toBe('awaiting-restart');
@@ -205,7 +221,9 @@ describe('POST /api/rag/reindex', () => {
     // Documents must be purged too — the pipeline's hash fast-path and the
     // sync route's etag fast-path both key off rag_documents surviving,
     // which would leave the index permanently empty after re-sync.
-    const docCount = db.prepare(`SELECT COUNT(*) AS n FROM rag_documents WHERE id = ?`).get(docId) as {
+    const docCount = db
+      .prepare(`SELECT COUNT(*) AS n FROM rag_documents WHERE id = ?`)
+      .get(docId) as {
       n: number;
     };
     expect(docCount.n).toBe(0);
@@ -223,8 +241,14 @@ describe('POST /api/rag/reindex', () => {
 
     for (const id of [s1, s2]) {
       const row = db
-        .prepare(`SELECT embedding_setting_name, embedding_model_version, embedding_dimensions FROM rag_sources WHERE id = ?`)
-        .get(id) as { embedding_setting_name: string; embedding_model_version: string; embedding_dimensions: number };
+        .prepare(
+          `SELECT embedding_setting_name, embedding_model_version, embedding_dimensions FROM rag_sources WHERE id = ?`,
+        )
+        .get(id) as {
+        embedding_setting_name: string;
+        embedding_model_version: string;
+        embedding_dimensions: number;
+      };
       expect(row.embedding_setting_name).toBe('new-local-setting');
       expect(row.embedding_model_version).toBe('embeddinggemma-300m-q4');
       expect(row.embedding_dimensions).toBe(768);
@@ -234,15 +258,22 @@ describe('POST /api/rag/reindex', () => {
   it('does not touch a soft-deleted source', async () => {
     const db = makeDb();
     const activeId = insertSource(db, { embeddingDimensions: 1536 });
-    const deletedId = insertSource(db, { embeddingDimensions: 1536, deletedAt: '2026-01-01T00:00:00.000Z' });
+    const deletedId = insertSource(db, {
+      embeddingDimensions: 1536,
+      deletedAt: '2026-01-01T00:00:00.000Z',
+    });
     const deps = makeDeps(db);
 
     await callReindex(deps, { targetSettingName: 'new-local-setting', confirm: true });
 
-    const activeRow = db.prepare(`SELECT embedding_setting_name FROM rag_sources WHERE id = ?`).get(activeId) as {
+    const activeRow = db
+      .prepare(`SELECT embedding_setting_name FROM rag_sources WHERE id = ?`)
+      .get(activeId) as {
       embedding_setting_name: string;
     };
-    const deletedRow = db.prepare(`SELECT embedding_setting_name FROM rag_sources WHERE id = ?`).get(deletedId) as {
+    const deletedRow = db
+      .prepare(`SELECT embedding_setting_name FROM rag_sources WHERE id = ?`)
+      .get(deletedId) as {
       embedding_setting_name: string;
     };
     expect(activeRow.embedding_setting_name).toBe('new-local-setting');
@@ -318,7 +349,9 @@ describe('resumeReindexJobs (boot recovery)', () => {
 
     resumeReindexJobs(db, 768, () => null);
 
-    const row = db.prepare(`SELECT status, error FROM rag_reindex_jobs WHERE id = ?`).get(jobId) as {
+    const row = db
+      .prepare(`SELECT status, error FROM rag_reindex_jobs WHERE id = ?`)
+      .get(jobId) as {
       status: string;
       error: string;
     };
@@ -341,7 +374,9 @@ describe('resumeReindexJobs (boot recovery)', () => {
 
     expect(triggerSync).toHaveBeenCalledWith(s1);
     expect(triggerSync).toHaveBeenCalledWith(s2);
-    const row = db.prepare(`SELECT status FROM rag_reindex_jobs WHERE id = ?`).get(jobId) as { status: string };
+    const row = db.prepare(`SELECT status FROM rag_reindex_jobs WHERE id = ?`).get(jobId) as {
+      status: string;
+    };
     expect(row.status).toBe('completed');
   });
 
@@ -360,7 +395,9 @@ describe('resumeReindexJobs (boot recovery)', () => {
     resumeReindexJobs(db, 1536, triggerSync);
 
     expect(triggerSync).not.toHaveBeenCalled();
-    const row = db.prepare(`SELECT status FROM rag_reindex_jobs WHERE id = ?`).get(jobId) as { status: string };
+    const row = db.prepare(`SELECT status FROM rag_reindex_jobs WHERE id = ?`).get(jobId) as {
+      status: string;
+    };
     expect(row.status).toBe('awaiting-restart');
   });
 });

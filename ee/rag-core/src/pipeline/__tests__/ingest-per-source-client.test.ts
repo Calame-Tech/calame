@@ -85,7 +85,10 @@ function makeSource(overrides: Partial<RagSource> = {}): RagSource {
 }
 
 function makeBuffer(): Buffer {
-  return Buffer.from('A reasonably sized document with several sentences to chunk.\n'.repeat(20), 'utf8');
+  return Buffer.from(
+    'A reasonably sized document with several sentences to chunk.\n'.repeat(20),
+    'utf8',
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -124,8 +127,20 @@ describe('IngestionPipeline — per-source embedding client resolution', () => {
       resolveEmbeddingClient,
     });
 
-    await pipeline.ingestDocument({ source: sourceA, folder: null, path: 'a.txt', mimeType: 'text/plain', buffer: makeBuffer() });
-    await pipeline.ingestDocument({ source: sourceB, folder: null, path: 'b.txt', mimeType: 'text/plain', buffer: makeBuffer() });
+    await pipeline.ingestDocument({
+      source: sourceA,
+      folder: null,
+      path: 'a.txt',
+      mimeType: 'text/plain',
+      buffer: makeBuffer(),
+    });
+    await pipeline.ingestDocument({
+      source: sourceB,
+      folder: null,
+      path: 'b.txt',
+      mimeType: 'text/plain',
+      buffer: makeBuffer(),
+    });
 
     expect(embedA).toHaveBeenCalledTimes(1);
     expect(embedB).toHaveBeenCalledTimes(1);
@@ -138,7 +153,13 @@ describe('IngestionPipeline — per-source embedding client resolution', () => {
     const { client, embed } = makeStubEmbeddingClient('only-client');
 
     const pipeline = new IngestionPipeline({ db, vectorStore, embeddingClient: client });
-    await pipeline.ingestDocument({ source, folder: null, path: 'a.txt', mimeType: 'text/plain', buffer: makeBuffer() });
+    await pipeline.ingestDocument({
+      source,
+      folder: null,
+      path: 'a.txt',
+      mimeType: 'text/plain',
+      buffer: makeBuffer(),
+    });
 
     expect(embed).toHaveBeenCalledTimes(1);
   });
@@ -160,12 +181,20 @@ describe('IngestionPipeline — per-source embedding client resolution', () => {
     });
 
     await expect(
-      pipeline.ingestDocument({ source, folder: null, path: 'a.txt', mimeType: 'text/plain', buffer: makeBuffer() }),
+      pipeline.ingestDocument({
+        source,
+        folder: null,
+        path: 'a.txt',
+        mimeType: 'text/plain',
+        buffer: makeBuffer(),
+      }),
     ).rejects.toThrow('AI setting "deleted-setting" not found.');
     expect(embedDefault).not.toHaveBeenCalled();
 
     // Nothing should have landed in the DB — same "fail before any write" invariant as the cap gate.
-    const docCount = db.prepare(`SELECT COUNT(*) AS n FROM rag_documents WHERE source_id = ?`).get(source.id) as {
+    const docCount = db
+      .prepare(`SELECT COUNT(*) AS n FROM rag_documents WHERE source_id = ?`)
+      .get(source.id) as {
       n: number;
     };
     expect(docCount.n).toBe(0);
@@ -184,7 +213,13 @@ describe('IngestionPipeline — per-source embedding client resolution', () => {
     });
 
     await expect(
-      pipeline.ingestDocument({ source, folder: null, path: 'a.txt', mimeType: 'text/plain', buffer: makeBuffer() }),
+      pipeline.ingestDocument({
+        source,
+        folder: null,
+        path: 'a.txt',
+        mimeType: 'text/plain',
+        buffer: makeBuffer(),
+      }),
     ).rejects.toThrow(/configured for 1536 dimensions.*produces 768/s);
   });
 
@@ -201,7 +236,13 @@ describe('IngestionPipeline — per-source embedding client resolution', () => {
     });
 
     await expect(
-      pipeline.ingestDocument({ source, folder: null, path: 'a.txt', mimeType: 'text/plain', buffer: makeBuffer() }),
+      pipeline.ingestDocument({
+        source,
+        folder: null,
+        path: 'a.txt',
+        mimeType: 'text/plain',
+        buffer: makeBuffer(),
+      }),
     ).resolves.toBeDefined();
     expect(embed).toHaveBeenCalledTimes(1);
   });
@@ -216,7 +257,14 @@ describe('IngestionPipeline — per-source embedding client resolution', () => {
 			 (id, source_id, status, progress, total_documents, processed_documents,
 			  skipped_by_etag, gc_deleted, tokens_embedded, tenant_id, started_at, finished_at)
 			 VALUES (?, ?, 'completed', 1, 1, 1, 0, 0, ?, ?, ?, ?)`,
-    ).run(nanoid(), source.id, 1_000_000, 'default', new Date().toISOString(), new Date().toISOString());
+    ).run(
+      nanoid(),
+      source.id,
+      1_000_000,
+      'default',
+      new Date().toISOString(),
+      new Date().toISOString(),
+    );
 
     const { client, embed } = makeStubEmbeddingClient('free-local-model');
     const nonBillableClient: EmbeddingClient = { ...client, billable: false };
@@ -230,7 +278,13 @@ describe('IngestionPipeline — per-source embedding client resolution', () => {
     });
 
     await expect(
-      pipeline.ingestDocument({ source, folder: null, path: 'a.txt', mimeType: 'text/plain', buffer: makeBuffer() }),
+      pipeline.ingestDocument({
+        source,
+        folder: null,
+        path: 'a.txt',
+        mimeType: 'text/plain',
+        buffer: makeBuffer(),
+      }),
     ).resolves.toBeDefined();
     expect(embed).toHaveBeenCalledTimes(1);
   });
@@ -243,7 +297,14 @@ describe('IngestionPipeline — per-source embedding client resolution', () => {
 			 (id, source_id, status, progress, total_documents, processed_documents,
 			  skipped_by_etag, gc_deleted, tokens_embedded, tenant_id, started_at, finished_at)
 			 VALUES (?, ?, 'completed', 1, 1, 1, 0, 0, ?, ?, ?, ?)`,
-    ).run(nanoid(), source.id, 1_000_000, 'default', new Date().toISOString(), new Date().toISOString());
+    ).run(
+      nanoid(),
+      source.id,
+      1_000_000,
+      'default',
+      new Date().toISOString(),
+      new Date().toISOString(),
+    );
 
     const { client } = makeStubEmbeddingClient('billable-model'); // billable defaults to true (undefined)
     const pipeline = new IngestionPipeline({
@@ -255,7 +316,13 @@ describe('IngestionPipeline — per-source embedding client resolution', () => {
     });
 
     await expect(
-      pipeline.ingestDocument({ source, folder: null, path: 'a.txt', mimeType: 'text/plain', buffer: makeBuffer() }),
+      pipeline.ingestDocument({
+        source,
+        folder: null,
+        path: 'a.txt',
+        mimeType: 'text/plain',
+        buffer: makeBuffer(),
+      }),
     ).rejects.toBeInstanceOf(EmbeddingCapExceededError);
   });
 });

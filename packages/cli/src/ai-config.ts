@@ -380,7 +380,13 @@ function seedBuiltInLocalSetting(
         embedding_model, embedding_dimensions, rerank_model, tenant_id)
        VALUES (?, ?, 'local', '', NULL, NULL, '["embeddings"]', ?, ?, NULL, ?)`,
     )
-    .run(name, LOCAL_EMBEDDING_DEFAULT_LABEL, LOCAL_EMBEDDING_MODEL_ID, LOCAL_EMBEDDING_DIMENSIONS, tenantId);
+    .run(
+      name,
+      LOCAL_EMBEDDING_DEFAULT_LABEL,
+      LOCAL_EMBEDDING_MODEL_ID,
+      LOCAL_EMBEDDING_DIMENSIONS,
+      tenantId,
+    );
 }
 
 /**
@@ -411,4 +417,3 @@ export function findBuiltInLocalSetting(
 ): AiSetting | null {
   return mgr.listSettings(tenantId).find((s) => s.provider === 'local') ?? null;
 }
-

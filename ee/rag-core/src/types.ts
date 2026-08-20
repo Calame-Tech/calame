@@ -214,7 +214,28 @@ export interface EmbeddingClient {
 export interface RagSearchResult {
   chunks: Array<{
     text: string;
+    /**
+     * Reciprocal Rank Fusion score — an internal ranking signal, NOT a
+     * relevance/confidence measure. It is `sum(1 / (k + rank))` across the
+     * vector and keyword branches, so it depends on how many candidates were
+     * requested and where this chunk landed in each branch's ranking, not on
+     * how well it actually matches the query. It cannot be thresholded and
+     * is not comparable across different queries or `topK` values — use it
+     * only to preserve the result ORDER already applied. See `similarity`
+     * for a query-comparable relevance signal.
+     */
     score: number;
+    /**
+     * Cosine similarity in [-1, 1] between the query and this chunk's
+     * embedding, computed from the vector branch's raw distance — `null`
+     * when this chunk matched ONLY via keyword (FTS5) search and has no
+     * vector-branch distance to derive it from. Unlike `score`, this is
+     * comparable across queries: a low value (e.g. well under 0.3) means
+     * the chunk is a weak semantic match even if it was the best one
+     * available, which is the signal needed to say "this isn't in the
+     * knowledge base" instead of confidently answering from a bad match.
+     */
+    similarity: number | null;
     sourceId: string;
     folder: string;
     fileName: string;

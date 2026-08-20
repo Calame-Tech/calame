@@ -232,6 +232,7 @@ describe('registerMergedDocumentRagTools', () => {
         {
           text: 'hello world',
           score: 0.9,
+          similarity: null,
           sourceId: 'src-1',
           folder: 'docs/faq',
           fileName: 'intro.md',
@@ -297,6 +298,7 @@ describe('registerMergedDocumentRagTools', () => {
         {
           text: 'allowed',
           score: 0.9,
+          similarity: null,
           sourceId: 'src-1',
           folder: 'docs/faq',
           fileName: 'intro.md',
@@ -306,6 +308,7 @@ describe('registerMergedDocumentRagTools', () => {
         {
           text: 'blocked',
           score: 0.8,
+          similarity: null,
           sourceId: 'src-1',
           folder: 'docs/internal',
           fileName: 'secret.md',
@@ -342,6 +345,7 @@ describe('registerMergedDocumentRagTools', () => {
         {
           text: 'hello',
           score: 0.9,
+          similarity: null,
           sourceId: 'src-1',
           folder: 'docs',
           fileName: 'a.md',
@@ -376,6 +380,119 @@ describe('registerMergedDocumentRagTools', () => {
         'test',
         expect.objectContaining({ topK: 10 }),
       );
+    });
+
+    // -----------------------------------------------------------------------
+    // minSimilarity — hard server-side cutoff, requested after real-world
+    // testing showed a nonsense query still returns low-similarity chunks
+    // that a naive tool-calling model might not know to discard on its own.
+    // -----------------------------------------------------------------------
+    describe('minSimilarity', () => {
+      it('drops chunks strictly below the threshold', async () => {
+        const chunks: RagSearchResult['chunks'] = [
+          {
+            text: 'strong match',
+            score: 0.9,
+            similarity: 0.4,
+            sourceId: 'src-1',
+            folder: '',
+            fileName: 'a.md',
+            position: 0,
+            documentId: 'doc-1',
+          },
+          {
+            text: 'weak match',
+            score: 0.85,
+            similarity: 0.1,
+            sourceId: 'src-1',
+            folder: '',
+            fileName: 'b.md',
+            position: 0,
+            documentId: 'doc-2',
+          },
+        ];
+        const searchIndex = makeSearchIndex({ search: vi.fn().mockResolvedValue({ chunks }) });
+        const opts = makeOpts({ deps: makeDeps({ searchIndex }) });
+        registerMergedDocumentRagTools(opts);
+
+        const handler = getToolHandler(opts.server, 'rag_search');
+        const response = await handler({ query: 'test', minSimilarity: 0.3 });
+        const payload = JSON.parse(response.content[0].text) as {
+          chunks: Array<{ text: string }>;
+        };
+        expect(payload.chunks).toHaveLength(1);
+        expect(payload.chunks[0]!.text).toBe('strong match');
+      });
+
+      it('a chunk exactly AT the threshold is kept (>=, not >)', async () => {
+        const chunks: RagSearchResult['chunks'] = [
+          {
+            text: 'exactly at threshold',
+            score: 0.9,
+            similarity: 0.3,
+            sourceId: 'src-1',
+            folder: '',
+            fileName: 'a.md',
+            position: 0,
+            documentId: 'doc-1',
+          },
+        ];
+        const searchIndex = makeSearchIndex({ search: vi.fn().mockResolvedValue({ chunks }) });
+        const opts = makeOpts({ deps: makeDeps({ searchIndex }) });
+        registerMergedDocumentRagTools(opts);
+
+        const handler = getToolHandler(opts.server, 'rag_search');
+        const response = await handler({ query: 'test', minSimilarity: 0.3 });
+        const payload = JSON.parse(response.content[0].text) as { chunks: unknown[] };
+        expect(payload.chunks).toHaveLength(1);
+      });
+
+      it('never drops a keyword-only chunk (similarity: null) — no vector score to compare', async () => {
+        const chunks: RagSearchResult['chunks'] = [
+          {
+            text: 'exact keyword hit, no vector score',
+            score: 0.9,
+            similarity: null,
+            sourceId: 'src-1',
+            folder: '',
+            fileName: 'a.md',
+            position: 0,
+            documentId: 'doc-1',
+          },
+        ];
+        const searchIndex = makeSearchIndex({ search: vi.fn().mockResolvedValue({ chunks }) });
+        const opts = makeOpts({ deps: makeDeps({ searchIndex }) });
+        registerMergedDocumentRagTools(opts);
+
+        const handler = getToolHandler(opts.server, 'rag_search');
+        // A very high threshold — would drop everything with a real score.
+        const response = await handler({ query: 'test', minSimilarity: 0.99 });
+        const payload = JSON.parse(response.content[0].text) as { chunks: unknown[] };
+        expect(payload.chunks).toHaveLength(1);
+      });
+
+      it('omitted minSimilarity applies no filtering at all (default, unchanged behavior)', async () => {
+        const chunks: RagSearchResult['chunks'] = [
+          {
+            text: 'very weak match',
+            score: 0.9,
+            similarity: -0.5,
+            sourceId: 'src-1',
+            folder: '',
+            fileName: 'a.md',
+            position: 0,
+            documentId: 'doc-1',
+          },
+        ];
+        const searchIndex = makeSearchIndex({ search: vi.fn().mockResolvedValue({ chunks }) });
+        const opts = makeOpts({ deps: makeDeps({ searchIndex }) });
+        registerMergedDocumentRagTools(opts);
+
+        const handler = getToolHandler(opts.server, 'rag_search');
+        const response = await handler({ query: 'test' });
+        const payload = JSON.parse(response.content[0].text) as { chunks: unknown[] };
+        expect(payload.chunks).toHaveLength(1);
+      });
     });
   });
 
@@ -433,6 +550,7 @@ describe('registerMergedDocumentRagTools', () => {
         {
           text: 'src1-chunk',
           score: 0.9,
+          similarity: null,
           sourceId: 'src-1',
           folder: 'docs/private',
           fileName: 'priv.md',
@@ -444,6 +562,7 @@ describe('registerMergedDocumentRagTools', () => {
         {
           text: 'src2-allowed',
           score: 0.85,
+          similarity: null,
           sourceId: 'src-2',
           folder: 'docs/public',
           fileName: 'pub.md',
@@ -453,6 +572,7 @@ describe('registerMergedDocumentRagTools', () => {
         {
           text: 'src2-blocked',
           score: 0.8,
+          similarity: null,
           sourceId: 'src-2',
           folder: 'docs/hidden',
           fileName: 'hidden.md',

@@ -18,6 +18,7 @@ function buildBaseHits(texts: Array<{ text: string; score: number }>): RagSearch
     chunks: texts.map((t, i) => ({
       text: t.text,
       score: t.score,
+      similarity: null,
       sourceId: 'src-1',
       folder: 'docs',
       fileName: `f${i}.md`,

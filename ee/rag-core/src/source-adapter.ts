@@ -122,7 +122,17 @@ export interface DocumentStorage {
       name: string;
       type: string;
       folderCount: number;
+      /** Total documents discovered by sync, regardless of whether they were actually chunked. */
       documentCount: number;
+      /**
+       * Documents that have at least one chunk and are therefore actually
+       * findable via rag_search / rag_get_document. Can be lower than
+       * `documentCount` — e.g. an image with no OCR/captioning support is
+       * discovered and counted, but produces zero chunks. Without this
+       * split, an agent sees "6 documents", finds content in only 3, and
+       * has no way to tell "3 aren't indexed yet" from "I'm missing access".
+       */
+      indexedDocumentCount: number;
     }>
   >;
   /**

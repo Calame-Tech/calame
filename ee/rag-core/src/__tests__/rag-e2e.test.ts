@@ -49,6 +49,7 @@ import type {
 } from '../source-adapter.js';
 import type { RagSource, RagDocument, RagFolder, VectorStore, EmbeddingClient } from '../types.js';
 import { parseRagPiiConfig } from '../pii-masking.js';
+import { l2DistanceToCosineSimilarity } from '../search/hybrid-search.js';
 
 // ---------------------------------------------------------------------------
 // Fakes — deterministic, in-process versions of the host-side dependencies.
@@ -252,6 +253,7 @@ function buildStorage(db: BetterSqlite3Database): DocumentStorage {
         type: string;
         folder_count: number;
         document_count: number;
+        indexed_document_count: number;
       }
       const rows = db
         .prepare<[], AggRow>(
@@ -259,7 +261,10 @@ function buildStorage(db: BetterSqlite3Database): DocumentStorage {
 					   s.id, s.name, s.type,
 					   (SELECT COUNT(*) FROM rag_folders f WHERE f.source_id = s.id) AS folder_count,
 					   (SELECT COUNT(*) FROM rag_documents d
-					     WHERE d.source_id = s.id AND d.deleted_at IS NULL) AS document_count
+					     WHERE d.source_id = s.id AND d.deleted_at IS NULL) AS document_count,
+					   (SELECT COUNT(*) FROM rag_documents d
+					     WHERE d.source_id = s.id AND d.deleted_at IS NULL
+					       AND EXISTS (SELECT 1 FROM rag_chunks c WHERE c.document_id = d.id)) AS indexed_document_count
 					 FROM rag_sources s
 					 WHERE s.deleted_at IS NULL
 					 ORDER BY s.created_at ASC`,
@@ -271,6 +276,7 @@ function buildStorage(db: BetterSqlite3Database): DocumentStorage {
         type: r.type,
         folderCount: r.folder_count,
         documentCount: r.document_count,
+        indexedDocumentCount: r.indexed_document_count,
       }));
     },
     async getDocumentFolderChain(documentId: string) {
@@ -345,6 +351,7 @@ function buildSearchIndex(
           .map((row) => ({
             text: row.chunk_text,
             score: 1 - (distanceMap.get(row.chunk_id) ?? 1),
+            similarity: l2DistanceToCosineSimilarity(distanceMap.get(row.chunk_id) ?? 1),
             sourceId: row.doc_source_id,
             folder: row.folder_path ?? '',
             fileName: row.doc_name,

@@ -106,6 +106,23 @@ interface ChunkMetadata {
 }
 
 /**
+ * Converts sqlite-vec's L2 distance (the `rag_chunks_vec` table declares no
+ * explicit `distance_metric`, so it defaults to L2 — see
+ * storage/sqlite-vec-store.ts) into a cosine similarity in [-1, 1].
+ *
+ * Valid for unit-normalized embeddings: ‖a-b‖² = 2 - 2·cos(a,b), so
+ * cos(a,b) = 1 - ‖a-b‖²/2. Every EmbeddingClient this repo ships produces
+ * unit vectors — the local ONNX client normalizes defensively (see
+ * embeddings/local-onnx-client.ts) and OpenAI/Cohere-compatible providers
+ * document pre-normalized output — but the result is still clamped in case
+ * a future custom provider's vectors aren't actually unit-length.
+ */
+export function l2DistanceToCosineSimilarity(distance: number): number {
+  const raw = 1 - (distance * distance) / 2;
+  return Math.max(-1, Math.min(1, raw));
+}
+
+/**
  * Escape a user-supplied query for FTS5. The MATCH parser treats a number
  * of characters as syntax (parentheses, quotes, `:`, `*`, `^`, `-`, …).
  * For the MVP we strip everything outside a permissive alphanumeric +
@@ -215,7 +232,7 @@ export class HybridSearchIndex implements DocumentSearchIndex {
         ? candidates * 3
         : candidates;
 
-    let vectorRanked: Array<{ chunkId: string; meta: ChunkMetadata }> = [];
+    let vectorRanked: Array<{ chunkId: string; meta: ChunkMetadata; similarity: number }> = [];
     try {
       const client = this.resolveEmbeddingClient(settingRow.embedding_setting_name);
       const vectors = await client.embed([query]);
@@ -231,6 +248,7 @@ export class HybridSearchIndex implements DocumentSearchIndex {
           // so the input array is already ranked. The hydration query loses
           // ordering through `IN (...)`, so we re-sort against the input.
           new Map(vecResults.map((r, i) => [r.chunkId, i])),
+          new Map(vecResults.map((r) => [r.chunkId, r.distance])),
           opts.tenantId,
         );
       }
@@ -264,9 +282,18 @@ export class HybridSearchIndex implements DocumentSearchIndex {
     // ----- RRF fusion -------------------------------------------------------
     // score(c) = sum over methods m of  1 / (k + rank_m(c))
     // Rank is 1-based, ties broken by stable insertion order.
+    // `similarity` rides along separately from `score`: it's the vector
+    // branch's cosine similarity when this chunk has one, `null` for a
+    // keyword-only match — never derived from (or mixed into) the RRF sum.
     const fused = new Map<
       string,
-      { score: number; meta: ChunkMetadata; vectorRank: number | null; keywordRank: number | null }
+      {
+        score: number;
+        meta: ChunkMetadata;
+        vectorRank: number | null;
+        keywordRank: number | null;
+        similarity: number | null;
+      }
     >();
 
     for (let i = 0; i < vectorRanked.length; i++) {
@@ -278,6 +305,7 @@ export class HybridSearchIndex implements DocumentSearchIndex {
         meta: entry.meta,
         vectorRank: rank,
         keywordRank: null,
+        similarity: entry.similarity,
       });
     }
 
@@ -295,6 +323,7 @@ export class HybridSearchIndex implements DocumentSearchIndex {
           meta: entry.meta,
           vectorRank: null,
           keywordRank: rank,
+          similarity: null,
         });
       }
     }
@@ -306,6 +335,7 @@ export class HybridSearchIndex implements DocumentSearchIndex {
       chunks: top.map((entry) => ({
         text: entry.meta.text,
         score: entry.score,
+        similarity: entry.similarity,
         sourceId: entry.meta.sourceId,
         folder: entry.meta.folder,
         fileName: entry.meta.fileName,
@@ -334,8 +364,9 @@ export class HybridSearchIndex implements DocumentSearchIndex {
     folders: readonly string[] | undefined,
     fileTypes: readonly string[] | undefined,
     rankByChunkId: Map<string, number>,
+    distanceByChunkId: Map<string, number>,
     tenantId?: string,
-  ): Array<{ chunkId: string; meta: ChunkMetadata }> {
+  ): Array<{ chunkId: string; meta: ChunkMetadata; similarity: number }> {
     if (chunkIds.length === 0) return [];
     const placeholders = chunkIds.map(() => '?').join(',');
     // Extra JOIN on rag_sources filters out chunks whose parent source
@@ -377,6 +408,11 @@ export class HybridSearchIndex implements DocumentSearchIndex {
     return filtered.map((row) => ({
       chunkId: row.chunk_id,
       meta: rowToMeta(row),
+      // Missing from the map shouldn't happen (every hydrated row came from
+      // a chunkId sqlite-vec itself returned a distance for) — defensive
+      // fallback deliberately fails toward "don't trust this" (max distance
+      // → similarity -1) rather than toward false confidence.
+      similarity: l2DistanceToCosineSimilarity(distanceByChunkId.get(row.chunk_id) ?? 2),
     }));
   }
 

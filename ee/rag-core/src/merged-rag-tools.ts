@@ -189,7 +189,10 @@ export function registerMergedDocumentRagTools(opts: RegisterMergedDocumentRagTo
     `Semantic vector search over the knowledge base(s) available in this profile — user-uploaded documents such as notes, work logs, manuals, reports, contracts, meeting minutes, or any free-form text content. ` +
       `Returns the most relevant text chunks. Prefer this tool over relational database queries whenever the user asks about textual content, what was written in a document, what was logged on a date, or anything that naturally lives in a file rather than a structured table. ` +
       `Call it even when the question mentions names, dates, or events — those may appear in documents just as easily as in tables. ` +
-      `Use rag_list_sources first to discover available source names, then pass the source name to restrict the search.`,
+      `Use rag_list_sources first to discover available source names, then pass the source name to restrict the search. ` +
+      `\n\nEach returned chunk has TWO different numbers, and only one of them tells you whether the match is any good: ` +
+      `"similarity" is a cosine similarity in [-1, 1] between your query and the chunk (or null for a chunk that only matched by exact keyword, not semantically) — treat a low similarity (roughly under 0.3) as a weak match, and if every returned chunk is low, say the knowledge base doesn't seem to cover this rather than answering from the best chunk available anyway. ` +
+      `"score" is an internal ranking value (rank-based, blends keyword and semantic signal) that always exists and is only meaningful for ordering these results against each other — a query with no real match in the knowledge base still returns chunks with a "score", so never use "score" to judge whether the results actually answer the question.`,
     {
       query: z.string().min(1).describe('The natural language search query.'),
       source: z
@@ -215,6 +218,17 @@ export function registerMergedDocumentRagTools(opts: RegisterMergedDocumentRagTo
         .array(z.string())
         .optional()
         .describe('Restrict search to specific MIME types, e.g. ["application/pdf"].'),
+      minSimilarity: z
+        .number()
+        .min(-1)
+        .max(1)
+        .optional()
+        .describe(
+          'Hard cutoff on the "similarity" field (see above) — chunks below this are dropped ' +
+            'before being returned, instead of relying on the caller to notice a low value. ' +
+            'A keyword-only chunk (similarity: null) is never dropped by this filter — it has no ' +
+            'vector score to compare, not a low one. Omit for no filtering (the default).',
+        ),
     },
     async (args) => {
       const t0 = Date.now();
@@ -305,11 +319,23 @@ export function registerMergedDocumentRagTools(opts: RegisterMergedDocumentRagTo
           continue;
         }
 
+        // Hard cutoff, when requested — a keyword-only chunk (similarity:
+        // null) has no vector score to compare against the threshold, so it
+        // is never dropped here (see the parameter's own description).
+        if (
+          args.minSimilarity !== undefined &&
+          chunk.similarity !== null &&
+          chunk.similarity < args.minSimilarity
+        ) {
+          continue;
+        }
+
         const { text, truncated } = capChunkText(chunk.text);
         filtered.push({
           text,
           truncated,
           score: chunk.score,
+          similarity: chunk.similarity,
           sourceId: chunk.sourceId,
           sourceName: entry.source.name,
           folder: chunk.folder,
@@ -368,7 +394,11 @@ export function registerMergedDocumentRagTools(opts: RegisterMergedDocumentRagTo
     'rag_list_sources',
     `List the document source(s) of the user's knowledge base accessible through this profile. ` +
       `Use when the user asks "what knowledge bases / document sources do I have?" or to discover ` +
-      `what's available before calling rag_search.`,
+      `what's available before calling rag_search. ` +
+      `"documentCount" is every file discovered by the last sync; "indexedDocumentCount" is how many of ` +
+      `those actually have searchable content (some file types, e.g. images with no OCR/captioning ` +
+      `support, are discovered but never produce any chunks). If they differ, rag_search/rag_list_documents ` +
+      `will legitimately miss some files — that's expected, not a permissions problem.`,
     {},
     async (_args) => {
       const t0 = Date.now();
@@ -378,6 +408,7 @@ export function registerMergedDocumentRagTools(opts: RegisterMergedDocumentRagTo
         type: string;
         folderCount: number;
         documentCount: number;
+        indexedDocumentCount: number;
       }>;
       try {
         const stored = await deps.storage.listSources();
@@ -818,6 +849,11 @@ export function registerMergedDocumentRagTools(opts: RegisterMergedDocumentRagTo
                 {
                   text: capped,
                   score: 0,
+                  // Not a real search hit — this is a synthetic wrapper
+                  // reusing maskSearchResult's masking logic on the whole
+                  // fetched document, so there's no vector distance to
+                  // derive a similarity from.
+                  similarity: null,
                   sourceId: doc.sourceId,
                   folder: '',
                   fileName: doc.name,

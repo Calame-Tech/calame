@@ -18,6 +18,7 @@ function makeChunk(
   return {
     text,
     score: 0.9,
+    similarity: 0.42,
     sourceId: 'src-1',
     folder,
     fileName: 'intro.md',
@@ -172,6 +173,7 @@ describe('maskSearchResult', () => {
     const chunk = makeChunk('Email a@b.co', 'doc-xyz', 'docs/special');
     const { result } = maskSearchResult(makeResult([chunk]), parseRagPiiConfig('on'));
     expect(result.chunks[0].score).toBe(chunk.score);
+    expect(result.chunks[0].similarity).toBe(chunk.similarity);
     expect(result.chunks[0].documentId).toBe('doc-xyz');
     expect(result.chunks[0].folder).toBe('docs/special');
     expect(result.chunks[0].position).toBe(chunk.position);

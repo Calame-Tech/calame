@@ -135,7 +135,11 @@ export { parseRagPiiConfig, maskSearchResult } from './pii-masking.js';
 export type { RagPiiMaskingConfig } from './pii-masking.js';
 
 // ---------- Search ----------
-export { HybridSearchIndex, escapeFtsQuery } from './search/hybrid-search.js';
+export {
+  HybridSearchIndex,
+  escapeFtsQuery,
+  l2DistanceToCosineSimilarity,
+} from './search/hybrid-search.js';
 export type { HybridSearchDeps } from './search/hybrid-search.js';
 export { CohereReranker, RerankerError } from './search/reranker.js';
 export type {

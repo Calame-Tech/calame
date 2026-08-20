@@ -414,6 +414,7 @@ describe('buildDocumentSourceAdapter', () => {
         {
           text: 'some content',
           score: 0.9,
+          similarity: null,
           sourceId: 'src-1',
           folder: 'docs/faq',
           fileName: 'intro.md',
@@ -443,6 +444,7 @@ describe('buildDocumentSourceAdapter', () => {
         {
           text: 'allowed content',
           score: 0.9,
+          similarity: null,
           sourceId: 'src-1',
           folder: 'docs/faq',
           fileName: 'intro.md',
@@ -452,6 +454,7 @@ describe('buildDocumentSourceAdapter', () => {
         {
           text: 'blocked content',
           score: 0.8,
+          similarity: null,
           sourceId: 'src-1',
           folder: 'docs/internal',
           fileName: 'secret.md',
@@ -485,6 +488,7 @@ describe('buildDocumentSourceAdapter', () => {
         {
           text: 'special doc content',
           score: 0.9,
+          similarity: null,
           sourceId: 'src-1',
           folder: 'docs/restricted',
           fileName: 'special.md',

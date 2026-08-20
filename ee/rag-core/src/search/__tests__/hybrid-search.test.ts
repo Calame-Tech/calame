@@ -7,7 +7,7 @@ import Database from 'better-sqlite3';
 import type { Database as BetterSqlite3Database } from 'better-sqlite3';
 
 import { runRagMigrations } from '../../storage/schema.js';
-import { HybridSearchIndex, escapeFtsQuery } from '../hybrid-search.js';
+import { HybridSearchIndex, escapeFtsQuery, l2DistanceToCosineSimilarity } from '../hybrid-search.js';
 import type { EmbeddingClient, VectorStore } from '../../types.js';
 
 // ---------------------------------------------------------------------------
@@ -463,6 +463,119 @@ describe('HybridSearchIndex', () => {
     const result = await index.search('src-1', 'AcronymXYZ', { topK: 5 });
     expect(result.chunks).toHaveLength(1);
     expect(result.chunks[0]!.documentId).toBe('doc-1');
+  });
+
+  // 11b. `similarity` — a query-comparable relevance signal, independent of
+  // the RRF `score` (which is a rank-position sum: `1/(k+rank)`, so it can
+  // never say "nothing here actually matches" — a nonsense query still gets
+  // a `score` because SOMETHING is always ranked first). `similarity` is
+  // the vector branch's cosine similarity, derived directly from distance —
+  // low for a bad match, `null` when a chunk has no vector-branch distance
+  // to derive it from (keyword-only hit).
+  describe('similarity (cosine, independent of RRF score)', () => {
+    it('a vector-branch hit gets a real cosine similarity computed from its distance', async () => {
+      insertDocument(db, { id: 'doc-1', sourceId: 'src-1', path: 'a.md', name: 'a.md' });
+      insertChunk(db, { chunkId: 'c-1', documentId: 'doc-1', text: 'unrelated to the fts query' });
+
+      // makeMockVectorStore gives rank 0 a distance of exactly 0.
+      const vectorStore = makeMockVectorStore(['c-1']);
+      const index = new HybridSearchIndex({
+        db,
+        vectorStore,
+        resolveEmbeddingClient: () => makeMockEmbeddingClient(),
+      });
+
+      const result = await index.search('src-1', 'zzz_no_keyword_match_zzz', { topK: 5 });
+      expect(result.chunks).toHaveLength(1);
+      // distance 0 → cosine similarity 1 (identical direction) via
+      // 1 - distance²/2.
+      expect(result.chunks[0]!.similarity).toBeCloseTo(1, 10);
+    });
+
+    it('a lower vector rank (larger distance) gets a strictly lower similarity — not inflated by RRF', async () => {
+      insertDocument(db, { id: 'doc-1', sourceId: 'src-1', path: 'a.md', name: 'a.md' });
+      insertChunk(db, { chunkId: 'c-near', documentId: 'doc-1', text: 'near match one' });
+      insertChunk(db, { chunkId: 'c-far', documentId: 'doc-1', text: 'far match two', position: 1 });
+
+      // rank 0 → distance 0/100=0 ; rank 1 → distance 1/100=0.01
+      const vectorStore = makeMockVectorStore(['c-near', 'c-far']);
+      const index = new HybridSearchIndex({
+        db,
+        vectorStore,
+        resolveEmbeddingClient: () => makeMockEmbeddingClient(),
+      });
+
+      const result = await index.search('src-1', 'zzz_no_keyword_match_zzz', { topK: 5 });
+      const near = result.chunks.find((c) => c.documentId === 'doc-1' && c.text === 'near match one');
+      const far = result.chunks.find((c) => c.text === 'far match two');
+      expect(near!.similarity).not.toBeNull();
+      expect(far!.similarity).not.toBeNull();
+      expect(near!.similarity!).toBeGreaterThan(far!.similarity!);
+    });
+
+    it('a keyword-only hit gets similarity: null — no vector distance to derive it from', async () => {
+      insertDocument(db, { id: 'doc-1', sourceId: 'src-1', path: 'a.md', name: 'a.md' });
+      insertChunk(db, {
+        chunkId: 'c-keyword',
+        documentId: 'doc-1',
+        text: 'The KubernetesOperator pattern simplifies cluster management.',
+      });
+
+      const vectorStore = makeMockVectorStore([]); // vector branch finds nothing
+      const index = new HybridSearchIndex({
+        db,
+        vectorStore,
+        resolveEmbeddingClient: () => makeMockEmbeddingClient(),
+      });
+
+      const result = await index.search('src-1', 'KubernetesOperator', { topK: 5 });
+      expect(result.chunks).toHaveLength(1);
+      expect(result.chunks[0]!.similarity).toBeNull();
+    });
+
+    it('a chunk found by both branches keeps its vector-derived similarity, not null', async () => {
+      insertDocument(db, { id: 'doc-1', sourceId: 'src-1', path: 'a.md', name: 'a.md' });
+      insertChunk(db, {
+        chunkId: 'c-both',
+        documentId: 'doc-1',
+        text: 'The Kubernetes Operator is a cluster pattern.',
+      });
+
+      const vectorStore = makeMockVectorStore(['c-both']);
+      const index = new HybridSearchIndex({
+        db,
+        vectorStore,
+        resolveEmbeddingClient: () => makeMockEmbeddingClient(),
+      });
+
+      const result = await index.search('src-1', 'Kubernetes Operator', { topK: 5 });
+      expect(result.chunks).toHaveLength(1);
+      expect(result.chunks[0]!.similarity).toBeCloseTo(1, 10);
+    });
+  });
+
+  // 11c. l2DistanceToCosineSimilarity — pure function, direct coverage
+  describe('l2DistanceToCosineSimilarity', () => {
+    it('distance 0 (identical vectors) → similarity 1', () => {
+      expect(l2DistanceToCosineSimilarity(0)).toBe(1);
+    });
+
+    it('distance 2 (opposite unit vectors, max L2 distance) → similarity -1', () => {
+      expect(l2DistanceToCosineSimilarity(2)).toBe(-1);
+    });
+
+    it('distance sqrt(2) (orthogonal unit vectors) → similarity 0', () => {
+      expect(l2DistanceToCosineSimilarity(Math.SQRT2)).toBeCloseTo(0, 10);
+    });
+
+    it('clamps rather than returning an out-of-range value for a distance beyond 2 (non-unit-vector defensive case)', () => {
+      expect(l2DistanceToCosineSimilarity(3)).toBe(-1);
+    });
+
+    it('is monotonically decreasing — larger distance never yields higher similarity', () => {
+      expect(l2DistanceToCosineSimilarity(0.1)).toBeGreaterThan(l2DistanceToCosineSimilarity(0.5));
+      expect(l2DistanceToCosineSimilarity(0.5)).toBeGreaterThan(l2DistanceToCosineSimilarity(1.0));
+    });
   });
 
   // 12. escapeFtsQuery — unit coverage for the escape helper

@@ -7,6 +7,7 @@ import type { Express, Request, Response } from 'express';
 import { z } from 'zod';
 import type { RagSearchResult } from '../types.js';
 import type { RagRouteDeps } from './types.js';
+import { l2DistanceToCosineSimilarity } from '../search/hybrid-search.js';
 
 /**
  * Resolve the tenant id for a request, falling back to the literal
@@ -162,10 +163,14 @@ export function registerRagSearchRoutes(app: Express, deps: RagRouteDeps): void 
           if (!docFolder?.folder_id || !allowedFolders.has(docFolder.folder_id)) continue;
         }
         // vec0 returns L2 distance; map to a [0,1] similarity score (best-effort).
+        // Kept as-is for backward compatibility with existing callers of this
+        // route. `similarity` below is the query-comparable cosine similarity
+        // (see l2DistanceToCosineSimilarity) — prefer it over `score`.
         const score = 1 / (1 + hit.distance);
         chunks.push({
           text: meta.chunk_text,
           score,
+          similarity: l2DistanceToCosineSimilarity(hit.distance),
           sourceId: meta.source_id,
           folder: meta.folder_path ?? path.dirname(meta.document_path),
           fileName: meta.document_name,

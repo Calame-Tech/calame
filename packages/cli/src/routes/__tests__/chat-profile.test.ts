@@ -7,6 +7,7 @@ import { createApp } from '../../app.js';
 import { AppState } from '../../state.js';
 import { CalameDatabase } from '../../database.js';
 import { UserManager } from '../../user.js';
+import { AiSettingsManager } from '../../ai-config.js';
 import type { ServeProfile } from '@calame/core';
 
 describe('GET /api/chat-profile/:profileName', () => {
@@ -143,5 +144,72 @@ describe('GET /api/chat-profile/:profileName', () => {
     const res = await request(app).get('/api/chat-profile/public').expect(200);
     expect(res.body.success).toBe(true);
     expect(res.body.profile.authMode).toBe('open');
+  });
+
+  // ---------------------------------------------------------------------------
+  // `aiSettings` must never surface the embeddings-only built-in `local`
+  // setting: ChatPanel/ChatEntryPage/UserChatPanel all pre-select
+  // `aiSettings[0]` and send it as an explicit `aiSettingName`, which the
+  // backend then rejects ("does not support chat" / "is not allowed for this
+  // MCP") — since `local` is seeded first on every install, the unfiltered
+  // version of this endpoint made that failure the common case, not an edge
+  // case. See ai-resolver.ts's `isChatCapable`.
+  // ---------------------------------------------------------------------------
+  describe('aiSettings (chat-capable filtering)', () => {
+    function createChatSetting(name: string): void {
+      state.aiSettingsManager!.createSetting({
+        name,
+        label: name,
+        provider: 'anthropic',
+        apiKey: 'sk-test',
+        capabilities: ['chat'],
+      });
+    }
+
+    beforeEach(() => {
+      state.aiSettingsManager = new AiSettingsManager(db);
+    });
+
+    it('omits aiSettings entirely when only the built-in "local" setting exists (no explicit list)', async () => {
+      loadProfile({ name: 'noAi', label: 'No AI', authMode: 'open' });
+
+      const res = await request(app).get('/api/chat-profile/noAi').expect(200);
+      expect(res.body.profile.aiSettings).toBeUndefined();
+    });
+
+    it('the fallback (no explicit aiSettingNames) skips "local" and picks a chat-capable setting', async () => {
+      createChatSetting('my-chat-setting');
+      loadProfile({ name: 'fallbackProfile', label: 'Fallback', authMode: 'open' });
+
+      const res = await request(app).get('/api/chat-profile/fallbackProfile').expect(200);
+      expect(res.body.profile.aiSettings).toEqual([
+        { name: 'my-chat-setting', label: 'my-chat-setting' },
+      ]);
+    });
+
+    it('an explicit aiSettingNames list filters out "local" even if present alongside a real chat setting', async () => {
+      createChatSetting('qwen27b');
+      loadProfile({
+        name: 'mixedProfile',
+        label: 'Mixed',
+        authMode: 'open',
+        aiSettingNames: ['local', 'qwen27b'],
+      });
+
+      const res = await request(app).get('/api/chat-profile/mixedProfile').expect(200);
+      expect(res.body.profile.aiSettings).toEqual([{ name: 'qwen27b', label: 'qwen27b' }]);
+    });
+
+    it('an explicit aiSettingNames list of only "local" resolves to no aiSettings (not a crash)', async () => {
+      loadProfile({
+        name: 'localOnlyProfile',
+        label: 'Local only',
+        authMode: 'open',
+        aiSettingNames: ['local'],
+      });
+
+      const res = await request(app).get('/api/chat-profile/localOnlyProfile').expect(200);
+      expect(res.body.profile.aiSettings).toBeUndefined();
+    });
   });
 });

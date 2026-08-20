@@ -53,9 +53,28 @@ describe('McpDetailPage', () => {
     // Label appears in the breadcrumb and the heading
     expect(screen.getAllByText('Default').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('Exposed Data')).toBeTruthy();
+    expect(screen.getByText('Connect')).toBeTruthy();
     expect(screen.getByText('API Keys')).toBeTruthy();
     expect(screen.getByText('Audit Log')).toBeTruthy();
     await flushEffects();
+  });
+
+  it('moves the AI client/settings UI to its own "Connect" tab, out of "Exposed Data"', async () => {
+    renderPage();
+    await flushEffects();
+
+    // Exposed Data is the default tab — it must not show AI-connect content.
+    expect(screen.queryByText('AI Settings')).toBeNull();
+
+    fireEvent.click(screen.getByText('Connect'));
+    await flushEffects();
+    expect(screen.getByText('AI Settings')).toBeTruthy();
+
+    // Switching back to Exposed Data hides it again — confirms it really
+    // moved rather than just always rendering everywhere.
+    fireEvent.click(screen.getByText('Exposed Data'));
+    await flushEffects();
+    expect(screen.queryByText('AI Settings')).toBeNull();
   });
 
   it('shows a not-found message for an unknown profile', async () => {

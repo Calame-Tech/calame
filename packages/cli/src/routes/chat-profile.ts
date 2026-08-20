@@ -15,6 +15,7 @@ import type { AppState } from '../state.js';
 import type { ServeProfile } from '@calame/core';
 import { upgradeProfileShape } from '@calame/core';
 import { DEFAULT_TENANT_ID } from '../tenancy.js';
+import { isChatCapable } from '../ai-resolver.js';
 
 /** Shape of the response profile object. */
 interface ChatProfileInfo {
@@ -117,6 +118,11 @@ export function registerChatProfileRoute(app: Express, state: AppState): void {
       }
 
       // Resolve the AI settings the client may pick from (label only — no API key, no provider).
+      // Filtered to chat-capable settings only — an embeddings-only setting
+      // (e.g. the bundled `local` provider) must never be offered here: the
+      // chat panel pre-selects aiSettings[0] and sends it as an explicit
+      // `aiSettingName`, which would otherwise make every chat turn fail
+      // with "does not support chat" / "is not allowed for this MCP".
       const mgr = state.aiSettingsManager;
       if (mgr) {
         const allowed = (profile.aiSettingNames ?? []).filter(Boolean);
@@ -124,11 +130,13 @@ export function registerChatProfileRoute(app: Express, state: AppState): void {
           const resolved = allowed
             .map((name) => mgr.getSetting(name))
             .filter((s): s is NonNullable<typeof s> => s !== null)
+            .filter(isChatCapable)
             .map((s) => ({ name: s.name, label: s.label }));
           if (resolved.length > 0) info.aiSettings = resolved;
         } else {
-          // No explicit list → expose the global fallback (first one) so the client knows what is used.
-          const fallback = mgr.listSettings()[0];
+          // No explicit list → expose the global fallback (first chat-capable
+          // setting) so the client knows what is used.
+          const fallback = mgr.listSettings().find(isChatCapable);
           if (fallback) info.aiSettings = [{ name: fallback.name, label: fallback.label }];
         }
       }

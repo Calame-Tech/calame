@@ -201,10 +201,16 @@ function McpDetailView({
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<'endpoint' | 'chat' | null>(null);
   const [activeSection, setActiveSection] = useState<
-    'tables' | 'config' | 'tokens' | 'audit' | 'users' | 'scoping'
+    'tables' | 'connect' | 'config' | 'tokens' | 'audit' | 'users' | 'scoping'
   >(
-    (initialActiveSection as 'tables' | 'config' | 'tokens' | 'audit' | 'users' | 'scoping') ??
-      'tables',
+    (initialActiveSection as
+      | 'tables'
+      | 'connect'
+      | 'config'
+      | 'tokens'
+      | 'audit'
+      | 'users'
+      | 'scoping') ?? 'tables',
   );
 
   const [editingLabel, setEditingLabel] = useState(false);
@@ -463,6 +469,11 @@ function McpDetailView({
       id: 'tables',
       label: 'Exposed Data',
       tooltip: 'Manage the Data Configurations and tables accessible via this MCP server',
+    },
+    {
+      id: 'connect',
+      label: 'Connect',
+      tooltip: 'Connect an AI client to this server and choose which AI setting powers its chat',
     },
     {
       id: 'users',
@@ -1152,19 +1163,6 @@ function McpDetailView({
       {/* Section content */}
       {activeSection === 'tables' && (
         <div className="space-y-4">
-          {/* Connect to Claude Desktop (or grab a manual snippet for other clients) */}
-          <ConnectClaudeDesktop profileName={profile.name} />
-
-          {/* Expose this server to cloud AIs (Copilot Studio, ChatGPT connectors) via a tunnel */}
-          <ExposeTunnel profileName={profile.name} />
-
-          {/* AI settings assignment */}
-          <AiSettingsAssignment
-            selected={profile.aiSettingNames ?? []}
-            onChange={handleAiSettingNamesChange}
-            onManageSettings={onNavigateToAiSettings}
-          />
-
           {/* Configurations selection */}
           <div className="card-primary p-4">
             <div className="flex items-center justify-between mb-3">
@@ -1323,6 +1321,23 @@ function McpDetailView({
               })()}
             </div>
           )}
+        </div>
+      )}
+
+      {activeSection === 'connect' && (
+        <div className="space-y-4">
+          {/* Connect to Claude Desktop (or grab a manual snippet for other clients) */}
+          <ConnectClaudeDesktop profileName={profile.name} />
+
+          {/* Expose this server to cloud AIs (Copilot Studio, ChatGPT connectors) via a tunnel */}
+          <ExposeTunnel profileName={profile.name} />
+
+          {/* AI settings assignment */}
+          <AiSettingsAssignment
+            selected={profile.aiSettingNames ?? []}
+            onChange={handleAiSettingNamesChange}
+            onManageSettings={onNavigateToAiSettings}
+          />
         </div>
       )}
 

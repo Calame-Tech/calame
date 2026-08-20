@@ -7,6 +7,18 @@ interface AiSettingMeta {
   label: string;
   provider: string;
   configured: boolean;
+  capabilities?: string[];
+}
+
+/**
+ * Chat clients only — an embeddings-only setting (the bundled `local`
+ * provider, or any setting explicitly configured without the `chat`
+ * capability) must never be assignable here. It would become the first
+ * (default) entry and get sent as an explicit `aiSettingName` on every chat
+ * turn, which the backend rejects (`does not support chat`).
+ */
+function isChatCapable(s: AiSettingMeta): boolean {
+  return s.provider !== 'local' && (s.capabilities?.includes('chat') ?? true);
 }
 
 interface AiSettingsAssignmentProps {
@@ -157,13 +169,13 @@ export default function AiSettingsAssignment({
             </div>
           )}
 
-          {/* Available (non-selected) */}
-          {available.some((s) => !selected.includes(s.name)) && (
+          {/* Available (non-selected) — chat-capable only, see isChatCapable above */}
+          {available.some((s) => !selected.includes(s.name) && isChatCapable(s)) && (
             <div className="pt-1 border-t border-white/5">
               <p className="text-xs text-gray-500 mb-2 mt-2">Add a setting:</p>
               <div className="flex flex-wrap gap-2">
                 {available
-                  .filter((s) => !selected.includes(s.name))
+                  .filter((s) => !selected.includes(s.name) && isChatCapable(s))
                   .map((s) => (
                     <button
                       key={s.name}

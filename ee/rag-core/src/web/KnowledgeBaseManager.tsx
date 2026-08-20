@@ -288,6 +288,28 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
   const sourceIds = useMemo(() => sources.map((s) => s.id), [sources]);
   const { jobMap, triggerPoll } = useActiveSyncJobs(sourceIds);
 
+  // `jobMap` only carries job status (from /api/rag/jobs) — it never updates
+  // `source.lastSyncAt` / connector-level error state, which live on the
+  // `sources` array and are only (re)fetched by refreshSources(). Without
+  // this, a source whose sync just finished would clear its "in progress"
+  // badge (via mergedJobInfo below) but then fall through to showing a STALE
+  // lastSyncAt — e.g. "Jamais synchronisé" right after a successful first
+  // sync — until the page was manually reloaded. Detect the active → done
+  // transition here and refresh the source list once it happens.
+  const previouslyActiveIdsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const currentlyActive = new Set(
+      [...jobMap.entries()].filter(([, info]) => info.activeJob !== null).map(([id]) => id),
+    );
+    const justFinished = [...previouslyActiveIdsRef.current].some(
+      (id) => !currentlyActive.has(id),
+    );
+    previouslyActiveIdsRef.current = currentlyActive;
+    if (justFinished) {
+      void refreshSources();
+    }
+  }, [jobMap, refreshSources]);
+
   const selectedSource = sources.find((s) => s.id === selectedSourceId) ?? null;
 
   const handleCreated = (source: RagSourcePublic) => {
@@ -661,28 +683,37 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
           {sources.map((source) => {
             const isSelected = source.id === selectedSourceId;
             const jobInfo = jobMap.get(source.id);
-            // Merge poll data with optimistic state.
-            const mergedJobInfo: SourceJobInfo = {
-              activeJob:
-                jobInfo?.activeJob ??
-                (optimisticActiveIds.has(source.id)
-                  ? ({
-                      id: 'optimistic',
-                      sourceId: source.id,
-                      status: 'pending',
-                      progress: 0,
-                      totalDocuments: 0,
-                      processedDocuments: 0,
-                      skippedByEtag: 0,
-                      gcDeleted: 0,
-                      tokensEmbedded: 0,
-                      error: null,
-                      startedAt: new Date().toISOString(),
-                      finishedAt: null,
-                    } satisfies import('../types.js').RagJob)
-                  : null),
-              lastFailedJob: jobInfo?.lastFailedJob ?? null,
-            };
+            // Merge poll data with optimistic state. Once `jobInfo` is
+            // defined we have a REAL answer from the poll — including a
+            // legitimate `activeJob: null` meaning "just finished" — and
+            // must trust it outright. The optimistic fallback only bridges
+            // the gap between clicking Re-sync and the first poll response
+            // ever landing for this source; using `??` here previously
+            // treated "real answer: null" the same as "no answer yet",
+            // which combined with optimisticActiveIds never being cleared
+            // on success made the badge get stuck on "in progress" forever.
+            const mergedJobInfo: SourceJobInfo =
+              jobInfo !== undefined
+                ? jobInfo
+                : {
+                    activeJob: optimisticActiveIds.has(source.id)
+                      ? ({
+                          id: 'optimistic',
+                          sourceId: source.id,
+                          status: 'pending',
+                          progress: 0,
+                          totalDocuments: 0,
+                          processedDocuments: 0,
+                          skippedByEtag: 0,
+                          gcDeleted: 0,
+                          tokensEmbedded: 0,
+                          error: null,
+                          startedAt: new Date().toISOString(),
+                          finishedAt: null,
+                        } satisfies import('../types.js').RagJob)
+                      : null,
+                    lastFailedJob: null,
+                  };
             const isResyncing = resyncingIds.has(source.id);
             const isSyncDisabled = isResyncing || mergedJobInfo.activeJob !== null;
 

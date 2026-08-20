@@ -724,7 +724,10 @@ describe('buildDocumentSourceAdapter', () => {
 
     it('returns documents when folder is in allowList', async () => {
       const doc = makeDocument({ id: 'doc-1' });
-      const storage = makeStorage({ listDocuments: vi.fn().mockResolvedValue([doc]) });
+      const storage = makeStorage({
+        listDocuments: vi.fn().mockResolvedValue([doc]),
+        listFolders: vi.fn().mockResolvedValue([makeFolder({ path: 'docs/faq' })]),
+      });
       const adapter = buildDocumentSourceAdapter(makeDeps({ storage }), 'local', 'Local folder');
       const scope = makeAllowListScope(['docs/faq'], []);
       const ctx = makeCtx({ selection: scope });
@@ -736,16 +739,33 @@ describe('buildDocumentSourceAdapter', () => {
       expect(payload.documents).toHaveLength(1);
     });
 
-    it('returns error when folder is not in allowList', async () => {
-      const adapter = buildDocumentSourceAdapter(makeDeps(), 'local', 'Local folder');
+    it('returns an empty list (not a hard error) when nothing in the folder is allowlisted', async () => {
+      // No pre-fetch folder gate — a folder that isn't in `allowedFolders` may
+      // still hold individually-allowlisted documents (see allowedDocuments),
+      // so the only authoritative check is the per-document filter, same as
+      // rag_search. A folder with nothing accessible in it just comes back
+      // empty, matching rag_search's own behavior when nothing matches.
+      const doc = makeDocument({ id: 'doc-internal', path: 'docs/internal/secret.md' });
+      const storage = makeStorage({
+        listDocuments: vi.fn().mockResolvedValue([doc]),
+        // The folder itself is real (just not allowlisted) — the existence
+        // check must pass so the DOWNSTREAM allowlist filter is what
+        // produces the empty result, not a false "unknown folder" error.
+        listFolders: vi.fn().mockResolvedValue([makeFolder({ path: 'docs/internal' })]),
+      });
+      const adapter = buildDocumentSourceAdapter(makeDeps({ storage }), 'local', 'Local folder');
       const scope = makeAllowListScope(['docs/faq'], []);
       const ctx = makeCtx({ selection: scope });
       adapter.registerMcpTools!(ctx);
 
       const handler = getToolHandler(ctx);
       const response = await handler({ folder: 'docs/internal' });
-      const payload = JSON.parse(response.content[0].text) as { error: string };
-      expect(payload.error).toMatch(/not accessible/);
+      const payload = JSON.parse(response.content[0].text) as {
+        documents: unknown[];
+        error?: string;
+      };
+      expect(payload.error).toBeUndefined();
+      expect(payload.documents).toHaveLength(0);
     });
 
     it('calls onAuditLog on success', async () => {

@@ -739,6 +739,268 @@ describe('registerMergedDocumentRagTools', () => {
   });
 
   // -------------------------------------------------------------------------
+  // rag_list_documents — root-folder access parity with rag_search
+  //
+  // Regression coverage for a real bug: a source included wholesale with no
+  // subfolders (folderCount: 0) ends up with `mode: 'allowList'` and every
+  // root document individually listed in `allowedDocuments` (see
+  // buildDocumentScope in rag-access-state.ts — root docs never populate
+  // `allowedFolders`). rag_search already handled this correctly because it
+  // never pre-checks the folder: it filters each chunk's owning document
+  // through isDocumentAllowedByChain, which checks allowedDocuments too.
+  // rag_list_documents used to have a SEPARATE, narrower pre-fetch gate that
+  // only consulted allowedFolders — so root, the majority case on a fresh
+  // install, was readable via rag_search but unlistable via
+  // rag_list_documents with a misleading "not accessible" error.
+  // -------------------------------------------------------------------------
+  describe('rag_list_documents — root-folder access parity with rag_search', () => {
+    function makeRootOnlyFixture() {
+      // Mirrors buildDocumentScope's output for a source included wholesale
+      // with zero subfolders: allowedFolders stays empty, every root
+      // document's path lands in allowedDocuments instead.
+      const scope: Extract<ScopeSelection, { kind: 'document' }> = {
+        kind: 'document',
+        mode: 'allowList',
+        allowedFolders: [],
+        allowedDocuments: ['post.txt', 'carrousel.html'],
+      };
+      const doc = makeDocument({
+        id: 'doc-post',
+        sourceId: 'src-1',
+        folderId: null,
+        path: 'post.txt',
+        name: 'post.txt',
+      });
+      const storage = makeStorage({
+        listDocuments: vi.fn().mockResolvedValue([doc]),
+        getDocumentFolderChain: vi.fn().mockResolvedValue([]),
+      });
+      const chunks: RagSearchResult['chunks'] = [
+        {
+          text: 'chunk from the root document',
+          score: 0.9,
+          similarity: null,
+          sourceId: 'src-1',
+          folder: '',
+          fileName: 'post.txt',
+          position: 0,
+          documentId: 'doc-post',
+        },
+      ];
+      const searchIndex = makeSearchIndex({ search: vi.fn().mockResolvedValue({ chunks }) });
+      const opts = makeOpts({
+        deps: makeDeps({ storage, searchIndex }),
+        sources: [makeEntry({ selectionOverrides: scope })],
+      });
+      registerMergedDocumentRagTools(opts);
+      return opts;
+    }
+
+    it('rag_search finds the root document (confirms the fixture matches the real bug report)', async () => {
+      const opts = makeRootOnlyFixture();
+      const handler = getToolHandler(opts.server, 'rag_search');
+      const response = await handler({ query: 'anything', folders: [''] });
+      const payload = JSON.parse(response.content[0].text) as { chunks: Array<{ folder: string }> };
+      expect(payload.chunks).toHaveLength(1);
+      expect(payload.chunks[0]!.folder).toBe('');
+    });
+
+    it('rag_list_documents(folder: "") no longer rejects the root that rag_search accepts', async () => {
+      const opts = makeRootOnlyFixture();
+      const handler = getToolHandler(opts.server, 'rag_list_documents');
+      const response = await handler({ folder: '' });
+      const payload = JSON.parse(response.content[0].text) as {
+        documents?: Array<{ id: string; name: string }>;
+        error?: string;
+      };
+      expect(payload.error).toBeUndefined();
+      expect(payload.documents).toHaveLength(1);
+      expect(payload.documents![0]!.id).toBe('doc-post');
+    });
+
+    it('acceptance property: every folder rag_search returns in chunk metadata must also work for rag_list_documents', async () => {
+      const opts = makeRootOnlyFixture();
+      const searchHandler = getToolHandler(opts.server, 'rag_search');
+      const listHandler = getToolHandler(opts.server, 'rag_list_documents');
+
+      const searchResponse = await searchHandler({ query: 'anything' });
+      const { chunks } = JSON.parse(searchResponse.content[0].text) as {
+        chunks: Array<{ folder: string }>;
+      };
+      expect(chunks.length).toBeGreaterThan(0); // guard against a vacuously-true property check
+
+      for (const chunk of chunks) {
+        const listResponse = await listHandler({ folder: chunk.folder });
+        const payload = JSON.parse(listResponse.content[0].text) as {
+          documents?: unknown[];
+          error?: string;
+        };
+        expect(payload.error).toBeUndefined();
+        expect(payload.documents!.length).toBeGreaterThan(0);
+      }
+    });
+
+    it('still rejects a folder that is genuinely outside the allowlist (not a blanket bypass)', async () => {
+      const doc = makeDocument({
+        id: 'doc-secret',
+        sourceId: 'src-1',
+        folderId: 'folder-secret',
+        path: 'private/secret.txt',
+        name: 'secret.txt',
+      });
+      const chain = [{ id: 'folder-secret', path: 'private' }];
+      const storage = makeStorage({
+        listDocuments: vi.fn().mockResolvedValue([doc]),
+        getDocumentFolderChain: vi.fn().mockResolvedValue(chain),
+        // The folder is real (just not allowlisted) — existence must pass
+        // so the allowlist filter is what produces the empty result.
+        listFolders: vi.fn().mockResolvedValue([makeFolder({ id: 'folder-secret', path: 'private' })]),
+      });
+      const opts = makeOpts({
+        deps: makeDeps({ storage }),
+        sources: [
+          makeEntry({
+            selectionOverrides: {
+              mode: 'allowList',
+              allowedFolders: ['public'],
+              allowedDocuments: [],
+            },
+          }),
+        ],
+      });
+      registerMergedDocumentRagTools(opts);
+
+      const handler = getToolHandler(opts.server, 'rag_list_documents');
+      const response = await handler({ folder: 'private' });
+      const payload = JSON.parse(response.content[0].text) as {
+        documents: unknown[];
+        error?: string;
+      };
+      // No hard error (folder legitimately exists) — but the post-fetch
+      // per-document filter still excludes what's genuinely not allowlisted.
+      expect(payload.error).toBeUndefined();
+      expect(payload.documents).toHaveLength(0);
+    });
+
+    // -----------------------------------------------------------------------
+    // Real-world testing follow-up: root normalization (".") and an explicit
+    // error for a genuinely unknown folder token, instead of a silent empty
+    // list an agent can't distinguish from "root really is empty".
+    // -----------------------------------------------------------------------
+    it('a bare "." is recognized as root, same as ""', async () => {
+      const opts = makeRootOnlyFixture();
+      const handler = getToolHandler(opts.server, 'rag_list_documents');
+      const response = await handler({ folder: '.' });
+      const payload = JSON.parse(response.content[0].text) as {
+        documents?: unknown[];
+        error?: string;
+      };
+      expect(payload.error).toBeUndefined();
+      expect(payload.documents).toHaveLength(1);
+    });
+
+    it('a genuinely unresolvable folder token returns an explicit "Unknown folder" error, not an empty list', async () => {
+      const opts = makeRootOnlyFixture();
+      const handler = getToolHandler(opts.server, 'rag_list_documents');
+      const response = await handler({ folder: 'root' });
+      const payload = JSON.parse(response.content[0].text) as {
+        documents?: unknown[];
+        error?: string;
+      };
+      expect(payload.error).toMatch(/Unknown folder "root"/);
+      expect(payload.documents).toBeUndefined();
+    });
+
+    it('a path-traversal-looking token also gets the same generic "Unknown folder" error — not a distinct signal', async () => {
+      const opts = makeRootOnlyFixture();
+      const handler = getToolHandler(opts.server, 'rag_list_documents');
+      const response = await handler({ folder: '../' });
+      const payload = JSON.parse(response.content[0].text) as { error?: string };
+      expect(payload.error).toMatch(/Unknown folder/);
+    });
+
+    it('a multi-source call errors when the folder is unknown to EVERY fanned-out source', async () => {
+      // Earlier behavior silently returned [] whenever a folder matched zero
+      // of several fanned-out sources — recreating the exact "can't tell
+      // typo from empty" ambiguity this whole check exists to remove, just
+      // one level up (a single-source call with the same unresolvable token
+      // already errors; a bare `source` omission shouldn't downgrade that to
+      // silence). This must now error the same way.
+      const storage = makeStorage({
+        listDocuments: vi.fn().mockResolvedValue([]),
+        getDocumentFolderChain: vi.fn().mockResolvedValue([]),
+        listFolders: vi.fn().mockResolvedValue([]),
+      });
+      const opts = makeOpts({
+        deps: makeDeps({ storage }),
+        sources: [
+          makeEntry({
+            sourceOverrides: { id: 'src-1', name: 'KB1' },
+            selectionOverrides: { mode: 'allowAll', allowedFolders: [], allowedDocuments: [] },
+          }),
+          makeEntry({
+            sourceOverrides: { id: 'src-2', name: 'KB2' },
+            selectionOverrides: { mode: 'allowAll', allowedFolders: [], allowedDocuments: [] },
+          }),
+        ],
+      });
+      registerMergedDocumentRagTools(opts);
+
+      const handler = getToolHandler(opts.server, 'rag_list_documents');
+      // No source filter → both KB1 and KB2 are queried. "nonexistent" isn't
+      // a real folder in either.
+      const response = await handler({ folder: 'nonexistent' });
+      const payload = JSON.parse(response.content[0].text) as {
+        documents?: unknown[];
+        error?: string;
+      };
+      expect(payload.error).toMatch(/Unknown folder "nonexistent"/);
+      expect(payload.documents).toBeUndefined();
+    });
+
+    it('a multi-source call still succeeds when the folder matches at least one fanned-out source', async () => {
+      const doc = makeDocument({ id: 'doc-in-kb2', sourceId: 'src-2', folderId: 'f-2', path: 'shared/a.txt' });
+      const storage = makeStorage({
+        listDocuments: vi.fn().mockImplementation((sourceId: string) =>
+          sourceId === 'src-2' ? Promise.resolve([doc]) : Promise.resolve([]),
+        ),
+        getDocumentFolderChain: vi.fn().mockResolvedValue([]),
+        // "shared" only exists in KB2 — KB1 must be silently skipped for it,
+        // not treated as proof the token is unknown everywhere.
+        listFolders: vi.fn().mockImplementation((sourceId: string) =>
+          sourceId === 'src-2'
+            ? Promise.resolve([makeFolder({ id: 'f-2', sourceId: 'src-2', path: 'shared', name: 'shared' })])
+            : Promise.resolve([]),
+        ),
+      });
+      const opts = makeOpts({
+        deps: makeDeps({ storage }),
+        sources: [
+          makeEntry({
+            sourceOverrides: { id: 'src-1', name: 'KB1' },
+            selectionOverrides: { mode: 'allowAll', allowedFolders: [], allowedDocuments: [] },
+          }),
+          makeEntry({
+            sourceOverrides: { id: 'src-2', name: 'KB2' },
+            selectionOverrides: { mode: 'allowAll', allowedFolders: [], allowedDocuments: [] },
+          }),
+        ],
+      });
+      registerMergedDocumentRagTools(opts);
+
+      const handler = getToolHandler(opts.server, 'rag_list_documents');
+      const response = await handler({ folder: 'shared' });
+      const payload = JSON.parse(response.content[0].text) as {
+        documents?: Array<{ id: string }>;
+        error?: string;
+      };
+      expect(payload.error).toBeUndefined();
+      expect(payload.documents).toHaveLength(1);
+      expect(payload.documents?.[0]?.id).toBe('doc-in-kb2');
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // rag_get_document — directFetchDisabled mixed
   // -------------------------------------------------------------------------
   describe('rag_get_document — directFetchDisabled', () => {

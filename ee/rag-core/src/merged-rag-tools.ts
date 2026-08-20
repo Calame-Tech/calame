@@ -88,6 +88,19 @@ function isDocumentAllowedByChain(
   return false;
 }
 
+/**
+ * Mirrors packages/cli/src/rag/folder-helpers.ts's `normaliseFolderArg` —
+ * kept as a small independent copy since ee/rag-core cannot import from the
+ * host package. Recognizes `""`, `"/"`, and a bare `"."` as root; everything
+ * else is trimmed and slash-stripped but otherwise passed through for the
+ * caller to resolve or reject.
+ */
+function normalizeFolderToken(folder: string): string {
+  const trimmed = folder.trim();
+  if (trimmed === '.') return '';
+  return trimmed.replace(/^\/+|\/+$/g, '');
+}
+
 // ---------------------------------------------------------------------------
 // Token-budget caps (mirrors source-adapter.ts)
 // ---------------------------------------------------------------------------
@@ -538,7 +551,13 @@ export function registerMergedDocumentRagTools(opts: RegisterMergedDocumentRagTo
     `List documents in a specific folder. Use when the user asks "what files do I have in <folder>?" ` +
       `or to enumerate documents before fetching them.`,
     {
-      folder: z.string().describe('The folder path to list documents from.'),
+      folder: z
+        .string()
+        .describe(
+          'The folder path to list documents from. Use "" (empty string) for the root — "/" and ' +
+            '"." also work. Use rag_list_folders to discover real folder paths; an unrecognized ' +
+            'value returns an explicit "Unknown folder" error rather than an empty list.',
+        ),
       source: z
         .string()
         .optional()
@@ -592,37 +611,60 @@ export function registerMergedDocumentRagTools(opts: RegisterMergedDocumentRagTo
         modifiedAt: string;
       }> = [];
 
+      // We check plain folder EXISTENCE (not the allowlist) up front, across
+      // every targeted source, before deciding between an error and an empty
+      // result. Without this, an unresolvable folder token — a typo, "root",
+      // "../" — silently resolves to zero documents (storage.listDocuments
+      // just finds no folder id to match) and is indistinguishable from
+      // "this folder is real but genuinely empty". Real-world testing showed
+      // an agent trying "." (a very natural root guess once ""/"/" are ruled
+      // out) concluding the whole knowledge base was empty.
+      //
+      // The check has to span the WHOLE fan-out, not just single-source
+      // calls: an earlier version only errored when `source` narrowed to
+      // exactly one entry, and silently returned `[]` whenever a folder
+      // matched zero of several fanned-out sources — recreating the exact
+      // ambiguity this check exists to remove, just one level up. So we
+      // record whether the folder matched ANY targeted source, and only
+      // error if it matched none — same outcome for the single-source case,
+      // now also correct for the multi-source one.
+      const normalizedFolder = normalizeFolderToken(args.folder);
+      const folderCheckNeeded = normalizedFolder !== '';
+      let folderMatchedAnywhere = false;
+
       for (const entry of targetEntries) {
         const scope = entry.selection;
 
-        // Allowlist check on folder before fetching documents.
-        if (scope.mode === 'allowList') {
-          const folderAllowed = scope.allowedFolders.some(
-            (af) => args.folder === af || args.folder.startsWith(af + '/'),
+        // No pre-fetch folder-level ALLOWLIST gate here — deliberately.
+        // `scope.allowedFolders` only covers WHOLE-folder auto-include
+        // grants; documents can ALSO be individually allowlisted by path in
+        // `scope.allowedDocuments` (e.g. every root-level document, per
+        // buildDocumentScope in rag-access-state.ts, or any strict-mode
+        // folder where docs were cherry-picked rather than the folder
+        // itself). A folder can therefore be legitimately "accessible" with
+        // zero entries in `allowedFolders` — checking only that list here
+        // used to hard-reject requests rag_search allowed just fine, because
+        // rag_search never pre-checks the folder at all: it filters each
+        // resulting chunk's own document through isDocumentAllowedByChain
+        // below, which correctly consults both lists. Deferring to the same
+        // per-document check here (instead of a separate, narrower
+        // pre-check) keeps the two tools in lockstep by construction.
+        //
+        // This is deliberately just an existence check, not a security
+        // boundary — the error text is the same generic "unknown folder"
+        // regardless of WHY it doesn't resolve anywhere, so it can't be used
+        // to distinguish "doesn't exist" from "exists but you can't see it".
+        if (folderCheckNeeded) {
+          const knownFolders = await deps.storage.listFolders(entry.source.id);
+          const folderExists = knownFolders.some(
+            (f) => f.id === normalizedFolder || f.path === normalizedFolder,
           );
-          if (!folderAllowed) {
-            // Silently skip this source for cross-source calls; error only for single-source.
-            if (targetEntries.length === 1) {
-              audit(
-                'rag_list_documents',
-                { folder: args.folder, source: args.source, limit },
-                'folder not in allowlist',
-                'error',
-                t0,
-              );
-              return {
-                content: [
-                  {
-                    type: 'text',
-                    text: JSON.stringify({
-                      error: `Folder "${args.folder}" is not accessible in this profile.`,
-                    }),
-                  },
-                ],
-              };
-            }
+          if (!folderExists) {
+            // Doesn't apply to this particular source — try the rest of the
+            // fan-out before concluding the token is unknown everywhere.
             continue;
           }
+          folderMatchedAnywhere = true;
         }
 
         let docs: RagDocument[];
@@ -644,12 +686,11 @@ export function registerMergedDocumentRagTools(opts: RegisterMergedDocumentRagTo
         for (const d of docs) {
           if (allDocuments.length >= limit) break;
           const chain = await deps.storage.getDocumentFolderChain(d.id);
-          const effectiveChain =
-            chain.length > 0
-              ? chain
-              : d.folderId && args.folder
-                ? [{ id: d.folderId, path: args.folder }]
-                : [];
+          // Mirrors rag_search's synthesis exactly (see above): a document
+          // with no real folder chain (root-level) still gets a single
+          // synthetic ancestor entry rather than an empty chain, so both
+          // tools evaluate root documents identically.
+          const effectiveChain = chain.length > 0 ? chain : [{ id: d.folderId ?? '', path: args.folder }];
           if (!isDocumentAllowedByChain(d.id, d.path, effectiveChain, scope)) continue;
           allDocuments.push({
             id: d.id,
@@ -660,6 +701,26 @@ export function registerMergedDocumentRagTools(opts: RegisterMergedDocumentRagTo
             modifiedAt: d.lastIndexedAt,
           });
         }
+      }
+
+      if (folderCheckNeeded && !folderMatchedAnywhere) {
+        audit(
+          'rag_list_documents',
+          { folder: args.folder, source: args.source, limit },
+          'unknown folder',
+          'error',
+          t0,
+        );
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                error: `Unknown folder "${args.folder}". Use rag_list_folders to discover valid folder paths, or omit "folder" / pass "" for the root.`,
+              }),
+            },
+          ],
+        };
       }
 
       const result = { documents: allDocuments.slice(0, limit) };

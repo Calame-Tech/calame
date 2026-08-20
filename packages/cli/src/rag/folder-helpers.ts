@@ -9,11 +9,18 @@
  * Rules:
  *  - `undefined` → `undefined` (no constraint: all folders / all documents)
  *  - blank after trim + strip leading/trailing slashes → `""` (root-level)
+ *  - `.` (alone, after trimming) → `""` (root-level) — "current directory"
+ *    is the single most natural root token an LLM tool-caller reaches for
+ *    (confirmed by real-world testing) once it's ruled out "" and "/".
+ *    Only the bare "." is special-cased — "./foo" is left for the id-or-path
+ *    lookup below to resolve or reject like any other value.
  *  - everything else → trimmed + stripped value (id or path to resolve)
  */
 export function normaliseFolderArg(arg: string | undefined): string | undefined {
   if (arg === undefined) return undefined;
-  return arg.trim().replace(/^\/+|\/+$/g, '');
+  const trimmed = arg.trim();
+  if (trimmed === '.') return '';
+  return trimmed.replace(/^\/+|\/+$/g, '');
 }
 
 /**

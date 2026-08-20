@@ -6,6 +6,7 @@ import path from 'node:path';
 import type { Express, Request, Response } from 'express';
 import { z } from 'zod';
 import type { RagSearchResult } from '../types.js';
+import { embedQueryWith } from '../types.js';
 import type { RagRouteDeps } from './types.js';
 import { l2DistanceToCosineSimilarity } from '../search/hybrid-search.js';
 
@@ -92,7 +93,7 @@ export function registerRagSearchRoutes(app: Express, deps: RagRouteDeps): void 
       }
 
       const embedClient = deps.resolveEmbeddingClient(resolvedSettingName);
-      const queryEmbeddings = await embedClient.embed([query]);
+      const queryEmbeddings = await embedQueryWith(embedClient, [query]);
       const queryEmbedding = queryEmbeddings[0];
       if (!queryEmbedding) {
         sendError(res, 500, 'Embedding client returned no vector for the query.');

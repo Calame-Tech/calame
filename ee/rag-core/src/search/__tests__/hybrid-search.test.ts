@@ -188,6 +188,50 @@ describe('HybridSearchIndex', () => {
     expect(result.chunks[0]!.documentId).toBe('doc-1');
   });
 
+  // 2b. Query-time embedding prefers embedQuery() over embed() when the
+  // client distinguishes them (see EmbeddingClient.embedQuery / embedQueryWith
+  // in types.ts) — this is what lets EmbeddingGemma apply its asymmetric
+  // query prefix at search time.
+  it('uses embedQuery() for the search query when the client provides it', async () => {
+    insertDocument(db, { id: 'doc-1', sourceId: 'src-1', path: 'a.md', name: 'a.md' });
+    insertChunk(db, { chunkId: 'c-1', documentId: 'doc-1', text: 'semantic match only' });
+
+    const vectorStore = makeMockVectorStore(['c-1']);
+    const embed = vi.fn().mockResolvedValue([[0.1, 0.2, 0.3]]);
+    const embedQuery = vi.fn().mockResolvedValue([[0.4, 0.5, 0.6]]);
+    const client: EmbeddingClient = { dimensions: 3, modelName: 'mock-asymmetric', embed, embedQuery };
+
+    const index = new HybridSearchIndex({
+      db,
+      vectorStore,
+      resolveEmbeddingClient: () => client,
+    });
+
+    await index.search('src-1', 'a query', { topK: 5 });
+    expect(embedQuery).toHaveBeenCalledTimes(1);
+    expect(embedQuery).toHaveBeenCalledWith(['a query']);
+    expect(embed).not.toHaveBeenCalled();
+  });
+
+  it('falls back to embed() for the search query when the client has no embedQuery()', async () => {
+    insertDocument(db, { id: 'doc-1', sourceId: 'src-1', path: 'a.md', name: 'a.md' });
+    insertChunk(db, { chunkId: 'c-1', documentId: 'doc-1', text: 'semantic match only' });
+
+    const vectorStore = makeMockVectorStore(['c-1']);
+    const embed = vi.fn().mockResolvedValue([[0.1, 0.2, 0.3]]);
+    const client: EmbeddingClient = { dimensions: 3, modelName: 'mock-symmetric', embed };
+
+    const index = new HybridSearchIndex({
+      db,
+      vectorStore,
+      resolveEmbeddingClient: () => client,
+    });
+
+    await index.search('src-1', 'a query', { topK: 5 });
+    expect(embed).toHaveBeenCalledTimes(1);
+    expect(embed).toHaveBeenCalledWith(['a query']);
+  });
+
   // 3. Chunk in both sets ranks higher than chunk in only one set
   it('ranks chunks present in both branches higher than single-branch chunks', async () => {
     insertDocument(db, { id: 'doc-1', sourceId: 'src-1', path: 'a.md', name: 'a.md' });

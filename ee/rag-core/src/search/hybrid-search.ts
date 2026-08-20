@@ -36,6 +36,7 @@
 import type { Database as BetterSqlite3Database } from 'better-sqlite3';
 import type { DocumentSearchIndex } from '../source-adapter.js';
 import type { EmbeddingClient, RagSearchResult, VectorStore } from '../types.js';
+import { embedQueryWith } from '../types.js';
 
 /** Constructor dependencies for the HybridSearchIndex. */
 export interface HybridSearchDeps {
@@ -235,7 +236,7 @@ export class HybridSearchIndex implements DocumentSearchIndex {
     let vectorRanked: Array<{ chunkId: string; meta: ChunkMetadata; similarity: number }> = [];
     try {
       const client = this.resolveEmbeddingClient(settingRow.embedding_setting_name);
-      const vectors = await client.embed([query]);
+      const vectors = await embedQueryWith(client, [query]);
       const queryVec = new Float32Array(vectors[0] ?? []);
       const vecResults = this.vectorStore.search(queryVec, overFetch);
       if (vecResults.length > 0) {

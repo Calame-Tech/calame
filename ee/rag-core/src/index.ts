@@ -16,6 +16,7 @@ export type {
   RagSourceType,
   VectorStore,
 } from './types.js';
+export { embedQueryWith } from './types.js';
 
 // ---------- Storage ----------
 export { runRagMigrations } from './storage/schema.js';

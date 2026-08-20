@@ -348,7 +348,7 @@ export function buildDocumentAdapterDeps(
         if (!settingRow) return { chunks: [] };
 
         const client = capturedResolveEmbeddingClient(settingRow.embedding_setting_name);
-        const vectors = await client.embed([query]);
+        const vectors = await ragCore.embedQueryWith(client, [query]);
         const queryVec = new Float32Array(vectors[0] ?? []);
 
         const topK = Math.min(opts.topK ?? 5, 10);

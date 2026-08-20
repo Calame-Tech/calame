@@ -3,6 +3,16 @@
 // See ee/LICENSE.BUSL at the root of the ee/ directory for terms.
 
 import type { EmbeddingClient } from '../types.js';
+import { LocalOnnxEmbeddingClient, LocalEmbeddingUnavailableError } from './local-onnx-client.js';
+
+// The local provider currently ships exactly one model. If a second local
+// model is ever added, derive these from `setting.embeddingModel` instead of
+// hardcoding them here — not needed yet (YAGNI), and keeping
+// LocalOnnxEmbeddingClient's own constructor fully parameterized (see that
+// file) means this is the only place that would need to change.
+const LOCAL_MODEL_FOLDER = 'embeddinggemma-300m';
+const LOCAL_MODEL_DTYPE = 'q4';
+const LOCAL_MODEL_MAX_TOKENS = 2048;
 
 /** Maximum input array size per embeddings request. OpenAI's hard cap is 2048;
  * we use 96 as a conservative default that works across providers (Ollama, LM
@@ -28,7 +38,7 @@ export class EmbeddingNotSupportedError extends Error {
   constructor(provider: string) {
     super(
       `Provider "${provider}" does not support embeddings. Use a setting whose ` +
-        `capabilities include "embeddings" (provider: openrouter or custom).`,
+        `capabilities include "embeddings" (provider: local, openrouter, or custom).`,
     );
     this.name = 'EmbeddingNotSupportedError';
   }
@@ -206,12 +216,25 @@ export interface EmbeddingSettingShape {
   embeddingModel?: string;
 }
 
+export interface CreateEmbeddingClientOptions {
+  /**
+   * Root directory containing the bundled local model folder (see
+   * LocalOnnxEmbeddingClient). Required for `provider: 'local'`; ignored by
+   * every other provider. Resolved by the host (see
+   * packages/cli/src/rag/local-model-resolve.ts) and passed in explicitly
+   * rather than read from an env var here, to keep rag-core decoupled from
+   * host env conventions and this branch unit-testable without env mutation.
+   */
+  localModelsRootDir?: string;
+}
+
 /**
  * Build an EmbeddingClient from an `AiSetting`-shaped object plus a known
  * dimension. The dimension MUST be provided by the caller — we cannot derive
  * it reliably from the model name across providers.
  *
  * Provider routing:
+ *  - `local` → bundled on-device model, no network/apiKey (see options.localModelsRootDir)
  *  - `anthropic` → throws {@link EmbeddingNotSupportedError}
  *  - `openrouter` → uses `https://openrouter.ai/api/v1`
  *  - `custom` → uses `setting.baseUrl` (required, throws otherwise)
@@ -219,7 +242,26 @@ export interface EmbeddingSettingShape {
 export function createEmbeddingClient(
   setting: EmbeddingSettingShape,
   dimensions: number,
+  opts?: CreateEmbeddingClientOptions,
 ): EmbeddingClient {
+  // Checked before the embeddingModel guard below: the local provider's
+  // model is fixed (not user-supplied), so it doesn't need that field to be
+  // set to build correctly — though the built-in AI setting always does seed
+  // one (see the ai_settings migration), for display purposes.
+  if (setting.provider === 'local') {
+    if (!opts?.localModelsRootDir) {
+      throw new LocalEmbeddingUnavailableError('no local models directory was configured.');
+    }
+    return new LocalOnnxEmbeddingClient({
+      modelsRootDir: opts.localModelsRootDir,
+      modelFolderName: LOCAL_MODEL_FOLDER,
+      dtype: LOCAL_MODEL_DTYPE,
+      dimensions,
+      maxTokens: LOCAL_MODEL_MAX_TOKENS,
+      modelName: setting.embeddingModel || `${LOCAL_MODEL_FOLDER}-${LOCAL_MODEL_DTYPE}`,
+    });
+  }
+
   if (!setting.embeddingModel) {
     throw new EmbeddingModelMissingError();
   }

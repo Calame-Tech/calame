@@ -59,7 +59,14 @@ export {
 export type {
   OpenAiCompatibleEmbeddingClientOptions,
   EmbeddingSettingShape,
+  CreateEmbeddingClientOptions,
 } from './embeddings/openai-client.js';
+export {
+  LocalOnnxEmbeddingClient,
+  LocalEmbeddingUnavailableError,
+  EMBEDDING_GEMMA_PREFIXES,
+} from './embeddings/local-onnx-client.js';
+export type { LocalOnnxEmbeddingClientOptions } from './embeddings/local-onnx-client.js';
 
 // ---------- Parsers ----------
 export {

@@ -204,7 +204,37 @@ export interface EmbeddingClient {
   dimensions: number;
   /** Human-readable model identifier, persisted as `embeddingModelVersion`. */
   modelName: string;
+  /** Embed DOCUMENT / passage text. This IS the document path — models with
+   * asymmetric query/document prompts (e.g. EmbeddingGemma) apply their
+   * document prefix here. */
   embed(texts: string[]): Promise<number[][]>;
+  /**
+   * Embed SEARCH QUERIES. Optional — only implemented by clients whose
+   * underlying model needs an asymmetric query prefix. Every OpenAI-
+   * compatible client omits it; callers must go through {@link embedQueryWith}
+   * rather than call `embedQuery` directly, so the fallback isn't duplicated
+   * at every call site.
+   */
+  embedQuery?(texts: string[]): Promise<number[][]>;
+  /**
+   * `false` when this client costs nothing to run (e.g. a bundled local
+   * model) — callers skip monthly token-cap accounting and cost display for
+   * it. `undefined`/`true` (the default) means "billable", matching every
+   * existing cloud client's behavior with no code change on their part.
+   */
+  readonly billable?: boolean;
+}
+
+/**
+ * Embed search queries through `client`, using its model-specific
+ * {@link EmbeddingClient.embedQuery} when it distinguishes queries from
+ * documents, falling back to {@link EmbeddingClient.embed} otherwise. Always
+ * use this at query time instead of calling `embed`/`embedQuery` directly —
+ * see the interface doc for why a second `embed()` parameter was rejected in
+ * favor of this optional-method + helper shape.
+ */
+export function embedQueryWith(client: EmbeddingClient, texts: string[]): Promise<number[][]> {
+  return client.embedQuery ? client.embedQuery(texts) : client.embed(texts);
 }
 
 /**

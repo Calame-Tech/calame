@@ -77,6 +77,53 @@ describe('profiles routes', () => {
       expect(row.tenant_id).toBe('default');
     });
 
+    it('updates AppState.serveProfiles when the profile is already active (stale in-memory cache)', async () => {
+      // Regression: state.serveProfiles is a process-wide cache populated
+      // once (ensureProfilesLoaded in serve-status.ts) and left untouched
+      // until serve/stop clears it. This save handler used to write only to
+      // SQLite — an already-running server's in-memory copy of the profile
+      // (e.g. its aiSettingNames) stayed stale until stop+restart, so
+      // configuring a chat AI setting here silently had no effect on an
+      // active MCP server.
+      const state = new AppState();
+      const localDb = new CalameDatabase(tmpDir);
+      state.db = localDb;
+      state.userManager = new UserManager(localDb);
+      state.serveProfiles = {
+        live: { name: 'live', label: 'Live', aiSettingNames: [] },
+      };
+      const appWithState = createApp(state);
+      const localCookie = await setupAdminAndGetCookie(appWithState);
+
+      await request(appWithState)
+        .post('/api/profiles/save')
+        .set('Cookie', localCookie)
+        .send({ profiles: { live: { label: 'Live', aiSettingNames: ['qwen27b'] } } })
+        .expect(200);
+
+      expect(state.serveProfiles.live.aiSettingNames).toEqual(['qwen27b']);
+      localDb.close();
+    });
+
+    it('does not create a serveProfiles entry for a profile that is not currently active', async () => {
+      const state = new AppState();
+      const localDb = new CalameDatabase(tmpDir);
+      state.db = localDb;
+      state.userManager = new UserManager(localDb);
+      state.serveProfiles = {};
+      const appWithState = createApp(state);
+      const localCookie = await setupAdminAndGetCookie(appWithState);
+
+      await request(appWithState)
+        .post('/api/profiles/save')
+        .set('Cookie', localCookie)
+        .send({ profiles: { dormant: { label: 'Dormant', aiSettingNames: ['qwen27b'] } } })
+        .expect(200);
+
+      expect(state.serveProfiles.dormant).toBeUndefined();
+      localDb.close();
+    });
+
     it('should return error when profiles data is missing', async () => {
       const res = await request(app)
         .post('/api/profiles/save')

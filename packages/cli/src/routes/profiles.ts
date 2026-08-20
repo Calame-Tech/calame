@@ -3,6 +3,7 @@ import type { AppState } from '../state.js';
 import type { CalameDatabase } from '../database.js';
 import { z } from 'zod';
 import { upgradeProfileShape } from '@calame/core';
+import type { ServeProfile } from '@calame/core';
 import { getTenantId } from '../tenancy.js';
 
 export interface ProfileWarning {
@@ -199,6 +200,22 @@ export function registerProfilesRoute(app: Express, state: AppState): void {
       db.raw
         .prepare("INSERT OR REPLACE INTO profiles (key, data, tenant_id) VALUES ('main', ?, ?)")
         .run(JSON.stringify(data), tenantId);
+
+      // Reflect in AppState for every profile currently loaded there.
+      // `state.serveProfiles` is a process-wide cache populated once (see
+      // `ensureProfilesLoaded` in serve-status.ts) and otherwise left alone
+      // until `serve/stop` clears it — without this, a save here would land
+      // in the DB but an already-active server would keep using the stale
+      // in-memory copy (wrong/stale aiSettingNames, connections, scopes…)
+      // until it was stopped and restarted. Mirrors the same sync already
+      // done in profile-scopes.ts for its narrower per-profile save route.
+      for (const [profileName, savedProfile] of Object.entries(
+        data.profiles as Record<string, Record<string, unknown>>,
+      )) {
+        if (state.serveProfiles[profileName]) {
+          state.serveProfiles[profileName] = savedProfile as unknown as ServeProfile;
+        }
+      }
 
       // Invalidate tool schema cache for all saved profiles so the next chat turn re-fetches tools
       const { invalidateToolSchemaCache } = await import('../chat-engine.js');

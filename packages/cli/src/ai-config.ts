@@ -2,7 +2,7 @@ import type { Database, Statement } from 'better-sqlite3';
 import type { CalameDatabase } from './database.js';
 import { DEFAULT_TENANT_ID } from './tenancy.js';
 
-export type AiProvider = 'anthropic' | 'openrouter' | 'custom';
+export type AiProvider = 'anthropic' | 'openrouter' | 'custom' | 'local';
 
 export type AiCapability = 'chat' | 'embeddings' | 'rerank';
 
@@ -59,7 +59,12 @@ interface AiSettingRow {
   rerank_model: string | null;
 }
 
-const VALID_PROVIDERS: ReadonlySet<AiProvider> = new Set(['anthropic', 'openrouter', 'custom']);
+const VALID_PROVIDERS: ReadonlySet<AiProvider> = new Set([
+  'anthropic',
+  'openrouter',
+  'custom',
+  'local',
+]);
 
 function parseCapabilities(raw: string | null): AiCapability[] | undefined {
   if (raw === null) return undefined;
@@ -92,6 +97,7 @@ function rowToSetting(row: AiSettingRow): AiSetting {
 }
 
 function validateCapabilities(
+  provider: AiProvider,
   capabilities: AiCapability[] | undefined,
   embeddingModel: string | undefined,
   rerankModel: string | undefined,
@@ -108,6 +114,15 @@ function validateCapabilities(
   if (capabilities.includes('rerank') && !rerankModel) {
     throw new Error('rerankModel is required when capabilities includes "rerank".');
   }
+  // The local model is embeddings-only — it's not an LLM (no chat) and has
+  // no reranking head. Enforced here rather than left implicit so a bad
+  // request fails clearly instead of silently registering a local setting
+  // that later fails in confusing ways when something tries to chat with it.
+  if (provider === 'local' && (capabilities.length !== 1 || capabilities[0] !== 'embeddings')) {
+    throw new Error(
+      `The "local" provider only supports the "embeddings" capability, got [${capabilities.join(', ')}].`,
+    );
+  }
 }
 
 function serializeCapabilities(capabilities: AiCapability[] | undefined): string | null {
@@ -122,6 +137,12 @@ function maskApiKey(key: string): string {
 }
 
 function isSettingConfigured(s: AiSetting): boolean {
+  // Local runs on-device with no API key or base URL — it's always
+  // "configured" from the DB's point of view. Whether the model files are
+  // actually staged on disk is a separate, runtime-only concern (surfaced as
+  // `localModelAvailable` in the API response — see routes/ai-settings.ts),
+  // deliberately not checked here so this function stays filesystem-free.
+  if (s.provider === 'local') return true;
   if (s.provider === 'custom') return !!s.baseUrl;
   return !!s.apiKey;
 }
@@ -200,7 +221,12 @@ export class AiSettingsManager {
     if (this.getSetting(setting.name, tenantId)) {
       throw new Error(`Setting "${setting.name}" already exists.`);
     }
-    validateCapabilities(setting.capabilities, setting.embeddingModel, setting.rerankModel);
+    validateCapabilities(
+      setting.provider,
+      setting.capabilities,
+      setting.embeddingModel,
+      setting.rerankModel,
+    );
     this.stmtInsert.run(
       setting.name,
       setting.label,
@@ -229,7 +255,7 @@ export class AiSettingsManager {
       name: current.name,
     };
     if (!VALID_PROVIDERS.has(next.provider)) throw new Error('Invalid provider.');
-    validateCapabilities(next.capabilities, next.embeddingModel, next.rerankModel);
+    validateCapabilities(next.provider, next.capabilities, next.embeddingModel, next.rerankModel);
     this.stmtUpdate.run(
       next.label,
       next.provider,
@@ -287,3 +313,4 @@ export class AiSettingsManager {
 /** @deprecated Use AiSettingsManager directly. Kept as an alias for transitional code. */
 export const AiConfigManager = AiSettingsManager;
 export type AiConfigManagerType = AiSettingsManager;
+

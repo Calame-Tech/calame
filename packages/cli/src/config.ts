@@ -118,6 +118,18 @@ export interface AppConfig {
    * `scripts/prepare-desktop.mjs`.
    */
   cloudflaredPath: string | null;
+
+  // Bundled local embedding model (default RAG embedding provider)
+  /**
+   * Absolute path to the directory containing the bundled local embedding
+   * model. Set via CALAME_LOCAL_EMBEDDING_MODEL_DIR — the Tauri desktop app
+   * sets this to the resource path it bundled the model at (see
+   * `apps/desktop/src-tauri/src/server.rs`). When unset,
+   * `rag/local-model-resolve.ts` falls back to a packaged-mode sibling of the
+   * bundled server, then a dev-mode cache dir staged by
+   * `scripts/fetch-embedding-model.mjs`.
+   */
+  localEmbeddingModelDir: string | null;
 }
 
 const LOG_LEVELS: LogLevel[] = ['debug', 'info', 'warn', 'error'];
@@ -233,6 +245,7 @@ export function loadConfig(overrides?: Partial<AppConfig>): AppConfig {
     webDistPath: envString('CALAME_WEB_DIST'),
     claudeDesktopConfigDir: envString('CALAME_CLAUDE_DESKTOP_CONFIG_DIR'),
     cloudflaredPath: envString('CALAME_CLOUDFLARED_PATH'),
+    localEmbeddingModelDir: envString('CALAME_LOCAL_EMBEDDING_MODEL_DIR'),
   };
 
   // Validate logLevel

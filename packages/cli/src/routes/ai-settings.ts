@@ -2,9 +2,20 @@ import type { Express } from 'express';
 import type { AppState } from '../state.js';
 import type { AiCapability, AiProvider, AiSetting } from '../ai-config.js';
 import { getTenantId } from '../tenancy.js';
+import type { RagRuntime } from '../rag/types.js';
+import { resolveLocalModelDir } from '../rag/local-model-resolve.js';
+import { LOCAL_EMBEDDING_DIMENSIONS } from '../rag/local-embedding-meta.js';
 
-const VALID_PROVIDERS: ReadonlySet<AiProvider> = new Set(['anthropic', 'openrouter', 'custom']);
-const VALID_CAPABILITIES: ReadonlySet<AiCapability> = new Set(['chat', 'embeddings']);
+const VALID_PROVIDERS: ReadonlySet<AiProvider> = new Set([
+  'anthropic',
+  'openrouter',
+  'custom',
+  'local',
+]);
+// Bug fix: this used to omit 'rerank' while ai-config.ts's own VALID_CAPABILITIES
+// (and the UI's rerank checkbox — AiSettings.tsx) included it, so saving a
+// setting with rerank enabled always 400'd with "Unknown capability".
+const VALID_CAPABILITIES: ReadonlySet<AiCapability> = new Set(['chat', 'embeddings', 'rerank']);
 
 /** Slug-style names: lowercase letters, digits, dash, underscore. */
 const NAME_RE = /^[a-z0-9_-]{1,64}$/;
@@ -18,6 +29,13 @@ interface SettingPayload {
   baseUrl?: string;
   capabilities?: string[];
   embeddingModel?: string;
+  // Was accepted by the frontend (AiSettings.tsx) and required by
+  // ai-config.ts's validateCapabilities, but never threaded through this
+  // payload type nor the create/update handlers below — saving a setting
+  // with reranking enabled always failed. Fixed alongside the VALID_CAPABILITIES
+  // omission (same underlying feature, same root cause: rerank support was
+  // added to the DB layer and the UI but never finished here).
+  rerankModel?: string;
 }
 
 function validateCapabilitiesPayload(payload: SettingPayload): string | null {
@@ -25,11 +43,20 @@ function validateCapabilitiesPayload(payload: SettingPayload): string | null {
   if (!Array.isArray(payload.capabilities)) return 'capabilities must be an array.';
   for (const cap of payload.capabilities) {
     if (typeof cap !== 'string' || !VALID_CAPABILITIES.has(cap as AiCapability)) {
-      return `Unknown capability "${cap}". Valid values: chat, embeddings.`;
+      return `Unknown capability "${cap}". Valid values: chat, embeddings, rerank.`;
     }
   }
   if (payload.capabilities.includes('embeddings') && !payload.embeddingModel) {
     return 'embeddingModel is required when capabilities includes "embeddings".';
+  }
+  if (payload.capabilities.includes('rerank') && !payload.rerankModel) {
+    return 'rerankModel is required when capabilities includes "rerank".';
+  }
+  if (
+    payload.provider === 'local' &&
+    (payload.capabilities.length !== 1 || payload.capabilities[0] !== 'embeddings')
+  ) {
+    return 'The "local" provider only supports the "embeddings" capability.';
   }
   return null;
 }
@@ -38,6 +65,8 @@ function validateProviderFields(body: SettingPayload): string | null {
   if (!body.provider || !VALID_PROVIDERS.has(body.provider as AiProvider)) {
     return 'Invalid provider.';
   }
+  // Local runs on-device — no API key, no base URL to validate.
+  if (body.provider === 'local') return null;
   if (body.provider !== 'custom' && !body.apiKey) {
     return 'API key is required for this provider.';
   }
@@ -49,11 +78,28 @@ function validateProviderFields(body: SettingPayload): string | null {
 
 async function testConnection(
   setting: AiSetting,
+  ragRuntime: RagRuntime | undefined,
 ): Promise<{ ok: true; response: string } | { ok: false; message: string }> {
   try {
     const capabilities = setting.capabilities ?? ['chat'];
     const hasChat = capabilities.includes('chat');
     const hasEmbeddings = capabilities.includes('embeddings');
+
+    if (setting.provider === 'local') {
+      if (!hasEmbeddings) {
+        return { ok: false, message: 'Le fournisseur local ne prend en charge que les embeddings.' };
+      }
+      if (!ragRuntime) {
+        return { ok: false, message: "Le runtime RAG n'est pas initialisé." };
+      }
+      // Goes through the same resolver ingestion/search use — proves the
+      // bundled model is actually staged on disk and loadable, not just that
+      // the DB row is well-formed.
+      const client = ragRuntime.resolveEmbeddingClient(setting.name);
+      const vectors = await client.embed(['test']);
+      const dims = vectors[0]?.length ?? 0;
+      return { ok: true, response: `Modèle local chargé avec succès (${dims} dimensions).` };
+    }
 
     if (setting.provider === 'anthropic') {
       if (!hasChat) {
@@ -123,6 +169,11 @@ async function probeEmbeddingDimensions(
 ): Promise<{ ok: true; dimensions: number } | { ok: false; message: string }> {
   try {
     const provider = payload.provider as AiProvider;
+    // The local model's dimension is fixed and known statically — never a
+    // network call, unlike every other provider here.
+    if (provider === 'local') {
+      return { ok: true, dimensions: LOCAL_EMBEDDING_DIMENSIONS };
+    }
     if (provider === 'anthropic') {
       return { ok: false, message: "Anthropic ne propose pas de modèles d'embeddings." };
     }
@@ -149,6 +200,25 @@ async function probeEmbeddingDimensions(
   }
 }
 
+/**
+ * Enrich a masked local-provider setting with whether the bundled model is
+ * actually staged on disk — a cheap fs.existsSync check via
+ * resolveLocalModelDir, deliberately kept out of ai-config.ts's
+ * isSettingConfigured (which stays DB-only / filesystem-free). No-op for
+ * every other provider.
+ */
+function withLocalModelAvailability<T extends { provider: string }>(
+  setting: T,
+  state: AppState,
+): T & { localModelAvailable?: boolean } {
+  if (setting.provider !== 'local') return setting;
+  const resolution = resolveLocalModelDir({
+    overridePath: state.config?.localEmbeddingModelDir,
+    packaged: state.config?.packaged ?? false,
+  });
+  return { ...setting, localModelAvailable: resolution.available };
+}
+
 export function registerAiSettingsRoute(app: Express, state: AppState): void {
   /** GET /api/ai-settings — list all settings (api keys masked). */
   app.get('/api/ai-settings', (req, res) => {
@@ -160,7 +230,7 @@ export function registerAiSettingsRoute(app: Express, state: AppState): void {
     // Phase B multi-tenancy — thread the resolved tenant through every
     // manager call so the listing is scoped to the caller.
     const tenantId = getTenantId(req);
-    const settings = mgr.listMaskedSettings(tenantId);
+    const settings = mgr.listMaskedSettings(tenantId).map((s) => withLocalModelAvailability(s, state));
     // Backward-compat: also expose `config` (first setting) for older callers.
     res.json({ success: true, settings, config: settings[0] ?? null });
   });
@@ -177,7 +247,7 @@ export function registerAiSettingsRoute(app: Express, state: AppState): void {
       res.status(404).json({ success: false, message: 'Setting not found.' });
       return;
     }
-    res.json({ success: true, setting });
+    res.json({ success: true, setting: withLocalModelAvailability(setting, state) });
   });
 
   /** POST /api/ai-settings — create a new setting, OR (legacy) upsert single config. */
@@ -267,6 +337,7 @@ export function registerAiSettingsRoute(app: Express, state: AppState): void {
           capabilities: body.capabilities as AiCapability[] | undefined,
           embeddingModel: body.embeddingModel,
           embeddingDimensions,
+          rerankModel: body.rerankModel,
         },
         tenantId,
       );
@@ -294,6 +365,7 @@ export function registerAiSettingsRoute(app: Express, state: AppState): void {
     }
 
     const body = (req.body ?? {}) as SettingPayload;
+
     const fieldError = validateProviderFields(body);
     if (fieldError) {
       res.status(400).json({ success: false, message: fieldError });
@@ -344,6 +416,7 @@ export function registerAiSettingsRoute(app: Express, state: AppState): void {
           capabilities: body.capabilities as AiCapability[] | undefined,
           embeddingModel: body.embeddingModel,
           embeddingDimensions,
+          rerankModel: body.rerankModel,
         },
         tenantId,
       );
@@ -385,7 +458,7 @@ export function registerAiSettingsRoute(app: Express, state: AppState): void {
       res.status(400).json({ success: false, message: 'No AI setting found.' });
       return;
     }
-    const result = await testConnection(setting);
+    const result = await testConnection(setting, state.ragRuntime);
     if (result.ok) {
       res.json({ success: true, response: result.response });
     } else {
@@ -405,7 +478,7 @@ export function registerAiSettingsRoute(app: Express, state: AppState): void {
       res.status(404).json({ success: false, message: 'Setting not found.' });
       return;
     }
-    const result = await testConnection(setting);
+    const result = await testConnection(setting, state.ragRuntime);
     if (result.ok) {
       res.json({ success: true, response: result.response });
     } else {

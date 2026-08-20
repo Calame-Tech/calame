@@ -77,6 +77,19 @@ fn spawn_sidecar(app: &AppHandle, port: u16) -> Result<CommandChild, String> {
         .to_string_lossy()
         .into_owned();
 
+    // Default local embedding model (RAG): tells the sidecar where the
+    // bundled model directory lives, staged by scripts/bundle-server.mjs
+    // (step 5b) at resources/server/models/ (see
+    // packages/cli/src/rag/local-model-resolve.ts). Note this points at the
+    // MODELS ROOT, not the model folder itself — same "root dir + folder
+    // name inside it" shape resolveLocalModelDir expects.
+    let local_embedding_model_dir = app
+        .path()
+        .resolve("resources/server/models", BaseDirectory::Resource)
+        .map_err(|err| format!("resolving resources/server/models: {err}"))?
+        .to_string_lossy()
+        .into_owned();
+
     let command = app
         .shell()
         .sidecar("node")
@@ -85,7 +98,8 @@ fn spawn_sidecar(app: &AppHandle, port: u16) -> Result<CommandChild, String> {
         .env("CALAME_PACKAGED", "1")
         .env("CALAME_WEB_DIST", web_dist)
         .env("CALAME_VERSION", version)
-        .env("CALAME_CLOUDFLARED_PATH", cloudflared_path);
+        .env("CALAME_CLOUDFLARED_PATH", cloudflared_path)
+        .env("CALAME_LOCAL_EMBEDDING_MODEL_DIR", local_embedding_model_dir);
 
     let (mut rx, child) = command
         .spawn()

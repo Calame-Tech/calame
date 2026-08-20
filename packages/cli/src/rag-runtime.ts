@@ -29,6 +29,7 @@ import {
   makeUnconfiguredEmbeddingClient,
 } from './rag/embeddings.js';
 import { buildDocumentAdapterDeps, registerDocumentAdapters } from './rag/document-adapters.js';
+import { resolveLocalModelDir } from './rag/local-model-resolve.js';
 
 // Re-export the public surface that historically lived in this module so
 // `./rag-runtime.js` stays the stable import path for consumers and tests.
@@ -49,12 +50,19 @@ export {
  * @param db   the host's SQLite database wrapper
  * @param aiSettingsManager  used to look up AI settings for embeddings
  * @param logger optional logger for status messages
+ * @param localModelConfig  packaged mode + CALAME_LOCAL_EMBEDDING_MODEL_DIR override,
+ *   used to resolve the bundled local embedding model directory once at boot.
+ *   Omitted (or defaulted) resolves as if running unpackaged in dev mode —
+ *   correct for tests, since `appState.config` isn't set yet at the point
+ *   `index.ts` calls this (see resolveLocalModelDir's own doc comment for
+ *   why this can't just read `state.config`).
  */
 export async function initRagRuntime(
   state: { ragRuntime?: RagRuntime; ragDisabledReason: string | null },
   db: CalameDatabase,
   aiSettingsManager: AiSettingsManager,
   logger?: { info: (msg: string) => void; warn: (msg: string) => void },
+  localModelConfig?: { packaged: boolean; overridePath?: string | null },
 ): Promise<void> {
   if (state.ragRuntime) return;
 
@@ -116,15 +124,32 @@ export async function initRagRuntime(
   const encryptConfig = (plaintext: string): string => encryptString(plaintext, encryptionKey);
   const decryptConfig = (ciphertext: string): string => decryptString(ciphertext, encryptionKey);
 
+  // Resolved once at boot — the model directory doesn't change during the
+  // process lifetime, so there's no need to re-stat the filesystem on every
+  // resolveEmbeddingClient('local', ...) call. Missing is not fatal here:
+  // the 'local' AI setting may not even be configured, in which case this
+  // path is simply never used.
+  const localModelResolution = resolveLocalModelDir({
+    overridePath: localModelConfig?.overridePath,
+    packaged: localModelConfig?.packaged ?? false,
+  });
+  if (!localModelResolution.available) {
+    log.info(`RAG: bundled local embedding model not staged (${localModelResolution.unavailableReason})`);
+  }
+
   const { resolveEmbeddingSetting, resolveEmbeddingClient } = buildEmbeddingResolvers(
     ragCore,
     aiSettingsManager,
+    { localModelsRootDir: localModelResolution.path ?? undefined },
   );
 
-  // Build a placeholder ingestion pipeline. The pipeline takes ONE
-  // EmbeddingClient at construction time — that's the Phase 1 contract. We bind
-  // it to a "default" embedding client (first usable AI setting). Routes that
-  // need a per-source client can rebuild the pipeline on demand later.
+  // `embeddingClient` below is the fallback the pipeline uses when a source's
+  // own `embeddingSettingName` doesn't resolve (deleted AI setting) — actual
+  // per-document ingestion resolves each source's OWN client via
+  // `resolveEmbeddingClient` (passed to the constructor below), not always
+  // this one. Bound to the first usable AI setting so there's still a
+  // sensible default when no per-source resolution is possible at all (e.g.
+  // a RagSource built by a test without a real embeddingSettingName).
   const defaultEmbeddingClient = pickDefaultEmbeddingClient(
     aiSettingsManager,
     resolveEmbeddingClient,
@@ -162,6 +187,7 @@ export async function initRagRuntime(
     db: db.raw,
     vectorStore,
     embeddingClient: defaultEmbeddingClient ?? makeUnconfiguredEmbeddingClient(dimension),
+    resolveEmbeddingClient,
     capConfig,
   });
 

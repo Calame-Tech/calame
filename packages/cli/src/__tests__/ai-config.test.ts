@@ -290,6 +290,74 @@ describe('AiSettingsManager — capabilities', () => {
   });
 });
 
+describe('AiSettingsManager — local provider', () => {
+  beforeEach(() => {
+    store = new Map();
+  });
+
+  const LOCAL_BASE: AiSetting = {
+    name: 'local',
+    label: 'Embeddings locaux (inclus)',
+    provider: 'local',
+    apiKey: '',
+    capabilities: ['embeddings'],
+    embeddingModel: 'embeddinggemma-300m-q4',
+    embeddingDimensions: 768,
+  };
+
+  it('creates a local-provider setting with no apiKey and no baseUrl', () => {
+    const mgr = makeManager();
+    expect(() => mgr.createSetting(LOCAL_BASE)).not.toThrow();
+    const saved = mgr.getSetting('local');
+    expect(saved).not.toBeNull();
+    expect(saved!.provider).toBe('local');
+    expect(saved!.apiKey).toBe('');
+  });
+
+  it('is reported as configured even with an empty apiKey (isSettingConfigured)', () => {
+    const mgr = makeManager();
+    mgr.createSetting(LOCAL_BASE);
+    const masked = mgr.getMaskedSetting('local');
+    expect(masked!.configured).toBe(true);
+  });
+
+  it('rejects a local setting with the chat capability', () => {
+    const mgr = makeManager();
+    expect(() => {
+      mgr.createSetting({ ...LOCAL_BASE, capabilities: ['chat'] });
+    }).toThrow(/only supports the "embeddings" capability/);
+  });
+
+  it('rejects a local setting with embeddings + chat combined', () => {
+    const mgr = makeManager();
+    expect(() => {
+      mgr.createSetting({ ...LOCAL_BASE, capabilities: ['embeddings', 'chat'] });
+    }).toThrow(/only supports the "embeddings" capability/);
+  });
+
+  it('rejects a local setting with the rerank capability', () => {
+    const mgr = makeManager();
+    expect(() => {
+      mgr.createSetting({ ...LOCAL_BASE, capabilities: ['rerank'], rerankModel: 'x' });
+    }).toThrow(/only supports the "embeddings" capability/);
+  });
+
+  it('accepts updating a local setting as long as capabilities stay embeddings-only', () => {
+    const mgr = makeManager();
+    mgr.createSetting(LOCAL_BASE);
+    expect(() => mgr.updateSetting('local', { label: 'Renamed' })).not.toThrow();
+    expect(mgr.getSetting('local')!.label).toBe('Renamed');
+  });
+
+  it('rejects updating a local setting to add the chat capability', () => {
+    const mgr = makeManager();
+    mgr.createSetting(LOCAL_BASE);
+    expect(() => {
+      mgr.updateSetting('local', { capabilities: ['embeddings', 'chat'] });
+    }).toThrow(/only supports the "embeddings" capability/);
+  });
+});
+
 describe('settingSupports', () => {
   const legacy: AiSetting = {
     name: 'legacy',

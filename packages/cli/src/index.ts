@@ -111,10 +111,16 @@ await initSsoRuntime(appState, appState.db, {
 // Initialize the optional RAG runtime BEFORE createApp so the route layer can
 // register `/api/rag/*` synchronously. When @calame-ee/rag-core is missing
 // this is a no-op and createApp simply skips RAG route registration.
-await initRagRuntime(appState, appState.db, appState.aiSettingsManager, {
-  info: (msg: string) => logger.info(msg, { component: 'rag' }),
-  warn: (msg: string) => logger.warn(msg, { component: 'rag' }),
-});
+await initRagRuntime(
+  appState,
+  appState.db,
+  appState.aiSettingsManager,
+  {
+    info: (msg: string) => logger.info(msg, { component: 'rag' }),
+    warn: (msg: string) => logger.warn(msg, { component: 'rag' }),
+  },
+  { packaged: config.packaged, overridePath: config.localEmbeddingModelDir },
+);
 
 const app = createApp({ state: appState, config, logger });
 

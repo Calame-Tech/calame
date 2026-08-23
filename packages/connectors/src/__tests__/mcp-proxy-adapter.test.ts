@@ -275,6 +275,33 @@ describe('testConnection', () => {
     expect(err?.message).toMatch(/Failed to connect to MCP server/);
     expect(err?.message).toMatch(/ECONNREFUSED/);
   });
+
+  // The transport factory throws a distinguishable message so a passing test
+  // proves the SSRF guard rejected the target BEFORE a transport/connection
+  // was ever opened, not that the (fake) connection itself failed.
+  it('should reject private IP URLs', async () => {
+    const adapter = buildMcpProxySourceAdapter(
+      throwingTransportFactory('should not reach transport'),
+    );
+    const err = await adapter
+      .testConnection({ url: 'http://10.0.0.5/mcp' })
+      .then(() => null)
+      .catch((e: unknown) => e as Error);
+    expect(err).toBeInstanceOf(Error);
+    expect(err?.message).not.toMatch(/should not reach transport/);
+  });
+
+  it('should reject loopback URLs', async () => {
+    const adapter = buildMcpProxySourceAdapter(
+      throwingTransportFactory('should not reach transport'),
+    );
+    const err = await adapter
+      .testConnection({ url: 'http://127.0.0.1:9999/mcp' })
+      .then(() => null)
+      .catch((e: unknown) => e as Error);
+    expect(err).toBeInstanceOf(Error);
+    expect(err?.message).not.toMatch(/should not reach transport/);
+  });
 });
 
 // ---------------------------------------------------------------------------

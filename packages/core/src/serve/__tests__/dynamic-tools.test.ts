@@ -250,6 +250,110 @@ describe('registerDynamicTools', () => {
     expect(tableInfo[0].columns).toContain('name');
   });
 
+  it('should not allow filtering on hash-masked columns', async () => {
+    const columnMasking: Record<string, Record<string, ColumnMasking>> = {
+      users: { email: { maskingMode: 'hash' } },
+    };
+
+    mockExecuteQuery.mockResolvedValue({ rows: [{ id: 1 }], fields: [{ name: 'id' }] });
+
+    registerDynamicTools({
+      server: server as unknown as Parameters<typeof registerDynamicTools>[0]['server'],
+      tables: [usersTable],
+      relations: [],
+      selectedTables: { users: ['id', 'name', 'email', 'age'] },
+      columnMasking,
+      executeQuery: mockExecuteQuery,
+      profileName: 'test',
+      databaseType: 'postgresql',
+    });
+
+    const tools = server.getRegisteredTools();
+    const queryHandler = tools.get('query')!.handler;
+    await queryHandler({
+      table: 'users',
+      filters: { email: { op: 'eq', value: 'secret@example.com' } },
+    });
+
+    const [sql, values] = mockExecuteQuery.mock.calls[0];
+    // email should NOT appear in the WHERE clause (no filter applied)
+    // and the value should NOT be in bound parameters
+    expect(values).not.toContain('secret@example.com');
+    // the WHERE clause should not reference email for filtering
+    const whereIdx = sql.indexOf('WHERE');
+    if (whereIdx !== -1) {
+      expect(sql.substring(whereIdx)).not.toContain('"email"');
+    }
+  });
+
+  it('should not allow filtering on truncate-masked columns', async () => {
+    const columnMasking: Record<string, Record<string, ColumnMasking>> = {
+      users: { email: { maskingMode: 'truncate', truncateOptions: { showFirst: 2 } } },
+    };
+
+    mockExecuteQuery.mockResolvedValue({ rows: [{ id: 1 }], fields: [{ name: 'id' }] });
+
+    registerDynamicTools({
+      server: server as unknown as Parameters<typeof registerDynamicTools>[0]['server'],
+      tables: [usersTable],
+      relations: [],
+      selectedTables: { users: ['id', 'name', 'email', 'age'] },
+      columnMasking,
+      executeQuery: mockExecuteQuery,
+      profileName: 'test',
+      databaseType: 'postgresql',
+    });
+
+    const tools = server.getRegisteredTools();
+    const queryHandler = tools.get('query')!.handler;
+    await queryHandler({
+      table: 'users',
+      filters: { email: { op: 'starts_with', value: 'se' } },
+    });
+
+    const [sql, values] = mockExecuteQuery.mock.calls[0];
+    // email filter should NOT appear in WHERE clause
+    expect(values).not.toContain('se');
+    const whereIdx = sql.indexOf('WHERE');
+    if (whereIdx !== -1) {
+      expect(sql.substring(whereIdx)).not.toContain('"email"');
+    }
+  });
+
+  it('should not allow filtering on replace-masked columns', async () => {
+    const columnMasking: Record<string, Record<string, ColumnMasking>> = {
+      users: { email: { maskingMode: 'replace', replaceValue: '[REDACTED]' } },
+    };
+
+    mockExecuteQuery.mockResolvedValue({ rows: [{ id: 1 }], fields: [{ name: 'id' }] });
+
+    registerDynamicTools({
+      server: server as unknown as Parameters<typeof registerDynamicTools>[0]['server'],
+      tables: [usersTable],
+      relations: [],
+      selectedTables: { users: ['id', 'name', 'email', 'age'] },
+      columnMasking,
+      executeQuery: mockExecuteQuery,
+      profileName: 'test',
+      databaseType: 'postgresql',
+    });
+
+    const tools = server.getRegisteredTools();
+    const queryHandler = tools.get('query')!.handler;
+    await queryHandler({
+      table: 'users',
+      filters: { email: { op: 'eq', value: 'secret@example.com' } },
+    });
+
+    const [sql, values] = mockExecuteQuery.mock.calls[0];
+    // email filter should NOT appear in WHERE clause
+    expect(values).not.toContain('secret@example.com');
+    const whereIdx = sql.indexOf('WHERE');
+    if (whereIdx !== -1) {
+      expect(sql.substring(whereIdx)).not.toContain('"email"');
+    }
+  });
+
   it('onAuditLog callback is called for each tool execution', async () => {
     const auditLog = vi.fn();
 

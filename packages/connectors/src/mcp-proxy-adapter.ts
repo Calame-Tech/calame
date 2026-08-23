@@ -43,6 +43,7 @@ import type {
   Capability,
 } from '@calame/core';
 import { isReadToolName } from '@calame/core';
+import { assertResolvedHostSafe } from './utils/ssrf.js';
 
 // ---------------------------------------------------------------------------
 // Config type
@@ -168,6 +169,11 @@ async function withUpstreamClient<T>(
   transportFactory: McpClientTransportFactory,
   fn: (client: Client, signal: AbortSignal) => Promise<T>,
 ): Promise<T> {
+  // Anti-SSRF / anti-DNS-rebinding: block private/internal targets before
+  // opening the connection — same check the HTTP API adapter runs before
+  // each fetch (see api-adapter.ts). Config urls are http/https-only
+  // (configSchema), so `new URL` here never throws for a persisted config.
+  await assertResolvedHostSafe(new URL(config.url).hostname);
   const signal = AbortSignal.timeout(CALL_TIMEOUT_MS);
   const client = new Client(CLIENT_INFO);
   const transport = transportFactory(config);

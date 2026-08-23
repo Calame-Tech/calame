@@ -347,9 +347,25 @@ function buildAccessibleTables(
     const maskingRules = tableMasking ? buildMaskingRules(tableMasking) : {};
 
     const excludedCols = new Set<string>();
+    // Columns masked with hash/truncate/replace still show a (obscured) value,
+    // but allowing them in filters/GROUP BY turns the masking into an oracle:
+    // an `eq`/`contains`/`starts_with` filter (or grouping) lets a caller
+    // binary-search the real value row-presence-by-row-presence even though
+    // the returned value itself is masked. `exclude`/`aggregate_only` are not
+    // included here — `exclude` already drops the column from `visibleColumns`
+    // below, and `aggregate_only` is intentionally filterable/groupable (that
+    // mode exists specifically to allow aggregation without exposing raw rows).
+    const oracleUnsafeCols = new Set<string>();
     if (tableMasking) {
       for (const [colName, m] of Object.entries(tableMasking)) {
         if (m.maskingMode === 'exclude') excludedCols.add(colName);
+        if (
+          m.maskingMode === 'hash' ||
+          m.maskingMode === 'truncate' ||
+          m.maskingMode === 'replace'
+        ) {
+          oracleUnsafeCols.add(colName);
+        }
       }
     }
 
@@ -359,7 +375,9 @@ function buildAccessibleTables(
     if (visibleColumns.length === 0) continue;
 
     const labelMap = buildLabelMap(visibleColumns.map((c) => ({ name: c.name })));
-    const filterableCols = visibleColumns.filter((c) => pgTypeToZod(c.type) !== null);
+    const filterableCols = visibleColumns.filter(
+      (c) => pgTypeToZod(c.type) !== null && !oracleUnsafeCols.has(c.name),
+    );
     const numericCols = visibleColumns.filter((c) => isNumericType(c.type)).map((c) => c.name);
     const groupableColumns = (
       opts?.groupableColumns && opts.groupableColumns.length > 0

@@ -96,10 +96,10 @@ type FormidableFactory = (options: object) => FormidableForm;
 
 async function loadFormidable(): Promise<FormidableFactory | null> {
   try {
-    // Dynamic specifier prevents TypeScript from trying to resolve the module
-    // at build time — `formidable` is loaded lazily at runtime.
-    const specifier = 'formidable';
-    const mod = (await import(/* @vite-ignore */ specifier)) as {
+    // Static specifier — still lazy at runtime, but statically analyzable so
+    // bundlers pull `formidable` into the shipped bundle. A variable specifier
+    // hides the dep from the bundler and the module goes missing at runtime.
+    const mod = (await import('formidable')) as unknown as {
       default?: unknown;
       [key: string]: unknown;
     };

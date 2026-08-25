@@ -345,27 +345,6 @@ importers:
       '@anthropic-ai/sdk':
         specifier: ^0.39.0
         version: 0.39.0
-      '@calame-ee/rag-connectors':
-        specifier: workspace:*
-        version: link:../../ee/rag-connectors
-      '@calame-ee/rag-core':
-        specifier: workspace:*
-        version: link:../../ee/rag-core
-      '@calame-ee/rag-gdrive':
-        specifier: workspace:*
-        version: link:../../ee/rag-gdrive
-      '@calame-ee/rag-gsheets':
-        specifier: workspace:*
-        version: link:../../ee/rag-gsheets
-      '@calame-ee/rag-microsoft':
-        specifier: workspace:*
-        version: link:../../ee/rag-microsoft
-      '@calame-ee/rag-notion':
-        specifier: workspace:*
-        version: link:../../ee/rag-notion
-      '@calame-ee/sso':
-        specifier: workspace:*
-        version: link:../../ee/sso
       '@calame/connectors':
         specifier: workspace:*
         version: link:../connectors
@@ -417,6 +396,28 @@ importers:
       zod:
         specifier: ^4.3.6
         version: 4.3.6
+    optionalDependencies:
+      '@calame-ee/rag-connectors':
+        specifier: workspace:*
+        version: link:../../ee/rag-connectors
+      '@calame-ee/rag-core':
+        specifier: workspace:*
+        version: link:../../ee/rag-core
+      '@calame-ee/rag-gdrive':
+        specifier: workspace:*
+        version: link:../../ee/rag-gdrive
+      '@calame-ee/rag-gsheets':
+        specifier: workspace:*
+        version: link:../../ee/rag-gsheets
+      '@calame-ee/rag-microsoft':
+        specifier: workspace:*
+        version: link:../../ee/rag-microsoft
+      '@calame-ee/rag-notion':
+        specifier: workspace:*
+        version: link:../../ee/rag-notion
+      '@calame-ee/sso':
+        specifier: workspace:*
+        version: link:../../ee/sso
     devDependencies:
       '@types/better-sqlite3':
         specifier: ^7.6.12
@@ -518,12 +519,6 @@ importers:
 
   packages/web:
     dependencies:
-      '@calame-ee/rag-core':
-        specifier: workspace:*
-        version: link:../../ee/rag-core
-      '@calame-ee/sso':
-        specifier: workspace:*
-        version: link:../../ee/sso
       react:
         specifier: ^18.3.0
         version: 18.3.1
@@ -536,6 +531,13 @@ importers:
       remark-gfm:
         specifier: ^4.0.1
         version: 4.0.1
+    optionalDependencies:
+      '@calame-ee/rag-core':
+        specifier: workspace:*
+        version: link:../../ee/rag-core
+      '@calame-ee/sso':
+        specifier: workspace:*
+        version: link:../../ee/sso
     devDependencies:
       '@testing-library/jest-dom':
         specifier: ^6.4.0
@@ -2328,6 +2330,7 @@ packages:
 
   '@ungap/structured-clone@1.3.0':
     resolution: {integrity: sha512-WmoN8qaIAo7WTYWbAZuG8PYEhn5fkz7dZrqTBZ7dtt//lL2Gwms1IcnQ5yHqjDfX8Ft5j4YzDM23f87zBfDe9g==}
+    deprecated: Potential CWE-502 - Update to 1.3.1 or higher
 
   '@vitejs/plugin-react@4.7.0':
     resolution: {integrity: sha512-gUu9hwfWvvEDBBmgtAowQCojwZmJ5mcLn3aufeCsitijs3+f2NsrPtlAWIR6OPiqljl96GVCUbLe0HyqIpVaoA==}
@@ -2376,6 +2379,7 @@ packages:
   '@xmldom/xmldom@0.8.13':
     resolution: {integrity: sha512-KRYzxepc14G/CEpEGc3Yn+JKaAeT63smlDr+vjB8jRfgTBBI9wRj/nkQEO+ucV8p8I9bfKLWp37uHgFrbntPvw==}
     engines: {node: '>=10.0.0'}
+    deprecated: this version has critical issues, please update to the latest version
 
   abbrev@1.1.1:
     resolution: {integrity: sha512-nne9/IiQ/hzIhY6pdDnbBtz7DjPTKrY00P/zvPSm5pOFkl6xuGrGnXn/VtTNNfNtAfZ9/1RtehkszU9qcTii0Q==}

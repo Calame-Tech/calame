@@ -54,9 +54,7 @@ const DataScopingSection = lazy(() =>
     .catch(() => ({
       default: function DataScopingSectionUnavailable() {
         const t = useTranslations('mcpDetail.scoping');
-        return (
-          <div className="p-6 text-sm text-gray-400 text-center">{t('unavailable')}</div>
-        );
+        return <div className="p-6 text-sm text-gray-400 text-center">{t('unavailable')}</div>;
       },
     })),
 );
@@ -729,11 +727,7 @@ function McpDetailView({
           <div>
             <p className="text-xs text-gray-500 mb-1 flex items-center gap-1">
               {t('endpoint.label')}
-              <HelpTip
-                content={t('endpoint.tooltip')}
-                position="bottom"
-                size="xs"
-              />
+              <HelpTip content={t('endpoint.tooltip')} position="bottom" size="xs" />
             </p>
             <button
               onClick={handleCopyEndpoint}
@@ -748,11 +742,7 @@ function McpDetailView({
           <div>
             <p className="text-xs text-gray-500 mb-1 flex items-center gap-1">
               {t('chat.label')}
-              <HelpTip
-                content={t('chat.tooltip')}
-                position="bottom"
-                size="xs"
-              />
+              <HelpTip content={t('chat.tooltip')} position="bottom" size="xs" />
             </p>
             <button
               onClick={() => {
@@ -808,11 +798,7 @@ function McpDetailView({
                 }`}
               />
             </button>
-            <HelpTip
-              content={t('responseMode.tooltip')}
-              position="left"
-              size="xs"
-            />
+            <HelpTip content={t('responseMode.tooltip')} position="left" size="xs" />
           </div>
         </div>
 
@@ -915,9 +901,7 @@ function McpDetailView({
                   placeholder={t('external.validationUrlPlaceholder')}
                   className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
                 />
-                <p className="text-xs text-gray-600 mt-1">
-                  {t('external.validationUrlHelp')}
-                </p>
+                <p className="text-xs text-gray-600 mt-1">{t('external.validationUrlHelp')}</p>
               </div>
 
               <div>
@@ -954,9 +938,7 @@ function McpDetailView({
                   placeholder={t('external.headerTemplatePlaceholder')}
                   className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
                 />
-                <p className="text-xs text-gray-600 mt-1">
-                  {t('external.headerTemplateHelp')}
-                </p>
+                <p className="text-xs text-gray-600 mt-1">{t('external.headerTemplateHelp')}</p>
               </div>
 
               <div className="grid grid-cols-2 gap-2">
@@ -995,9 +977,7 @@ function McpDetailView({
                   />
                 </div>
               </div>
-              <p className="text-xs text-gray-600">
-                {t('external.dotNotationHelp')}
-              </p>
+              <p className="text-xs text-gray-600">{t('external.dotNotationHelp')}</p>
 
               {/* Auto-create users toggle */}
               <label className="flex items-center gap-2 cursor-pointer mt-2">
@@ -1186,17 +1166,11 @@ function McpDetailView({
                   </svg>
                   {t('tables.newButton')}
                 </button>
-                <HelpTip
-                  content={t('tables.newTooltip')}
-                  position="left"
-                  size="xs"
-                />
+                <HelpTip content={t('tables.newTooltip')} position="left" size="xs" />
               </div>
             </div>
             {configurations.length === 0 ? (
-              <p className="text-sm text-gray-500">
-                {t('tables.emptyState')}
-              </p>
+              <p className="text-sm text-gray-500">{t('tables.emptyState')}</p>
             ) : (
               <div className="flex flex-wrap gap-2">
                 {configurations.map((cfg) => {
@@ -1278,9 +1252,7 @@ function McpDetailView({
                 }
                 const tableNames = Object.keys(mergedTables);
                 if (tableNames.length === 0) {
-                  return (
-                    <p className="text-sm text-gray-500">{t('tables.noTablesSelected')}</p>
-                  );
+                  return <p className="text-sm text-gray-500">{t('tables.noTablesSelected')}</p>;
                 }
                 return (
                   <div className="flex flex-wrap gap-2">
@@ -1352,7 +1324,9 @@ function McpDetailView({
       )}
 
       {activeSection === 'scoping' && (
-        <Suspense fallback={<div className="p-6 text-sm text-gray-500 italic">{tCommon('loading')}</div>}>
+        <Suspense
+          fallback={<div className="p-6 text-sm text-gray-500 italic">{tCommon('loading')}</div>}
+        >
           <DataScopingSection
             profile={profile}
             configurations={configurations}

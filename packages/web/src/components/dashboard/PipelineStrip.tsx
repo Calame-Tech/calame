@@ -152,7 +152,9 @@ export default function PipelineStrip({
                   <div className="flex items-center gap-2 min-w-0">
                     <div
                       className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${hasSchema ? 'bg-emerald-400' : 'bg-gray-600'}`}
-                      title={hasSchema ? t('sources.connectedTooltip') : t('sources.notConnectedTooltip')}
+                      title={
+                        hasSchema ? t('sources.connectedTooltip') : t('sources.notConnectedTooltip')
+                      }
                     />
                     <span className="font-mono-plex text-xs text-gray-300 truncate">
                       {conn.label || conn.name}

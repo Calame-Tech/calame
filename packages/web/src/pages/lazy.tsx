@@ -16,9 +16,7 @@ export const KnowledgeBaseManager = lazy(() =>
     .catch(() => ({
       default: function RagUnavailable() {
         const t = useTranslations('configurationDetail');
-        return (
-          <div className="p-6 text-sm text-gray-400 text-center">{t('ragUnavailable')}</div>
-        );
+        return <div className="p-6 text-sm text-gray-400 text-center">{t('ragUnavailable')}</div>;
       },
     })),
 );

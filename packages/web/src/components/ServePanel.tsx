@@ -262,7 +262,9 @@ export default function ServePanel({
           const profileIdx = profiles.findIndex((p) => p.name === profile.name);
           const authMode = profile.authMode ?? 'token';
           const responseModeIsRaw = (profile.responseMode ?? 'friendly') === 'raw';
-          const responseModeLabel = responseModeIsRaw ? t('responseMode.technical') : t('responseMode.natural');
+          const responseModeLabel = responseModeIsRaw
+            ? t('responseMode.technical')
+            : t('responseMode.natural');
 
           return (
             <div
@@ -331,7 +333,9 @@ export default function ServePanel({
                   <span
                     className={`flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium ${AUTH_MODE_STYLES[authMode]}`}
                     aria-label={t('authMode.ariaLabel', { mode: t(`authMode.labels.${authMode}`) })}
-                    title={t('authMode.tooltip', { description: t(`authMode.descriptions.${authMode}`) })}
+                    title={t('authMode.tooltip', {
+                      description: t(`authMode.descriptions.${authMode}`),
+                    })}
                   >
                     {t(`authMode.labels.${authMode}`)}
                   </span>
@@ -380,7 +384,9 @@ export default function ServePanel({
                           setTimeout(() => setCopiedChatLink(null), 2000);
                         });
                       }}
-                      aria-label={t('copyChatLinkAriaLabel', { name: profile.label || profile.name })}
+                      aria-label={t('copyChatLinkAriaLabel', {
+                        name: profile.label || profile.name,
+                      })}
                       title={t('copyChatLinkTooltip')}
                       className="flex-shrink-0 text-xs text-gray-500 hover:text-gray-300 transition-colors focus:outline-none focus:ring-1 focus:ring-os-500 rounded"
                     >

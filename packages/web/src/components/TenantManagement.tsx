@@ -310,9 +310,7 @@ export default function TenantManagement() {
       {/* Hint footer */}
       <p className="text-xs text-gray-500 leading-relaxed">
         {t.rich('hintFooter', {
-          code: (chunks) => (
-            <code className="font-mono-plex text-gray-400">{chunks}</code>
-          ),
+          code: (chunks) => <code className="font-mono-plex text-gray-400">{chunks}</code>,
         })}
       </p>
 

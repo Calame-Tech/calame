@@ -13,7 +13,13 @@ const PII_CATEGORIES: PiiCategory[] = [
   'ssn',
   'encrypted',
 ];
-const MASKING_MODE_VALUES: MaskingMode[] = ['exclude', 'hash', 'truncate', 'replace', 'aggregate_only'];
+const MASKING_MODE_VALUES: MaskingMode[] = [
+  'exclude',
+  'hash',
+  'truncate',
+  'replace',
+  'aggregate_only',
+];
 
 interface GlobalMaskingRulesProps {
   rules: GlobalMaskingRule[];
@@ -92,12 +98,7 @@ export default function GlobalMaskingRules({ rules, onRulesChange }: GlobalMaski
                 </option>
               ))}
             </select>
-            <HelpTip
-              content={t('global.modeHelpTip')}
-              maxWidth={320}
-              position="bottom"
-              size="xs"
-            />
+            <HelpTip content={t('global.modeHelpTip')} maxWidth={320} position="bottom" size="xs" />
           </div>
           {rule.defaultMode === 'truncate' && (
             <div className="flex items-center gap-1 text-xs text-gray-400">

@@ -10,13 +10,13 @@
 import { vi } from 'vitest';
 import { act, render as rtlRender } from '@testing-library/react';
 import type { ReactElement } from 'react';
-import type { RenderOptions } from '@testing-library/react';
+import type { RenderOptions, RenderResult } from '@testing-library/react';
 import { I18nProvider } from '../../i18n/I18nProvider.js';
 import type { SessionState } from '../../context/SessionContext.js';
 import type { Config, Profile, ServeStatus } from '../../types/schema.js';
 
 /** Renders with the i18n context every page/component now requires. */
-export function render(ui: ReactElement, options?: RenderOptions) {
+export function render(ui: ReactElement, options?: RenderOptions): RenderResult {
   return rtlRender(ui, { wrapper: I18nProvider, ...options });
 }
 

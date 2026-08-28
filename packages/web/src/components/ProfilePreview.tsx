@@ -46,7 +46,8 @@ export default function ProfilePreview({ profileName, onClose }: ProfilePreviewP
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
           const msg =
-            (body as { message?: string }).message || t('errors.statusFallback', { status: res.status });
+            (body as { message?: string }).message ||
+            t('errors.statusFallback', { status: res.status });
           throw new Error(msg);
         }
         const body = await res.json();
@@ -216,7 +217,9 @@ export default function ProfilePreview({ profileName, onClose }: ProfilePreviewP
                         <th className="text-left pb-2 pr-4 font-medium">
                           {t('columnsTable.colType')}
                         </th>
-                        <th className="text-left pb-2 font-medium">{t('columnsTable.colStatus')}</th>
+                        <th className="text-left pb-2 font-medium">
+                          {t('columnsTable.colStatus')}
+                        </th>
                       </tr>
                     </thead>
                     <tbody>

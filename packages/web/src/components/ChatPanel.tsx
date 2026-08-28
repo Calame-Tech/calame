@@ -247,9 +247,7 @@ export default function ChatPanel({ selectedTables, activeProfiles }: ChatPanelP
                 )}
               </span>
               <span className="text-gray-600 ml-auto text-xs">
-                {allAiSettings.length > 1
-                  ? t('panel.assignMore')
-                  : t('panel.configureAiSettings')}
+                {allAiSettings.length > 1 ? t('panel.assignMore') : t('panel.configureAiSettings')}
               </span>
             </div>
           )

@@ -200,7 +200,8 @@ export default function ConfigGraphView({
         },
         { k: t('chip.tablesLabel'), v: String(tables) },
       ];
-      if (masked > 0) rows.push({ k: t('chip.maskedColumnsLabel'), v: String(masked), tone: 'pii' });
+      if (masked > 0)
+        rows.push({ k: t('chip.maskedColumnsLabel'), v: String(masked), tone: 'pii' });
       rows.push({
         k: t('chip.mountedByLabel'),
         v: mountedBy.map((p) => p.label || p.name).join(' · ') || '—',
@@ -542,9 +543,7 @@ export default function ConfigGraphView({
       : undefined;
 
   if (nodes.length === 0) {
-    return (
-      <EmptyState title={t('emptyState.title')} description={t('emptyState.description')} />
-    );
+    return <EmptyState title={t('emptyState.title')} description={t('emptyState.description')} />;
   }
 
   const svgClass = [

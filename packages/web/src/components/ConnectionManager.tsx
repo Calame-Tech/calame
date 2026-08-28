@@ -876,11 +876,7 @@ export default function ConnectionManager({
                     </span>
                   )}
                 </button>
-                <HelpTip
-                  content={t('ssl.help')}
-                  position="right"
-                  maxWidth={300}
-                />
+                <HelpTip content={t('ssl.help')} position="right" maxWidth={300} />
               </div>
 
               {sslExpanded && (

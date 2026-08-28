@@ -41,9 +41,7 @@ const RagAccessSelector = lazy(() =>
     .catch(() => ({
       default: function RagAccessSelectorUnavailable() {
         const t = useTranslations('configurationDetail');
-        return (
-          <div className="p-6 text-sm text-gray-400 text-center">{t('ragUnavailable')}</div>
-        );
+        return <div className="p-6 text-sm text-gray-400 text-center">{t('ragUnavailable')}</div>;
       },
     })),
 );
@@ -91,8 +89,7 @@ export default function ConfigurationDetailPage({
   // Reported up from ConfigurationDetailView (Lot D3) so the breadcrumb and
   // "manage connections" links can warn before discarding unsaved edits.
   const [isDirty, setIsDirty] = useState(false);
-  const guardedNav = (fn: () => void) =>
-    guardedNavigate(isDirty, fn, t('unsavedChangesConfirm'));
+  const guardedNav = (fn: () => void) => guardedNavigate(isDirty, fn, t('unsavedChangesConfirm'));
 
   return (
     <div className="max-w-7xl mx-auto">
@@ -590,7 +587,9 @@ function ConfigurationDetailView({
             </Button>
             {confirmDelete ? (
               <div className="flex items-center gap-1">
-                <span className="text-xs text-gray-400 mr-1">{t('header.confirmDeleteQuestion')}</span>
+                <span className="text-xs text-gray-400 mr-1">
+                  {t('header.confirmDeleteQuestion')}
+                </span>
                 <Button variant="danger" size="sm" onClick={handleDelete} disabled={deleting}>
                   {deleting ? t('header.deleting') : t('header.yesDelete')}
                 </Button>
@@ -710,7 +709,9 @@ function ConfigurationDetailView({
                           {conn?.label ?? connName}
                           {hasSchema && (
                             <span className="text-xs text-gray-500">
-                              {t('tablesCount', { count: connectionSchemas[connName].tables.length })}
+                              {t('tablesCount', {
+                                count: connectionSchemas[connName].tables.length,
+                              })}
                             </span>
                           )}
                         </button>

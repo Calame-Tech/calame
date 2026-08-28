@@ -619,7 +619,10 @@ function StepTables({ state, connectionName, onToggle, onToggleAll, onNext }: St
           {/* Select all / none */}
           <div className="flex items-center justify-between pb-2 border-b border-gray-800">
             <span className="text-sm text-gray-400">
-              {t('step2.tablesSelected', { checked: state.checked.size, total: state.tables.length })}
+              {t('step2.tablesSelected', {
+                checked: state.checked.size,
+                total: state.tables.length,
+              })}
             </span>
             <button
               type="button"
@@ -827,7 +830,9 @@ function StepDone({
           <button
             type="button"
             onClick={onCopy}
-            aria-label={copied ? t('step4.urlCard.copiedAriaLabel') : t('step4.urlCard.copyAriaLabel')}
+            aria-label={
+              copied ? t('step4.urlCard.copiedAriaLabel') : t('step4.urlCard.copyAriaLabel')
+            }
             className="flex-shrink-0 px-3 py-2 rounded-lg border border-gray-700/50 bg-gray-800/60 hover:bg-gray-700/60 text-sm text-gray-300 hover:text-white transition-colors focus:outline-none focus:ring-2 focus:ring-os-500"
           >
             {copied ? (

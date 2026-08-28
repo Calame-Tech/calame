@@ -276,7 +276,8 @@ function UserDetailPanel({
           <span className="text-gray-300">{user.role}</span>
         </div>
         <div>
-          <span className="text-gray-500">{t('detail.status')}</span> <StatusBadge status={user.status} />
+          <span className="text-gray-500">{t('detail.status')}</span>{' '}
+          <StatusBadge status={user.status} />
         </div>
         <div>
           <span className="text-gray-500">{t('detail.created')}</span>{' '}
@@ -1060,11 +1061,7 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
             />
             <span className="flex items-center gap-1 text-sm text-gray-300">
               {t('createForm.sendInvitationLabel')}
-              <HelpTip
-                content={t('createForm.sendInvitationHelp')}
-                position="right"
-                size="xs"
-              />
+              <HelpTip content={t('createForm.sendInvitationHelp')} position="right" size="xs" />
             </span>
           </label>
 

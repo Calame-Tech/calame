@@ -320,7 +320,12 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                   >
                     {t('generateButton')}
                   </button>
-                  <HelpTip content={t('generateHelpTip')} position="left" maxWidth={280} size="xs" />
+                  <HelpTip
+                    content={t('generateHelpTip')}
+                    position="left"
+                    maxWidth={280}
+                    size="xs"
+                  />
                 </div>
               </div>
 
@@ -354,11 +359,7 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                       >
                         {generating ? t('generateForm.generating') : t('generateForm.create')}
                       </button>
-                      <HelpTip
-                        content={t('generateForm.createHelpTip')}
-                        position="top"
-                        size="xs"
-                      />
+                      <HelpTip content={t('generateForm.createHelpTip')} position="top" size="xs" />
                     </div>
                     <button
                       onClick={() => {
@@ -406,9 +407,13 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                             )}
                           </div>
                           <div className="flex items-center gap-3 text-xs text-gray-500">
-                            <span>{t('tokenRow.created', { date: formatDate(tok.createdAt) })}</span>
+                            <span>
+                              {t('tokenRow.created', { date: formatDate(tok.createdAt) })}
+                            </span>
                             {tok.lastUsedAt && (
-                              <span>{t('tokenRow.lastUsed', { date: formatDate(tok.lastUsedAt) })}</span>
+                              <span>
+                                {t('tokenRow.lastUsed', { date: formatDate(tok.lastUsedAt) })}
+                              </span>
                             )}
                           </div>
                         </div>
@@ -421,7 +426,9 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                                 : 'bg-red-600/20 text-red-400 hover:bg-red-600/30'
                             }`}
                           >
-                            {confirmRevoke === tok.id ? t('tokenRow.confirmRevoke') : t('tokenRow.revoke')}
+                            {confirmRevoke === tok.id
+                              ? t('tokenRow.confirmRevoke')
+                              : t('tokenRow.revoke')}
                           </button>
                           <HelpTip
                             content={
@@ -511,9 +518,7 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                   ))}
                 </div>
               ) : (
-                <div className="px-4 py-6 text-center text-gray-500 text-sm">
-                  {t('emptyState')}
-                </div>
+                <div className="px-4 py-6 text-center text-gray-500 text-sm">{t('emptyState')}</div>
               )}
             </div>
           );

@@ -66,9 +66,7 @@ export function describeAccess(
   const parts = [
     t('modeAccess', { mode: t(`modeLabel.${access.accessMode}`) }),
     write ? t('writeAllowed') : t('readOnly'),
-    restricted
-      ? t('restrictedToTables', { count: access.allowedTables!.length })
-      : t('allTables'),
+    restricted ? t('restrictedToTables', { count: access.allowedTables!.length }) : t('allTables'),
   ];
   return {
     label: write ? 'R+W' : 'R',
@@ -90,8 +88,7 @@ function cellInfo(access: UserProfileAccess, t: AccessMatrixTranslator): CellInf
 
 export default function UserAccessMatrix({ profiles }: UserAccessMatrixProps) {
   const t = useTranslations('users');
-  const tAccessMatrix: AccessMatrixTranslator = (key, values) =>
-    t(`accessMatrix.${key}`, values);
+  const tAccessMatrix: AccessMatrixTranslator = (key, values) => t(`accessMatrix.${key}`, values);
   const [users, setUsers] = useState<UserEntry[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -171,7 +168,10 @@ export default function UserAccessMatrix({ profiles }: UserAccessMatrixProps) {
                             server: p.label || p.name,
                           })}
                         >
-                          <span className="text-gray-700" aria-label={t('accessMatrix.ariaNoAccess')}>
+                          <span
+                            className="text-gray-700"
+                            aria-label={t('accessMatrix.ariaNoAccess')}
+                          >
                             &mdash;
                           </span>
                         </td>

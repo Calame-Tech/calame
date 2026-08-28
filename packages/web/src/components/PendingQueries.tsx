@@ -225,13 +225,11 @@ export default function PendingQueries({
         <div className="text-center text-gray-500 py-8">{t('loadingEntries')}</div>
       ) : entries.length === 0 ? (
         <div className="card-primary p-8 text-center text-gray-500">
-          {statusFilter === 'pending' ? (
-            t.rich('empty.pending', {
-              code: (chunks) => <code className="text-xs text-gray-400">{chunks}</code>,
-            })
-          ) : (
-            t(`empty.${statusFilter}`)
-          )}
+          {statusFilter === 'pending'
+            ? t.rich('empty.pending', {
+                code: (chunks) => <code className="text-xs text-gray-400">{chunks}</code>,
+              })
+            : t(`empty.${statusFilter}`)}
         </div>
       ) : (
         <div className="space-y-3">
@@ -290,7 +288,9 @@ export default function PendingQueries({
                         title={t('actions.reject.tooltip')}
                         className="px-3 py-1.5 rounded-lg bg-red-600/20 text-red-400 hover:bg-red-600/30 text-sm font-medium transition-all duration-200 disabled:opacity-50"
                       >
-                        {actionLoading === entry.id ? t('actions.loadingEllipsis') : t('actions.reject.label')}
+                        {actionLoading === entry.id
+                          ? t('actions.loadingEllipsis')
+                          : t('actions.reject.label')}
                       </button>
                     </div>
                   )}
@@ -303,7 +303,9 @@ export default function PendingQueries({
                     }
                     className="text-gray-500 hover:text-gray-300 text-sm transition-colors"
                   >
-                    {expandedId === entry.id ? t('actions.details.hideLabel') : t('actions.details.showLabel')}
+                    {expandedId === entry.id
+                      ? t('actions.details.hideLabel')
+                      : t('actions.details.showLabel')}
                   </button>
                 </div>
               </div>
@@ -336,7 +338,9 @@ export default function PendingQueries({
                       </div>
                       {entry.params && entry.params.length > 0 && (
                         <div>
-                          <span className="text-xs text-gray-500">{t('details.parametersLabel')}</span>
+                          <span className="text-xs text-gray-500">
+                            {t('details.parametersLabel')}
+                          </span>
                           <pre className="mt-1 p-2 rounded bg-gray-900 border border-gray-700 text-xs text-gray-300 font-mono overflow-x-auto">
                             {JSON.stringify(entry.params, null, 2)}
                           </pre>

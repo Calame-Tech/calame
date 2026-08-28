@@ -245,9 +245,7 @@ export default function DashboardPage({
           {recentActivity.length > 0 && (
             <div className="card-primary p-4 anim-rise-in" style={{ animationDelay: '280ms' }}>
               <div className="flex items-baseline justify-between">
-                <h2 className="text-sm font-semibold text-gray-100">
-                  {t('recentActivity.title')}
-                </h2>
+                <h2 className="text-sm font-semibold text-gray-100">{t('recentActivity.title')}</h2>
                 <span className="font-mono-plex text-[11px] text-gray-500">
                   {t('recentActivity.eventsCount', { count: recentActivity.length })}
                 </span>

@@ -290,7 +290,9 @@ export default function NotificationSettings() {
                 }`}
               >
                 <span className="font-medium">{CHANNEL_LABELS[channel]}</span>
-                <span>{result.ok ? t('testResults.ok') : result.error || t('testResults.failed')}</span>
+                <span>
+                  {result.ok ? t('testResults.ok') : result.error || t('testResults.failed')}
+                </span>
               </div>
             );
           })}

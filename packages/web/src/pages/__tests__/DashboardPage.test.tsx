@@ -4,7 +4,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { screen, fireEvent } from '@testing-library/react';
 import DashboardPage from '../DashboardPage.js';
 import { useSession } from '../../context/SessionContext.js';
-import { render, makeSession, makeServeStatus, makeProfile, installFetchMock } from './testUtils.js';
+import {
+  render,
+  makeSession,
+  makeServeStatus,
+  makeProfile,
+  installFetchMock,
+} from './testUtils.js';
 import type { AuditLogEntry, Configuration, NamedConnection } from '../../types/schema.js';
 
 vi.mock('../../context/SessionContext.js', () => ({

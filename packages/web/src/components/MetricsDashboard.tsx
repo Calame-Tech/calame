@@ -510,7 +510,12 @@ function PoolRing({ active, total, t }: { active: number; total: number; t: Tran
   const animatedPct = useAnimatedNumber(total > 0 ? ratio * 100 : 0, 600);
 
   return (
-    <svg width={size} height={size} aria-label={t('poolRing.ariaLabel', { active, total })} role="img">
+    <svg
+      width={size}
+      height={size}
+      aria-label={t('poolRing.ariaLabel', { active, total })}
+      role="img"
+    >
       {/* Track */}
       <circle
         cx={cx}
@@ -717,9 +722,17 @@ export default function MetricsDashboard() {
           )}
           <SegmentedControl<Period>
             options={[
-              { value: '24h', label: t('period.h24.label'), description: t('period.h24.description') },
+              {
+                value: '24h',
+                label: t('period.h24.label'),
+                description: t('period.h24.description'),
+              },
               { value: '7d', label: t('period.d7.label'), description: t('period.d7.description') },
-              { value: '30d', label: t('period.d30.label'), description: t('period.d30.description') },
+              {
+                value: '30d',
+                label: t('period.d30.label'),
+                description: t('period.d30.description'),
+              },
             ]}
             value={period}
             onChange={setPeriod}
@@ -899,12 +912,7 @@ export default function MetricsDashboard() {
             <div className="card-primary p-6 flex flex-col">
               <h3 className="flex items-center gap-2 font-mono-plex uppercase tracking-widest text-[10px] text-gray-500 mb-5">
                 {t('topTools.title')}
-                <HelpTip
-                  content={t('topTools.help')}
-                  position="top"
-                  maxWidth={280}
-                  size="xs"
-                />
+                <HelpTip content={t('topTools.help')} position="top" maxWidth={280} size="xs" />
               </h3>
               <RankedList
                 items={(metrics?.topTools ?? []).map((tool) => ({
@@ -923,12 +931,7 @@ export default function MetricsDashboard() {
             <div className="card-primary p-6 flex flex-col">
               <h3 className="flex items-center gap-2 font-mono-plex uppercase tracking-widest text-[10px] text-gray-500 mb-5">
                 {t('topApiKeys.title')}
-                <HelpTip
-                  content={t('topApiKeys.help')}
-                  position="top"
-                  maxWidth={280}
-                  size="xs"
-                />
+                <HelpTip content={t('topApiKeys.help')} position="top" maxWidth={280} size="xs" />
               </h3>
               <RankedList
                 items={(metrics?.topTokens ?? []).map((tok) => ({
@@ -948,12 +951,15 @@ export default function MetricsDashboard() {
           <div className="card-primary p-6 animate-fade-in-up" style={{ animationDelay: '320ms' }}>
             <h3 className="flex items-center gap-2 font-mono-plex uppercase tracking-widest text-[10px] text-gray-500 mb-5">
               {t('avgResponseTime.title')}
-              <HelpTip content={t('avgResponseTime.help')} position="top" maxWidth={300} size="xs" />
+              <HelpTip
+                content={t('avgResponseTime.help')}
+                position="top"
+                maxWidth={300}
+                size="xs"
+              />
             </h3>
             {!metrics || metrics.avgResponseTime.length === 0 ? (
-              <p className="text-gray-600 text-sm text-center py-4">
-                {t('avgResponseTime.empty')}
-              </p>
+              <p className="text-gray-600 text-sm text-center py-4">{t('avgResponseTime.empty')}</p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full" aria-label={t('avgResponseTime.tableAriaLabel')}>
@@ -1036,12 +1042,7 @@ export default function MetricsDashboard() {
             >
               <h3 className="flex items-center gap-2 font-mono-plex uppercase tracking-widest text-[10px] text-gray-500 mb-5">
                 {t('poolStats.title')}
-                <HelpTip
-                  content={t('poolStats.help')}
-                  position="top"
-                  maxWidth={320}
-                  size="xs"
-                />
+                <HelpTip content={t('poolStats.help')} position="top" maxWidth={320} size="xs" />
               </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {poolStats.map((pool) => {

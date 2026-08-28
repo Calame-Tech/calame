@@ -271,7 +271,8 @@ export default function SchemaExplorer({
         {!connName && tableToConnection && connectionNames.length > 1 && (
           <span
             title={t('databaseTitle', {
-              name: connectionLabels?.[tableToConnection[table.name]] ?? tableToConnection[table.name],
+              name:
+                connectionLabels?.[tableToConnection[table.name]] ?? tableToConnection[table.name],
             })}
             className={`flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded border font-medium ${getConnColor(tableToConnection[table.name]).badge}`}
           >
@@ -411,9 +412,7 @@ export default function SchemaExplorer({
                   <PiiBadge detection={piiDetections[table.name][col.name]} />
                 )}
                 {col.nullable && (
-                  <span className="flex-shrink-0 text-[10px] text-gray-600">
-                    {t('nullLabel')}
-                  </span>
+                  <span className="flex-shrink-0 text-[10px] text-gray-600">{t('nullLabel')}</span>
                 )}
               </label>
             );

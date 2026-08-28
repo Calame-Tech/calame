@@ -70,7 +70,9 @@ export default function SettingsPage({
   }
   breadcrumb.push({ label: t('title') });
 
-  const loadingFallback = <div className="p-6 text-sm text-gray-500 italic">{tCommon('loading')}</div>;
+  const loadingFallback = (
+    <div className="p-6 text-sm text-gray-500 italic">{tCommon('loading')}</div>
+  );
 
   return (
     <div className="space-y-4">

@@ -389,7 +389,10 @@ export default function AiSettings() {
       const data = await res.json();
       setTestResult(
         data.success
-          ? { success: true, message: t('quickTest.ok', { label: s.label, response: data.response }) }
+          ? {
+              success: true,
+              message: t('quickTest.ok', { label: s.label, response: data.response }),
+            }
           : {
               success: false,
               message: t('quickTest.failed', {
@@ -399,7 +402,10 @@ export default function AiSettings() {
             },
       );
     } catch {
-      setTestResult({ success: false, message: t('quickTest.connectionError', { label: s.label }) });
+      setTestResult({
+        success: false,
+        message: t('quickTest.connectionError', { label: s.label }),
+      });
     } finally {
       setTestingName(null);
     }
@@ -459,7 +465,11 @@ export default function AiSettings() {
       label: t('providers.local.label'),
       desc: t('providers.local.desc'),
     },
-    { value: 'anthropic', label: t('providers.anthropic.label'), desc: t('providers.anthropic.desc') },
+    {
+      value: 'anthropic',
+      label: t('providers.anthropic.label'),
+      desc: t('providers.anthropic.desc'),
+    },
     {
       value: 'openrouter',
       label: t('providers.openrouter.label'),
@@ -736,7 +746,9 @@ export default function AiSettings() {
       {provider !== 'custom' && provider !== 'local' && (
         <div>
           <label className="text-sm text-gray-400">
-            {provider === 'openrouter' ? t('form.apiKeyLabel.openrouter') : t('form.apiKeyLabel.anthropic')}{' '}
+            {provider === 'openrouter'
+              ? t('form.apiKeyLabel.openrouter')
+              : t('form.apiKeyLabel.anthropic')}{' '}
             <span className="text-red-400">*</span>
           </label>
           <div className="relative mt-1">
@@ -1020,7 +1032,9 @@ export default function AiSettings() {
                 className="input-editorial w-full text-sm mt-1"
               >
                 <option value="anthropic">{t('router.classifierProviderOptions.anthropic')}</option>
-                <option value="openrouter">{t('router.classifierProviderOptions.openrouter')}</option>
+                <option value="openrouter">
+                  {t('router.classifierProviderOptions.openrouter')}
+                </option>
                 <option value="custom">{t('router.classifierProviderOptions.custom')}</option>
               </select>
             </div>
@@ -1053,7 +1067,9 @@ export default function AiSettings() {
             </div>
             {classifierProvider === 'custom' && (
               <div>
-                <label className="text-sm text-gray-400">{t('router.classifierEndpointLabel')}</label>
+                <label className="text-sm text-gray-400">
+                  {t('router.classifierEndpointLabel')}
+                </label>
                 <input
                   type="text"
                   value={classifierEndpoint}

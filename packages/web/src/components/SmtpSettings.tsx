@@ -264,7 +264,11 @@ export default function SmtpSettings() {
             }}
             className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-500 hover:text-gray-300"
           >
-            {isPasswordMasked ? t('password.show') : showPassword ? t('password.hide') : t('password.show')}
+            {isPasswordMasked
+              ? t('password.show')
+              : showPassword
+                ? t('password.hide')
+                : t('password.show')}
           </button>
         </div>
 

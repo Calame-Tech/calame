@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, lazy, Suspense } from 'react';
+import { useTranslations } from 'use-intl/react';
 import { apiFetch, getCurrentTenant } from '../lib/api.js';
 import { useBranding, DEFAULT_LOGO_SRC } from '../lib/branding.js';
 import { buildMcpPath } from '../lib/mcp-url.js';
@@ -14,11 +15,8 @@ const ChatSsoLogin = lazy(() =>
     .then((m) => ({ default: m.ChatSsoLogin }))
     .catch(() => ({
       default: function ChatSsoLoginUnavailable() {
-        return (
-          <div className="p-6 text-sm text-gray-400 text-center">
-            SSO features are not available on this instance.
-          </div>
-        );
+        const t = useTranslations('settings.sso');
+        return <div className="p-6 text-sm text-gray-400 text-center">{t('unavailable')}</div>;
       },
     })),
 );
@@ -64,6 +62,7 @@ function InlineChatPanel({
   profileName: string;
   aiSettings?: Array<{ name: string; label: string }>;
 }) {
+  const t = useTranslations('chat');
   const [chatInput, setChatInput] = useState('');
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [selectedAi, setSelectedAi] = useState<string | undefined>(aiSettings?.[0]?.name);
@@ -120,11 +119,11 @@ function InlineChatPanel({
       <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 space-y-3">
         {chatMessages.length === 0 && (
           <div className="text-center text-gray-500 text-sm mt-16">
-            <p className="mb-2">Ask anything about your data</p>
+            <p className="mb-2">{t('emptyState.title')}</p>
             <div className="space-y-1 text-xs text-gray-600">
-              <p>&quot;How many rows are in the users table?&quot;</p>
-              <p>&quot;Show me the 5 most recent orders&quot;</p>
-              <p>&quot;What tables are available?&quot;</p>
+              {(t.raw('emptyState.examples') as string[]).map((example) => (
+                <p key={example}>&quot;{example}&quot;</p>
+              ))}
             </div>
           </div>
         )}
@@ -156,9 +155,13 @@ function InlineChatPanel({
                   )}
                   {!msg.streaming && msg.usage && (
                     <span className="text-xs text-zinc-500 mt-1 block">
-                      {(msg.usage.input + msg.usage.output).toLocaleString()} tokens
+                      {t('usage.tokens', {
+                        count: (msg.usage.input + msg.usage.output).toLocaleString(),
+                      })}
                       {msg.usage.cacheRead
-                        ? ` · cache ${Math.round((msg.usage.cacheRead / msg.usage.input) * 100)}%`
+                        ? t('usage.cacheSuffix', {
+                            percent: Math.round((msg.usage.cacheRead / msg.usage.input) * 100),
+                          })
                         : ''}
                     </span>
                   )}
@@ -172,9 +175,9 @@ function InlineChatPanel({
       {/* AI selector — shown only when multiple settings are available for this MCP */}
       {aiSettings && aiSettings.length > 1 && (
         <div className="border-t border-white/5 px-3 py-2 flex items-center gap-2">
-          <span className="text-xs text-gray-500">AI:</span>
+          <span className="text-xs text-gray-500">{t('aiSelector.label')}</span>
           <DarkSelect
-            ariaLabel="AI provider"
+            ariaLabel={t('aiSelector.ariaLabel')}
             size="xs"
             value={selectedAi ?? ''}
             options={aiSettings.map((s) => ({ value: s.name, label: s.label }))}
@@ -196,9 +199,9 @@ function InlineChatPanel({
               handleChatSend();
             }
           }}
-          placeholder="Ask about your data..."
+          placeholder={t('input.placeholder')}
           disabled={isStreaming}
-          aria-label="Chat message input"
+          aria-label={t('input.ariaLabel')}
           className="input-editorial flex-1 text-sm disabled:opacity-50 resize-none overflow-hidden"
           style={{ minHeight: '38px', maxHeight: '160px' }}
           onInput={(e) => {
@@ -210,19 +213,19 @@ function InlineChatPanel({
         {isStreaming ? (
           <button
             onClick={abort}
-            aria-label="Stop generation"
+            aria-label={t('actions.stopAriaLabel')}
             className="px-4 py-2 bg-red-700 hover:bg-red-600 rounded-lg text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-red-500"
           >
-            Stop
+            {t('actions.stop')}
           </button>
         ) : (
           <button
             onClick={handleChatSend}
             disabled={!chatInput.trim()}
-            aria-label="Send message"
+            aria-label={t('actions.sendAriaLabel')}
             className="px-4 py-2 bg-os-700 hover:bg-os-600 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-os-500"
           >
-            Send
+            {t('actions.send')}
           </button>
         )}
       </div>
@@ -234,6 +237,7 @@ function InlineChatPanel({
 // Auth form — token mode
 // ---------------------------------------------------------------------------
 function TokenLoginForm({ profile, onSuccess }: { profile: ChatProfile; onSuccess: () => void }) {
+  const t = useTranslations('chat');
   const [token, setToken] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -257,10 +261,10 @@ function TokenLoginForm({ profile, onSuccess }: { profile: ChatProfile; onSucces
       if (data.success) {
         onSuccess();
       } else {
-        setError(data.message || 'Invalid API key. Please try again.');
+        setError(data.message || t('tokenLogin.invalidKey'));
       }
     } catch {
-      setError('Connection error. Please try again.');
+      setError(t('errors.connection'));
     } finally {
       setLoading(false);
     }
@@ -278,13 +282,13 @@ function TokenLoginForm({ profile, onSuccess }: { profile: ChatProfile; onSucces
           <h1 className="text-xl font-semibold text-gray-100 mb-1">
             {profile.label || profile.name}
           </h1>
-          <p className="text-sm text-gray-500">Enter your Calame API key to start chatting.</p>
+          <p className="text-sm text-gray-500">{t('tokenLogin.subtitle')}</p>
         </div>
 
         <div className="space-y-4">
           <div>
             <label htmlFor="token-input" className="block text-sm font-medium text-gray-300 mb-1.5">
-              API Key <span className="text-red-400">*</span>
+              {t('tokenLogin.apiKeyLabel')} <span className="text-red-400">*</span>
             </label>
             <input
               id="token-input"
@@ -294,7 +298,7 @@ function TokenLoginForm({ profile, onSuccess }: { profile: ChatProfile; onSucces
               onKeyDown={(e) => {
                 if (e.key === 'Enter') handleTokenLogin();
               }}
-              placeholder="fmcp_..."
+              placeholder={t('tokenLogin.apiKeyPlaceholder')}
               autoFocus
               autoComplete="off"
               className="input-editorial w-full text-sm"
@@ -312,7 +316,7 @@ function TokenLoginForm({ profile, onSuccess }: { profile: ChatProfile; onSucces
             disabled={!token.trim() || loading}
             className="w-full py-2.5 px-4 bg-os-700 hover:bg-os-600 disabled:opacity-50 rounded-lg text-sm font-medium text-white transition-colors focus:outline-none focus:ring-2 focus:ring-os-500"
           >
-            {loading ? 'Verifying...' : 'Access Chat'}
+            {loading ? t('tokenLogin.verifying') : t('actions.accessChat')}
           </button>
         </div>
       </div>
@@ -324,6 +328,7 @@ function TokenLoginForm({ profile, onSuccess }: { profile: ChatProfile; onSucces
 // Auth form — calame mode (email + password)
 // ---------------------------------------------------------------------------
 function CalameLoginForm({ profile, onSuccess }: { profile: ChatProfile; onSuccess: () => void }) {
+  const t = useTranslations('chat');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -349,10 +354,10 @@ function CalameLoginForm({ profile, onSuccess }: { profile: ChatProfile; onSucce
       if (data.success) {
         onSuccess();
       } else {
-        setError(data.message || 'Invalid email or password.');
+        setError(data.message || t('calameLogin.invalidCredentials'));
       }
     } catch {
-      setError('Connection error. Please try again.');
+      setError(t('errors.connection'));
     } finally {
       setLoading(false);
     }
@@ -370,20 +375,20 @@ function CalameLoginForm({ profile, onSuccess }: { profile: ChatProfile; onSucce
           <h1 className="text-xl font-semibold text-gray-100 mb-1">
             {profile.label || profile.name}
           </h1>
-          <p className="text-sm text-gray-500">Sign in with your Calame account.</p>
+          <p className="text-sm text-gray-500">{t('calameLogin.subtitle')}</p>
         </div>
 
         <form onSubmit={handleEmailLogin} className="space-y-4" noValidate>
           <div>
             <label htmlFor="email-input" className="block text-sm font-medium text-gray-300 mb-1.5">
-              Email address <span className="text-red-400">*</span>
+              {t('calameLogin.emailLabel')} <span className="text-red-400">*</span>
             </label>
             <input
               id="email-input"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="email@example.com"
+              placeholder={t('calameLogin.emailPlaceholder')}
               autoFocus
               autoComplete="email"
               className="input-editorial w-full text-sm"
@@ -395,14 +400,14 @@ function CalameLoginForm({ profile, onSuccess }: { profile: ChatProfile; onSucce
               htmlFor="password-input"
               className="block text-sm font-medium text-gray-300 mb-1.5"
             >
-              Password <span className="text-red-400">*</span>
+              {t('calameLogin.passwordLabel')} <span className="text-red-400">*</span>
             </label>
             <input
               id="password-input"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
+              placeholder={t('calameLogin.passwordPlaceholder')}
               autoComplete="current-password"
               className="input-editorial w-full text-sm"
             />
@@ -419,7 +424,7 @@ function CalameLoginForm({ profile, onSuccess }: { profile: ChatProfile; onSucce
             disabled={!email.trim() || !password || loading}
             className="w-full py-2.5 px-4 bg-os-700 hover:bg-os-600 disabled:opacity-50 rounded-lg text-sm font-medium text-white transition-colors focus:outline-none focus:ring-2 focus:ring-os-500"
           >
-            {loading ? 'Signing in...' : 'Sign In'}
+            {loading ? t('calameLogin.signingIn') : t('actions.signIn')}
           </button>
         </form>
       </div>
@@ -437,6 +442,7 @@ function ExternalLoginForm({
   profile: ChatProfile;
   onSuccess: () => void;
 }) {
+  const t = useTranslations('chat');
   const [token, setToken] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -458,10 +464,10 @@ function ExternalLoginForm({
       if (data.success) {
         onSuccess();
       } else {
-        setError(data.message || 'Token validation failed.');
+        setError(data.message || t('externalLogin.tokenInvalid'));
       }
     } catch {
-      setError('Connection error. Please try again.');
+      setError(t('errors.connection'));
     } finally {
       setLoading(false);
     }
@@ -479,7 +485,7 @@ function ExternalLoginForm({
           <h1 className="text-xl font-semibold text-gray-100 mb-1">
             {profile.label || profile.name}
           </h1>
-          <p className="text-sm text-gray-500">Enter your access token to start chatting.</p>
+          <p className="text-sm text-gray-500">{t('externalLogin.subtitle')}</p>
         </div>
 
         <div className="space-y-4">
@@ -488,7 +494,7 @@ function ExternalLoginForm({
               htmlFor="external-token-input"
               className="block text-sm font-medium text-gray-300 mb-1.5"
             >
-              Access token <span className="text-red-400">*</span>
+              {t('externalLogin.tokenLabel')} <span className="text-red-400">*</span>
             </label>
             <input
               id="external-token-input"
@@ -498,7 +504,7 @@ function ExternalLoginForm({
               onKeyDown={(e) => {
                 if (e.key === 'Enter') handleLogin();
               }}
-              placeholder="Your access token..."
+              placeholder={t('externalLogin.tokenPlaceholder')}
               autoFocus
               autoComplete="off"
               className="input-editorial w-full text-sm"
@@ -516,7 +522,7 @@ function ExternalLoginForm({
             disabled={!token.trim() || loading}
             className="w-full py-2.5 px-4 bg-os-700 hover:bg-os-600 disabled:opacity-50 rounded-lg text-sm font-medium text-white transition-colors focus:outline-none focus:ring-2 focus:ring-os-500"
           >
-            {loading ? 'Validating...' : 'Access Chat'}
+            {loading ? t('externalLogin.validating') : t('actions.accessChat')}
           </button>
         </div>
       </div>
@@ -528,9 +534,10 @@ function ExternalLoginForm({
 // Auth form — OAuth mode
 // ---------------------------------------------------------------------------
 function OAuthLoginForm({ profile }: { profile: ChatProfile }) {
+  const t = useTranslations('chat');
   const branding = useBranding();
   const redirectUrl = `/chat/${encodeURIComponent(profile.name)}`;
-  const providerLabel = profile.oauthProvider || 'OAuth';
+  const providerLabel = profile.oauthProvider || t('oauthLogin.defaultProvider');
 
   return (
     <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
@@ -543,13 +550,13 @@ function OAuthLoginForm({ profile }: { profile: ChatProfile }) {
         <h1 className="text-xl font-semibold text-gray-100 mb-1">
           {profile.label || profile.name}
         </h1>
-        <p className="text-sm text-gray-500 mb-8">Sign in to access this chat.</p>
+        <p className="text-sm text-gray-500 mb-8">{t('oauthLogin.subtitle')}</p>
 
         <a
           href={`${buildMcpPath(profile.name, getCurrentTenant())}/oauth/login?redirect=${encodeURIComponent(redirectUrl)}`}
           className="inline-flex items-center justify-center w-full py-2.5 px-4 rounded-lg bg-gray-700 hover:bg-gray-600 text-sm font-medium text-white transition-colors focus:outline-none focus:ring-2 focus:ring-gray-500"
         >
-          Sign in with {providerLabel}
+          {t('oauthLogin.signInWith', { provider: providerLabel })}
         </a>
       </div>
     </div>
@@ -560,6 +567,7 @@ function OAuthLoginForm({ profile }: { profile: ChatProfile }) {
 // Chat view — full-screen once authenticated
 // ---------------------------------------------------------------------------
 function ChatView({ profile, onLogout }: { profile: ChatProfile; onLogout: () => void }) {
+  const t = useTranslations('chat');
   const branding = useBranding();
   const handleLogout = async () => {
     try {
@@ -603,7 +611,7 @@ function ChatView({ profile, onLogout }: { profile: ChatProfile; onLogout: () =>
                   d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9"
                 />
               </svg>
-              Logout
+              {t('actions.logout')}
             </button>
           )}
         </div>
@@ -621,6 +629,8 @@ function ChatView({ profile, onLogout }: { profile: ChatProfile; onLogout: () =>
 // Main component
 // ---------------------------------------------------------------------------
 export default function ChatEntryPage({ profileName }: ChatEntryPageProps) {
+  const t = useTranslations('chat');
+  const tCommon = useTranslations('common');
   const [pageState, setPageState] = useState<PageState>({ step: 'loading' });
 
   useEffect(() => {
@@ -637,7 +647,7 @@ export default function ChatEntryPage({ profileName }: ChatEntryPageProps) {
           if (!cancelled) {
             setPageState({
               step: 'error',
-              message: data.message || 'This chat link is not available.',
+              message: data.message || t('errors.linkUnavailable'),
             });
           }
           return;
@@ -647,13 +657,13 @@ export default function ChatEntryPage({ profileName }: ChatEntryPageProps) {
 
         if (!profile.active) {
           if (!cancelled) {
-            setPageState({ step: 'error', message: 'This chat is currently inactive.' });
+            setPageState({ step: 'error', message: t('errors.inactive') });
           }
           return;
         }
       } catch {
         if (!cancelled) {
-          setPageState({ step: 'error', message: 'Could not load the MCP server.' });
+          setPageState({ step: 'error', message: t('errors.loadFailed') });
         }
         return;
       }
@@ -739,7 +749,7 @@ export default function ChatEntryPage({ profileName }: ChatEntryPageProps) {
         <div
           className="h-6 w-6 rounded-full border-2 border-os-500 border-t-transparent animate-spin"
           role="status"
-          aria-label="Loading"
+          aria-label={t('loadingAriaLabel')}
         />
       </div>
     );
@@ -766,7 +776,7 @@ export default function ChatEntryPage({ profileName }: ChatEntryPageProps) {
               />
             </svg>
           </div>
-          <h1 className="text-lg font-semibold text-gray-100 mb-2">Chat unavailable</h1>
+          <h1 className="text-lg font-semibold text-gray-100 mb-2">{t('errorPage.title')}</h1>
           <p className="text-sm text-gray-400">{pageState.message}</p>
         </div>
       </div>
@@ -803,25 +813,20 @@ export default function ChatEntryPage({ profileName }: ChatEntryPageProps) {
               />
             </svg>
           </div>
-          <h1 className="text-lg font-semibold text-gray-100 mb-2">Access denied</h1>
+          <h1 className="text-lg font-semibold text-gray-100 mb-2">{t('denied.title')}</h1>
           <p className="text-sm text-gray-400 mb-1">
-            {pageState.userEmail ? (
-              <>
-                You are signed in as{' '}
-                <span className="font-medium text-gray-300">{pageState.userEmail}</span>, but your
-                account does not have access to{' '}
-                <span className="font-medium text-gray-300">{pageState.profile.label}</span>.
-              </>
-            ) : (
-              <>
-                Your account does not have access to{' '}
-                <span className="font-medium text-gray-300">{pageState.profile.label}</span>.
-              </>
-            )}
+            {pageState.userEmail
+              ? t.rich('denied.signedInAs', {
+                  email: pageState.userEmail,
+                  label: pageState.profile.label,
+                  b: (chunks) => <span className="font-medium text-gray-300">{chunks}</span>,
+                })
+              : t.rich('denied.noAccess', {
+                  label: pageState.profile.label,
+                  b: (chunks) => <span className="font-medium text-gray-300">{chunks}</span>,
+                })}
           </p>
-          <p className="text-sm text-gray-500 mb-6">
-            Contact your administrator to request access.
-          </p>
+          <p className="text-sm text-gray-500 mb-6">{t('denied.contactAdmin')}</p>
           <button
             type="button"
             onClick={handleSignOut}
@@ -841,7 +846,7 @@ export default function ChatEntryPage({ profileName }: ChatEntryPageProps) {
                 d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15M12 9l-3 3m0 0 3 3m-3-3h12.75"
               />
             </svg>
-            Sign out
+            {t('actions.signOut')}
           </button>
         </div>
       </div>
@@ -878,7 +883,9 @@ export default function ChatEntryPage({ profileName }: ChatEntryPageProps) {
 
     case 'sso':
       return (
-        <Suspense fallback={<div className="p-6 text-sm text-gray-500 italic">Loading…</div>}>
+        <Suspense
+          fallback={<div className="p-6 text-sm text-gray-500 italic">{tCommon('loading')}</div>}
+        >
           <ChatSsoLogin profile={profile} />
         </Suspense>
       );

@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { useTranslations } from 'use-intl/react';
 import { apiFetch } from '../lib/api.js';
 import DarkSelect from './ui/DarkSelect.js';
 import { useChatStream } from '../hooks/useChatStream.js';
@@ -31,6 +32,7 @@ interface AiSettingMeta {
 }
 
 export default function ChatPanel({ selectedTables, activeProfiles }: ChatPanelProps) {
+  const t = useTranslations('chat');
   const [chatInput, setChatInput] = useState('');
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [aiStatus, setAiStatus] = useState<AiStatus>({ configured: false });
@@ -178,36 +180,34 @@ export default function ChatPanel({ selectedTables, activeProfiles }: ChatPanelP
     aiStatus.provider === 'openrouter'
       ? 'OpenRouter'
       : aiStatus.provider === 'custom'
-        ? 'Custom'
+        ? t('panel.provider.custom')
         : 'Anthropic';
 
   return (
     <div>
-      <h2 className="heading-md mb-2">Chat with your database</h2>
-      <p className="text-sm text-gray-400 mb-4">
-        Ask questions in natural language. The AI will query your database using the MCP tools and
-        answer.
-      </p>
+      <h2 className="heading-md mb-2">{t('panel.heading')}</h2>
+      <p className="text-sm text-gray-400 mb-4">{t('panel.description')}</p>
 
       {/* MCP profile selector */}
       {statusLoading ? (
-        <div className="text-sm text-gray-500 mb-4">Loading...</div>
+        <div className="text-sm text-gray-500 mb-4">{t('panel.loading')}</div>
       ) : activeProfiles.length === 0 ? (
         <div className="mb-4 px-4 py-3 rounded-lg bg-amber-950/30 border border-amber-800/50 text-sm text-amber-400">
-          No active MCP server. Start an MCP server first to use the chat.
+          {t('panel.noActiveServer')}
         </div>
       ) : activeProfiles.length === 1 ? (
         <div className="mb-4 flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-800/50 border border-gray-700/50 text-sm">
           <div className="w-2 h-2 rounded-full bg-green-500 shadow-lg shadow-green-500/30" />
           <span className="text-gray-400">
-            Testing against: <code className="text-gray-200 font-medium">{activeProfiles[0]}</code>
+            {t('panel.testingAgainst')}{' '}
+            <code className="text-gray-200 font-medium">{activeProfiles[0]}</code>
           </span>
         </div>
       ) : (
         <div className="mb-4 flex items-center gap-3 px-3 py-2 rounded-lg bg-gray-800/50 border border-gray-700/50 text-sm">
-          <span className="text-gray-400 shrink-0">MCP server to test:</span>
+          <span className="text-gray-400 shrink-0">{t('panel.serverToTestLabel')}</span>
           <DarkSelect
-            ariaLabel="MCP server to test"
+            ariaLabel={t('panel.serverToTestAriaLabel')}
             value={selectedProfile ?? ''}
             options={activeProfiles.map((name) => ({ value: name, label: name }))}
             onChange={(v) => setSelectedProfile(v)}
@@ -222,21 +222,23 @@ export default function ChatPanel({ selectedTables, activeProfiles }: ChatPanelP
         (aiStatus.configured ? (
           profileAiSettings && profileAiSettings.length > 1 ? (
             <div className="mb-4 flex items-center gap-3 px-3 py-2 rounded-lg bg-gray-800/50 border border-gray-700/50 text-sm">
-              <span className="text-gray-400 shrink-0">AI:</span>
+              <span className="text-gray-400 shrink-0">{t('aiSelector.label')}</span>
               <DarkSelect
-                ariaLabel="AI provider"
+                ariaLabel={t('aiSelector.ariaLabel')}
                 value={selectedAi ?? ''}
                 options={profileAiSettings.map((s) => ({ value: s.name, label: s.label }))}
                 onChange={(v) => setSelectedAi(v || undefined)}
                 className="flex-1"
               />
-              <span className="text-gray-600 text-xs">{profileAiSettings.length} available</span>
+              <span className="text-gray-600 text-xs">
+                {t('panel.aiAvailableCount', { count: profileAiSettings.length })}
+              </span>
             </div>
           ) : (
             <div className="mb-4 flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-800/50 border border-gray-700/50 text-sm">
               <div className="w-2 h-2 rounded-full bg-green-500 shadow-lg shadow-green-500/30" />
               <span className="text-gray-400">
-                Using{' '}
+                {t('panel.usingLabel')}{' '}
                 <span className="text-gray-200 font-medium">
                   {profileAiSettings?.[0]?.label ?? providerLabel}
                 </span>
@@ -246,15 +248,16 @@ export default function ChatPanel({ selectedTables, activeProfiles }: ChatPanelP
               </span>
               <span className="text-gray-600 ml-auto text-xs">
                 {allAiSettings.length > 1
-                  ? 'Assign more in the MCP detail page'
-                  : 'Configure in AI Settings'}
+                  ? t('panel.assignMore')
+                  : t('panel.configureAiSettings')}
               </span>
             </div>
           )
         ) : (
           <div className="mb-4 px-4 py-3 rounded-lg bg-amber-950/30 border border-amber-800/50 text-sm text-amber-400">
-            AI is not configured. Go to <span className="font-medium">AI Settings</span> to set up a
-            provider and API key.
+            {t.rich('panel.aiNotConfigured', {
+              b: (chunks) => <span className="font-medium">{chunks}</span>,
+            })}
           </div>
         ))}
 
@@ -264,11 +267,11 @@ export default function ChatPanel({ selectedTables, activeProfiles }: ChatPanelP
         <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 space-y-3">
           {chatMessages.length === 0 && (
             <div className="text-center text-gray-500 text-sm mt-16">
-              <p className="mb-2">Ask anything about your data</p>
+              <p className="mb-2">{t('emptyState.title')}</p>
               <div className="space-y-1 text-xs text-gray-600">
-                <p>&quot;How many rows are in the users table?&quot;</p>
-                <p>&quot;Show me the 5 most recent orders&quot;</p>
-                <p>&quot;What tables are available?&quot;</p>
+                {(t.raw('emptyState.examples') as string[]).map((example) => (
+                  <p key={example}>&quot;{example}&quot;</p>
+                ))}
               </div>
             </div>
           )}
@@ -303,9 +306,13 @@ export default function ChatPanel({ selectedTables, activeProfiles }: ChatPanelP
                     )}
                     {!msg.streaming && msg.usage && (
                       <span className="text-xs text-zinc-500 mt-1 block">
-                        {(msg.usage.input + msg.usage.output).toLocaleString()} tokens
+                        {t('usage.tokens', {
+                          count: (msg.usage.input + msg.usage.output).toLocaleString(),
+                        })}
                         {msg.usage.cacheRead
-                          ? ` · cache ${Math.round((msg.usage.cacheRead / msg.usage.input) * 100)}%`
+                          ? t('usage.cacheSuffix', {
+                              percent: Math.round((msg.usage.cacheRead / msg.usage.input) * 100),
+                            })
                           : ''}
                       </span>
                     )}
@@ -330,10 +337,10 @@ export default function ChatPanel({ selectedTables, activeProfiles }: ChatPanelP
             }}
             placeholder={
               activeProfiles.length === 0
-                ? 'Start an MCP server first'
+                ? t('panel.placeholderNoServer')
                 : aiStatus.configured
-                  ? 'Ask about your data...'
-                  : 'Configure AI in Settings first'
+                  ? t('input.placeholder')
+                  : t('panel.placeholderAiNotConfigured')
             }
             disabled={!canChat || isStreaming}
             className="input-editorial flex-1 text-sm disabled:opacity-50 resize-none overflow-hidden"
@@ -349,7 +356,7 @@ export default function ChatPanel({ selectedTables, activeProfiles }: ChatPanelP
               onClick={abort}
               className="px-4 py-2 bg-red-700 hover:bg-red-600 rounded-lg text-sm font-medium transition-colors"
             >
-              Stop
+              {t('actions.stop')}
             </button>
           ) : (
             <button
@@ -357,7 +364,7 @@ export default function ChatPanel({ selectedTables, activeProfiles }: ChatPanelP
               disabled={!canChat || !chatInput.trim() || isStreaming}
               className="px-4 py-2 bg-os-700 hover:bg-os-600 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
             >
-              Send
+              {t('actions.send')}
             </button>
           )}
         </div>

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslations } from 'use-intl/react';
 import { apiFetch, getCurrentTenant } from '../lib/api.js';
 import { slugifyProfileName } from '../lib/profiles.js';
 import { buildMcpUrl } from '../lib/mcp-url.js';
@@ -45,6 +46,7 @@ export default function OnboardingWizard({
   onSkip,
   onNavigateToConfig,
 }: OnboardingWizardProps) {
+  const t = useTranslations('onboarding.wizard');
   const [step, setStep] = useState(1);
   const [createdConnectionName, setCreatedConnectionName] = useState('');
   const [createdProfileName, setCreatedProfileName] = useState('');
@@ -66,7 +68,7 @@ export default function OnboardingWizard({
   });
 
   const [step3Profile, setStep3Profile] = useState<Step3ProfileState>({
-    profileName: 'My first MCP server',
+    profileName: t('step3.form.defaultProfileName'),
     loading: false,
     error: '',
   });
@@ -89,25 +91,29 @@ export default function OnboardingWizard({
       });
       const data = (await res.json()) as { success: boolean; name?: string; message?: string };
       if (!data.success) {
-        setStep1((s) => ({ ...s, loading: false, error: data.message ?? 'Connection failed.' }));
+        setStep1((s) => ({
+          ...s,
+          loading: false,
+          error: data.message ?? t('step1.errors.connectionFailed'),
+        }));
         return;
       }
       setCreatedConnectionName(data.name ?? 'demo-logistique');
       setStep1((s) => ({ ...s, loading: false }));
       setStep(2);
     } catch {
-      setStep1((s) => ({ ...s, loading: false, error: 'Network error. Please try again.' }));
+      setStep1((s) => ({ ...s, loading: false, error: t('networkError') }));
     }
   }
 
   async function connectCustom(e: React.FormEvent) {
     e.preventDefault();
     if (!step1.connectionName.trim()) {
-      setStep1((s) => ({ ...s, error: 'Connection name is required.' }));
+      setStep1((s) => ({ ...s, error: t('step1.errors.connectionNameRequired') }));
       return;
     }
     if (!step1.connectionString.trim()) {
-      setStep1((s) => ({ ...s, error: 'Connection string is required.' }));
+      setStep1((s) => ({ ...s, error: t('step1.errors.connectionStringRequired') }));
       return;
     }
     setStep1((s) => ({ ...s, loading: true, error: '' }));
@@ -124,14 +130,18 @@ export default function OnboardingWizard({
       });
       const data = (await res.json()) as { success: boolean; message?: string };
       if (!data.success) {
-        setStep1((s) => ({ ...s, loading: false, error: data.message ?? 'Connection failed.' }));
+        setStep1((s) => ({
+          ...s,
+          loading: false,
+          error: data.message ?? t('step1.errors.connectionFailed'),
+        }));
         return;
       }
       setCreatedConnectionName(step1.connectionName.trim());
       setStep1((s) => ({ ...s, loading: false }));
       setStep(2);
     } catch {
-      setStep1((s) => ({ ...s, loading: false, error: 'Network error. Please try again.' }));
+      setStep1((s) => ({ ...s, loading: false, error: t('networkError') }));
     }
   }
 
@@ -159,7 +169,11 @@ export default function OnboardingWizard({
         },
       )
       .catch(() =>
-        setStep2Tables((s) => ({ ...s, loading: false, error: 'Failed to load schema.' })),
+        setStep2Tables((s) => ({
+          ...s,
+          loading: false,
+          error: t('step2.errors.schemaLoadFailed'),
+        })),
       );
   }, [step, createdConnectionName]);
 
@@ -195,20 +209,20 @@ export default function OnboardingWizard({
     // list, so it always gets a distinct `-config` suffix.
     const configName = `${name}-config`;
     if (!label) {
-      setStep3Profile((s) => ({ ...s, error: 'MCP server name is required.' }));
+      setStep3Profile((s) => ({ ...s, error: t('step3.errors.nameRequired') }));
       return;
     }
     if (!name) {
       setStep3Profile((s) => ({
         ...s,
-        error: 'MCP server name must contain at least one letter or number.',
+        error: t('step3.errors.nameInvalid'),
       }));
       return;
     }
     if (step2Tables.checked.size === 0) {
       setStep3Profile((s) => ({
         ...s,
-        error: 'Select at least one table in the previous step.',
+        error: t('step3.errors.noTablesSelected'),
       }));
       return;
     }
@@ -248,7 +262,7 @@ export default function OnboardingWizard({
         setStep3Profile((s) => ({
           ...s,
           loading: false,
-          error: configData.message ?? 'Failed to create the data configuration.',
+          error: configData.message ?? t('step3.errors.configCreateFailed'),
         }));
         return; // Don't create a profile with no backing configuration.
       }
@@ -273,7 +287,7 @@ export default function OnboardingWizard({
         setStep3Profile((s) => ({
           ...s,
           loading: false,
-          error: saveData.message ?? 'Failed to create MCP server.',
+          error: saveData.message ?? t('step3.errors.profileCreateFailed'),
         }));
         return;
       }
@@ -301,7 +315,7 @@ export default function OnboardingWizard({
       setStep3Profile((s) => ({
         ...s,
         loading: false,
-        error: 'Network error. Please try again.',
+        error: t('networkError'),
       }));
     }
   }
@@ -329,7 +343,7 @@ export default function OnboardingWizard({
       className="fixed inset-0 z-50 bg-gray-950 flex flex-col"
       role="dialog"
       aria-modal="true"
-      aria-label="Onboarding wizard"
+      aria-label={t('ariaLabel')}
     >
       {/* Progress bar */}
       <div className="h-1 w-full bg-gray-800" aria-hidden="true">
@@ -344,7 +358,7 @@ export default function OnboardingWizard({
         <div className="flex items-center gap-3">
           <img src="/logo.png" alt="Calame" className="h-7 w-7 object-contain" />
           <span className="text-sm font-medium text-gray-400">
-            Step {step} of {TOTAL_STEPS}
+            {t('stepIndicator', { step, total: TOTAL_STEPS })}
           </span>
         </div>
         <button
@@ -352,7 +366,7 @@ export default function OnboardingWizard({
           onClick={onSkip}
           className="text-sm text-gray-500 hover:text-gray-300 transition-colors focus:outline-none focus:ring-2 focus:ring-os-700 rounded px-2 py-1"
         >
-          Skip setup
+          {t('skipSetup')}
         </button>
       </div>
 
@@ -431,23 +445,22 @@ interface StepConnectProps {
 }
 
 function StepConnect({ state, setState, onDemo, onCustom }: StepConnectProps) {
+  const t = useTranslations('onboarding.wizard');
   return (
     <div className="space-y-6">
       <div>
-        <p className="text-xs font-semibold tracking-widest text-os-400 uppercase mb-2">Step 1</p>
-        <h1 className="heading-lg mb-2">Connect your first database</h1>
-        <p className="text-sm text-gray-400">
-          Connect to a database to start exploring your data and building MCP servers.
+        <p className="text-xs font-semibold tracking-widest text-os-400 uppercase mb-2">
+          {t('step1.stepLabel')}
         </p>
+        <h1 className="heading-lg mb-2">{t('step1.title')}</h1>
+        <p className="text-sm text-gray-400">{t('step1.description')}</p>
       </div>
 
       {/* Demo shortcut */}
       <div className="card-primary p-4 space-y-3">
         <div>
-          <p className="text-sm font-medium text-gray-200">Quick start</p>
-          <p className="text-xs text-gray-500 mt-0.5">
-            Use our demo logistics database to explore Calame without any setup.
-          </p>
+          <p className="text-sm font-medium text-gray-200">{t('step1.quickStart.title')}</p>
+          <p className="text-xs text-gray-500 mt-0.5">{t('step1.quickStart.description')}</p>
         </div>
         <button
           type="button"
@@ -455,14 +468,14 @@ function StepConnect({ state, setState, onDemo, onCustom }: StepConnectProps) {
           disabled={state.loading}
           className="w-full py-2 px-4 bg-os-700 hover:bg-os-600 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-os-500"
         >
-          {state.loading ? 'Connecting...' : 'Use demo database (SQLite)'}
+          {state.loading ? t('connecting') : t('step1.quickStart.useDemoButton')}
         </button>
       </div>
 
       {/* Divider */}
       <div className="flex items-center gap-3">
         <div className="flex-1 h-px bg-gray-800" />
-        <span className="text-xs text-gray-600">or connect your own</span>
+        <span className="text-xs text-gray-600">{t('step1.orDivider')}</span>
         <div className="flex-1 h-px bg-gray-800" />
       </div>
 
@@ -470,7 +483,7 @@ function StepConnect({ state, setState, onDemo, onCustom }: StepConnectProps) {
       <form onSubmit={onCustom} className="card-primary p-4 space-y-4" noValidate>
         <div>
           <label htmlFor="conn-name" className="block text-sm font-medium text-gray-300 mb-1">
-            Connection name{' '}
+            {t('step1.form.connectionNameLabel')}{' '}
             <span className="text-red-400" aria-hidden="true">
               *
             </span>
@@ -481,14 +494,14 @@ function StepConnect({ state, setState, onDemo, onCustom }: StepConnectProps) {
             value={state.connectionName}
             onChange={(e) => setState((s) => ({ ...s, connectionName: e.target.value }))}
             className="input-editorial w-full"
-            placeholder="e.g. Production DB"
+            placeholder={t('step1.form.connectionNamePlaceholder')}
             autoComplete="off"
           />
         </div>
 
         <div>
           <label htmlFor="conn-type" className="block text-sm font-medium text-gray-300 mb-1">
-            Database type{' '}
+            {t('step1.form.dbTypeLabel')}{' '}
             <span className="text-red-400" aria-hidden="true">
               *
             </span>
@@ -499,15 +512,15 @@ function StepConnect({ state, setState, onDemo, onCustom }: StepConnectProps) {
             onChange={(e) => setState((s) => ({ ...s, dbType: e.target.value as DbType }))}
             className="input-editorial w-full"
           >
-            <option value="postgresql">PostgreSQL</option>
-            <option value="mysql">MySQL</option>
-            <option value="sqlite">SQLite</option>
+            <option value="postgresql">{t('step1.form.dbTypeOptions.postgresql')}</option>
+            <option value="mysql">{t('step1.form.dbTypeOptions.mysql')}</option>
+            <option value="sqlite">{t('step1.form.dbTypeOptions.sqlite')}</option>
           </select>
         </div>
 
         <div>
           <label htmlFor="conn-string" className="block text-sm font-medium text-gray-300 mb-1">
-            Connection string{' '}
+            {t('step1.form.connectionStringLabel')}{' '}
             <span className="text-red-400" aria-hidden="true">
               *
             </span>
@@ -543,7 +556,7 @@ function StepConnect({ state, setState, onDemo, onCustom }: StepConnectProps) {
           disabled={state.loading || !state.connectionName.trim() || !state.connectionString.trim()}
           className="w-full py-2 px-4 bg-os-700 hover:bg-os-600 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-os-500"
         >
-          {state.loading ? 'Connecting...' : 'Connect'}
+          {state.loading ? t('connecting') : t('step1.form.submitButton')}
         </button>
       </form>
     </div>
@@ -561,23 +574,28 @@ interface StepTablesProps {
 }
 
 function StepTables({ state, connectionName, onToggle, onToggleAll, onNext }: StepTablesProps) {
+  const t = useTranslations('onboarding.wizard');
   const allChecked = state.tables.length > 0 && state.checked.size === state.tables.length;
   const noneChecked = state.checked.size === 0;
 
   return (
     <div className="space-y-6">
       <div>
-        <p className="text-xs font-semibold tracking-widest text-os-400 uppercase mb-2">Step 2</p>
-        <h1 className="heading-lg mb-2">Select tables to expose</h1>
+        <p className="text-xs font-semibold tracking-widest text-os-400 uppercase mb-2">
+          {t('step2.stepLabel')}
+        </p>
+        <h1 className="heading-lg mb-2">{t('step2.title')}</h1>
         <p className="text-sm text-gray-400">
-          Choose which tables from <span className="text-gray-200 font-mono">{connectionName}</span>{' '}
-          will be accessible through your MCP server. All columns are included by default.
+          {t.rich('step2.description', {
+            connectionName,
+            name: (chunks) => <span className="text-gray-200 font-mono">{chunks}</span>,
+          })}
         </p>
       </div>
 
       {state.loading && (
         <div className="flex items-center justify-center py-12 text-gray-500 text-sm">
-          Loading schema...
+          {t('step2.loadingSchema')}
         </div>
       )}
 
@@ -592,7 +610,7 @@ function StepTables({ state, connectionName, onToggle, onToggleAll, onNext }: St
 
       {!state.loading && !state.error && state.tables.length === 0 && (
         <div className="card-primary p-6 text-center text-gray-500 text-sm">
-          No tables found in this database.
+          {t('step2.noTables')}
         </div>
       )}
 
@@ -601,33 +619,35 @@ function StepTables({ state, connectionName, onToggle, onToggleAll, onNext }: St
           {/* Select all / none */}
           <div className="flex items-center justify-between pb-2 border-b border-gray-800">
             <span className="text-sm text-gray-400">
-              {state.checked.size} / {state.tables.length} tables selected
+              {t('step2.tablesSelected', { checked: state.checked.size, total: state.tables.length })}
             </span>
             <button
               type="button"
               onClick={onToggleAll}
               className="text-xs text-os-400 hover:text-os-300 transition-colors focus:outline-none"
             >
-              {allChecked ? 'Deselect all' : 'Select all'}
+              {allChecked ? t('step2.deselectAll') : t('step2.selectAll')}
             </button>
           </div>
 
           {/* Table list */}
           <div className="space-y-1 max-h-72 overflow-y-auto">
-            {state.tables.map((t) => (
+            {state.tables.map((table) => (
               <label
-                key={t.name}
+                key={table.name}
                 className="flex items-center gap-3 px-2 py-1.5 rounded-lg hover:bg-gray-800/50 cursor-pointer group"
               >
                 <input
                   type="checkbox"
-                  checked={state.checked.has(t.name)}
-                  onChange={() => onToggle(t.name)}
+                  checked={state.checked.has(table.name)}
+                  onChange={() => onToggle(table.name)}
                   className="rounded border-gray-600 bg-gray-800 text-os-600 focus:ring-os-500 focus:ring-offset-gray-900"
                 />
-                <span className="text-sm text-gray-200 font-mono flex-1 truncate">{t.name}</span>
+                <span className="text-sm text-gray-200 font-mono flex-1 truncate">
+                  {table.name}
+                </span>
                 <span className="text-xs text-gray-600 group-hover:text-gray-500 flex-shrink-0">
-                  {t.columns.length} col{t.columns.length !== 1 ? 's' : ''}
+                  {t('step2.colCount', { count: table.columns.length })}
                 </span>
               </label>
             ))}
@@ -641,7 +661,7 @@ function StepTables({ state, connectionName, onToggle, onToggleAll, onNext }: St
         disabled={noneChecked || state.loading}
         className="w-full py-2 px-4 bg-os-700 hover:bg-os-600 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-os-500"
       >
-        Continue
+        {t('step2.continueButton')}
       </button>
     </div>
   );
@@ -666,21 +686,27 @@ function StepProfile({
   onSubmit,
   onBack,
 }: StepProfileProps) {
+  const t = useTranslations('onboarding.wizard');
   return (
     <div className="space-y-6">
       <div>
-        <p className="text-xs font-semibold tracking-widest text-os-400 uppercase mb-2">Step 3</p>
-        <h1 className="heading-lg mb-2">Name your MCP server</h1>
+        <p className="text-xs font-semibold tracking-widest text-os-400 uppercase mb-2">
+          {t('step3.stepLabel')}
+        </p>
+        <h1 className="heading-lg mb-2">{t('step3.title')}</h1>
         <p className="text-sm text-gray-400">
-          Your MCP server will expose {tableCount} table{tableCount !== 1 ? 's' : ''} from{' '}
-          <span className="text-gray-200 font-mono">{connectionName}</span>.
+          {t.rich('step3.description', {
+            count: tableCount,
+            connectionName,
+            name: (chunks) => <span className="text-gray-200 font-mono">{chunks}</span>,
+          })}
         </p>
       </div>
 
       <form onSubmit={onSubmit} className="card-primary p-4 space-y-4" noValidate>
         <div>
           <label htmlFor="profile-name" className="block text-sm font-medium text-gray-300 mb-1">
-            MCP server name{' '}
+            {t('step3.form.nameLabel')}{' '}
             <span className="text-red-400" aria-hidden="true">
               *
             </span>
@@ -691,7 +717,7 @@ function StepProfile({
             value={state.profileName}
             onChange={(e) => onChange(e.target.value)}
             className="input-editorial w-full"
-            placeholder="My first MCP server"
+            placeholder={t('step3.form.defaultProfileName')}
             autoFocus
           />
           {slugifyProfileName(state.profileName) && (
@@ -716,14 +742,14 @@ function StepProfile({
             onClick={onBack}
             className="px-4 py-2 text-sm text-gray-500 hover:text-gray-300 border border-gray-700 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-os-700"
           >
-            Back
+            {t('step3.form.backButton')}
           </button>
           <button
             type="submit"
             disabled={state.loading || !state.profileName.trim()}
             className="flex-1 py-2 px-4 bg-os-700 hover:bg-os-600 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-os-500"
           >
-            {state.loading ? 'Creating...' : 'Create MCP server & activate'}
+            {state.loading ? t('step3.form.creating') : t('step3.form.submitButton')}
           </button>
         </div>
       </form>
@@ -752,6 +778,7 @@ function StepDone({
   onComplete,
   onNavigateToConfig,
 }: StepDoneProps) {
+  const t = useTranslations('onboarding.wizard');
   return (
     <div className="space-y-6">
       <div className="flex flex-col items-center text-center space-y-3">
@@ -772,16 +799,17 @@ function StepDone({
         </div>
 
         <div>
-          <p className="text-xs font-semibold tracking-widest text-os-400 uppercase mb-2">Step 4</p>
-          <h1 className="heading-lg mb-2">You're all set!</h1>
+          <p className="text-xs font-semibold tracking-widest text-os-400 uppercase mb-2">
+            {t('step4.stepLabel')}
+          </p>
+          <h1 className="heading-lg mb-2">{t('step4.title')}</h1>
           <p className="text-sm text-gray-400">
-            Your MCP server is ready.{' '}
-            {profileName && (
-              <>
-                MCP server <span className="text-gray-200 font-medium">{profileName}</span> has been
-                created.
-              </>
-            )}
+            {t('step4.readyText')}{' '}
+            {profileName &&
+              t.rich('step4.createdText', {
+                profileName,
+                name: (chunks) => <span className="text-gray-200 font-medium">{chunks}</span>,
+              })}
           </p>
         </div>
       </div>
@@ -789,10 +817,8 @@ function StepDone({
       {/* MCP URL */}
       <div className="card-primary p-4 space-y-3">
         <div>
-          <p className="text-sm font-medium text-gray-200">MCP server URL</p>
-          <p className="text-xs text-gray-500 mt-0.5">
-            Add this URL to your MCP client (Cursor, Claude Desktop, etc.)
-          </p>
+          <p className="text-sm font-medium text-gray-200">{t('step4.urlCard.title')}</p>
+          <p className="text-xs text-gray-500 mt-0.5">{t('step4.urlCard.description')}</p>
         </div>
         <div className="flex items-center gap-2">
           <div className="flex-1 min-w-0 px-3 py-2 rounded-lg bg-gray-800/60 border border-gray-700/50">
@@ -801,7 +827,7 @@ function StepDone({
           <button
             type="button"
             onClick={onCopy}
-            aria-label={copied ? 'URL copied' : 'Copy MCP URL'}
+            aria-label={copied ? t('step4.urlCard.copiedAriaLabel') : t('step4.urlCard.copyAriaLabel')}
             className="flex-shrink-0 px-3 py-2 rounded-lg border border-gray-700/50 bg-gray-800/60 hover:bg-gray-700/60 text-sm text-gray-300 hover:text-white transition-colors focus:outline-none focus:ring-2 focus:ring-os-500"
           >
             {copied ? (
@@ -844,7 +870,7 @@ function StepDone({
         onClick={onComplete}
         className="w-full py-2.5 px-4 bg-os-700 hover:bg-os-600 text-white text-sm font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-os-500"
       >
-        Go to dashboard
+        {t('step4.goToDashboardButton')}
       </button>
 
       {onNavigateToConfig && configName && (
@@ -853,7 +879,7 @@ function StepDone({
           onClick={() => onNavigateToConfig(configName)}
           className="w-full text-center text-sm text-os-400 hover:text-os-300 transition-colors focus:outline-none focus:ring-2 focus:ring-os-700 rounded px-2 py-1"
         >
-          Fine-tune tables, tools &amp; masking &rarr;
+          {t('step4.fineTuneLink')}
         </button>
       )}
     </div>

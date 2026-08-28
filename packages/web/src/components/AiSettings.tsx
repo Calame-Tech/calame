@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useTranslations } from 'use-intl/react';
 import { apiFetch } from '../lib/api.js';
 import HelpTip from './HelpTip.js';
 
@@ -72,6 +73,9 @@ const NEW_SENTINEL = '__new__';
 const SLUG_RE = /^[a-z0-9_-]{1,64}$/;
 
 export default function AiSettings() {
+  const t = useTranslations('aiSettings');
+  const tCommon = useTranslations('common');
+
   // List of all AI settings (refreshed after each mutation)
   const [settings, setSettings] = useState<MaskedAiSetting[]>([]);
   const [loading, setLoading] = useState(true);
@@ -231,32 +235,32 @@ export default function AiSettings() {
 
     if (isCreating) {
       if (!SLUG_RE.test(formName)) {
-        setFormError('Name must be 1-64 chars: lowercase letters, digits, dash, underscore.');
+        setFormError(t('errors.nameFormat'));
         return;
       }
       if (!formLabel.trim()) {
-        setFormError('Label is required.');
+        setFormError(t('errors.labelRequired'));
         return;
       }
     }
     if (provider !== 'custom' && provider !== 'local' && !apiKey) {
-      setFormError('API key is required for this provider.');
+      setFormError(t('errors.apiKeyRequired'));
       return;
     }
     if (provider === 'custom' && !baseUrl) {
-      setFormError('Base URL is required for the custom provider.');
+      setFormError(t('errors.baseUrlRequired'));
       return;
     }
     if (!capChat && !capEmbeddings) {
-      setFormError('At least one capability must be selected (Chat or Embeddings).');
+      setFormError(t('errors.capabilityRequired'));
       return;
     }
     if (capEmbeddings && !embeddingModel.trim()) {
-      setFormError('The embeddings model is required when the Embeddings capability is enabled.');
+      setFormError(t('errors.embeddingModelRequired'));
       return;
     }
     if (capRerank && !rerankModel.trim()) {
-      setFormError('Rerank model is required when the rerank capability is enabled.');
+      setFormError(t('errors.rerankModelRequired'));
       return;
     }
 
@@ -295,14 +299,14 @@ export default function AiSettings() {
       });
       const data = await res.json();
       if (data.success) {
-        setSaveResult({ ok: true, message: 'Saved.' });
+        setSaveResult({ ok: true, message: t('saveResult.saved') });
         await refresh();
         setEditingName(null);
       } else {
-        setFormError(data.message || 'Failed to save.');
+        setFormError(data.message || t('errors.failedToSave'));
       }
     } catch {
-      setFormError('Connection error.');
+      setFormError(t('errors.connectionError'));
     } finally {
       setSaving(false);
       setTimeout(() => setSaveResult(null), 3000);
@@ -334,8 +338,8 @@ export default function AiSettings() {
         const data = await res.json();
         setTestResult(
           data.success
-            ? { success: true, message: `Connection OK: "${data.response}"` }
-            : { success: false, message: data.message || 'Test failed.' },
+            ? { success: true, message: t('testResult.connectionOk', { response: data.response }) }
+            : { success: false, message: data.message || t('testResult.testFailed') },
         );
         await refresh();
       } else {
@@ -362,13 +366,13 @@ export default function AiSettings() {
         const data = await res.json();
         setTestResult(
           data.success
-            ? { success: true, message: `Connection OK: "${data.response}"` }
-            : { success: false, message: data.message || 'Test failed.' },
+            ? { success: true, message: t('testResult.connectionOk', { response: data.response }) }
+            : { success: false, message: data.message || t('testResult.testFailed') },
         );
         await refresh();
       }
     } catch {
-      setTestResult({ success: false, message: 'Connection error.' });
+      setTestResult({ success: false, message: t('errors.connectionError') });
     } finally {
       setTesting(false);
     }
@@ -385,18 +389,24 @@ export default function AiSettings() {
       const data = await res.json();
       setTestResult(
         data.success
-          ? { success: true, message: `${s.label}: OK — "${data.response}"` }
-          : { success: false, message: `${s.label}: ${data.message || 'Test failed.'}` },
+          ? { success: true, message: t('quickTest.ok', { label: s.label, response: data.response }) }
+          : {
+              success: false,
+              message: t('quickTest.failed', {
+                label: s.label,
+                message: data.message || t('testResult.testFailed'),
+              }),
+            },
       );
     } catch {
-      setTestResult({ success: false, message: `${s.label}: connection error.` });
+      setTestResult({ success: false, message: t('quickTest.connectionError', { label: s.label }) });
     } finally {
       setTestingName(null);
     }
   };
 
   const handleDelete = async (s: MaskedAiSetting) => {
-    if (!window.confirm(`Delete AI setting "${s.label}"?`)) return;
+    if (!window.confirm(t('confirmDelete', { label: s.label }))) return;
     try {
       await apiFetch(`/api/ai-settings/${encodeURIComponent(s.name)}`, {
         method: 'DELETE',
@@ -430,9 +440,9 @@ export default function AiSettings() {
           injectionThreshold: routerEnabled ? injectionThreshold / 100 : undefined,
         }),
       });
-      setSaveResult({ ok: true, message: 'Router settings saved.' });
+      setSaveResult({ ok: true, message: t('router.saveResult.saved') });
     } catch {
-      setSaveResult({ ok: false, message: 'Failed to save router.' });
+      setSaveResult({ ok: false, message: t('router.saveResult.failed') });
     } finally {
       setSaving(false);
       setTimeout(() => setSaveResult(null), 3000);
@@ -440,26 +450,32 @@ export default function AiSettings() {
   };
 
   if (loading) {
-    return <div className="text-gray-400 text-sm">Loading AI settings...</div>;
+    return <div className="text-gray-400 text-sm">{t('loading')}</div>;
   }
 
   const providers: { value: Provider; label: string; desc: string }[] = [
     {
       value: 'local',
-      label: 'Local (included)',
-      desc: 'Runs on this PC — no API key, nothing leaves your machine',
+      label: t('providers.local.label'),
+      desc: t('providers.local.desc'),
     },
-    { value: 'anthropic', label: 'Anthropic', desc: 'Claude API' },
-    { value: 'openrouter', label: 'OpenRouter', desc: 'Multi-model gateway' },
-    { value: 'custom', label: 'Custom', desc: 'OpenAI-compatible (Ollama, vLLM...)' },
+    { value: 'anthropic', label: t('providers.anthropic.label'), desc: t('providers.anthropic.desc') },
+    {
+      value: 'openrouter',
+      label: t('providers.openrouter.label'),
+      desc: t('providers.openrouter.desc'),
+    },
+    { value: 'custom', label: t('providers.custom.label'), desc: t('providers.custom.desc') },
   ];
 
   const renderEditForm = () => (
     <div className="space-y-4 p-4 rounded-lg border border-os-600/40 bg-os-700/5 mt-2">
       <div className="flex items-center justify-between">
-        <h3 className="eyebrow">{isCreating ? 'New AI Setting' : `Edit "${editingName}"`}</h3>
+        <h3 className="eyebrow">
+          {isCreating ? t('form.newTitle') : t('form.editTitle', { name: editingName ?? '' })}
+        </h3>
         <button onClick={cancelEdit} className="text-xs text-gray-400 hover:text-gray-200">
-          Close
+          {t('form.close')}
         </button>
       </div>
 
@@ -467,29 +483,27 @@ export default function AiSettings() {
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="text-sm text-gray-400">
-            Name <span className="text-red-400">*</span>
+            {t('form.nameLabel')} <span className="text-red-400">*</span>
           </label>
           <input
             type="text"
             value={formName}
             onChange={(e) => setFormName(e.target.value)}
             disabled={!isCreating}
-            placeholder="prod-claude"
+            placeholder={t('form.namePlaceholder')}
             className="input-editorial w-full text-sm mt-1 disabled:opacity-60"
           />
-          <p className="text-xs text-gray-600 mt-1">
-            Unique slug (lowercase, dash, underscore). Cannot be changed later.
-          </p>
+          <p className="text-xs text-gray-600 mt-1">{t('form.nameHelp')}</p>
         </div>
         <div>
           <label className="text-sm text-gray-400">
-            Label <span className="text-red-400">*</span>
+            {t('form.labelLabel')} <span className="text-red-400">*</span>
           </label>
           <input
             type="text"
             value={formLabel}
             onChange={(e) => setFormLabel(e.target.value)}
-            placeholder="Production Claude"
+            placeholder={t('form.labelPlaceholder')}
             className="input-editorial w-full text-sm mt-1"
           />
         </div>
@@ -498,17 +512,11 @@ export default function AiSettings() {
       {/* Provider selection */}
       <div>
         <div className="flex items-center gap-1.5 mb-2">
-          <label className="text-sm text-gray-400">Provider</label>
-          <HelpTip
-            content="Local runs the bundled EmbeddingGemma model on this machine for RAG — no API key, nothing leaves your PC. Anthropic provides direct access to Claude models for chat. OpenRouter is a multi-model gateway. Custom lets you use a local OpenAI-compatible server such as Ollama or vLLM."
-            position="right"
-            maxWidth={320}
-          />
+          <label className="text-sm text-gray-400">{t('form.providerLabel')}</label>
+          <HelpTip content={t('form.providerHelp')} position="right" maxWidth={320} />
         </div>
         {isEditingLocalSetting && (
-          <p className="text-xs text-gray-500 mb-2">
-            This is the built-in local provider — only the label can be changed.
-          </p>
+          <p className="text-xs text-gray-500 mb-2">{t('form.localProviderNote')}</p>
         )}
         <div className="grid grid-cols-2 gap-3">
           {providers.map((p) => (
@@ -545,12 +553,8 @@ export default function AiSettings() {
       {/* Capabilities section */}
       <div>
         <div className="flex items-center gap-1.5 mb-2">
-          <label className="text-sm text-gray-400">Capabilities</label>
-          <HelpTip
-            content="Chat: this setting can be used for conversations with the LLM. Embeddings: this setting can generate vectors for RAG (OpenAI/Ollama only)."
-            position="right"
-            maxWidth={320}
-          />
+          <label className="text-sm text-gray-400">{t('form.capabilitiesLabel')}</label>
+          <HelpTip content={t('form.capabilitiesHelp')} position="right" maxWidth={320} />
         </div>
         <div className="space-y-3 pl-1">
           {/* Chat capability */}
@@ -568,21 +572,21 @@ export default function AiSettings() {
                 htmlFor="cap-chat"
                 className={`text-sm cursor-pointer ${provider === 'local' ? 'text-gray-500' : 'text-gray-200'}`}
               >
-                Chat
+                {t('form.chatLabel')}
               </label>
               {capChat && (
                 <div className="mt-1">
-                  <label className="text-xs text-gray-400">Model (Chat)</label>
+                  <label className="text-xs text-gray-400">{t('form.chatModelLabel')}</label>
                   <input
                     type="text"
                     value={model}
                     onChange={(e) => updateField('model', e.target.value)}
                     placeholder={
                       provider === 'anthropic'
-                        ? 'claude-sonnet-4-20250514'
+                        ? t('form.chatModelPlaceholder.anthropic')
                         : provider === 'openrouter'
-                          ? 'anthropic/claude-sonnet-4'
-                          : 'llama3, mistral, etc.'
+                          ? t('form.chatModelPlaceholder.openrouter')
+                          : t('form.chatModelPlaceholder.custom')
                     }
                     className="input-editorial w-full text-sm mt-1"
                   />
@@ -612,63 +616,64 @@ export default function AiSettings() {
                   htmlFor="cap-embeddings"
                   className={`text-sm cursor-pointer ${provider === 'anthropic' ? 'text-gray-500' : 'text-gray-200'}`}
                 >
-                  Embeddings
+                  {t('form.embeddingsLabel')}
                 </label>
                 {provider === 'anthropic' && (
                   <span
                     className="text-xs text-amber-400 cursor-default"
-                    title="Anthropic does not offer embeddings models — use OpenAI, Ollama, or a custom endpoint"
+                    title={t('form.embeddingsNotAvailableTitle')}
                   >
-                    Not available
+                    {t('form.embeddingsNotAvailable')}
                   </span>
                 )}
                 {provider === 'local' && (
                   <span
                     className="text-xs text-green-400 cursor-default"
-                    title="Always on — runs on this machine, no configuration needed"
+                    title={t('form.embeddingsAlwaysOnTitle')}
                   >
-                    Always on
+                    {t('form.embeddingsAlwaysOn')}
                   </span>
                 )}
               </div>
               {capEmbeddings && provider === 'local' && (
                 <div className="mt-1">
-                  <label className="text-xs text-gray-400">Embeddings model</label>
+                  <label className="text-xs text-gray-400">{t('form.embeddingsModelLabel')}</label>
                   <div className="input-editorial w-full text-sm mt-1 opacity-70 cursor-default select-none">
-                    {LOCAL_MODEL_INFO.embeddingModel} · {LOCAL_MODEL_INFO.dimensions} dims ·{' '}
-                    {LOCAL_MODEL_INFO.maxTokens} tokens · 100+ languages
+                    {t('form.embeddingsModelInfo', {
+                      model: LOCAL_MODEL_INFO.embeddingModel,
+                      dimensions: LOCAL_MODEL_INFO.dimensions,
+                      maxTokens: LOCAL_MODEL_INFO.maxTokens,
+                    })}
                   </div>
                   {editingSetting?.localModelAvailable === false && (
                     <p className="text-xs text-amber-400 mt-1">
-                      Model files not found on disk. Run <code>pnpm model:fetch</code>, or reinstall
-                      the app.
+                      {t.rich('form.modelFilesNotFound', {
+                        code: (chunks) => <code>{chunks}</code>,
+                      })}
                     </p>
                   )}
-                  <p className="text-xs text-gray-600 mt-1">
-                    Documents and search queries are embedded on this machine. Nothing is sent to
-                    any third-party service.
-                  </p>
+                  <p className="text-xs text-gray-600 mt-1">{t('form.localPrivacyNote')}</p>
                   <a
                     href="https://ai.google.dev/gemma/terms"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-xs text-gray-500 hover:text-gray-300 underline underline-offset-2 mt-1 inline-block"
-                    title="EmbeddingGemma is distributed under the Gemma Terms of Use — see third_party/NOTICES.md in the installation for the full list of bundled licenses"
+                    title={t('form.thirdPartyLicensesTitle')}
                   >
-                    Third-party licenses
+                    {t('form.thirdPartyLicenses')}
                   </a>
                 </div>
               )}
               {capEmbeddings && provider !== 'anthropic' && provider !== 'local' && (
                 <div className="mt-1">
                   <label className="text-xs text-gray-400">
-                    Embeddings model <span className="text-red-400">*</span>
+                    {t('form.embeddingsModelLabel')} <span className="text-red-400">*</span>
                   </label>
                   <input
                     type="text"
                     value={embeddingModel}
                     onChange={(e) => setEmbeddingModel(e.target.value)}
-                    placeholder="text-embedding-3-small, nomic-embed-text, etc."
+                    placeholder={t('form.embeddingsModelPlaceholder')}
                     className="input-editorial w-full text-sm mt-1"
                   />
                 </div>
@@ -697,31 +702,26 @@ export default function AiSettings() {
                   htmlFor="cap-rerank"
                   className={`text-sm cursor-pointer ${provider === 'local' ? 'text-gray-500' : 'text-gray-200'}`}
                 >
-                  Rerank
+                  {t('form.rerankLabel')}
                 </label>
               </div>
-              <p className="text-xs text-gray-500 mt-0.5">
-                Used by RAG hybrid search to re-order results for better relevance (Cohere API).
-                When a valid rerank setting is configured, it activates automatically — no extra
-                toggle needed.
-              </p>
+              <p className="text-xs text-gray-500 mt-0.5">{t('form.rerankDescription')}</p>
               {capRerank && (
                 <div className="mt-2">
                   <label className="text-xs text-gray-400">
-                    Rerank model <span className="text-red-400">*</span>
+                    {t('form.rerankModelLabel')} <span className="text-red-400">*</span>
                   </label>
                   <input
                     type="text"
                     value={rerankModel}
                     onChange={(e) => setRerankModel(e.target.value)}
-                    placeholder="rerank-multilingual-v3.0"
+                    placeholder={t('form.rerankModelPlaceholder')}
                     className="input-editorial w-full text-sm mt-1"
                   />
                   <p className="text-xs text-gray-600 mt-1">
-                    Cohere model name.{' '}
-                    <code className="text-gray-500">rerank-multilingual-v3.0</code> works for FR/EN
-                    mixed corpora. <code className="text-gray-500">rerank-english-v3.0</code> is
-                    English-only.
+                    {t.rich('form.rerankModelNote', {
+                      code: (chunks) => <code className="text-gray-500">{chunks}</code>,
+                    })}
                   </p>
                 </div>
               )}
@@ -736,7 +736,7 @@ export default function AiSettings() {
       {provider !== 'custom' && provider !== 'local' && (
         <div>
           <label className="text-sm text-gray-400">
-            {provider === 'openrouter' ? 'OpenRouter API Key' : 'Anthropic API Key'}{' '}
+            {provider === 'openrouter' ? t('form.apiKeyLabel.openrouter') : t('form.apiKeyLabel.anthropic')}{' '}
             <span className="text-red-400">*</span>
           </label>
           <div className="relative mt-1">
@@ -744,14 +744,18 @@ export default function AiSettings() {
               type={showApiKey ? 'text' : 'password'}
               value={apiKey}
               onChange={(e) => updateField('apiKey', e.target.value)}
-              placeholder={provider === 'openrouter' ? 'sk-or-...' : 'sk-ant-...'}
+              placeholder={
+                provider === 'openrouter'
+                  ? t('form.apiKeyPlaceholder.openrouter')
+                  : t('form.apiKeyPlaceholder.anthropic')
+              }
               className="input-editorial w-full text-sm pr-16"
             />
             <button
               onClick={() => setShowApiKey(!showApiKey)}
               className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-500 hover:text-gray-300"
             >
-              {showApiKey ? 'Hide' : 'Show'}
+              {showApiKey ? t('form.hideApiKey') : t('form.showApiKey')}
             </button>
           </div>
         </div>
@@ -759,12 +763,12 @@ export default function AiSettings() {
 
       {provider === 'custom' && (
         <div>
-          <label className="text-sm text-gray-400">API Key (optional)</label>
+          <label className="text-sm text-gray-400">{t('form.apiKeyOptionalLabel')}</label>
           <input
             type={showApiKey ? 'text' : 'password'}
             value={apiKey}
             onChange={(e) => updateField('apiKey', e.target.value)}
-            placeholder="Leave empty if not required"
+            placeholder={t('form.apiKeyOptionalPlaceholder')}
             className="input-editorial w-full text-sm mt-1"
           />
         </div>
@@ -772,12 +776,12 @@ export default function AiSettings() {
 
       {provider === 'custom' && (
         <div>
-          <label className="text-sm text-gray-400">Base URL</label>
+          <label className="text-sm text-gray-400">{t('form.baseUrlLabel')}</label>
           <input
             type="text"
             value={baseUrl}
             onChange={(e) => updateField('baseUrl', e.target.value)}
-            placeholder="http://localhost:11434/v1"
+            placeholder={t('form.baseUrlPlaceholder')}
             className="input-editorial w-full text-sm mt-1"
           />
         </div>
@@ -796,14 +800,14 @@ export default function AiSettings() {
           disabled={saving}
           className="px-4 py-2 rounded-lg bg-os-700 hover:bg-os-600 text-white text-sm font-medium transition-all duration-200 disabled:opacity-50 shadow-md shadow-os-900/20"
         >
-          {saving ? 'Saving...' : isCreating ? 'Create setting' : 'Save changes'}
+          {saving ? t('form.saving') : isCreating ? t('form.createSetting') : t('form.saveChanges')}
         </button>
         <button
           onClick={handleTestForm}
           disabled={testing}
           className="px-4 py-2 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-300 text-sm font-medium transition-all duration-200 disabled:opacity-50"
         >
-          {testing ? 'Testing...' : 'Test connection'}
+          {testing ? t('form.testing') : t('form.testConnection')}
         </button>
         {saveResult && (
           <span className={`text-sm ${saveResult.ok ? 'text-green-400' : 'text-red-400'}`}>
@@ -831,17 +835,10 @@ export default function AiSettings() {
       <div className="flex items-center justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <h2 className="heading-md">AI Settings</h2>
-            <HelpTip
-              content="Configure one or more LLM providers. Each MCP server can be linked to several settings, and the chat user picks which one to use."
-              position="right"
-              maxWidth={340}
-            />
+            <h2 className="heading-md">{t('title')}</h2>
+            <HelpTip content={t('titleHelp')} position="right" maxWidth={340} />
           </div>
-          <p className="text-sm text-gray-500 mt-1">
-            Define the AI providers your MCP servers can use. Associate them per-MCP server in the
-            MCP Server editor.
-          </p>
+          <p className="text-sm text-gray-500 mt-1">{t('description')}</p>
         </div>
         <button
           onClick={startCreate}
@@ -851,7 +848,7 @@ export default function AiSettings() {
               : 'bg-os-700 hover:bg-os-600 text-white'
           }`}
         >
-          {isCreating ? 'Cancel' : '+ New AI Setting'}
+          {isCreating ? tCommon('cancel') : t('newSettingButton')}
         </button>
       </div>
 
@@ -859,8 +856,9 @@ export default function AiSettings() {
       <div className="space-y-2">
         {settings.length === 0 && !isCreating && (
           <div className="text-sm text-gray-500 italic px-3 py-6 text-center border border-dashed border-white/5 rounded-lg">
-            No AI setting yet. Click <span className="text-os-400">+ New AI Setting</span> to create
-            one.
+            {t.rich('emptyState', {
+              span: (chunks) => <span className="text-os-400">{chunks}</span>,
+            })}
           </div>
         )}
 
@@ -892,7 +890,7 @@ export default function AiSettings() {
                       className={`w-1.5 h-1.5 rounded-full ml-1 ${
                         s.configured ? 'bg-green-500 shadow-md shadow-green-500/30' : 'bg-gray-600'
                       }`}
-                      title={s.configured ? 'Configured' : 'Not configured'}
+                      title={s.configured ? t('status.configured') : t('status.notConfigured')}
                     />
                   </div>
                   <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
@@ -903,9 +901,9 @@ export default function AiSettings() {
                     {s.provider === 'local' && (
                       <span
                         className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-500/10 text-green-400 ring-1 ring-green-500/20"
-                        title="Bundled with Calame — runs on this machine, cannot be deleted"
+                        title={t('builtInBadgeTitle')}
                       >
-                        Built-in
+                        {t('builtInBadge')}
                       </span>
                     )}
                     {/* Capability badges */}
@@ -915,10 +913,10 @@ export default function AiSettings() {
                       const hasEmb = caps.includes('embeddings');
                       const hasRerank = caps.includes('rerank');
                       const parts: string[] = [];
-                      if (hasChat) parts.push('Chat');
-                      if (hasEmb) parts.push('Embeddings');
-                      if (hasRerank) parts.push('Rerank');
-                      const label = parts.length > 0 ? parts.join(' + ') : 'Chat';
+                      if (hasChat) parts.push(t('form.chatLabel'));
+                      if (hasEmb) parts.push(t('form.embeddingsLabel'));
+                      if (hasRerank) parts.push(t('form.rerankLabel'));
+                      const label = parts.length > 0 ? parts.join(' + ') : t('form.chatLabel');
                       const isLocal = s.provider === 'local';
                       return (
                         <span
@@ -943,7 +941,7 @@ export default function AiSettings() {
                     disabled={testingName === s.name}
                     className="px-2 py-1 rounded text-xs text-gray-300 hover:bg-gray-700/40 disabled:opacity-50"
                   >
-                    {testingName === s.name ? 'Testing…' : 'Test'}
+                    {testingName === s.name ? t('list.testingButton') : t('list.testButton')}
                   </button>
                   <button
                     onClick={(e) => {
@@ -951,14 +949,10 @@ export default function AiSettings() {
                       handleDelete(s);
                     }}
                     disabled={s.provider === 'local'}
-                    title={
-                      s.provider === 'local'
-                        ? 'The built-in local provider cannot be deleted'
-                        : undefined
-                    }
+                    title={s.provider === 'local' ? t('list.deleteDisabledTitle') : undefined}
                     className="px-2 py-1 rounded text-xs text-red-400 hover:bg-red-950/40 disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed"
                   >
-                    Delete
+                    {t('list.deleteButton')}
                   </button>
                   <span
                     aria-hidden="true"
@@ -1000,17 +994,10 @@ export default function AiSettings() {
         <div className="flex items-center justify-between">
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="eyebrow">LLM Router / Classifier</h3>
-              <HelpTip
-                content="Two-stage pipeline: a lightweight classifier analyzes each message before the main LLM. It detects prompt injection attempts and off-topic queries, reducing costs and improving security."
-                position="right"
-                maxWidth={340}
-              />
+              <h3 className="eyebrow">{t('router.title')}</h3>
+              <HelpTip content={t('router.titleHelp')} position="right" maxWidth={340} />
             </div>
-            <p className="text-xs text-gray-500 mt-0.5">
-              Two-stage pipeline: lightweight classifier detects intent and blocks injection
-              attempts before the main LLM processes the query.
-            </p>
+            <p className="text-xs text-gray-500 mt-0.5">{t('router.description')}</p>
           </div>
           <label className="flex items-center gap-2 cursor-pointer">
             <input
@@ -1019,66 +1006,66 @@ export default function AiSettings() {
               onChange={(e) => setRouterEnabled(e.target.checked)}
               className="rounded border-gray-600 bg-gray-700 text-os-500 focus:ring-os-500/30"
             />
-            <span className="text-sm text-gray-300">Enable</span>
+            <span className="text-sm text-gray-300">{t('router.enableLabel')}</span>
           </label>
         </div>
 
         {routerEnabled && (
           <div className="space-y-4 pl-2 border-l-2 border-white/10">
             <div>
-              <label className="text-sm text-gray-400">Classifier Provider</label>
+              <label className="text-sm text-gray-400">{t('router.classifierProviderLabel')}</label>
               <select
                 value={classifierProvider}
                 onChange={(e) => setClassifierProvider(e.target.value as ClassifierProvider)}
                 className="input-editorial w-full text-sm mt-1"
               >
-                <option value="anthropic">Anthropic (Claude)</option>
-                <option value="openrouter">OpenRouter</option>
-                <option value="custom">Custom / Ollama</option>
+                <option value="anthropic">{t('router.classifierProviderOptions.anthropic')}</option>
+                <option value="openrouter">{t('router.classifierProviderOptions.openrouter')}</option>
+                <option value="custom">{t('router.classifierProviderOptions.custom')}</option>
               </select>
             </div>
             <div>
               <label className="text-sm text-gray-400">
-                Classifier Model <span className="text-red-400">*</span>
+                {t('router.classifierModelLabel')} <span className="text-red-400">*</span>
               </label>
               <input
                 type="text"
                 value={classifierModel}
                 onChange={(e) => setClassifierModel(e.target.value)}
                 placeholder={
-                  classifierProvider === 'anthropic' ? 'claude-haiku-4-5-20251001' : 'gpt-4o-mini'
+                  classifierProvider === 'anthropic'
+                    ? t('router.classifierModelPlaceholder.anthropic')
+                    : t('router.classifierModelPlaceholder.other')
                 }
                 className="input-editorial w-full text-sm mt-1"
               />
             </div>
             <div>
-              <label className="text-sm text-gray-400">Classifier API Key</label>
+              <label className="text-sm text-gray-400">{t('router.classifierApiKeyLabel')}</label>
               <input
                 type="password"
                 value={classifierApiKey}
                 onChange={(e) => setClassifierApiKey(e.target.value)}
-                placeholder="sk-..."
+                placeholder={t('router.classifierApiKeyPlaceholder')}
                 className="input-editorial w-full text-sm mt-1"
               />
-              <p className="text-xs text-gray-600 mt-1">
-                Leave empty to use the same key as the main provider.
-              </p>
+              <p className="text-xs text-gray-600 mt-1">{t('router.classifierApiKeyHelp')}</p>
             </div>
             {classifierProvider === 'custom' && (
               <div>
-                <label className="text-sm text-gray-400">Classifier Endpoint</label>
+                <label className="text-sm text-gray-400">{t('router.classifierEndpointLabel')}</label>
                 <input
                   type="text"
                   value={classifierEndpoint}
                   onChange={(e) => setClassifierEndpoint(e.target.value)}
-                  placeholder="http://localhost:11434/v1"
+                  placeholder={t('router.classifierEndpointPlaceholder')}
                   className="input-editorial w-full text-sm mt-1"
                 />
               </div>
             )}
             <div>
               <label className="text-sm text-gray-400">
-                Injection Detection Threshold: {injectionThreshold}%
+                {t('router.injectionThresholdLabel', { threshold: injectionThreshold })}
               </label>
               <input
                 type="range"
@@ -1089,8 +1076,8 @@ export default function AiSettings() {
                 className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-os-500"
               />
               <div className="flex justify-between text-xs text-gray-600 mt-1">
-                <span>50% (aggressive)</span>
-                <span>100% (permissive)</span>
+                <span>{t('router.thresholdMin')}</span>
+                <span>{t('router.thresholdMax')}</span>
               </div>
             </div>
           </div>
@@ -1101,7 +1088,7 @@ export default function AiSettings() {
           disabled={saving}
           className="px-3 py-1.5 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-300 text-sm font-medium transition-all duration-200 disabled:opacity-50"
         >
-          Save router settings
+          {t('router.saveButton')}
         </button>
       </div>
     </div>

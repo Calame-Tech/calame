@@ -1,9 +1,9 @@
 // TenantsPage component tests (Phase 3 #16).
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { screen, fireEvent } from '@testing-library/react';
 import TenantsPage from '../TenantsPage.js';
-import { installFetchMock, flushEffects } from './testUtils.js';
+import { render, installFetchMock, flushEffects } from './testUtils.js';
 
 describe('TenantsPage', () => {
   beforeEach(() => {

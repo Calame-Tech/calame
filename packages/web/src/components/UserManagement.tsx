@@ -1,21 +1,23 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useTranslations } from 'use-intl/react';
 import { apiFetch } from '../lib/api.js';
 import type { UserEntry, AccessMode, Profile } from '../types/schema.js';
 import HelpTip from './HelpTip.js';
+import { useLocale } from '../i18n/I18nProvider.js';
 
 interface UserManagementProps {
   profiles: Profile[];
   initialSelectedUserId?: string;
 }
 
-const STATUS_TOOLTIP: Record<string, string> = {
-  active: 'Active account — the user can sign in and use their MCP access.',
-  disabled: 'Disabled account — access has been revoked. The user can no longer authenticate.',
-  invited: 'Invitation sent — the account will become active once the user completes signup.',
-};
-
 /** Status badge with color coding */
 function StatusBadge({ status }: { status: string }) {
+  const t = useTranslations('userManagement');
+  const statusTooltip: Record<string, string> = {
+    active: t('statusTooltip.active'),
+    disabled: t('statusTooltip.disabled'),
+    invited: t('statusTooltip.invited'),
+  };
   const colors: Record<string, string> = {
     active: 'bg-green-900/50 text-green-300 border-green-700',
     disabled: 'bg-red-900/50 text-red-300 border-red-700',
@@ -23,7 +25,7 @@ function StatusBadge({ status }: { status: string }) {
   };
   return (
     <span
-      title={STATUS_TOOLTIP[status] ?? `Status: ${status}`}
+      title={statusTooltip[status] ?? t('statusTooltip.fallback', { status })}
       className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border ${colors[status] ?? 'bg-gray-700 text-gray-300 border-gray-600'}`}
     >
       {status}
@@ -41,6 +43,8 @@ function CustomAttributesEditor({
   initialAttrs: Record<string, string> | null;
   onSaved: () => void;
 }) {
+  const t = useTranslations('userManagement');
+  const tCommon = useTranslations('common');
   const [attrs, setAttrs] = useState<Array<{ key: string; value: string }>>(
     initialAttrs ? Object.entries(initialAttrs).map(([key, value]) => ({ key, value })) : [],
   );
@@ -101,7 +105,7 @@ function CustomAttributesEditor({
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <span className="text-sm text-gray-400">Custom Attributes</span>
+        <span className="text-sm text-gray-400">{t('customAttributes.title')}</span>
         <div className="flex items-center gap-2">
           {dirty && (
             <button
@@ -109,11 +113,11 @@ function CustomAttributesEditor({
               disabled={saving}
               className="text-xs px-2 py-0.5 bg-blue-600 hover:bg-blue-700 text-white rounded disabled:opacity-40 transition-colors"
             >
-              {saving ? 'Saving...' : 'Save'}
+              {saving ? t('customAttributes.saving') : tCommon('save')}
             </button>
           )}
           <button onClick={addAttr} className="text-xs text-blue-400 hover:text-blue-300">
-            + Add
+            {t('customAttributes.add')}
           </button>
         </div>
       </div>
@@ -125,7 +129,7 @@ function CustomAttributesEditor({
                 type="text"
                 value={attr.key}
                 onChange={(e) => updateAttr(i, 'key', e.target.value)}
-                placeholder="Key"
+                placeholder={t('customAttributes.keyPlaceholder')}
                 className="flex-1 bg-gray-900 border border-gray-600 rounded px-2 py-1 text-xs text-gray-200 font-mono"
               />
               <span className="text-gray-600">=</span>
@@ -133,7 +137,7 @@ function CustomAttributesEditor({
                 type="text"
                 value={attr.value}
                 onChange={(e) => updateAttr(i, 'value', e.target.value)}
-                placeholder="Value"
+                placeholder={t('customAttributes.valuePlaceholder')}
                 className="flex-1 bg-gray-900 border border-gray-600 rounded px-2 py-1 text-xs text-gray-200 font-mono"
               />
               <button
@@ -146,7 +150,7 @@ function CustomAttributesEditor({
           ))}
         </div>
       ) : (
-        <p className="text-xs text-gray-500">No custom attributes.</p>
+        <p className="text-xs text-gray-500">{t('customAttributes.empty')}</p>
       )}
     </div>
   );
@@ -166,6 +170,8 @@ function UserDetailPanel({
   onUpdate: () => void;
   formatDate: (d: string | null) => string;
 }) {
+  const t = useTranslations('userManagement');
+  const tCommon = useTranslations('common');
   const [user, setUser] = useState(initialUser);
   const [addingProfile, setAddingProfile] = useState(false);
   const [newProfileName, setNewProfileName] = useState('');
@@ -213,13 +219,13 @@ function UserDetailPanel({
         setError(data.message);
       }
     } catch {
-      setError('Failed to add MCP server.');
+      setError(t('errors.addProfileFailed'));
     }
   };
 
   const handleRemoveProfile = async (profileName: string) => {
     if (user.profiles.length <= 1) {
-      setError('Cannot remove the last MCP server. Delete the user instead.');
+      setError(t('errors.cannotRemoveLastProfile'));
       return;
     }
     try {
@@ -231,7 +237,7 @@ function UserDetailPanel({
       if (data.success) await refreshUser();
       else setError(data.message);
     } catch {
-      setError('Failed to remove MCP server.');
+      setError(t('errors.removeProfileFailed'));
     }
   };
 
@@ -262,23 +268,23 @@ function UserDetailPanel({
 
       <div className="grid grid-cols-2 gap-3 text-sm">
         <div>
-          <span className="text-gray-500">Email:</span>{' '}
+          <span className="text-gray-500">{t('detail.email')}</span>{' '}
           <span className="text-gray-300">{user.email}</span>
         </div>
         <div>
-          <span className="text-gray-500">Role:</span>{' '}
+          <span className="text-gray-500">{t('detail.role')}</span>{' '}
           <span className="text-gray-300">{user.role}</span>
         </div>
         <div>
-          <span className="text-gray-500">Status:</span> <StatusBadge status={user.status} />
+          <span className="text-gray-500">{t('detail.status')}</span> <StatusBadge status={user.status} />
         </div>
         <div>
-          <span className="text-gray-500">Created:</span>{' '}
+          <span className="text-gray-500">{t('detail.created')}</span>{' '}
           <span className="text-gray-300">{formatDate(user.createdAt)}</span>
         </div>
         {user.disabledReason && (
           <div className="col-span-2">
-            <span className="text-gray-500">Disabled reason:</span>{' '}
+            <span className="text-gray-500">{t('detail.disabledReason')}</span>{' '}
             <span className="text-red-300">{user.disabledReason}</span>
           </div>
         )}
@@ -295,9 +301,11 @@ function UserDetailPanel({
       {onboardingLink && !onboardingExpired && (
         <div className="bg-blue-900/20 border border-blue-800 rounded-lg p-3">
           <div className="flex items-center justify-between mb-1">
-            <span className="text-blue-300 text-sm font-medium">Invitation Link</span>
+            <span className="text-blue-300 text-sm font-medium">
+              {t('detail.invitationLink.title')}
+            </span>
             <span className="text-xs text-gray-500">
-              Expires {formatDate(user.onboardingExpiresAt)}
+              {t('detail.invitationLink.expires', { date: formatDate(user.onboardingExpiresAt) })}
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -312,29 +320,29 @@ function UserDetailPanel({
               }}
               className={`px-2 py-1 ${copied ? 'bg-green-700 text-green-200' : 'bg-gray-700 hover:bg-gray-600 text-white'} text-xs rounded flex-shrink-0 transition-colors`}
             >
-              {copied ? 'Copied!' : 'Copy'}
+              {copied ? t('actions.copied') : t('actions.copy')}
             </button>
           </div>
         </div>
       )}
       {onboardingLink && onboardingExpired && (
-        <div className="text-xs text-gray-600">Invitation link expired.</div>
+        <div className="text-xs text-gray-600">{t('detail.invitationLink.expired')}</div>
       )}
       {!onboardingLink && user.status === 'active' && (
-        <div className="text-xs text-green-600">Account activated.</div>
+        <div className="text-xs text-green-600">{t('detail.accountActivated')}</div>
       )}
 
       {/* Profiles — editable */}
       <div>
         <div className="flex items-center justify-between mb-2">
-          <span className="text-sm text-gray-400">MCP Server Access</span>
+          <span className="text-sm text-gray-400">{t('mcpAccess.title')}</span>
           {profilesNotAdded.length > 0 && !addingProfile && (
             <button
               onClick={() => setAddingProfile(true)}
-              title="Grant this user access to an additional MCP server."
+              title={t('mcpAccess.addTooltip')}
               className="text-xs text-blue-400 hover:text-blue-300"
             >
-              + Add MCP
+              {t('mcpAccess.addButton')}
             </button>
           )}
         </div>
@@ -350,13 +358,13 @@ function UserDetailPanel({
                 <span className="text-xs text-gray-500">({p.accessMode})</span>
                 {p.allowedTables && (
                   <span className="text-xs text-gray-600">
-                    tables: {p.allowedTables.join(', ')}
+                    {t('mcpAccess.tables', { tables: p.allowedTables.join(', ') })}
                   </span>
                 )}
               </div>
               <button
                 onClick={() => handleRemoveProfile(p.profileName)}
-                title="Revoke this user's access to this MCP server."
+                title={t('mcpAccess.revokeTooltip')}
                 className="text-red-400 hover:text-red-300 text-xs px-1"
               >
                 ×
@@ -373,7 +381,7 @@ function UserDetailPanel({
               onChange={(e) => setNewProfileName(e.target.value)}
               className="flex-1 px-2 py-1 bg-gray-700 border border-gray-600 rounded text-white text-sm"
             >
-              <option value="">Select MCP...</option>
+              <option value="">{t('mcpAccess.selectPlaceholder')}</option>
               {profilesNotAdded.map((p) => (
                 <option key={p.name} value={p.name}>
                   {p.label || p.name}
@@ -385,21 +393,21 @@ function UserDetailPanel({
               onChange={(e) => setNewAccessMode(e.target.value as AccessMode)}
               className="px-2 py-1 bg-gray-700 border border-gray-600 rounded text-white text-sm"
             >
-              <option value="both">MCP + Chat</option>
-              <option value="mcp">MCP only</option>
-              <option value="chat">Chat only</option>
+              <option value="both">{t('accessMode.both')}</option>
+              <option value="mcp">{t('accessMode.mcp')}</option>
+              <option value="chat">{t('accessMode.chat')}</option>
             </select>
             <button
               onClick={handleAddProfile}
               className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded"
             >
-              Add
+              {t('mcpAccess.addSubmit')}
             </button>
             <button
               onClick={() => setAddingProfile(false)}
               className="text-gray-400 hover:text-white text-xs"
             >
-              Cancel
+              {tCommon('cancel')}
             </button>
           </div>
         )}
@@ -409,6 +417,9 @@ function UserDetailPanel({
 }
 
 export default function UserManagement({ profiles, initialSelectedUserId }: UserManagementProps) {
+  const t = useTranslations('userManagement');
+  const tCommon = useTranslations('common');
+  const { locale } = useLocale();
   const [users, setUsers] = useState<UserEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -444,11 +455,11 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
         setUsers(data.users);
       }
     } catch {
-      setError('Failed to load users.');
+      setError(t('errors.loadFailed'));
     } finally {
       setLoading(false);
     }
-  }, [filterStatus, filterProfile, searchQuery]);
+  }, [filterStatus, filterProfile, searchQuery, t]);
 
   useEffect(() => {
     fetchUsers();
@@ -481,7 +492,7 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
     setError('');
 
     if (formProfiles.length === 0 || formProfiles.some((p) => !p.profileName)) {
-      setError('At least one MCP server with a name is required.');
+      setError(t('errors.profileRequired'));
       return;
     }
 
@@ -527,12 +538,12 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
         setError(data.message);
       }
     } catch {
-      setError('Failed to create user.');
+      setError(t('errors.createFailed'));
     }
   };
 
   const handleDisable = async (userId: string) => {
-    const reason = prompt('Reason for disabling (optional):');
+    const reason = prompt(t('prompts.disableReason'));
     try {
       const res = await apiFetch(`/api/users/${userId}/disable`, {
         method: 'POST',
@@ -544,7 +555,7 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
       if (data.success) fetchUsers();
       else setError(data.message);
     } catch {
-      setError('Failed to disable user.');
+      setError(t('errors.disableFailed'));
     }
   };
 
@@ -563,12 +574,12 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
         setError(data.message);
       }
     } catch {
-      setError('Failed to enable user.');
+      setError(t('errors.enableFailed'));
     }
   };
 
   const handleRegenerateToken = async (userId: string) => {
-    if (!confirm('Regenerate access token? The old token will stop working immediately.')) return;
+    if (!confirm(t('confirmations.regenerateToken'))) return;
     try {
       const res = await apiFetch(`/api/users/${userId}/regenerate-token`, {
         method: 'POST',
@@ -582,12 +593,12 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
         setError(data.message);
       }
     } catch {
-      setError('Failed to regenerate access token.');
+      setError(t('errors.regenerateTokenFailed'));
     }
   };
 
   const handleDelete = async (userId: string) => {
-    if (!confirm('Permanently delete this user? This action cannot be undone.')) return;
+    if (!confirm(t('confirmations.deleteUser'))) return;
     try {
       const res = await apiFetch(`/api/users/${userId}`, {
         method: 'DELETE',
@@ -601,7 +612,7 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
         setError(data.message);
       }
     } catch {
-      setError('Failed to delete user.');
+      setError(t('errors.deleteFailed'));
     }
   };
 
@@ -614,16 +625,16 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
       });
       const data = await res.json();
       if (!data.success) {
-        setError(data.message || 'Failed to resend invitation.');
+        setError(data.message || t('errors.resendInvitationFailed'));
       }
     } catch {
-      setError('Failed to resend invitation.');
+      setError(t('errors.resendInvitationFailed'));
     }
   };
 
   const formatDate = (date: string | null) => {
     if (!date) return '—';
-    return new Date(date).toLocaleDateString('en-US', {
+    return new Date(date).toLocaleDateString(locale, {
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',
@@ -655,7 +666,7 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
         // Try CSV parsing: first line = headers, rest = data
         const lines = importText.trim().split('\n').filter(Boolean);
         if (lines.length < 2) {
-          setError('Invalid format. Use JSON array or CSV with headers.');
+          setError(t('import.invalidFormat'));
           setImporting(false);
           return;
         }
@@ -678,7 +689,7 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
         });
       }
       if (!Array.isArray(parsed)) {
-        setError('Expected a JSON array of user objects.');
+        setError(t('import.invalidArray'));
         setImporting(false);
         return;
       }
@@ -697,7 +708,7 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
         setError(data.message);
       }
     } catch {
-      setError('Import failed.');
+      setError(t('import.failed'));
     } finally {
       setImporting(false);
     }
@@ -706,7 +717,7 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="heading-md">Users</h2>
+        <h2 className="heading-md">{t('title')}</h2>
         <div className="flex items-center gap-2">
           <button
             onClick={() => {
@@ -715,7 +726,7 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
             }}
             className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm font-medium rounded-md transition-colors"
           >
-            {showImport ? 'Cancel Import' : 'Import'}
+            {showImport ? t('import.toggleCancel') : t('import.toggleOpen')}
           </button>
           <button
             onClick={() => {
@@ -724,7 +735,7 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
             }}
             className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-md transition-colors"
           >
-            {showCreateForm ? 'Cancel' : '+ New User'}
+            {showCreateForm ? tCommon('cancel') : t('actions.newUser')}
           </button>
         </div>
       </div>
@@ -732,10 +743,8 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
       {/* Token display modal */}
       {newToken && (
         <div className="bg-green-900/30 border border-green-700 rounded-lg p-4">
-          <h3 className="text-green-300 font-medium mb-2">Access Token Generated</h3>
-          <p className="text-gray-400 text-sm mb-2">
-            Copy it now — you can reveal it later from your account with your password.
-          </p>
+          <h3 className="text-green-300 font-medium mb-2">{t('tokenModal.title')}</h3>
+          <p className="text-gray-400 text-sm mb-2">{t('tokenModal.description')}</p>
           <div className="flex items-center gap-2">
             <code className="flex-1 bg-gray-800 px-3 py-2 rounded text-green-300 text-sm font-mono break-all">
               {newToken}
@@ -746,12 +755,12 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
               }}
               className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded transition-colors"
             >
-              Copy
+              {t('actions.copy')}
             </button>
           </div>
           {onboardingCode && (
             <div className="mt-3">
-              <p className="text-gray-400 text-sm mb-1">Onboarding link:</p>
+              <p className="text-gray-400 text-sm mb-1">{t('tokenModal.onboardingLink')}</p>
               <code className="block bg-gray-800 px-3 py-2 rounded text-blue-300 text-sm font-mono break-all">
                 {window.location.origin}/welcome/{onboardingCode}
               </code>
@@ -764,7 +773,7 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
             }}
             className="mt-3 text-sm text-gray-400 hover:text-white transition-colors"
           >
-            Dismiss
+            {t('actions.dismiss')}
           </button>
         </div>
       )}
@@ -781,19 +790,16 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
       {/* Import form */}
       {showImport && (
         <div className="card-primary p-4 space-y-3">
-          <h3 className="eyebrow">Bulk Import Users</h3>
-          <p className="text-xs text-gray-500">
-            Paste a JSON array or CSV data. CSV format: first row = headers (email required), extra
-            columns become custom attributes.
-          </p>
+          <h3 className="eyebrow">{t('import.heading')}</h3>
+          <p className="text-xs text-gray-500">{t('import.description')}</p>
           <div className="flex items-center gap-2">
-            <label className="text-sm text-gray-400">Default MCP server:</label>
+            <label className="text-sm text-gray-400">{t('import.defaultProfileLabel')}</label>
             <select
               value={importProfile}
               onChange={(e) => setImportProfile(e.target.value)}
               className="bg-gray-900 border border-gray-600 rounded px-2 py-1 text-sm text-gray-200"
             >
-              <option value="">None (update only)</option>
+              <option value="">{t('import.noneOption')}</option>
               {profiles.map((p) => (
                 <option key={p.name} value={p.name}>
                   {p.label || p.name}
@@ -816,14 +822,21 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
               disabled={importing || !importText.trim()}
               className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-md disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
-              {importing ? 'Importing...' : 'Import'}
+              {importing ? t('import.submitting') : t('import.toggleOpen')}
             </button>
             {importResult && (
               <span className="text-sm text-gray-300">
-                <span className="text-green-400">{importResult.created} created</span>,{' '}
-                <span className="text-blue-400">{importResult.updated} updated</span>
+                <span className="text-green-400">
+                  {t('import.result.created', { count: importResult.created })}
+                </span>
+                ,{' '}
+                <span className="text-blue-400">
+                  {t('import.result.updated', { count: importResult.updated })}
+                </span>
                 {importResult.errors.length > 0 && (
-                  <span className="text-red-400">, {importResult.errors.length} errors</span>
+                  <span className="text-red-400">
+                    , {t('import.result.errorsCount', { count: importResult.errors.length })}
+                  </span>
                 )}
               </span>
             )}
@@ -832,7 +845,7 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
             <div className="text-xs text-red-400 max-h-32 overflow-auto space-y-1">
               {importResult.errors.map((err, i) => (
                 <div key={i}>
-                  Line {err.index + 1}
+                  {t('import.result.errorLine', { line: err.index + 1 })}
                   {err.email ? ` (${err.email})` : ''}: {err.reason}
                 </div>
               ))}
@@ -844,11 +857,11 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
       {/* Create form */}
       {showCreateForm && (
         <form onSubmit={handleCreate} className="card-primary p-4 space-y-3">
-          <h3 className="heading-md">Create User</h3>
+          <h3 className="heading-md">{t('createForm.title')}</h3>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm text-gray-400 mb-1" htmlFor="form-name">
-                Name <span className="text-red-400">*</span>
+                {t('createForm.nameLabel')} <span className="text-red-400">*</span>
               </label>
               <input
                 id="form-name"
@@ -861,7 +874,7 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
             </div>
             <div>
               <label className="block text-sm text-gray-400 mb-1" htmlFor="form-email">
-                Email <span className="text-red-400">*</span>
+                {t('createForm.emailLabel')} <span className="text-red-400">*</span>
               </label>
               <input
                 id="form-email"
@@ -877,9 +890,9 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
                 className="flex items-center gap-1 text-sm text-gray-400 mb-1"
                 htmlFor="form-role"
               >
-                Role
+                {t('createForm.roleLabel')}
                 <HelpTip
-                  content="Admin: full access to user management, API keys, and configuration. User: limited access to authorized MCP servers only."
+                  content={t('createForm.roleHelp')}
                   position="top"
                   maxWidth={300}
                   size="xs"
@@ -891,8 +904,8 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
                 onChange={(e) => setFormRole(e.target.value as 'admin' | 'user')}
                 className="w-full px-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-white text-sm focus:outline-none focus:ring-1 focus:ring-blue-500/50"
               >
-                <option value="user">User</option>
-                <option value="admin">Admin</option>
+                <option value="user">{t('createForm.roleUser')}</option>
+                <option value="admin">{t('createForm.roleAdmin')}</option>
               </select>
             </div>
             <div>
@@ -900,9 +913,9 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
                 className="flex items-center gap-1 text-sm text-gray-400 mb-1"
                 htmlFor="form-rate-limit"
               >
-                Rate limit (req/min, 0 = unlimited)
+                {t('createForm.rateLimitLabel')}
                 <HelpTip
-                  content="Limits the number of requests per minute for this user. Enter 0 to apply no limit."
+                  content={t('createForm.rateLimitHelp')}
                   position="top"
                   maxWidth={280}
                   size="xs"
@@ -924,13 +937,13 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
           {/* Profile accesses */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="text-sm text-gray-400">MCP Server Access</label>
+              <label className="text-sm text-gray-400">{t('mcpAccess.title')}</label>
               <button
                 type="button"
                 onClick={addProfileToForm}
                 className="text-xs text-blue-400 hover:text-blue-300"
               >
-                + Add profile
+                {t('createForm.addProfile')}
               </button>
             </div>
             {formProfiles.map((fp, i) => (
@@ -941,7 +954,7 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
                   className="flex-1 px-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-white text-sm"
                   required
                 >
-                  <option value="">Select an MCP server</option>
+                  <option value="">{t('createForm.selectProfilePlaceholder')}</option>
                   {profiles.map((p) => (
                     <option key={p.name} value={p.name}>
                       {p.label || p.name}
@@ -951,12 +964,12 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
                 <select
                   value={fp.accessMode}
                   onChange={(e) => updateFormProfile(i, 'accessMode', e.target.value)}
-                  title="MCP: API access only. Chat: browser chat interface only. Both: full access to both modes."
+                  title={t('createForm.accessModeTooltip')}
                   className="px-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-white text-sm"
                 >
-                  <option value="both">MCP + Chat</option>
-                  <option value="mcp">MCP only</option>
-                  <option value="chat">Chat only</option>
+                  <option value="both">{t('accessMode.both')}</option>
+                  <option value="mcp">{t('accessMode.mcp')}</option>
+                  <option value="chat">{t('accessMode.chat')}</option>
                 </select>
                 {formProfiles.length > 1 && (
                   <button
@@ -974,13 +987,13 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
           {/* Custom Attributes (for data scoping) */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="text-sm text-gray-400">Custom Attributes</label>
+              <label className="text-sm text-gray-400">{t('customAttributes.title')}</label>
               <button
                 type="button"
                 onClick={() => setFormCustomAttrs([...formCustomAttrs, { key: '', value: '' }])}
                 className="text-xs text-blue-400 hover:text-blue-300"
               >
-                + Add attribute
+                {t('createForm.addAttribute')}
               </button>
             </div>
             {formCustomAttrs.length > 0 && (
@@ -995,7 +1008,7 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
                         updated[i] = { ...updated[i], key: e.target.value };
                         setFormCustomAttrs(updated);
                       }}
-                      placeholder="Key (e.g. client_id)"
+                      placeholder={t('createForm.attrKeyPlaceholder')}
                       className="flex-1 bg-gray-900 border border-gray-600 rounded px-2 py-1 text-sm text-gray-200"
                     />
                     <input
@@ -1006,7 +1019,7 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
                         updated[i] = { ...updated[i], value: e.target.value };
                         setFormCustomAttrs(updated);
                       }}
-                      placeholder="Value (e.g. CLT-00042)"
+                      placeholder={t('createForm.attrValuePlaceholder')}
                       className="flex-1 bg-gray-900 border border-gray-600 rounded px-2 py-1 text-sm text-gray-200"
                     />
                     <button
@@ -1033,10 +1046,7 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
               </div>
             )}
             {formCustomAttrs.length === 0 && (
-              <p className="text-xs text-gray-500">
-                No custom attributes. Used for data scoping when the user&apos;s email isn&apos;t
-                the identifier in the database.
-              </p>
+              <p className="text-xs text-gray-500">{t('createForm.noAttributesHint')}</p>
             )}
           </div>
 
@@ -1049,9 +1059,9 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
               className="rounded border-gray-600 bg-gray-700 text-blue-500 focus:ring-blue-500/30 focus:ring-offset-0"
             />
             <span className="flex items-center gap-1 text-sm text-gray-300">
-              Send invitation email
+              {t('createForm.sendInvitationLabel')}
               <HelpTip
-                content="Automatically sends the user an email containing their registration link."
+                content={t('createForm.sendInvitationHelp')}
                 position="right"
                 size="xs"
               />
@@ -1064,13 +1074,13 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
               onClick={() => setShowCreateForm(false)}
               className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded transition-colors"
             >
-              Cancel
+              {tCommon('cancel')}
             </button>
             <button
               type="submit"
               className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded transition-colors"
             >
-              Create User
+              {t('createForm.title')}
             </button>
           </div>
         </form>
@@ -1080,7 +1090,7 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
       <div className="flex gap-3 items-center">
         <input
           type="text"
-          placeholder="Search by name or email..."
+          placeholder={t('filters.searchPlaceholder')}
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className="flex-1 px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-white text-sm placeholder-gray-500"
@@ -1090,17 +1100,17 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
           onChange={(e) => setFilterStatus(e.target.value)}
           className="px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-white text-sm"
         >
-          <option value="">All statuses</option>
-          <option value="active">Active</option>
-          <option value="disabled">Disabled</option>
-          <option value="invited">Invited</option>
+          <option value="">{t('filters.allStatuses')}</option>
+          <option value="active">{t('filters.statusActive')}</option>
+          <option value="disabled">{t('filters.statusDisabled')}</option>
+          <option value="invited">{t('filters.statusInvited')}</option>
         </select>
         <select
           value={filterProfile}
           onChange={(e) => setFilterProfile(e.target.value)}
           className="px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-white text-sm"
         >
-          <option value="">All MCP servers</option>
+          <option value="">{t('filters.allProfiles')}</option>
           {profiles.map((p) => (
             <option key={p.name} value={p.name}>
               {p.label || p.name}
@@ -1111,22 +1121,20 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
 
       {/* User table */}
       {loading ? (
-        <div className="text-gray-400 text-center py-8">Loading users...</div>
+        <div className="text-gray-400 text-center py-8">{t('table.loading')}</div>
       ) : users.length === 0 ? (
-        <div className="text-gray-500 text-center py-8">
-          No users yet. Click "+ New User" to create one.
-        </div>
+        <div className="text-gray-500 text-center py-8">{t('table.empty')}</div>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
             <thead className="text-gray-400 border-b border-white/5">
               <tr>
-                <th className="px-3 py-2">Name</th>
-                <th className="px-3 py-2">Email</th>
-                <th className="px-3 py-2">MCP Servers</th>
-                <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2">Last Active</th>
-                <th className="px-3 py-2">Actions</th>
+                <th className="px-3 py-2">{t('table.colName')}</th>
+                <th className="px-3 py-2">{t('table.colEmail')}</th>
+                <th className="px-3 py-2">{t('table.colMcpServers')}</th>
+                <th className="px-3 py-2">{t('table.colStatus')}</th>
+                <th className="px-3 py-2">{t('table.colLastActive')}</th>
+                <th className="px-3 py-2">{t('table.colActions')}</th>
               </tr>
             </thead>
             <tbody className="text-gray-300">
@@ -1143,7 +1151,15 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
                       {user.profiles.map((p) => (
                         <span
                           key={p.profileName}
-                          title={`MCP Server: ${p.profileName} — Access mode: ${p.accessMode === 'both' ? 'MCP + Chat' : p.accessMode === 'mcp' ? 'MCP only' : 'Chat only'}`}
+                          title={t('table.profileTooltip', {
+                            name: p.profileName,
+                            mode:
+                              p.accessMode === 'both'
+                                ? t('accessMode.both')
+                                : p.accessMode === 'mcp'
+                                  ? t('accessMode.mcp')
+                                  : t('accessMode.chat'),
+                          })}
                           className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-os-700/20 text-os-400 border border-os-600/30"
                         >
                           {p.profileName}
@@ -1161,42 +1177,42 @@ export default function UserManagement({ profiles, initialSelectedUserId }: User
                       {user.status === 'active' ? (
                         <button
                           onClick={() => handleDisable(user.id)}
-                          title="Disable the account — the user will no longer be able to sign in."
+                          title={t('actions.disableTooltip')}
                           className="px-2 py-1 bg-red-900/50 hover:bg-red-900 text-red-300 text-xs rounded transition-colors"
                         >
-                          Disable
+                          {t('actions.disable')}
                         </button>
                       ) : user.status === 'disabled' ? (
                         <button
                           onClick={() => handleEnable(user.id)}
-                          title="Re-enable the account and generate a new access token."
+                          title={t('actions.enableTooltip')}
                           className="px-2 py-1 bg-green-900/50 hover:bg-green-900 text-green-300 text-xs rounded transition-colors"
                         >
-                          Enable
+                          {t('actions.enable')}
                         </button>
                       ) : null}
                       {user.status === 'invited' && (
                         <button
                           onClick={() => handleResendInvitation(user.id)}
-                          title="Resend the invitation email with a new signup link."
+                          title={t('actions.resendTooltip')}
                           className="text-xs text-os-400 hover:text-os-300 px-2 py-1 transition-colors"
                         >
-                          Resend invitation
+                          {t('actions.resend')}
                         </button>
                       )}
                       <button
                         onClick={() => handleRegenerateToken(user.id)}
-                        title="Generate a new access token — the old one will be invalidated immediately."
+                        title={t('actions.regenerateTooltip')}
                         className="px-2 py-1 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs rounded transition-colors"
                       >
-                        New Access Token
+                        {t('actions.regenerate')}
                       </button>
                       <button
                         onClick={() => handleDelete(user.id)}
-                        title="Permanently delete this user and all their access. This action is irreversible."
+                        title={t('actions.deleteTooltip')}
                         className="px-2 py-1 bg-gray-700 hover:bg-red-900 text-gray-300 hover:text-red-300 text-xs rounded transition-colors"
                       >
-                        Delete
+                        {t('actions.delete')}
                       </button>
                     </div>
                   </td>

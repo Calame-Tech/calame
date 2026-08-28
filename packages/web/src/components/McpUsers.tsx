@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useTranslations } from 'use-intl/react';
 import { apiFetch } from '../lib/api.js';
 import type { UserEntry, AccessMode } from '../types/schema.js';
+import { useLocale } from '../i18n/I18nProvider.js';
 
 interface McpUsersProps {
   profileName: string;
@@ -23,6 +25,9 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export default function McpUsers({ profileName, onNavigateToUser }: McpUsersProps) {
+  const t = useTranslations('mcpList.users');
+  const tCommon = useTranslations('common');
+  const { locale } = useLocale();
   const [usersOnProfile, setUsersOnProfile] = useState<UserEntry[]>([]);
   const [allUsers, setAllUsers] = useState<UserEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -51,7 +56,7 @@ export default function McpUsers({ profileName, onNavigateToUser }: McpUsersProp
       if (profileData.success) setUsersOnProfile(profileData.users);
       if (allData.success) setAllUsers(allData.users);
     } catch {
-      setError('Failed to load users.');
+      setError(t('errors.loadFailed'));
     } finally {
       setLoading(false);
     }
@@ -67,7 +72,7 @@ export default function McpUsers({ profileName, onNavigateToUser }: McpUsersProp
   );
 
   const handleRemoveFromProfile = async (userId: string) => {
-    if (!confirm('Remove this user from this MCP server?')) return;
+    if (!confirm(t('confirmRemove'))) return;
     try {
       const res = await apiFetch(`/api/users/${userId}/profiles/${profileName}`, {
         method: 'DELETE',
@@ -77,7 +82,7 @@ export default function McpUsers({ profileName, onNavigateToUser }: McpUsersProp
       if (data.success) fetchUsers();
       else setError(data.message);
     } catch {
-      setError('Failed to remove user.');
+      setError(t('errors.removeFailed'));
     }
   };
 
@@ -100,7 +105,7 @@ export default function McpUsers({ profileName, onNavigateToUser }: McpUsersProp
         setError(data.message);
       }
     } catch {
-      setError('Failed to add user.');
+      setError(t('errors.addFailed'));
     }
   };
 
@@ -131,13 +136,13 @@ export default function McpUsers({ profileName, onNavigateToUser }: McpUsersProp
         setError(data.message);
       }
     } catch {
-      setError('Failed to create user.');
+      setError(t('errors.createFailed'));
     }
   };
 
   const formatDate = (date: string | null) => {
     if (!date) return '—';
-    return new Date(date).toLocaleDateString('en-US', {
+    return new Date(date).toLocaleDateString(locale, {
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',
@@ -157,7 +162,7 @@ export default function McpUsers({ profileName, onNavigateToUser }: McpUsersProp
           }}
           className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded transition-colors"
         >
-          + New User
+          {t('newUserButton')}
         </button>
         {usersNotOnProfile.length > 0 && (
           <button
@@ -167,7 +172,7 @@ export default function McpUsers({ profileName, onNavigateToUser }: McpUsersProp
             }}
             className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded transition-colors"
           >
-            + Add Existing User
+            {t('addExistingButton')}
           </button>
         )}
       </div>
@@ -175,9 +180,7 @@ export default function McpUsers({ profileName, onNavigateToUser }: McpUsersProp
       {/* Token display */}
       {newToken && (
         <div className="bg-green-900/30 border border-green-700 rounded-lg p-3">
-          <p className="text-green-300 text-sm font-medium mb-1">
-            Access Token — copy now, shown once only
-          </p>
+          <p className="text-green-300 text-sm font-medium mb-1">{t('tokenDisplay.heading')}</p>
           <div className="flex items-center gap-2">
             <code className="flex-1 bg-gray-800 px-3 py-1.5 rounded text-green-300 text-xs font-mono break-all">
               {newToken}
@@ -186,13 +189,13 @@ export default function McpUsers({ profileName, onNavigateToUser }: McpUsersProp
               onClick={() => navigator.clipboard.writeText(newToken)}
               className="px-2 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-xs rounded"
             >
-              Copy
+              {t('tokenDisplay.copy')}
             </button>
             <button
               onClick={() => setNewToken(null)}
               className="text-gray-500 hover:text-white text-xs"
             >
-              Dismiss
+              {t('tokenDisplay.dismiss')}
             </button>
           </div>
         </div>
@@ -210,11 +213,13 @@ export default function McpUsers({ profileName, onNavigateToUser }: McpUsersProp
       {/* Quick-create form */}
       {showQuickCreate && (
         <form onSubmit={handleQuickCreate} className="card-nested p-3 space-y-2">
-          <h4 className="text-sm text-gray-200 font-medium">Quick Create User for {profileName}</h4>
+          <h4 className="text-sm text-gray-200 font-medium">
+            {t('quickCreate.heading', { profileName })}
+          </h4>
           <div className="flex gap-2">
             <input
               type="text"
-              placeholder="Name"
+              placeholder={t('quickCreate.namePlaceholder')}
               value={qcName}
               onChange={(e) => setQcName(e.target.value)}
               className="input-editorial flex-1 text-sm"
@@ -222,7 +227,7 @@ export default function McpUsers({ profileName, onNavigateToUser }: McpUsersProp
             />
             <input
               type="email"
-              placeholder="Email"
+              placeholder={t('quickCreate.emailPlaceholder')}
               value={qcEmail}
               onChange={(e) => setQcEmail(e.target.value)}
               className="input-editorial flex-1 text-sm"
@@ -233,22 +238,22 @@ export default function McpUsers({ profileName, onNavigateToUser }: McpUsersProp
               onChange={(e) => setQcAccessMode(e.target.value as AccessMode)}
               className="input-editorial text-sm"
             >
-              <option value="both">MCP + Chat</option>
-              <option value="mcp">MCP only</option>
-              <option value="chat">Chat only</option>
+              <option value="both">{t('accessMode.both')}</option>
+              <option value="mcp">{t('accessMode.mcp')}</option>
+              <option value="chat">{t('accessMode.chat')}</option>
             </select>
             <button
               type="submit"
               className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded"
             >
-              Create
+              {t('quickCreate.createButton')}
             </button>
             <button
               type="button"
               onClick={() => setShowQuickCreate(false)}
               className="px-2 py-1.5 text-gray-400 hover:text-white text-sm"
             >
-              Cancel
+              {tCommon('cancel')}
             </button>
           </div>
         </form>
@@ -257,17 +262,19 @@ export default function McpUsers({ profileName, onNavigateToUser }: McpUsersProp
       {/* Add existing user */}
       {showAddExisting && (
         <div className="card-nested p-3 space-y-2">
-          <h4 className="text-sm text-gray-200 font-medium">Add Existing User to {profileName}</h4>
+          <h4 className="text-sm text-gray-200 font-medium">
+            {t('addExisting.heading', { profileName })}
+          </h4>
           <div className="flex items-center gap-2 mb-2">
-            <span className="text-xs text-gray-400">Access mode:</span>
+            <span className="text-xs text-gray-400">{t('addExisting.accessModeLabel')}</span>
             <select
               value={addAccessMode}
               onChange={(e) => setAddAccessMode(e.target.value as AccessMode)}
               className="input-editorial text-xs"
             >
-              <option value="both">MCP + Chat</option>
-              <option value="mcp">MCP only</option>
-              <option value="chat">Chat only</option>
+              <option value="both">{t('accessMode.both')}</option>
+              <option value="mcp">{t('accessMode.mcp')}</option>
+              <option value="chat">{t('accessMode.chat')}</option>
             </select>
           </div>
           <div className="space-y-1 max-h-40 overflow-y-auto">
@@ -284,7 +291,7 @@ export default function McpUsers({ profileName, onNavigateToUser }: McpUsersProp
                   onClick={() => handleAddExistingUser(u.id)}
                   className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded"
                 >
-                  Add
+                  {t('addExisting.addButton')}
                 </button>
               </div>
             ))}
@@ -293,27 +300,25 @@ export default function McpUsers({ profileName, onNavigateToUser }: McpUsersProp
             onClick={() => setShowAddExisting(false)}
             className="text-xs text-gray-400 hover:text-white"
           >
-            Cancel
+            {tCommon('cancel')}
           </button>
         </div>
       )}
 
       {/* Users list */}
       {loading ? (
-        <div className="text-gray-500 text-sm text-center py-4">Loading...</div>
+        <div className="text-gray-500 text-sm text-center py-4">{t('loading')}</div>
       ) : usersOnProfile.length === 0 ? (
-        <div className="text-gray-500 text-sm text-center py-4">
-          No users have access to this MCP server.
-        </div>
+        <div className="text-gray-500 text-sm text-center py-4">{t('emptyState')}</div>
       ) : (
         <table className="w-full text-sm text-left">
           <thead className="text-gray-400 border-b border-white/5">
             <tr>
-              <th className="px-3 py-2">Name</th>
-              <th className="px-3 py-2">Email</th>
-              <th className="px-3 py-2">Access</th>
-              <th className="px-3 py-2">Status</th>
-              <th className="px-3 py-2">Last Active</th>
+              <th className="px-3 py-2">{t('table.colName')}</th>
+              <th className="px-3 py-2">{t('table.colEmail')}</th>
+              <th className="px-3 py-2">{t('table.colAccess')}</th>
+              <th className="px-3 py-2">{t('table.colStatus')}</th>
+              <th className="px-3 py-2">{t('table.colLastActive')}</th>
               <th className="px-3 py-2"></th>
             </tr>
           </thead>
@@ -340,7 +345,7 @@ export default function McpUsers({ profileName, onNavigateToUser }: McpUsersProp
                       onClick={() => handleRemoveFromProfile(user.id)}
                       className="px-2 py-1 bg-red-900/50 hover:bg-red-900 text-red-300 text-xs rounded transition-colors"
                     >
-                      Remove
+                      {t('table.removeButton')}
                     </button>
                   </td>
                 </tr>

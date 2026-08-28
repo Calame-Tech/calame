@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useTranslations } from 'use-intl/react';
 import { apiFetch } from '../lib/api.js';
 import HelpTip from './HelpTip.js';
 
@@ -37,6 +38,8 @@ export default function AiSettingsAssignment({
   onChange,
   onManageSettings,
 }: AiSettingsAssignmentProps) {
+  const t = useTranslations('aiSettings');
+  const tCommon = useTranslations('common');
   const [available, setAvailable] = useState<AiSettingMeta[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -82,36 +85,32 @@ export default function AiSettingsAssignment({
     <div className="card-primary p-4">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <h4 className="text-sm font-semibold text-gray-300">AI Settings</h4>
-          <HelpTip
-            content="Select which AI settings the chat clients of this MCP can use. Use ↑/↓ to reorder; the first entry is the default. Leave empty to fall back to the global default."
-            position="right"
-            maxWidth={340}
-          />
+          <h4 className="text-sm font-semibold text-gray-300">{t('title')}</h4>
+          <HelpTip content={t('assignment.help')} position="right" maxWidth={340} />
         </div>
         <div className="flex items-center gap-3">
           <span className="text-xs text-gray-500">
-            {selected.length === 0 ? 'No setting · global default' : `${selected.length} selected`}
+            {selected.length === 0
+              ? t('assignment.noSettingDefault')
+              : t('assignment.selectedCount', { count: selected.length })}
           </span>
           {onManageSettings && (
             <button
               type="button"
               onClick={onManageSettings}
               className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-os-700/30 hover:bg-os-700/50 text-os-400 text-xs font-medium transition-all duration-200"
-              title="Open the AI Settings page (you can come back via the breadcrumb)"
+              title={t('assignment.manageButtonTitle')}
             >
-              Manage AI settings →
+              {t('assignment.manageButton')}
             </button>
           )}
         </div>
       </div>
 
       {loading ? (
-        <p className="text-sm text-gray-500">Loading…</p>
+        <p className="text-sm text-gray-500">{tCommon('loading')}</p>
       ) : available.length === 0 ? (
-        <p className="text-sm text-gray-500">
-          No AI setting defined yet. Create one from the AI Settings panel first.
-        </p>
+        <p className="text-sm text-gray-500">{t('assignment.emptyState')}</p>
       ) : (
         <div className="space-y-3">
           {/* Selected list — ordered, first = default */}
@@ -132,18 +131,20 @@ export default function AiSettingsAssignment({
                         {meta?.label ?? name}{' '}
                         {i === 0 && (
                           <span className="text-[10px] uppercase tracking-wide text-os-400/80 ml-1">
-                            default
+                            {t('assignment.defaultBadge')}
                           </span>
                         )}
                       </div>
                       <div className="text-xs text-gray-500">
-                        {meta ? `${meta.provider} · ${meta.name}` : `${name} (deleted?)`}
+                        {meta
+                          ? `${meta.provider} · ${meta.name}`
+                          : t('assignment.deletedFallback', { name })}
                       </div>
                     </div>
                     <button
                       onClick={() => moveUp(i)}
                       disabled={i === 0}
-                      title="Move up"
+                      title={t('assignment.moveUp')}
                       className="px-1.5 py-0.5 text-xs text-gray-400 hover:text-gray-200 disabled:opacity-30"
                     >
                       ↑
@@ -151,14 +152,14 @@ export default function AiSettingsAssignment({
                     <button
                       onClick={() => moveDown(i)}
                       disabled={i === selected.length - 1}
-                      title="Move down"
+                      title={t('assignment.moveDown')}
                       className="px-1.5 py-0.5 text-xs text-gray-400 hover:text-gray-200 disabled:opacity-30"
                     >
                       ↓
                     </button>
                     <button
                       onClick={() => toggle(name)}
-                      title="Remove"
+                      title={t('assignment.remove')}
                       className="px-1.5 py-0.5 text-xs text-red-400 hover:text-red-300"
                     >
                       ×
@@ -172,7 +173,7 @@ export default function AiSettingsAssignment({
           {/* Available (non-selected) — chat-capable only, see isChatCapable above */}
           {available.some((s) => !selected.includes(s.name) && isChatCapable(s)) && (
             <div className="pt-1 border-t border-white/5">
-              <p className="text-xs text-gray-500 mb-2 mt-2">Add a setting:</p>
+              <p className="text-xs text-gray-500 mb-2 mt-2">{t('assignment.addSetting')}</p>
               <div className="flex flex-wrap gap-2">
                 {available
                   .filter((s) => !selected.includes(s.name) && isChatCapable(s))

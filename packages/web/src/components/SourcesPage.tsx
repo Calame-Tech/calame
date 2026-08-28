@@ -1,4 +1,5 @@
 import React, { useState, useEffect, Suspense } from 'react';
+import { useTranslations } from 'use-intl/react';
 import { apiFetch } from '../lib/api.js';
 import type { NamedConnection, DatabaseSchema } from '../types/schema.js';
 import ConnectionManager from './ConnectionManager.js';
@@ -55,6 +56,7 @@ export default function SourcesPage({
   ragDisabledReason,
   KnowledgeBaseManagerComponent,
 }: SourcesPageProps) {
+  const t = useTranslations('sources.sourcesPage');
   const [showAddModal, setShowAddModal] = useState(false);
   const [ragSourceCount, setRagSourceCount] = useState(0);
 
@@ -77,19 +79,18 @@ export default function SourcesPage({
     }
   };
 
-  const kbDisabledTitle =
-    ragDisabledReason ?? 'Knowledge base features are unavailable on this instance';
+  const kbDisabledTitle = ragDisabledReason ?? t('kbDisabledDefault');
 
   const tabs: { id: SourcesTab; label: string; count: number; disabled: boolean }[] = [
     {
       id: 'databases',
-      label: 'Databases',
+      label: t('tabDatabases'),
       count: connections.length,
       disabled: false,
     },
     {
       id: 'knowledge',
-      label: 'Knowledge bases',
+      label: t('tabKnowledge'),
       count: ragEnabled ? ragSourceCount : 0,
       disabled: !ragEnabled,
     },
@@ -100,10 +101,8 @@ export default function SourcesPage({
       {/* Page header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="heading-md">Sources</h1>
-          <p className="text-sm text-gray-400 mt-0.5">
-            Manage database connections and knowledge bases used by your MCP servers.
-          </p>
+          <h1 className="heading-md">{t('title')}</h1>
+          <p className="text-sm text-gray-400 mt-0.5">{t('description')}</p>
         </div>
         <button
           type="button"
@@ -121,7 +120,7 @@ export default function SourcesPage({
           >
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
           </svg>
-          Add source
+          {t('addSource')}
         </button>
       </div>
 
@@ -144,7 +143,7 @@ export default function SourcesPage({
                   {tab.label}
                   <span
                     className="ml-1 px-1.5 py-0.5 rounded-full bg-gray-800 text-gray-600 text-[10px] font-mono"
-                    aria-label={`${tab.count} items`}
+                    aria-label={t('itemsAriaLabel', { count: tab.count })}
                   >
                     {tab.count}
                   </span>
@@ -174,7 +173,7 @@ export default function SourcesPage({
                     'ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-mono',
                     isActive ? 'bg-os-500/20 text-os-400' : 'bg-gray-800 text-gray-500',
                   ].join(' ')}
-                  aria-label={`${tab.count} items`}
+                  aria-label={t('itemsAriaLabel', { count: tab.count })}
                 >
                   {tab.count}
                 </span>
@@ -200,7 +199,7 @@ export default function SourcesPage({
             <Suspense
               fallback={
                 <div className="text-sm text-gray-500 italic py-8 text-center">
-                  Loading knowledge bases…
+                  {t('loadingKnowledgeBases')}
                 </div>
               }
             >
@@ -229,11 +228,10 @@ export default function SourcesPage({
                 </span>
               </div>
               <h3 className="text-sm font-semibold text-gray-300 mb-2">
-                Knowledge bases unavailable
+                {t('kbUnavailableTitle')}
               </h3>
               <p className="text-sm text-gray-500">
-                {ragDisabledReason ??
-                  'The RAG (Retrieval-Augmented Generation) feature is not available on this instance.'}
+                {ragDisabledReason ?? t('kbUnavailableDescription')}
               </p>
             </div>
           ))}

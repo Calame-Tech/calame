@@ -1,9 +1,9 @@
 // SettingsPage component tests (Phase 3 #16).
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { screen, fireEvent } from '@testing-library/react';
 import SettingsPage from '../SettingsPage.js';
-import { installFetchMock, flushEffects } from './testUtils.js';
+import { render, installFetchMock, flushEffects } from './testUtils.js';
 
 // The SSO tab lazily imports OidcSettings from the EE package — mock the
 // module so the license boundary is never crossed.

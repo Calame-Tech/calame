@@ -10,6 +10,7 @@
 // drag/spring never re-render the React tree.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslations } from 'use-intl/react';
 import { EmptyState } from './ui/index.js';
 import GraphDetailChip, { type ChipRow } from './GraphDetailChip.js';
 import { apiFetch } from '../lib/api.js';
@@ -83,6 +84,13 @@ export default function ConfigGraphView({
   profiles,
   serveStatus,
 }: ConfigGraphViewProps) {
+  const t = useTranslations('configGraph');
+  const nodeKindWords: Record<NodeKind, string> = {
+    source: t('words.source'),
+    config: t('words.config'),
+    server: t('words.server'),
+  };
+
   // ---- graph model (deterministic, from props) ----------------------------
   const {
     nodes,
@@ -156,16 +164,16 @@ export default function ConfigGraphView({
         id: `s:${sid}`,
         kind: 'source',
         label: conn?.label || sid,
-        sub: kind === 'document' ? 'knowledge' : kind,
+        sub: kind === 'document' ? t('node.knowledge') : kind,
         color: SOURCE_COLORS[kind] ?? SOURCE_COLORS.unknown,
         layer: 0,
       });
       chips.set(`s:${sid}`, {
-        kind: `source · ${kind === 'document' ? 'knowledge base' : kind}`,
+        kind: `${t('words.source')} · ${kind === 'document' ? t('words.knowledgeBase') : kind}`,
         title: conn?.label || sid,
         rows: [
-          { k: 'Type', v: kind },
-          { k: 'Used by', v: `${usedBy} configuration${usedBy !== 1 ? 's' : ''}` },
+          { k: t('chip.typeLabel'), v: kind },
+          { k: t('chip.usedByLabel'), v: t('chip.usedByCount', { count: usedBy }) },
         ],
       });
     }
@@ -182,23 +190,23 @@ export default function ConfigGraphView({
         id: `c:${cfg.name}`,
         kind: 'config',
         label: cfg.label || cfg.name,
-        sub: `${srcCount} src${masked > 0 ? ` · ${masked} masked` : ''}`,
+        sub: `${t('node.srcCount', { count: srcCount })}${masked > 0 ? ` · ${t('node.maskedCount', { count: masked })}` : ''}`,
         layer: 1,
       });
       const rows: ChipRow[] = [
         {
-          k: 'Sources',
+          k: t('chip.sourcesLabel'),
           v: (cfg.sources ?? []).map((sid) => connByName.get(sid)?.label || sid).join(' · ') || '—',
         },
-        { k: 'Tables', v: String(tables) },
+        { k: t('chip.tablesLabel'), v: String(tables) },
       ];
-      if (masked > 0) rows.push({ k: 'Masked columns', v: String(masked), tone: 'pii' });
+      if (masked > 0) rows.push({ k: t('chip.maskedColumnsLabel'), v: String(masked), tone: 'pii' });
       rows.push({
-        k: 'Mounted by',
+        k: t('chip.mountedByLabel'),
         v: mountedBy.map((p) => p.label || p.name).join(' · ') || '—',
       });
       chips.set(`c:${cfg.name}`, {
-        kind: 'data configuration',
+        kind: t('words.dataConfiguration'),
         title: cfg.label || cfg.name,
         rows,
       });
@@ -211,24 +219,28 @@ export default function ConfigGraphView({
         id: `m:${p.name}`,
         kind: 'server',
         label: p.label || p.name,
-        sub: `${p.authMode ?? 'open'} · ${active ? 'ACTIVE' : 'STOPPED'}`,
+        sub: `${t(`authModeLabels.${p.authMode ?? 'open'}`)} · ${active ? t('node.statusActive') : t('node.statusStopped')}`,
         stopped: !active,
         layer: 2,
       });
       chips.set(`m:${p.name}`, {
-        kind: `mcp server · ${active ? 'active' : 'stopped'}`,
+        kind: `${t('words.mcpServer')} · ${active ? t('chip.statusActiveLower') : t('chip.statusStoppedLower')}`,
         title: p.label || p.name,
         rows: [
-          { k: 'Auth', v: p.authMode ?? 'open' },
-          { k: 'Status', v: active ? 'ACTIVE' : 'STOPPED', tone: active ? 'ok' : undefined },
-          { k: 'Configurations', v: String(cfgCount) },
+          { k: t('chip.authLabel'), v: t(`authModeLabels.${p.authMode ?? 'open'}`) },
+          {
+            k: t('chip.statusLabel'),
+            v: active ? t('node.statusActive') : t('node.statusStopped'),
+            tone: active ? 'ok' : undefined,
+          },
+          { k: t('chip.configurationsLabel'), v: String(cfgCount) },
         ],
       });
     }
 
     const order: Record<number, string[]> = { 0: sourceOrder, 1: configOrder, 2: serverOrder };
     return { nodes, edges, order, chips };
-  }, [connections, configurations, profiles, serveStatus.profileStatuses]);
+  }, [connections, configurations, profiles, serveStatus.profileStatuses, t]);
 
   // ---- imperative position/render machinery --------------------------------
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -531,10 +543,7 @@ export default function ConfigGraphView({
 
   if (nodes.length === 0) {
     return (
-      <EmptyState
-        title="Nothing to graph yet"
-        description="Add a source, a Data Configuration or an MCP server to see how data flows."
-      />
+      <EmptyState title={t('emptyState.title')} description={t('emptyState.description')} />
     );
   }
 
@@ -553,7 +562,7 @@ export default function ConfigGraphView({
         ref={svgRef}
         className={svgClass}
         role="application"
-        aria-label="Interactive graph of sources, data configurations and MCP servers"
+        aria-label={t('graph.ariaLabel')}
         onClick={() => setPinnedId(null)}
       >
         {edges.map(([a, b], i) => (
@@ -572,7 +581,7 @@ export default function ConfigGraphView({
             className={`nd l${n.layer} ${n.stopped ? 'stopped' : ''} ${hotNodes.has(n.id) ? 'hot' : ''}`}
             tabIndex={0}
             role="button"
-            aria-label={`${n.kind} ${n.label}`}
+            aria-label={t('graph.nodeAriaLabel', { kind: nodeKindWords[n.kind], label: n.label })}
             ref={(el) => {
               if (el) nodeEls.current.set(n.id, el);
               else nodeEls.current.delete(n.id);
@@ -696,7 +705,7 @@ export default function ConfigGraphView({
           <svg width="12" height="12" aria-hidden="true">
             <circle cx="6" cy="6" r="5" fill="#748FFC" />
           </svg>
-          source
+          {t('words.source')}
         </span>
         <span className="inline-flex items-center gap-1.5">
           <svg width="14" height="14" aria-hidden="true">
@@ -712,7 +721,7 @@ export default function ConfigGraphView({
               transform="rotate(45 7 7)"
             />
           </svg>
-          data configuration
+          {t('words.dataConfiguration')}
         </span>
         <span className="inline-flex items-center gap-1.5">
           <svg width="26" height="14" aria-hidden="true">
@@ -727,9 +736,9 @@ export default function ConfigGraphView({
               strokeWidth="1.5"
             />
           </svg>
-          mcp server
+          {t('words.mcpServer')}
         </span>
-        <span>dashed = stopped</span>
+        <span>{t('legend.dashedStopped')}</span>
       </div>
 
       {/* Reset layout — only when a dragged arrangement is saved */}
@@ -738,9 +747,9 @@ export default function ConfigGraphView({
           type="button"
           onClick={resetLayout}
           className="absolute top-3 right-3 card-primary rounded-lg px-3 py-1.5 font-mono-plex text-[11px] text-gray-400 hover:text-gray-200 hover:border-white/10 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-os-500/40"
-          title="Clear the saved arrangement and restore the computed order"
+          title={t('resetLayout.tooltip')}
         >
-          Reset layout
+          {t('resetLayout.button')}
         </button>
       )}
 

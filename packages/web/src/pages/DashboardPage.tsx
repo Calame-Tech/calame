@@ -6,11 +6,13 @@
 
 import { useEffect, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
+import { useTranslations } from 'use-intl/react';
 import { Button, PageHeader } from '../components/ui/index.js';
 import PipelineStrip from '../components/dashboard/PipelineStrip.js';
 import QueriesCard from '../components/dashboard/QueriesCard.js';
 import ServersTable from '../components/dashboard/ServersTable.js';
 import { timeAgo } from '../components/dashboard/activity-stats.js';
+import { useLocale } from '../i18n/I18nProvider.js';
 import { getConfigurationColumnMasking } from '../lib/configuration-accessors.js';
 import { apiFetch } from '../lib/api.js';
 import type {
@@ -40,20 +42,17 @@ interface DashboardPageProps {
 
 const QUICK_NAV = [
   {
-    label: 'USERS',
-    description: 'Manage user accounts and permissions',
+    key: 'users' as const,
     dot: 'bg-purple-500',
     page: 'users' as const,
   },
   {
-    label: 'SETTINGS',
-    description: 'AI, email, SSO, branding & notifications',
+    key: 'settings' as const,
     dot: 'bg-amber-500',
     page: 'settings' as const,
   },
   {
-    label: 'METRICS',
-    description: 'Usage analytics and performance',
+    key: 'metrics' as const,
     dot: 'bg-cyan-500',
     page: 'metrics' as const,
   },
@@ -72,6 +71,9 @@ export default function DashboardPage({
   connectedCount,
   pendingWriteCount,
 }: DashboardPageProps) {
+  const t = useTranslations('dashboard');
+  const tCommon = useTranslations('common');
+  const { locale } = useLocale();
   const { setShowOnboarding, ragEnabled } = useSession();
 
   // Knowledge-base sources count — SQL connections arrive via props, RAG
@@ -113,15 +115,15 @@ export default function DashboardPage({
   return (
     <div className="space-y-4">
       <PageHeader
-        title="Dashboard"
-        description="Overview of your MCP servers, sources, and activity."
+        title={tCommon('dashboard')}
+        description={t('description')}
         actions={
           <div className="flex items-center gap-2">
             <Button variant="secondary" onClick={() => setShowOnboarding(true)}>
-              Get started
+              {t('getStarted')}
             </Button>
             <Button variant="primary" onClick={() => setView({ page: 'mcp-list' })}>
-              New MCP server
+              {t('newServer')}
             </Button>
           </div>
         }
@@ -163,9 +165,9 @@ export default function DashboardPage({
             className={`card-primary p-4 anim-rise-in ${attentionCount > 0 ? 'border-amber-700/30' : ''}`}
             style={{ animationDelay: '160ms' }}
           >
-            <h2 className="text-sm font-semibold text-gray-100">Needs attention</h2>
+            <h2 className="text-sm font-semibold text-gray-100">{t('attention.title')}</h2>
             <p className="font-mono-plex text-[11px] text-gray-500 mb-2">
-              {attentionCount} item{attentionCount !== 1 ? 's' : ''}
+              {t('attention.itemCount', { count: attentionCount })}
             </p>
             {pendingWriteCount > 0 ? (
               <div className="flex items-start gap-2.5 py-1 text-sm">
@@ -183,29 +185,28 @@ export default function DashboardPage({
                   </svg>
                 </span>
                 <p className="text-amber-300 leading-snug">
-                  {pendingWriteCount} write request{pendingWriteCount !== 1 ? 's' : ''} awaiting
-                  your approval
+                  {t('attention.writeRequestBanner', { count: pendingWriteCount })}
                 </p>
                 <button
                   type="button"
                   onClick={() => setView({ page: 'pending-writes' })}
                   className="ml-auto flex-none font-semibold text-[11px] text-os-300 bg-os-500/10 hover:bg-os-500/20 rounded-md px-2.5 py-1 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-os-500/40"
                 >
-                  Review
+                  {t('attention.review')}
                 </button>
               </div>
             ) : (
               <div className="flex items-center gap-2 py-1 text-sm text-gray-500">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" aria-hidden="true" />
-                All clear — nothing needs your attention.
+                {t('attention.allClear')}
               </div>
             )}
           </div>
 
           {/* PII protection */}
           <div className="card-primary p-4 anim-rise-in" style={{ animationDelay: '220ms' }}>
-            <h2 className="text-sm font-semibold text-gray-100">PII protection</h2>
-            <p className="font-mono-plex text-[11px] text-gray-500 mb-2">column masking</p>
+            <h2 className="text-sm font-semibold text-gray-100">{t('pii.title')}</h2>
+            <p className="font-mono-plex text-[11px] text-gray-500 mb-2">{t('pii.subtitle')}</p>
             {configurations.length > 0 ? (
               <>
                 <div className="flex items-baseline justify-between gap-3">
@@ -213,16 +214,21 @@ export default function DashboardPage({
                     {totalMaskedColumns}
                   </span>
                   <span className="text-xs text-gray-500 text-right leading-relaxed">
-                    masked column{totalMaskedColumns !== 1 ? 's' : ''} across
+                    {t('pii.maskedColumnsLabel', { count: totalMaskedColumns })}
                     <br />
-                    {configsWithMasking} of {configurations.length} configuration
-                    {configurations.length !== 1 ? 's' : ''}
+                    {t('pii.configShare', {
+                      used: configsWithMasking,
+                      total: configurations.length,
+                    })}
                   </span>
                 </div>
                 <div
                   className="mt-2.5 h-1 rounded-sm bg-white/5 overflow-hidden"
                   role="img"
-                  aria-label={`${configsWithMasking} of ${configurations.length} configurations use masking`}
+                  aria-label={t('pii.ariaLabel', {
+                    used: configsWithMasking,
+                    total: configurations.length,
+                  })}
                 >
                   <div
                     className="h-full rounded-sm bg-purple-400 anim-grow-x"
@@ -231,9 +237,7 @@ export default function DashboardPage({
                 </div>
               </>
             ) : (
-              <p className="text-sm text-gray-500">
-                No Data Configurations yet — masking is set per configuration.
-              </p>
+              <p className="text-sm text-gray-500">{t('pii.empty')}</p>
             )}
           </div>
 
@@ -241,12 +245,16 @@ export default function DashboardPage({
           {recentActivity.length > 0 && (
             <div className="card-primary p-4 anim-rise-in" style={{ animationDelay: '280ms' }}>
               <div className="flex items-baseline justify-between">
-                <h2 className="text-sm font-semibold text-gray-100">Recent activity</h2>
+                <h2 className="text-sm font-semibold text-gray-100">
+                  {t('recentActivity.title')}
+                </h2>
                 <span className="font-mono-plex text-[11px] text-gray-500">
-                  {recentActivity.length} events
+                  {t('recentActivity.eventsCount', { count: recentActivity.length })}
                 </span>
               </div>
-              <p className="font-mono-plex text-[11px] text-gray-500 mb-1.5">audit log</p>
+              <p className="font-mono-plex text-[11px] text-gray-500 mb-1.5">
+                {t('recentActivity.auditLogCaption')}
+              </p>
               <div>
                 {recentActivity.slice(0, 8).map((entry) => (
                   <div
@@ -257,7 +265,11 @@ export default function DashboardPage({
                       className={`flex-shrink-0 w-1.5 h-1.5 rounded-full ${
                         entry.result === 'success' ? 'bg-emerald-400' : 'bg-rose-400'
                       }`}
-                      title={entry.result === 'success' ? 'Success' : 'Error'}
+                      title={
+                        entry.result === 'success'
+                          ? t('recentActivity.statusSuccess')
+                          : t('recentActivity.statusError')
+                      }
                     />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
@@ -275,7 +287,7 @@ export default function DashboardPage({
                       )}
                     </div>
                     <span className="font-mono-plex text-[11px] text-gray-600 flex-shrink-0 whitespace-nowrap">
-                      {timeAgo(entry.timestamp)}
+                      {timeAgo(entry.timestamp, locale, { justNow: tCommon('justNow') })}
                     </span>
                   </div>
                 ))}
@@ -285,7 +297,7 @@ export default function DashboardPage({
                 onClick={() => setView({ page: 'audit-log' })}
                 className="mt-2 text-xs text-os-300 hover:underline focus:outline-none focus-visible:ring-1 focus-visible:ring-os-500/40 rounded"
               >
-                Open audit log
+                {t('recentActivity.openAuditLog')}
               </button>
             </div>
           )}
@@ -306,8 +318,10 @@ export default function DashboardPage({
           >
             <span className={`w-2 h-2 rounded-full flex-shrink-0 ${tile.dot}`} aria-hidden="true" />
             <div className="flex-1 min-w-0">
-              <div className="eyebrow mb-0.5">{tile.label}</div>
-              <p className="text-xs text-gray-400 truncate">{tile.description}</p>
+              <div className="eyebrow mb-0.5">{t(`quickNav.${tile.key}.label`)}</div>
+              <p className="text-xs text-gray-400 truncate">
+                {t(`quickNav.${tile.key}.description`)}
+              </p>
             </div>
             <span className="font-mono-plex text-sm text-gray-600 group-hover:text-os-400 transition-colors flex-shrink-0">
               &rarr;

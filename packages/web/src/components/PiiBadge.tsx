@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { useTranslations } from 'use-intl/react';
 import type { PiiDetection, PiiCategory } from '../types/schema.js';
 
 const CONFIDENCE_CLASSES: Record<PiiDetection['confidence'], string> = {
@@ -20,18 +21,6 @@ export const ALL_PII_CATEGORIES: PiiCategory[] = [
   'encrypted',
 ];
 
-export const CATEGORY_LABELS: Record<PiiCategory, string> = {
-  email: 'Email',
-  phone: 'Phone',
-  name: 'Name',
-  address: 'Address',
-  credit_card: 'Card',
-  password: 'Password',
-  ip_address: 'IP',
-  ssn: 'SSN',
-  encrypted: 'Encrypted',
-};
-
 interface PiiBadgeProps {
   detection: PiiDetection;
   /** If provided, the badge becomes editable: click to change category, or remove. */
@@ -40,6 +29,7 @@ interface PiiBadgeProps {
 }
 
 export default function PiiBadge({ detection, onChangeCategory, onRemove }: PiiBadgeProps) {
+  const t = useTranslations('settingsPanels.pii');
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -53,33 +43,33 @@ export default function PiiBadge({ detection, onChangeCategory, onRemove }: PiiB
     return () => document.removeEventListener('mousedown', handler);
   }, [open]);
 
-  const label = CATEGORY_LABELS[detection.category];
+  const categoryLabel = (cat: PiiCategory) =>
+    ALL_PII_CATEGORIES.includes(cat) ? t(`categoryLabels.${cat}`) : cat;
+  const label = categoryLabel(detection.category);
   const isManual = detection.matchedBy === 'manual';
   const classes = CONFIDENCE_CLASSES[detection.confidence];
   const editable = onChangeCategory || onRemove;
 
   const confidenceLabel: Record<PiiDetection['confidence'], string> = {
-    high: 'High confidence — data is very likely sensitive.',
-    medium: 'Medium confidence — verification recommended.',
-    low: 'Low confidence — uncertain detection.',
-    manual: 'Manually flagged by an administrator.',
+    high: t('confidenceLabels.high'),
+    medium: t('confidenceLabels.medium'),
+    low: t('confidenceLabels.low'),
+    manual: t('confidenceLabels.manual'),
   };
 
-  const categoryDescriptions: Record<string, string> = {
-    email: 'Email address',
-    phone: 'Phone number',
-    name: 'Person name',
-    address: 'Postal address',
-    credit_card: 'Credit card number',
-    password: 'Password or secret',
-    ip_address: 'IP address',
-    ssn: 'Social security number',
-    encrypted: 'Encrypted data',
-  };
+  const categoryDescription = (cat: PiiCategory) =>
+    ALL_PII_CATEGORIES.includes(cat) ? t(`categoryDescriptions.${cat}`) : cat;
 
   const tooltipText = isManual
-    ? `PII: ${categoryDescriptions[detection.category] ?? detection.category} — ${confidenceLabel.manual}${editable ? ' Click to edit.' : ''}`
-    : `PII: ${categoryDescriptions[detection.category] ?? detection.category} — ${confidenceLabel[detection.confidence]} Detected by: ${detection.matchedBy}.${editable ? ' Click to edit.' : ''}`;
+    ? t('tooltip.manual', {
+        description: categoryDescription(detection.category),
+        confidence: confidenceLabel.manual,
+      }) + (editable ? t('tooltip.clickToEdit') : '')
+    : t('tooltip.detectedBy', {
+        description: categoryDescription(detection.category),
+        confidence: confidenceLabel[detection.confidence],
+        matchedBy: detection.matchedBy,
+      }) + (editable ? t('tooltip.clickToEdit') : '');
 
   return (
     <div className="relative inline-block" ref={ref}>
@@ -88,7 +78,7 @@ export default function PiiBadge({ detection, onChangeCategory, onRemove }: PiiB
         title={tooltipText}
         className={`text-[10px] px-1.5 py-0.5 rounded-md font-medium ring-1 ${classes} ${editable ? 'cursor-pointer hover:brightness-125' : ''}`}
       >
-        PII:{label}
+        {t('badgeLabel', { label })}
       </span>
 
       {open && editable && (
@@ -104,7 +94,7 @@ export default function PiiBadge({ detection, onChangeCategory, onRemove }: PiiB
                 cat === detection.category ? 'text-os-400 font-medium' : 'text-gray-300'
               }`}
             >
-              {CATEGORY_LABELS[cat]}
+              {categoryLabel(cat)}
             </button>
           ))}
           {onRemove && (
@@ -117,7 +107,7 @@ export default function PiiBadge({ detection, onChangeCategory, onRemove }: PiiB
                 }}
                 className="block w-full text-left px-3 py-1 text-xs text-red-400 hover:bg-gray-800 transition-colors"
               >
-                Remove PII tag
+                {t('removeTag')}
               </button>
             </>
           )}

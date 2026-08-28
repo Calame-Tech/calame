@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useTranslations } from 'use-intl/react';
 import { apiFetch } from '../lib/api.js';
 import type { PendingWriteQuery } from '../types/schema.js';
+import { useLocale } from '../i18n/I18nProvider.js';
 
 interface PendingQueriesProps {
   onPendingCountChange?: (count: number) => void;
@@ -13,6 +15,8 @@ export default function PendingQueries({
   onPendingCountChange,
   onNavigateToProfile,
 }: PendingQueriesProps) {
+  const t = useTranslations('pendingWrites');
+  const { locale } = useLocale();
   const [entries, setEntries] = useState<PendingWriteQuery[]>([]);
   const [total, setTotal] = useState(0);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('pending');
@@ -119,15 +123,15 @@ export default function PendingQueries({
     const statusInfo: Record<PendingWriteQuery['status'], { classes: string; tooltip: string }> = {
       pending: {
         classes: 'bg-yellow-600/20 text-yellow-400',
-        tooltip: 'Awaiting approval from an administrator.',
+        tooltip: t('badge.status.pending.tooltip'),
       },
       approved: {
         classes: 'bg-green-600/20 text-green-400',
-        tooltip: 'Query approved and executed in the database.',
+        tooltip: t('badge.status.approved.tooltip'),
       },
       rejected: {
         classes: 'bg-red-600/20 text-red-400',
-        tooltip: 'Query rejected — it will not be executed.',
+        tooltip: t('badge.status.rejected.tooltip'),
       },
     };
     const info = statusInfo[status];
@@ -136,7 +140,7 @@ export default function PendingQueries({
         title={info.tooltip}
         className={`px-2 py-0.5 rounded-full text-xs font-medium ${info.classes}`}
       >
-        {status}
+        {t(`badge.status.${status}.label`)}
       </span>
     );
   };
@@ -147,10 +151,10 @@ export default function PendingQueries({
   // kind instead of a misleading INSERT.
   const mcpBadge = (toolName: string) => (
     <span
-      title={`MCP tool call — "${toolName}", forwarded to the upstream MCP server on approval.`}
+      title={t('badge.mcp.tooltip', { toolName })}
       className="px-2 py-0.5 rounded-full text-xs font-medium uppercase bg-purple-600/20 text-purple-400"
     >
-      MCP
+      {t('badge.mcp.label')}
     </span>
   );
 
@@ -158,15 +162,15 @@ export default function PendingQueries({
     const opInfo: Record<PendingWriteQuery['operation'], { classes: string; tooltip: string }> = {
       insert: {
         classes: 'bg-blue-600/20 text-blue-400',
-        tooltip: 'INSERT operation — adds new rows to the table.',
+        tooltip: t('badge.operation.insert.tooltip'),
       },
       update: {
         classes: 'bg-amber-600/20 text-amber-400',
-        tooltip: 'UPDATE operation — modifies existing rows in the table.',
+        tooltip: t('badge.operation.update.tooltip'),
       },
       delete: {
         classes: 'bg-red-600/20 text-red-400',
-        tooltip: 'DELETE operation — removes rows from the table. Irreversible without a backup.',
+        tooltip: t('badge.operation.delete.tooltip'),
       },
     };
     const info = opInfo[op];
@@ -175,21 +179,21 @@ export default function PendingQueries({
         title={info.tooltip}
         className={`px-2 py-0.5 rounded-full text-xs font-medium uppercase ${info.classes}`}
       >
-        {op}
+        {t(`badge.operation.${op}.label`)}
       </span>
     );
   };
 
   const formatTime = (iso: string) => {
     const d = new Date(iso);
-    return d.toLocaleString();
+    return d.toLocaleString(locale);
   };
 
   const filters: { value: StatusFilter; label: string }[] = [
-    { value: 'pending', label: 'Pending' },
-    { value: 'approved', label: 'Approved' },
-    { value: 'rejected', label: 'Rejected' },
-    { value: 'all', label: 'All' },
+    { value: 'pending', label: t('filters.pending') },
+    { value: 'approved', label: t('filters.approved') },
+    { value: 'rejected', label: t('filters.rejected') },
+    { value: 'all', label: t('filters.all') },
   ];
 
   return (
@@ -212,24 +216,21 @@ export default function PendingQueries({
           ))}
         </div>
         <span className="text-sm text-gray-500">
-          {total} {statusFilter === 'all' ? 'total' : statusFilter}{' '}
-          {total === 1 ? 'query' : 'queries'}
+          {t(`summary.${statusFilter === 'all' ? 'total' : statusFilter}`, { count: total })}
         </span>
       </div>
 
       {/* Entries */}
       {loading && entries.length === 0 ? (
-        <div className="text-center text-gray-500 py-8">Loading...</div>
+        <div className="text-center text-gray-500 py-8">{t('loadingEntries')}</div>
       ) : entries.length === 0 ? (
         <div className="card-primary p-8 text-center text-gray-500">
           {statusFilter === 'pending' ? (
-            <>
-              No pending writes. Write operations proposed by an LLM will appear here — enable the{' '}
-              <code className="text-xs text-gray-400">write</code> tool on a table in a Data
-              Configuration.
-            </>
+            t.rich('empty.pending', {
+              code: (chunks) => <code className="text-xs text-gray-400">{chunks}</code>,
+            })
           ) : (
-            `No ${statusFilter === 'all' ? '' : statusFilter} write queries.`
+            t(`empty.${statusFilter}`)
           )}
         </div>
       ) : (
@@ -251,7 +252,7 @@ export default function PendingQueries({
                   {onNavigateToProfile ? (
                     <button
                       onClick={() => onNavigateToProfile(entry.profileName)}
-                      title={`Go to MCP server ${entry.profileName}`}
+                      title={t('actions.goToProfileTooltip', { profileName: entry.profileName })}
                       className="text-xs text-gray-500 hover:text-os-400 font-mono underline decoration-dotted transition-colors"
                     >
                       {entry.profileName}
@@ -266,8 +267,10 @@ export default function PendingQueries({
                         disabled={actionLoading === entry.id}
                         title={
                           entry.operation !== 'insert' && confirmApproveId === entry.id
-                            ? `This will execute an irreversible ${entry.operation.toUpperCase()} immediately. Continue?`
-                            : 'Approve and execute this query immediately in the database.'
+                            ? t('actions.approve.confirmTooltip', {
+                                operation: entry.operation.toUpperCase(),
+                              })
+                            : t('actions.approve.tooltip')
                         }
                         className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 disabled:opacity-50 ${
                           entry.operation !== 'insert' && confirmApproveId === entry.id
@@ -276,18 +279,18 @@ export default function PendingQueries({
                         }`}
                       >
                         {actionLoading === entry.id
-                          ? '...'
+                          ? t('actions.loadingEllipsis')
                           : entry.operation !== 'insert' && confirmApproveId === entry.id
-                            ? 'Confirm Approve'
-                            : 'Approve'}
+                            ? t('actions.approve.confirmLabel')
+                            : t('actions.approve.label')}
                       </button>
                       <button
                         onClick={() => handleReject(entry.id)}
                         disabled={actionLoading === entry.id}
-                        title="Reject this query — it will not be executed and will be marked as rejected."
+                        title={t('actions.reject.tooltip')}
                         className="px-3 py-1.5 rounded-lg bg-red-600/20 text-red-400 hover:bg-red-600/30 text-sm font-medium transition-all duration-200 disabled:opacity-50"
                       >
-                        {actionLoading === entry.id ? '...' : 'Reject'}
+                        {actionLoading === entry.id ? t('actions.loadingEllipsis') : t('actions.reject.label')}
                       </button>
                     </div>
                   )}
@@ -295,12 +298,12 @@ export default function PendingQueries({
                     onClick={() => setExpandedId(expandedId === entry.id ? null : entry.id)}
                     title={
                       expandedId === entry.id
-                        ? 'Hide the SQL and parameters for this query.'
-                        : 'Show the full SQL and parameters for this query.'
+                        ? t('actions.details.hideTooltip')
+                        : t('actions.details.showTooltip')
                     }
                     className="text-gray-500 hover:text-gray-300 text-sm transition-colors"
                   >
-                    {expandedId === entry.id ? 'Hide' : 'Details'}
+                    {expandedId === entry.id ? t('actions.details.hideLabel') : t('actions.details.showLabel')}
                   </button>
                 </div>
               </div>
@@ -311,13 +314,13 @@ export default function PendingQueries({
                   {entry.action?.kind === 'mcp-tool' ? (
                     <>
                       <div>
-                        <span className="text-xs text-gray-500">Tool:</span>
+                        <span className="text-xs text-gray-500">{t('details.toolLabel')}</span>
                         <p className="mt-1 text-sm text-gray-300 font-mono">
                           {entry.action.toolName}
                         </p>
                       </div>
                       <div>
-                        <span className="text-xs text-gray-500">Args:</span>
+                        <span className="text-xs text-gray-500">{t('details.argsLabel')}</span>
                         <pre className="mt-1 p-2 rounded bg-gray-900 border border-gray-700 text-xs text-gray-300 font-mono overflow-x-auto whitespace-pre-wrap">
                           {JSON.stringify(entry.action.args, null, 2)}
                         </pre>
@@ -326,14 +329,14 @@ export default function PendingQueries({
                   ) : (
                     <>
                       <div>
-                        <span className="text-xs text-gray-500">SQL:</span>
+                        <span className="text-xs text-gray-500">{t('details.sqlLabel')}</span>
                         <pre className="mt-1 p-2 rounded bg-gray-900 border border-gray-700 text-xs text-gray-300 font-mono overflow-x-auto whitespace-pre-wrap">
                           {entry.sql}
                         </pre>
                       </div>
                       {entry.params && entry.params.length > 0 && (
                         <div>
-                          <span className="text-xs text-gray-500">Parameters:</span>
+                          <span className="text-xs text-gray-500">{t('details.parametersLabel')}</span>
                           <pre className="mt-1 p-2 rounded bg-gray-900 border border-gray-700 text-xs text-gray-300 font-mono overflow-x-auto">
                             {JSON.stringify(entry.params, null, 2)}
                           </pre>
@@ -343,12 +346,14 @@ export default function PendingQueries({
                   )}
                   {entry.approvedAt && (
                     <p className="text-xs text-gray-500">
-                      Approved at: {formatTime(entry.approvedAt)}
+                      {t('details.approvedAtLabel', { time: formatTime(entry.approvedAt) })}
                     </p>
                   )}
                   {entry.executionResult && (
                     <div>
-                      <span className="text-xs text-green-500">Execution result:</span>
+                      <span className="text-xs text-green-500">
+                        {t('details.executionResultLabel')}
+                      </span>
                       <pre className="mt-1 p-2 rounded bg-gray-900 border border-gray-700 text-xs text-green-300 font-mono overflow-x-auto">
                         {entry.executionResult}
                       </pre>
@@ -356,13 +361,17 @@ export default function PendingQueries({
                   )}
                   {entry.executionError && (
                     <div>
-                      <span className="text-xs text-red-500">Execution error:</span>
+                      <span className="text-xs text-red-500">
+                        {t('details.executionErrorLabel')}
+                      </span>
                       <pre className="mt-1 p-2 rounded bg-gray-900 border border-gray-700 text-xs text-red-300 font-mono overflow-x-auto">
                         {entry.executionError}
                       </pre>
                     </div>
                   )}
-                  <p className="text-xs text-gray-600 font-mono">ID: {entry.id}</p>
+                  <p className="text-xs text-gray-600 font-mono">
+                    {t('details.idLabel', { id: entry.id })}
+                  </p>
                 </div>
               )}
             </div>

@@ -10,8 +10,15 @@
 // an orphaned profile with no backing configuration.
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render as rtlRender, screen, fireEvent, waitFor } from '@testing-library/react';
+import type { ReactElement } from 'react';
 import OnboardingWizard from '../OnboardingWizard.js';
+import { I18nProvider } from '../../i18n/I18nProvider.js';
+
+/** Renders with the i18n context OnboardingWizard now requires. */
+function render(ui: ReactElement) {
+  return rtlRender(ui, { wrapper: I18nProvider });
+}
 
 function jsonResponse(body: unknown): Response {
   return {

@@ -4,6 +4,7 @@
 // activity rather than a full query-count metric.
 
 import { useMemo, useState } from 'react';
+import { useTranslations } from 'use-intl/react';
 import { activeDayCount, buildDailySeries, countByProfile24h } from './activity-stats.js';
 import type { AuditLogEntry, Profile, ServeStatus } from '../../types/schema.js';
 
@@ -29,6 +30,7 @@ function niceMax(rawMax: number): number {
 }
 
 export default function QueriesCard({ recentActivity, profiles, serveStatus }: QueriesCardProps) {
+  const t = useTranslations('dashboard.activityChart');
   const series = useMemo(() => buildDailySeries(recentActivity), [recentActivity]);
   const daysWithData = activeDayCount(series);
   const showChart = daysWithData >= 2;
@@ -61,10 +63,8 @@ export default function QueriesCard({ recentActivity, profiles, serveStatus }: Q
 
   return (
     <div className="card-primary p-4 anim-rise-in" style={{ animationDelay: '120ms' }}>
-      <h2 className="text-sm font-semibold text-gray-100">Activity</h2>
-      <p className="font-mono-plex text-[11px] text-gray-500 mb-3">
-        tool calls &middot; last 7 days &middot; all servers
-      </p>
+      <h2 className="text-sm font-semibold text-gray-100">{t('title')}</h2>
+      <p className="font-mono-plex text-[11px] text-gray-500 mb-3">{t('caption')}</p>
 
       {showChart ? (
         <div className="relative">
@@ -73,7 +73,7 @@ export default function QueriesCard({ recentActivity, profiles, serveStatus }: Q
             preserveAspectRatio="none"
             className="block w-full h-[190px]"
             role="img"
-            aria-label={`Activity per day over the last 7 days, up to ${max} tool calls`}
+            aria-label={t('ariaLabel', { max })}
             onMouseMove={(e) => {
               const r = e.currentTarget.getBoundingClientRect();
               if (r.width === 0) return;
@@ -191,22 +191,22 @@ export default function QueriesCard({ recentActivity, profiles, serveStatus }: Q
                 top: `${(y(series[hover].count) / H) * 100}%`,
               }}
             >
-              <b className="text-gray-100 text-xs">{series[hover].count}</b> tool call
-              {series[hover].count !== 1 ? 's' : ''} &middot; {series[hover].label}
+              {t.rich('tooltip', {
+                count: series[hover].count,
+                label: series[hover].label,
+                b: (chunks) => <b className="text-gray-100 text-xs">{chunks}</b>,
+              })}
             </div>
           )}
         </div>
       ) : (
-        <p className="text-sm text-gray-500 py-8 text-center">
-          Not enough activity yet to chart — data appears once your servers have been used on at
-          least two days.
-        </p>
+        <p className="text-sm text-gray-500 py-8 text-center">{t('emptyState')}</p>
       )}
 
       {/* Per-server bars, last 24h */}
       {barRows.length > 0 && (
-        <div className="mt-4 flex flex-col gap-2" aria-label="Activity by server, last 24 hours">
-          <p className="font-mono-plex text-[11px] text-gray-500">by server &middot; last 24h</p>
+        <div className="mt-4 flex flex-col gap-2" aria-label={t('byServerAriaLabel')}>
+          <p className="font-mono-plex text-[11px] text-gray-500">{t('byServerCaption')}</p>
           {barRows.map((row, i) => (
             <div
               key={row.name}
@@ -222,7 +222,7 @@ export default function QueriesCard({ recentActivity, profiles, serveStatus }: Q
                   <div
                     className="absolute inset-0 rounded-r anim-grow-x"
                     tabIndex={0}
-                    title={`${row.count} tool call${row.count !== 1 ? 's' : ''} · 24h`}
+                    title={t('barTooltip', { count: row.count })}
                     style={{
                       background: 'rgb(var(--color-os-500))',
                       transform: `scaleX(${row.count / barMax})`,

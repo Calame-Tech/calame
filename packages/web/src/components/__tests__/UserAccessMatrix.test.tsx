@@ -2,9 +2,9 @@
 // pure access-derivation helper.
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import UserAccessMatrix, { describeAccess } from '../UserAccessMatrix.js';
-import { makeProfile, flushEffects } from '../../pages/__tests__/testUtils.js';
+import { render, makeProfile, flushEffects } from '../../pages/__tests__/testUtils.js';
 import type { UserEntry, UserProfileAccess } from '../../types/schema.js';
 
 function makeUser(overrides: Partial<UserEntry> = {}): UserEntry {

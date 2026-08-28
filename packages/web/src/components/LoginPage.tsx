@@ -1,4 +1,5 @@
 import { useState, lazy, Suspense } from 'react';
+import { useTranslations } from 'use-intl/react';
 import { apiFetch } from '../lib/api.js';
 import { useBranding, DEFAULT_LOGO_SRC } from '../lib/branding.js';
 
@@ -25,6 +26,7 @@ interface LoginPageProps {
 }
 
 export default function LoginPage({ onAdminLogin, onUserLogin }: LoginPageProps) {
+  const t = useTranslations('setupLogin.loginPage');
   const branding = useBranding();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -66,13 +68,13 @@ export default function LoginPage({ onAdminLogin, onUserLogin }: LoginPageProps)
           return;
         }
 
-        setError(userData.message || 'Invalid email or password.');
+        setError(userData.message || t('errors.invalidCredentials'));
         return;
       }
 
-      setError(adminData.message || 'Invalid email or password.');
+      setError(adminData.message || t('errors.invalidCredentials'));
     } catch {
-      setError('Connection error. Please try again.');
+      setError(t('errors.connectionError'));
     } finally {
       setLoading(false);
     }
@@ -90,7 +92,7 @@ export default function LoginPage({ onAdminLogin, onUserLogin }: LoginPageProps)
             />
             <h1 className="heading-lg">Calame</h1>
           </div>
-          <p className="text-gray-400 mt-2">Sign in to your account</p>
+          <p className="text-gray-400 mt-2">{t('subtitle')}</p>
         </div>
 
         {/* SSO button — self-hides when OIDC is not configured */}
@@ -101,7 +103,7 @@ export default function LoginPage({ onAdminLogin, onUserLogin }: LoginPageProps)
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label htmlFor="email" className="block text-sm font-medium text-gray-300 mb-1">
-              Email <span className="text-red-400">*</span>
+              {t('form.emailLabel')} <span className="text-red-400">*</span>
             </label>
             <input
               id="email"
@@ -109,7 +111,7 @@ export default function LoginPage({ onAdminLogin, onUserLogin }: LoginPageProps)
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="input-editorial w-full"
-              placeholder="your@email.com"
+              placeholder={t('form.emailPlaceholder')}
               autoFocus
               required
             />
@@ -117,7 +119,7 @@ export default function LoginPage({ onAdminLogin, onUserLogin }: LoginPageProps)
 
           <div>
             <label htmlFor="password" className="block text-sm font-medium text-gray-300 mb-1">
-              Password <span className="text-red-400">*</span>
+              {t('form.passwordLabel')} <span className="text-red-400">*</span>
             </label>
             <input
               id="password"
@@ -125,7 +127,7 @@ export default function LoginPage({ onAdminLogin, onUserLogin }: LoginPageProps)
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="input-editorial w-full"
-              placeholder="Enter your password"
+              placeholder={t('form.passwordPlaceholder')}
               required
             />
           </div>
@@ -141,7 +143,7 @@ export default function LoginPage({ onAdminLogin, onUserLogin }: LoginPageProps)
             disabled={loading || !email || !password}
             className="w-full py-2 px-4 bg-os-700 hover:bg-os-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors"
           >
-            {loading ? 'Signing in...' : 'Sign In'}
+            {loading ? t('form.submitLoading') : t('form.submitButton')}
           </button>
         </form>
       </div>

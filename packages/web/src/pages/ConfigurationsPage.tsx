@@ -4,6 +4,7 @@
 
 import { useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
+import { useTranslations } from 'use-intl/react';
 import { Button, EmptyState, Breadcrumb, SegmentedControl } from '../components/ui/index.js';
 import HelpTip from '../components/HelpTip.js';
 import ConfigGraphView from '../components/ConfigGraphView.js';
@@ -48,6 +49,8 @@ export default function ConfigurationsPage({
   profiles,
   serveStatus,
 }: ConfigurationsPageProps) {
+  const t = useTranslations('sources.configurationsPage');
+  const tCommon = useTranslations('common');
   const [mode, setMode] = useState<ConfigViewMode>('list');
 
   return (
@@ -55,8 +58,8 @@ export default function ConfigurationsPage({
       <Breadcrumb
         className="mb-4"
         items={[
-          { label: 'Dashboard', onClick: () => setView({ page: 'dashboard' }) },
-          { label: 'Data Configurations' },
+          { label: tCommon('dashboard'), onClick: () => setView({ page: 'dashboard' }) },
+          { label: t('title') },
         ]}
       />
       <ConfigurationListView
@@ -110,6 +113,8 @@ function ConfigurationListView({
   onCreate,
   onDelete,
 }: ConfigurationListViewProps) {
+  const t = useTranslations('sources.configurationsPage');
+  const tCommon = useTranslations('common');
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const [newLabel, setNewLabel] = useState('');
@@ -132,26 +137,23 @@ function ConfigurationListView({
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div className="flex items-baseline gap-3 min-w-0">
-          <h2 className="heading-md">Data Configurations</h2>
+          <h2 className="heading-md">{t('title')}</h2>
           <span className="font-mono-plex text-[11px] text-gray-500 whitespace-nowrap">
-            {connections.length} source{connections.length !== 1 ? 's' : ''} &middot;{' '}
-            {configurations.length} configuration{configurations.length !== 1 ? 's' : ''} &middot;{' '}
-            {profiles.length} server{profiles.length !== 1 ? 's' : ''}
+            {t('sourceCount', { count: connections.length })} &middot;{' '}
+            {t('configurationCount', { count: configurations.length })} &middot;{' '}
+            {t('serverCount', { count: profiles.length })}
           </span>
         </div>
         <div className="flex items-center gap-2.5">
           <Button variant="primary" onClick={() => setCreating(true)}>
-            + New Data Configuration
+            {t('newButton')}
           </Button>
-          <HelpTip
-            content="Create a new Data Configuration to define which tables and columns to expose"
-            position="bottom"
-          />
+          <HelpTip content={t('newHelpTip')} position="bottom" />
           <SegmentedControl<ConfigViewMode>
-            ariaLabel="Configurations view"
+            ariaLabel={t('viewAriaLabel')}
             options={[
-              { value: 'list', label: 'List' },
-              { value: 'graph', label: 'Graph', description: 'Trace how sources flow to servers' },
+              { value: 'list', label: t('viewList') },
+              { value: 'graph', label: t('viewGraph'), description: t('viewGraphDescription') },
             ]}
             value={mode}
             onChange={onModeChange}
@@ -161,11 +163,12 @@ function ConfigurationListView({
 
       <p className="text-sm text-gray-500 mb-4">
         {mode === 'list' ? (
-          <>Switch to Graph to trace how sources flow to servers.</>
+          t('switchToGraphHint')
         ) : (
           <>
-            Drag nodes to rearrange. Hover to trace a complete data path,{' '}
-            <b className="text-gray-400 font-medium">click to pin it</b>.
+            {t.rich('graphHint', {
+              b: (chunks) => <b className="text-gray-400 font-medium">{chunks}</b>,
+            })}
           </>
         )}
       </p>
@@ -175,23 +178,23 @@ function ConfigurationListView({
           <div className="flex gap-3">
             <input
               type="text"
-              placeholder="Configuration name"
+              placeholder={t('namePlaceholder')}
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               className="input-editorial flex-1 text-sm"
             />
             <input
               type="text"
-              placeholder="Display name"
+              placeholder={t('labelPlaceholder')}
               value={newLabel}
               onChange={(e) => setNewLabel(e.target.value)}
               className="input-editorial flex-1 text-sm"
             />
             <Button variant="primary" onClick={handleCreate} disabled={!newName.trim()}>
-              Create
+              {t('create')}
             </Button>
             <Button variant="ghost" onClick={() => setCreating(false)}>
-              Cancel
+              {tCommon('cancel')}
             </Button>
           </div>
         </div>
@@ -207,10 +210,7 @@ function ConfigurationListView({
           />
         </div>
       ) : configurations.length === 0 && !creating ? (
-        <EmptyState
-          title="No Data Configurations"
-          description="Create one to define which tables to expose."
-        />
+        <EmptyState title={t('emptyTitle')} description={t('emptyDescription')} />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {configurations.map((cfg) => {
@@ -237,11 +237,11 @@ function ConfigurationListView({
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (confirm(`Delete configuration "${cfg.label}"?`)) {
+                      if (confirm(t('deleteConfirm', { label: cfg.label }))) {
                         onDelete(cfg.name);
                       }
                     }}
-                    title="Delete this Data Configuration"
+                    title={t('deleteTitle')}
                     className="opacity-0 group-hover:opacity-100 p-1 text-gray-500 hover:text-rose-400 transition-all duration-200"
                   >
                     <svg
@@ -284,31 +284,26 @@ function ConfigurationListView({
                   </div>
                 )}
                 <div className="flex gap-3 text-sm text-gray-500">
-                  <span>
-                    {(cfg.sources ?? []).length} source{(cfg.sources ?? []).length !== 1 ? 's' : ''}
-                  </span>
+                  <span>{t('sourceCount', { count: (cfg.sources ?? []).length })}</span>
                   <span>&middot;</span>
-                  <span>
-                    {tableCount} table{tableCount !== 1 ? 's' : ''}
-                  </span>
+                  <span>{t('tableCount', { count: tableCount })}</span>
                 </div>
                 {(writeTableCount > 0 || maskedColumnCount > 0) && (
                   <div className="flex gap-3 text-xs mt-1.5">
                     {writeTableCount > 0 && (
                       <span
                         className="text-amber-400"
-                        title={`Write tool enabled on ${writeTableCount} table(s)`}
+                        title={t('writeToolTitle', { count: writeTableCount })}
                       >
-                        &#9999; write on {writeTableCount} table{writeTableCount !== 1 ? 's' : ''}
+                        &#9999; {t('writeBadge', { count: writeTableCount })}
                       </span>
                     )}
                     {maskedColumnCount > 0 && (
                       <span
                         className="text-gray-400"
-                        title={`${maskedColumnCount} column(s) masked`}
+                        title={t('maskedColumnsTitle', { count: maskedColumnCount })}
                       >
-                        &#128737; {maskedColumnCount} masked column
-                        {maskedColumnCount !== 1 ? 's' : ''}
+                        &#128737; {t('maskedColumnsBadge', { count: maskedColumnCount })}
                       </span>
                     )}
                   </div>
@@ -323,20 +318,20 @@ function ConfigurationListView({
                   <div className="hairline mt-2.5 pt-2.5 text-xs text-gray-500">
                     {mountedBy.length > 0 ? (
                       <>
-                        Mounted by{' '}
+                        {t('mountedByPrefix')}{' '}
                         {mountedBy.map((p, i) => {
                           const active = serveStatus.profileStatuses?.[p.name]?.active === true;
                           return (
                             <span key={p.name}>
                               {i > 0 && ' · '}
                               <b className="text-gray-400 font-semibold">{p.label || p.name}</b>
-                              {!active && <span className="text-gray-600"> (stopped)</span>}
+                              {!active && <span className="text-gray-600"> {t('stopped')}</span>}
                             </span>
                           );
                         })}
                       </>
                     ) : (
-                      <span className="italic text-gray-600">Not mounted by any server</span>
+                      <span className="italic text-gray-600">{t('notMounted')}</span>
                     )}
                   </div>
                 </div>

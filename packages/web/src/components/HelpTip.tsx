@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, type KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
+import { useTranslations } from 'use-intl/react';
 
 interface HelpTipProps {
   content: string;
@@ -19,6 +20,7 @@ export default function HelpTip({
   maxWidth = 260,
   size = 'sm',
 }: HelpTipProps) {
+  const t = useTranslations('setupLogin.helpTip');
   const [visible, setVisible] = useState(false);
   const [coords, setCoords] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
   const ref = useRef<HTMLSpanElement>(null);
@@ -100,7 +102,7 @@ export default function HelpTip({
         tabIndex={0}
         role="button"
         className={`inline-flex items-center justify-center ${sizeClasses} rounded-full border border-gray-600 text-gray-500 hover:text-gray-300 hover:border-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-400 cursor-help transition-colors flex-shrink-0 select-none`}
-        aria-label="Help"
+        aria-label={t('ariaLabel')}
       >
         ?
       </span>

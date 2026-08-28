@@ -5,9 +5,16 @@
 // onNavigateToProfile, (c) the updated empty state copy for the pending tab.
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render as rtlRender, screen, fireEvent, waitFor } from '@testing-library/react';
+import type { ReactElement } from 'react';
 import PendingQueries from '../PendingQueries.js';
 import type { PendingWriteQuery } from '../../types/schema.js';
+import { I18nProvider } from '../../i18n/I18nProvider.js';
+
+/** Renders with the i18n context the component now requires. */
+function render(ui: ReactElement) {
+  return rtlRender(ui, { wrapper: I18nProvider });
+}
 
 function makeEntry(overrides: Partial<PendingWriteQuery> = {}): PendingWriteQuery {
   return {

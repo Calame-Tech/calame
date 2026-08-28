@@ -5,6 +5,7 @@
 
 import { useState, useMemo, useEffect, lazy, Suspense } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
+import { useTranslations } from 'use-intl/react';
 import { apiFetch, getCurrentTenant } from '../lib/api.js';
 import { buildMcpPath } from '../lib/mcp-url.js';
 import { Breadcrumb } from '../components/ui/index.js';
@@ -52,10 +53,9 @@ const DataScopingSection = lazy(() =>
     .then((m) => ({ default: m.DataScopingSection }))
     .catch(() => ({
       default: function DataScopingSectionUnavailable() {
+        const t = useTranslations('mcpDetail.scoping');
         return (
-          <div className="p-6 text-sm text-gray-400 text-center">
-            Scoping features are not available on this instance.
-          </div>
+          <div className="p-6 text-sm text-gray-400 text-center">{t('unavailable')}</div>
         );
       },
     })),
@@ -90,13 +90,15 @@ export default function McpDetailPage({
   handleProfileDelete,
   handleConfigurationSave,
 }: McpDetailPageProps) {
+  const t = useTranslations('mcpDetail');
+  const tCommon = useTranslations('common');
   return (
     <div className="max-w-7xl mx-auto">
       <Breadcrumb
         className="mb-4"
         items={[
-          { label: 'Dashboard', onClick: () => setView({ page: 'dashboard' }) },
-          { label: 'MCP Servers', onClick: () => setView({ page: 'mcp-list' }) },
+          { label: tCommon('dashboard'), onClick: () => setView({ page: 'dashboard' }) },
+          { label: t('breadcrumb.mcpServers'), onClick: () => setView({ page: 'mcp-list' }) },
           {
             label: profiles.find((p) => p.name === view.profileName)?.label ?? view.profileName,
           },
@@ -124,7 +126,7 @@ export default function McpDetailPage({
             const slug = `config-${Date.now()}`;
             const newConfig: Configuration = {
               name: slug,
-              label: 'New Configuration',
+              label: t('newConfigurationLabel'),
             };
             setConfigurations((prev) => [...prev, newConfig]);
             handleConfigurationSave(newConfig);
@@ -196,6 +198,8 @@ function McpDetailView({
   onNavigateToUser,
   initialActiveSection,
 }: McpDetailViewProps) {
+  const t = useTranslations('mcpDetail');
+  const tCommon = useTranslations('common');
   const [togglingProfile, setTogglingProfile] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -316,12 +320,12 @@ function McpDetailView({
   if (!profile) {
     return (
       <div className="text-center text-gray-500 py-12">
-        <p>MCP Server &quot;{profileName}&quot; not found.</p>
+        <p>{t('notFound.message', { name: profileName })}</p>
         <button
           onClick={onNavigateBack}
           className="mt-4 px-4 py-2 rounded-lg bg-os-700 hover:bg-os-600 text-white text-sm font-medium transition-all duration-200"
         >
-          ← Back to MCP Servers
+          {t('notFound.backButton')}
         </button>
       </div>
     );
@@ -361,10 +365,10 @@ function McpDetailView({
       });
       const data = await res.json();
       if (data.success === false) {
-        setError(data.message || `Failed to start MCP server "${profile.name}".`);
+        setError(data.message || t('errors.startFailed', { name: profile.name }));
       }
     } catch {
-      setError(`Network error starting MCP server "${profile.name}".`);
+      setError(t('errors.startNetworkError', { name: profile.name }));
     } finally {
       setTogglingProfile(false);
     }
@@ -381,10 +385,10 @@ function McpDetailView({
       });
       const data = await res.json();
       if (data.success === false) {
-        setError(data.message || `Failed to stop MCP server "${profile.name}".`);
+        setError(data.message || t('errors.stopFailed', { name: profile.name }));
       }
     } catch {
-      setError(`Network error stopping MCP server "${profile.name}".`);
+      setError(t('errors.stopNetworkError', { name: profile.name }));
     } finally {
       setTogglingProfile(false);
     }
@@ -404,10 +408,10 @@ function McpDetailView({
       const res = await apiFetch('/api/serve/refresh', { method: 'POST' });
       const data = await res.json();
       if (data.success === false) {
-        setError(data.message || 'Failed to refresh.');
+        setError(data.message || t('errors.refreshFailed'));
       }
     } catch {
-      setError('Network error refreshing.');
+      setError(t('errors.refreshNetworkError'));
     } finally {
       setRefreshing(false);
     }
@@ -457,7 +461,7 @@ function McpDetailView({
         return updated;
       });
     } catch {
-      setResponseModeError('Error changing response mode');
+      setResponseModeError(t('responseMode.error'));
     } finally {
       setTogglingResponseMode(false);
     }
@@ -467,33 +471,33 @@ function McpDetailView({
   const sectionTabs: { id: typeof activeSection; label: string; tooltip: string }[] = [
     {
       id: 'tables',
-      label: 'Exposed Data',
-      tooltip: 'Manage the Data Configurations and tables accessible via this MCP server',
+      label: t('tabs.tables.label'),
+      tooltip: t('tabs.tables.tooltip'),
     },
     {
       id: 'connect',
-      label: 'Connect',
-      tooltip: 'Connect an AI client to this server and choose which AI setting powers its chat',
+      label: t('tabs.connect.label'),
+      tooltip: t('tabs.connect.tooltip'),
     },
     {
       id: 'users',
-      label: 'Users',
-      tooltip: 'View and manage the users with access to this MCP server',
+      label: t('tabs.users.label'),
+      tooltip: t('tabs.users.tooltip'),
     },
     {
       id: 'tokens',
-      label: 'API Keys',
-      tooltip: 'Create and revoke API keys for programmatic authentication',
+      label: t('tabs.tokens.label'),
+      tooltip: t('tabs.tokens.tooltip'),
     },
     {
       id: 'scoping',
-      label: 'Data Scoping',
-      tooltip: 'Configure per-user data isolation (row-level)',
+      label: t('tabs.scoping.label'),
+      tooltip: t('tabs.scoping.tooltip'),
     },
     {
       id: 'audit',
-      label: 'Audit Log',
-      tooltip: 'View the history of requests and access to this server',
+      label: t('tabs.audit.label'),
+      tooltip: t('tabs.audit.tooltip'),
     },
   ];
 
@@ -507,7 +511,7 @@ function McpDetailView({
               className={`w-3 h-3 rounded-full ${
                 isActive ? 'bg-green-500 shadow-lg shadow-green-500/30' : 'bg-gray-600'
               }`}
-              title={isActive ? 'MCP server running' : 'MCP server stopped'}
+              title={isActive ? t('header.statusRunningTooltip') : t('header.statusStoppedTooltip')}
             />
             <div>
               {editingLabel ? (
@@ -525,7 +529,7 @@ function McpDetailView({
                             label: editLabel.trim(),
                           };
                           persistProfiles(buildProfilesData(updated)).catch(() => {
-                            setError('Failed to save the new label.');
+                            setError(t('errors.saveLabelFailed'));
                           });
                           return updated;
                         });
@@ -546,7 +550,7 @@ function McpDetailView({
                             label: editLabel.trim(),
                           };
                           persistProfiles(buildProfilesData(updated)).catch(() => {
-                            setError('Failed to save the new label.');
+                            setError(t('errors.saveLabelFailed'));
                           });
                           return updated;
                         });
@@ -555,13 +559,13 @@ function McpDetailView({
                     }}
                     className="text-xs text-os-400 hover:text-os-300"
                   >
-                    Save
+                    {tCommon('save')}
                   </button>
                   <button
                     onClick={() => setEditingLabel(false)}
                     className="text-xs text-gray-500 hover:text-gray-300"
                   >
-                    Cancel
+                    {tCommon('cancel')}
                   </button>
                 </div>
               ) : (
@@ -591,14 +595,13 @@ function McpDetailView({
                       {profile.name}
                     </span>
                   )}
-                  <HelpTip content="Click to rename this MCP server" position="right" size="xs" />
+                  <HelpTip content={t('header.renameTooltip')} position="right" size="xs" />
                 </h2>
               )}
               <p className="text-sm text-gray-500 mt-1">
-                {isActive ? 'Active' : 'Inactive'} &middot; {profileConfigurations.length} Data
-                Configuration
-                {profileConfigurations.length !== 1 ? 's' : ''} &middot; {effectiveTableCount} table
-                {effectiveTableCount !== 1 ? 's' : ''}
+                {isActive ? t('header.statusActive') : t('header.statusInactive')} &middot;{' '}
+                {t('header.dataConfigCount', { count: profileConfigurations.length })} &middot;{' '}
+                {t('header.tableCount', { count: effectiveTableCount })}
               </p>
             </div>
           </div>
@@ -607,7 +610,7 @@ function McpDetailView({
               <button
                 onClick={handleRefresh}
                 disabled={refreshing}
-                title="Reload the configuration without restarting the server"
+                title={t('header.refreshTooltip')}
                 className="px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 disabled:opacity-50 bg-gray-700/30 text-gray-300 hover:bg-gray-700/50"
               >
                 {refreshing ? (
@@ -646,7 +649,7 @@ function McpDetailView({
             <button
               onClick={() => (isActive ? handleStopProfile() : handleStartProfile())}
               disabled={togglingProfile}
-              title={isActive ? 'Stop this MCP server' : 'Start this MCP server'}
+              title={isActive ? t('header.stopTooltip') : t('header.startTooltip')}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 disabled:opacity-50 ${
                 isActive
                   ? 'bg-red-600/20 text-red-400 hover:bg-red-600/30'
@@ -670,14 +673,14 @@ function McpDetailView({
                   />
                 </svg>
               ) : isActive ? (
-                'Stop'
+                t('header.stop')
               ) : (
-                'Start'
+                t('header.start')
               )}
             </button>
             {confirmDelete ? (
               <div className="flex items-center gap-1">
-                <span className="text-xs text-gray-400 mr-1">Delete?</span>
+                <span className="text-xs text-gray-400 mr-1">{t('header.deleteConfirm')}</span>
                 <button
                   onClick={() => {
                     if (profileIndex >= 0) {
@@ -688,19 +691,19 @@ function McpDetailView({
                   }}
                   className="px-2 py-1.5 text-xs bg-red-600 hover:bg-red-500 text-white rounded transition-all duration-200"
                 >
-                  Yes
+                  {t('header.yes')}
                 </button>
                 <button
                   onClick={() => setConfirmDelete(false)}
                   className="px-2 py-1.5 text-xs bg-gray-600 hover:bg-gray-500 text-white rounded transition-all duration-200"
                 >
-                  No
+                  {t('header.no')}
                 </button>
               </div>
             ) : (
               <button
                 onClick={() => setConfirmDelete(true)}
-                title="Delete this MCP server"
+                title={t('header.deleteTooltip')}
                 className="p-2 text-gray-500 hover:text-red-400 transition-all duration-200 rounded-lg hover:bg-red-500/10"
               >
                 <svg
@@ -725,9 +728,9 @@ function McpDetailView({
         <div className="mt-3 flex flex-wrap gap-4">
           <div>
             <p className="text-xs text-gray-500 mb-1 flex items-center gap-1">
-              Endpoint
+              {t('endpoint.label')}
               <HelpTip
-                content="MCP endpoint URL to configure in Claude Desktop, Cursor or VS Code"
+                content={t('endpoint.tooltip')}
                 position="bottom"
                 size="xs"
               />
@@ -738,15 +741,15 @@ function McpDetailView({
             >
               <code className="text-sm text-os-400 font-mono">{endpoint}</code>
               <span className="text-xs text-gray-500 group-hover:text-os-400 transition-all duration-200">
-                {copied === 'endpoint' ? 'Copied!' : 'Copy'}
+                {copied === 'endpoint' ? t('copy.copied') : t('copy.copy')}
               </span>
             </button>
           </div>
           <div>
             <p className="text-xs text-gray-500 mb-1 flex items-center gap-1">
-              Chat
+              {t('chat.label')}
               <HelpTip
-                content="Shareable link to the chat interface for your end users"
+                content={t('chat.tooltip')}
                 position="bottom"
                 size="xs"
               />
@@ -765,7 +768,7 @@ function McpDetailView({
                 {window.location.origin}/chat/{encodeURIComponent(profile.name)}
               </code>
               <span className="text-xs text-gray-500 group-hover:text-os-400 transition-all duration-200">
-                {copied === 'chat' ? 'Copied!' : 'Copy'}
+                {copied === 'chat' ? t('copy.copied') : t('copy.copy')}
               </span>
             </button>
           </div>
@@ -774,7 +777,7 @@ function McpDetailView({
         {/* Response mode */}
         <div className="mt-4 flex items-center justify-between pt-3 border-t border-gray-700/50">
           <div>
-            <span className="text-xs text-gray-400">Response Mode</span>
+            <span className="text-xs text-gray-400">{t('responseMode.label')}</span>
             {responseModeError && (
               <p className="text-xs text-red-400 mt-0.5">{responseModeError}</p>
             )}
@@ -783,12 +786,16 @@ function McpDetailView({
             <span
               className={`text-xs font-medium ${isRawMode ? 'text-orange-400' : 'text-green-400'}`}
             >
-              {togglingResponseMode ? '...' : isRawMode ? 'Technical' : 'Natural'}
+              {togglingResponseMode
+                ? t('responseMode.toggling')
+                : isRawMode
+                  ? t('responseMode.technical')
+                  : t('responseMode.natural')}
             </span>
             <button
               role="switch"
               aria-checked={isRawMode}
-              aria-label="Toggle response mode"
+              aria-label={t('responseMode.toggleAriaLabel')}
               onClick={handleToggleResponseMode}
               disabled={togglingResponseMode}
               className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-os-500 focus:ring-offset-2 focus:ring-offset-gray-900 disabled:opacity-50 ${
@@ -802,7 +809,7 @@ function McpDetailView({
               />
             </button>
             <HelpTip
-              content="In Natural mode, responses are phrased in plain language without technical terms. In Technical mode, the underlying database table and column names are visible."
+              content={t('responseMode.tooltip')}
               position="left"
               size="xs"
             />
@@ -811,49 +818,45 @@ function McpDetailView({
 
         {/* Chat authentication mode selector */}
         <div className="mt-4">
-          <label className="block text-xs text-gray-500 mb-2">Chat Authentication</label>
+          <label className="block text-xs text-gray-500 mb-2">{t('authMode.label')}</label>
           <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
             {(
               [
                 {
                   value: 'token',
-                  label: 'API Key',
-                  desc: 'Calame API key',
-                  tooltip:
-                    'Users authenticate with an API key generated by Calame. Ideal for programmatic access.',
+                  label: t('authMode.options.token.label'),
+                  desc: t('authMode.options.token.desc'),
+                  tooltip: t('authMode.options.token.tooltip'),
                 },
                 {
                   value: 'calame',
-                  label: 'Calame',
-                  desc: 'User account',
-                  tooltip: 'Users sign in with their Calame email and password.',
+                  label: t('authMode.options.calame.label'),
+                  desc: t('authMode.options.calame.desc'),
+                  tooltip: t('authMode.options.calame.tooltip'),
                 },
                 {
                   value: 'sso',
-                  label: 'SSO',
-                  desc: 'OIDC provider',
-                  tooltip:
-                    'Authentication via your enterprise SSO (Azure AD, Okta, Keycloak). Configure it in Settings.',
+                  label: t('authMode.options.sso.label'),
+                  desc: t('authMode.options.sso.desc'),
+                  tooltip: t('authMode.options.sso.tooltip'),
                 },
                 {
                   value: 'oauth',
-                  label: 'OAuth',
-                  desc: 'GitHub, Google...',
-                  tooltip: 'Users sign in via GitHub, Google, GitLab, or a custom OAuth provider.',
+                  label: t('authMode.options.oauth.label'),
+                  desc: t('authMode.options.oauth.desc'),
+                  tooltip: t('authMode.options.oauth.tooltip'),
                 },
                 {
                   value: 'external',
-                  label: 'External',
-                  desc: 'External API validation',
-                  tooltip:
-                    'Access tokens are validated by your own API endpoint. Useful for integrating with an existing authentication system.',
+                  label: t('authMode.options.external.label'),
+                  desc: t('authMode.options.external.desc'),
+                  tooltip: t('authMode.options.external.tooltip'),
                 },
                 {
                   value: 'open',
-                  label: 'Open',
-                  desc: 'No auth',
-                  tooltip:
-                    'Open access with no authentication. Use with caution — anyone can query this server.',
+                  label: t('authMode.options.open.label'),
+                  desc: t('authMode.options.open.desc'),
+                  tooltip: t('authMode.options.open.tooltip'),
                 },
               ] as { value: AuthMode; label: string; desc: string; tooltip: string }[]
             ).map((mode) => {
@@ -881,7 +884,7 @@ function McpDetailView({
           {/* Warning for open mode */}
           {(profile.authMode ?? 'token') === 'open' && (
             <p className="mt-2 text-xs text-yellow-500/80 bg-yellow-900/10 border border-yellow-700/30 rounded px-2 py-1">
-              Warning: this MCP server will be accessible without any authentication.
+              {t('authMode.openWarning')}
             </p>
           )}
 
@@ -900,7 +903,7 @@ function McpDetailView({
                   className="block text-xs text-gray-400 mb-1"
                   htmlFor={`external-validation-url-${profile.name}`}
                 >
-                  Validation URL <span className="text-red-400">*</span>
+                  {t('external.validationUrlLabel')} <span className="text-red-400">*</span>
                 </label>
                 <input
                   id={`external-validation-url-${profile.name}`}
@@ -909,11 +912,11 @@ function McpDetailView({
                   onChange={(e) =>
                     handleExternalAuthConfigChange({ validationUrl: e.target.value })
                   }
-                  placeholder="https://your-app.com/api/validate-token"
+                  placeholder={t('external.validationUrlPlaceholder')}
                   className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
                 />
                 <p className="text-xs text-gray-600 mt-1">
-                  Calame will call this URL with the user&apos;s token to validate it.
+                  {t('external.validationUrlHelp')}
                 </p>
               </div>
 
@@ -922,14 +925,14 @@ function McpDetailView({
                   className="block text-xs text-gray-400 mb-1"
                   htmlFor={`external-header-name-${profile.name}`}
                 >
-                  Header Name (optional)
+                  {t('external.headerNameLabel')}
                 </label>
                 <input
                   id={`external-header-name-${profile.name}`}
                   type="text"
                   value={profile.externalAuthConfig?.headerName ?? ''}
                   onChange={(e) => handleExternalAuthConfigChange({ headerName: e.target.value })}
-                  placeholder="Authorization (default)"
+                  placeholder={t('external.headerNamePlaceholder')}
                   className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
                 />
               </div>
@@ -939,7 +942,7 @@ function McpDetailView({
                   className="block text-xs text-gray-400 mb-1"
                   htmlFor={`external-header-template-${profile.name}`}
                 >
-                  Header Template (optional)
+                  {t('external.headerTemplateLabel')}
                 </label>
                 <input
                   id={`external-header-template-${profile.name}`}
@@ -948,13 +951,11 @@ function McpDetailView({
                   onChange={(e) =>
                     handleExternalAuthConfigChange({ headerTemplate: e.target.value })
                   }
-                  placeholder="Bearer {token} (default)"
+                  placeholder={t('external.headerTemplatePlaceholder')}
                   className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
                 />
                 <p className="text-xs text-gray-600 mt-1">
-                  Use &#123;token&#125; as placeholder. Examples: &quot;Bearer
-                  &#123;token&#125;&quot;, &quot;Token &#123;token&#125;&quot;,
-                  &quot;&#123;token&#125;&quot;
+                  {t('external.headerTemplateHelp')}
                 </p>
               </div>
 
@@ -964,14 +965,15 @@ function McpDetailView({
                     className="block text-xs text-gray-400 mb-1"
                     htmlFor={`external-email-field-${profile.name}`}
                   >
-                    Email field <span className="text-gray-600">(optional)</span>
+                    {t('external.emailFieldLabel')}{' '}
+                    <span className="text-gray-600">{t('external.optionalSuffix')}</span>
                   </label>
                   <input
                     id={`external-email-field-${profile.name}`}
                     type="text"
                     value={profile.externalAuthConfig?.emailField ?? ''}
                     onChange={(e) => handleExternalAuthConfigChange({ emailField: e.target.value })}
-                    placeholder="email (default)"
+                    placeholder={t('external.emailFieldPlaceholder')}
                     className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
                   />
                 </div>
@@ -980,20 +982,21 @@ function McpDetailView({
                     className="block text-xs text-gray-400 mb-1"
                     htmlFor={`external-name-field-${profile.name}`}
                   >
-                    Name field <span className="text-gray-600">(optional)</span>
+                    {t('external.nameFieldLabel')}{' '}
+                    <span className="text-gray-600">{t('external.optionalSuffix')}</span>
                   </label>
                   <input
                     id={`external-name-field-${profile.name}`}
                     type="text"
                     value={profile.externalAuthConfig?.nameField ?? ''}
                     onChange={(e) => handleExternalAuthConfigChange({ nameField: e.target.value })}
-                    placeholder="name (default)"
+                    placeholder={t('external.nameFieldPlaceholder')}
                     className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
                   />
                 </div>
               </div>
               <p className="text-xs text-gray-600">
-                Dot notation supported (e.g., &quot;user.profile.email&quot;).
+                {t('external.dotNotationHelp')}
               </p>
 
               {/* Auto-create users toggle */}
@@ -1006,12 +1009,12 @@ function McpDetailView({
                   }
                   className="rounded border-gray-600 bg-gray-700 text-os-500 focus:ring-os-500/30 focus:ring-offset-0"
                 />
-                <span className="text-sm text-gray-300">Auto-create users</span>
+                <span className="text-sm text-gray-300">{t('external.autoCreateUsersLabel')}</span>
               </label>
               <p className="text-xs text-gray-600">
                 {profile.externalAuthConfig?.autoCreateUsers !== false
-                  ? 'Users validated by the external API will be automatically created in Calame.'
-                  : 'Only existing Calame users will be accepted. New users will be rejected.'}
+                  ? t('external.autoCreateEnabled')
+                  : t('external.autoCreateDisabled')}
               </p>
             </div>
           )}
@@ -1024,7 +1027,7 @@ function McpDetailView({
                   className="block text-xs text-gray-400 mb-1"
                   htmlFor={`oauth-provider-${profile.name}`}
                 >
-                  OAuth Provider
+                  {t('oauth.providerLabel')}
                 </label>
                 <select
                   id={`oauth-provider-${profile.name}`}
@@ -1036,10 +1039,10 @@ function McpDetailView({
                   }
                   className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
                 >
-                  <option value="github">GitHub</option>
-                  <option value="google">Google</option>
-                  <option value="gitlab">GitLab</option>
-                  <option value="custom">Custom</option>
+                  <option value="github">{t('oauth.providers.github')}</option>
+                  <option value="google">{t('oauth.providers.google')}</option>
+                  <option value="gitlab">{t('oauth.providers.gitlab')}</option>
+                  <option value="custom">{t('oauth.providers.custom')}</option>
                 </select>
               </div>
               <div>
@@ -1047,14 +1050,14 @@ function McpDetailView({
                   className="block text-xs text-gray-400 mb-1"
                   htmlFor={`oauth-client-id-${profile.name}`}
                 >
-                  Client ID <span className="text-red-400">*</span>
+                  {t('oauth.clientIdLabel')} <span className="text-red-400">*</span>
                 </label>
                 <input
                   id={`oauth-client-id-${profile.name}`}
                   type="text"
                   value={profile.oauthConfig?.clientId ?? ''}
                   onChange={(e) => handleOAuthConfigChange({ clientId: e.target.value })}
-                  placeholder="your-client-id"
+                  placeholder={t('oauth.clientIdPlaceholder')}
                   className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
                 />
               </div>
@@ -1063,14 +1066,14 @@ function McpDetailView({
                   className="block text-xs text-gray-400 mb-1"
                   htmlFor={`oauth-client-secret-${profile.name}`}
                 >
-                  Client Secret <span className="text-red-400">*</span>
+                  {t('oauth.clientSecretLabel')} <span className="text-red-400">*</span>
                 </label>
                 <input
                   id={`oauth-client-secret-${profile.name}`}
                   type="password"
                   value={profile.oauthConfig?.clientSecret ?? ''}
                   onChange={(e) => handleOAuthConfigChange({ clientSecret: e.target.value })}
-                  placeholder="your-client-secret"
+                  placeholder={t('oauth.clientSecretPlaceholder')}
                   className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
                 />
               </div>
@@ -1082,7 +1085,7 @@ function McpDetailView({
                       className="block text-xs text-gray-400 mb-1"
                       htmlFor={`oauth-auth-url-${profile.name}`}
                     >
-                      Authorization URL <span className="text-red-400">*</span>
+                      {t('oauth.authUrlLabel')} <span className="text-red-400">*</span>
                     </label>
                     <input
                       id={`oauth-auth-url-${profile.name}`}
@@ -1091,7 +1094,7 @@ function McpDetailView({
                       onChange={(e) =>
                         handleOAuthConfigChange({ authorizationUrl: e.target.value })
                       }
-                      placeholder="https://..."
+                      placeholder={t('oauth.urlPlaceholder')}
                       className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
                     />
                   </div>
@@ -1100,14 +1103,14 @@ function McpDetailView({
                       className="block text-xs text-gray-400 mb-1"
                       htmlFor={`oauth-token-url-${profile.name}`}
                     >
-                      Token URL <span className="text-red-400">*</span>
+                      {t('oauth.tokenUrlLabel')} <span className="text-red-400">*</span>
                     </label>
                     <input
                       id={`oauth-token-url-${profile.name}`}
                       type="text"
                       value={profile.oauthConfig?.tokenUrl ?? ''}
                       onChange={(e) => handleOAuthConfigChange({ tokenUrl: e.target.value })}
-                      placeholder="https://..."
+                      placeholder={t('oauth.urlPlaceholder')}
                       className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
                     />
                   </div>
@@ -1116,14 +1119,14 @@ function McpDetailView({
                       className="block text-xs text-gray-400 mb-1"
                       htmlFor={`oauth-userinfo-url-${profile.name}`}
                     >
-                      User Info URL <span className="text-red-400">*</span>
+                      {t('oauth.userinfoUrlLabel')} <span className="text-red-400">*</span>
                     </label>
                     <input
                       id={`oauth-userinfo-url-${profile.name}`}
                       type="text"
                       value={profile.oauthConfig?.userinfoUrl ?? ''}
                       onChange={(e) => handleOAuthConfigChange({ userinfoUrl: e.target.value })}
-                      placeholder="https://..."
+                      placeholder={t('oauth.urlPlaceholder')}
                       className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
                     />
                   </div>
@@ -1166,7 +1169,7 @@ function McpDetailView({
           {/* Configurations selection */}
           <div className="card-primary p-4">
             <div className="flex items-center justify-between mb-3">
-              <h4 className="text-sm font-semibold text-gray-300">Assigned Data Configurations</h4>
+              <h4 className="text-sm font-semibold text-gray-300">{t('tables.assignedHeading')}</h4>
               <div className="flex items-center gap-1">
                 <button
                   onClick={() => onNavigateToConfig('')}
@@ -1181,10 +1184,10 @@ function McpDetailView({
                   >
                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                   </svg>
-                  New
+                  {t('tables.newButton')}
                 </button>
                 <HelpTip
-                  content="Create a new Data Configuration and assign it to this server"
+                  content={t('tables.newTooltip')}
                   position="left"
                   size="xs"
                 />
@@ -1192,7 +1195,7 @@ function McpDetailView({
             </div>
             {configurations.length === 0 ? (
               <p className="text-sm text-gray-500">
-                No Data Configurations available. Click &quot;+ New&quot; to create one.
+                {t('tables.emptyState')}
               </p>
             ) : (
               <div className="flex flex-wrap gap-2">
@@ -1217,13 +1220,12 @@ function McpDetailView({
                         />
                         {cfg.label}
                         <span className="text-xs text-gray-500">
-                          ({tableCount} table{tableCount !== 1 ? 's' : ''}, {sourceCount} source
-                          {sourceCount !== 1 ? 's' : ''})
+                          {t('tables.configSummary', { tableCount, sourceCount })}
                         </span>
                       </button>
                       <button
                         onClick={() => onNavigateToConfig(cfg.name)}
-                        title="Edit this Data Configuration"
+                        title={t('tables.editTooltip')}
                         className="p-1 text-gray-500 hover:text-os-400 transition-all duration-200"
                       >
                         <svg
@@ -1251,8 +1253,7 @@ function McpDetailView({
           {profileConfigurations.length > 0 && (
             <div className="rounded-lg border border-blue-600/30 bg-blue-700/10 p-5">
               <h4 className="text-sm font-semibold text-blue-400 mb-3">
-                Effective Tables (merged from {profileConfigurations.length} configuration
-                {profileConfigurations.length !== 1 ? 's' : ''})
+                {t('tables.effectiveHeading', { count: profileConfigurations.length })}
               </h4>
               {(() => {
                 const mergedTables: Record<string, string[]> = {};
@@ -1278,7 +1279,7 @@ function McpDetailView({
                 const tableNames = Object.keys(mergedTables);
                 if (tableNames.length === 0) {
                   return (
-                    <p className="text-sm text-gray-500">No tables selected in configurations.</p>
+                    <p className="text-sm text-gray-500">{t('tables.noTablesSelected')}</p>
                   );
                 }
                 return (
@@ -1296,13 +1297,13 @@ function McpDetailView({
                         >
                           {tableName}
                           <span className="text-xs text-gray-500">
-                            {mergedTables[tableName].length} cols
+                            {t('tables.colsLabel', { count: mergedTables[tableName].length })}
                           </span>
                           <span className="flex items-center gap-1">
                             {enabledTools.map((tool) => (
                               <span
                                 key={tool}
-                                title={`Tool: ${tool}`}
+                                title={t('tables.toolTitle', { tool })}
                                 className={`text-[9px] px-1 py-0.5 rounded font-bold ${
                                   tool === 'write'
                                     ? 'bg-amber-500/20 text-amber-400'
@@ -1344,14 +1345,14 @@ function McpDetailView({
       {activeSection === 'users' && (
         <div className="card-primary p-4">
           <h3 className="text-sm font-semibold text-gray-300 mb-3">
-            Users with access to {profile.name}
+            {t('users.heading', { name: profile.name })}
           </h3>
           <McpUsersLazy profileName={profile.name} onNavigateToUser={onNavigateToUser} />
         </div>
       )}
 
       {activeSection === 'scoping' && (
-        <Suspense fallback={<div className="p-6 text-sm text-gray-500 italic">Loading…</div>}>
+        <Suspense fallback={<div className="p-6 text-sm text-gray-500 italic">{tCommon('loading')}</div>}>
           <DataScopingSection
             profile={profile}
             configurations={configurations}
@@ -1362,14 +1363,14 @@ function McpDetailView({
 
       {activeSection === 'tokens' && (
         <div className="card-primary p-4">
-          <h3 className="text-sm font-semibold text-gray-300 mb-3">API Keys</h3>
+          <h3 className="text-sm font-semibold text-gray-300 mb-3">{t('tabs.tokens.label')}</h3>
           <TokenManagerLazy profile={profile} port={serveStatus.port} />
         </div>
       )}
 
       {activeSection === 'audit' && (
         <div className="card-primary p-4">
-          <h3 className="text-sm font-semibold text-gray-300 mb-3">Audit Log</h3>
+          <h3 className="text-sm font-semibold text-gray-300 mb-3">{t('tabs.audit.label')}</h3>
           <AuditLogViewerLazy profile={profile} />
         </div>
       )}

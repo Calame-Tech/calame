@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslations } from 'use-intl/react';
 import Sidebar from './components/Sidebar.js';
 import LoginPage from './components/LoginPage.js';
 import SetupPage from './components/SetupPage.js';
@@ -29,6 +30,7 @@ import {
 } from './pages/index.js';
 
 export default function App() {
+  const tCommon = useTranslations('common');
   // Session / auth state — owned by SessionProvider (context/SessionContext).
   const {
     authChecked,
@@ -108,7 +110,7 @@ export default function App() {
   if (!authChecked) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
-        <div className="text-gray-400">Loading...</div>
+        <div className="text-gray-400">{tCommon('loading')}</div>
       </div>
     );
   }

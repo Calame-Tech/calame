@@ -5,9 +5,17 @@
 // the component's sole call site (McpListPage) always supplies it.
 
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render as rtlRender, screen, fireEvent } from '@testing-library/react';
+import type { ReactElement } from 'react';
+import type { RenderOptions } from '@testing-library/react';
 import ServePanel from '../ServePanel.js';
+import { I18nProvider } from '../../i18n/I18nProvider.js';
 import type { Config, Profile, ServeStatus } from '../../types/schema.js';
+
+/** Renders with the i18n context the component now requires. */
+function render(ui: ReactElement, options?: RenderOptions) {
+  return rtlRender(ui, { wrapper: I18nProvider, ...options });
+}
 
 const config: Config = {
   serverName: 'calame',

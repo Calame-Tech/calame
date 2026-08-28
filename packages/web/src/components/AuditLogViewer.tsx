@@ -1,7 +1,9 @@
 import { Fragment, useState, useEffect, useCallback, useRef } from 'react';
+import { useTranslations } from 'use-intl/react';
 import { apiFetch } from '../lib/api.js';
 import type { Profile, AuditLogEntry } from '../types/schema.js';
 import HelpTip from './HelpTip.js';
+import { useLocale } from '../i18n/I18nProvider.js';
 
 interface AuditLogViewerProps {
   profiles: Profile[];
@@ -10,6 +12,8 @@ interface AuditLogViewerProps {
 const PAGE_SIZE = 50;
 
 export default function AuditLogViewer({ profiles }: AuditLogViewerProps) {
+  const t = useTranslations('auditLog.viewer');
+  const { locale } = useLocale();
   const [entries, setEntries] = useState<AuditLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -52,15 +56,15 @@ export default function AuditLogViewer({ profiles }: AuditLogViewerProps) {
           setEntries(data.entries ?? []);
           setTotalCount(data.total ?? data.entries?.length ?? 0);
         } else {
-          setError(data.message || 'Failed to load audit log.');
+          setError(data.message || t('errors.loadFailed'));
         }
       } catch {
-        setError('Network error loading audit log.');
+        setError(t('errors.networkError'));
       } finally {
         setLoading(false);
       }
     },
-    [filterProfile, filterDateFrom, filterDateTo],
+    [filterProfile, filterDateFrom, filterDateTo, t],
   );
 
   useEffect(() => {
@@ -99,7 +103,7 @@ export default function AuditLogViewer({ profiles }: AuditLogViewerProps) {
 
   const formatTime = (iso: string) => {
     const d = new Date(iso);
-    return d.toLocaleString('en-US', {
+    return d.toLocaleString(locale, {
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
@@ -125,8 +129,8 @@ export default function AuditLogViewer({ profiles }: AuditLogViewerProps) {
         {profiles.length > 1 && (
           <div>
             <label className="flex items-center gap-1 text-xs text-gray-400 mb-1">
-              MCP Server
-              <HelpTip content="Filter entries by MCP server." position="top" size="xs" />
+              {t('filters.mcpServerLabel')}
+              <HelpTip content={t('filters.mcpServerHelp')} position="top" size="xs" />
             </label>
             <select
               value={filterProfile}
@@ -138,7 +142,7 @@ export default function AuditLogViewer({ profiles }: AuditLogViewerProps) {
                 backgroundPosition: 'right 8px center',
               }}
             >
-              <option value="">All MCP servers</option>
+              <option value="">{t('filters.allServers')}</option>
               {profiles.map((p) => (
                 <option key={p.name} value={p.name}>
                   {p.label}
@@ -151,8 +155,8 @@ export default function AuditLogViewer({ profiles }: AuditLogViewerProps) {
         {/* Date from */}
         <div>
           <label className="flex items-center gap-1 text-xs text-gray-400 mb-1">
-            From
-            <HelpTip content="Show only entries from this date onward." position="top" size="xs" />
+            {t('filters.fromLabel')}
+            <HelpTip content={t('filters.fromHelp')} position="top" size="xs" />
           </label>
           <input
             type="date"
@@ -165,12 +169,8 @@ export default function AuditLogViewer({ profiles }: AuditLogViewerProps) {
         {/* Date to */}
         <div>
           <label className="flex items-center gap-1 text-xs text-gray-400 mb-1">
-            To
-            <HelpTip
-              content="Show only entries up to and including this date."
-              position="top"
-              size="xs"
-            />
+            {t('filters.toLabel')}
+            <HelpTip content={t('filters.toHelp')} position="top" size="xs" />
           </label>
           <input
             type="date"
@@ -198,29 +198,25 @@ export default function AuditLogViewer({ profiles }: AuditLogViewerProps) {
             />
           </div>
           <span className="flex items-center gap-1 text-xs text-gray-400">
-            Auto-refresh
-            <HelpTip
-              content="Automatically refreshes the log every 5 seconds."
-              position="top"
-              size="xs"
-            />
+            {t('autoRefresh.label')}
+            <HelpTip content={t('autoRefresh.help')} position="top" size="xs" />
           </span>
         </label>
 
         {/* Export buttons */}
         <button
           onClick={() => handleExport('json')}
-          title="Download all filtered entries in JSON format."
+          title={t('export.jsonTooltip')}
           className="px-3 py-2 rounded-lg border border-white/10 text-gray-400 hover:text-gray-200 hover:bg-gray-800 text-sm transition-colors"
         >
-          Export JSON
+          {t('export.jsonButton')}
         </button>
         <button
           onClick={() => handleExport('csv')}
-          title="Download all filtered entries in CSV format (Excel-compatible)."
+          title={t('export.csvTooltip')}
           className="px-3 py-2 rounded-lg border border-white/10 text-gray-400 hover:text-gray-200 hover:bg-gray-800 text-sm transition-colors"
         >
-          Export CSV
+          {t('export.csvButton')}
         </button>
       </div>
 
@@ -238,57 +234,38 @@ export default function AuditLogViewer({ profiles }: AuditLogViewerProps) {
               <th className="w-8 px-2 py-3" />
               <th className="px-4 py-3 font-medium">
                 <span className="flex items-center gap-1">
-                  Time <HelpTip content="Timestamp of the tool call." position="bottom" size="xs" />
+                  {t('table.colTime')}{' '}
+                  <HelpTip content={t('table.colTimeTooltip')} position="bottom" size="xs" />
                 </span>
               </th>
               <th className="px-4 py-3 font-medium">
                 <span className="flex items-center gap-1">
-                  MCP Server{' '}
-                  <HelpTip
-                    content="MCP server that handled the request."
-                    position="bottom"
-                    size="xs"
-                  />
+                  {t('table.colServer')}{' '}
+                  <HelpTip content={t('table.colServerTooltip')} position="bottom" size="xs" />
                 </span>
               </th>
               <th className="px-4 py-3 font-medium">
                 <span className="flex items-center gap-1">
-                  Tool{' '}
-                  <HelpTip
-                    content="Name of the MCP tool that was called."
-                    position="bottom"
-                    size="xs"
-                  />
+                  {t('table.colTool')}{' '}
+                  <HelpTip content={t('table.colToolTooltip')} position="bottom" size="xs" />
                 </span>
               </th>
               <th className="px-4 py-3 font-medium">
                 <span className="flex items-center gap-1">
-                  Result{' '}
-                  <HelpTip
-                    content="Execution outcome: success or error."
-                    position="bottom"
-                    size="xs"
-                  />
+                  {t('table.colResult')}{' '}
+                  <HelpTip content={t('table.colResultTooltip')} position="bottom" size="xs" />
                 </span>
               </th>
               <th className="px-4 py-3 font-medium">
                 <span className="flex items-center gap-1">
-                  Duration{' '}
-                  <HelpTip
-                    content="Total execution time of the tool, in milliseconds or seconds."
-                    position="bottom"
-                    size="xs"
-                  />
+                  {t('table.colDuration')}{' '}
+                  <HelpTip content={t('table.colDurationTooltip')} position="bottom" size="xs" />
                 </span>
               </th>
               <th className="px-4 py-3 font-medium">
                 <span className="flex items-center gap-1">
-                  Summary{' '}
-                  <HelpTip
-                    content="Short summary of the result or error returned."
-                    position="bottom"
-                    size="xs"
-                  />
+                  {t('table.colSummary')}{' '}
+                  <HelpTip content={t('table.colSummaryTooltip')} position="bottom" size="xs" />
                 </span>
               </th>
             </tr>
@@ -297,13 +274,13 @@ export default function AuditLogViewer({ profiles }: AuditLogViewerProps) {
             {loading && entries.length === 0 ? (
               <tr>
                 <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
-                  Loading audit log...
+                  {t('table.loading')}
                 </td>
               </tr>
             ) : entries.length === 0 ? (
               <tr>
                 <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
-                  No audit log entries found.
+                  {t('table.empty')}
                 </td>
               </tr>
             ) : (
@@ -350,8 +327,8 @@ export default function AuditLogViewer({ profiles }: AuditLogViewerProps) {
                         <span
                           title={
                             entry.result === 'success'
-                              ? 'The tool executed without error.'
-                              : 'The tool failed. Click the row to see details.'
+                              ? t('table.resultSuccessTooltip')
+                              : t('table.resultErrorTooltip')
                           }
                           className={`px-2 py-0.5 rounded-full text-xs ${
                             entry.result === 'success'
@@ -359,7 +336,9 @@ export default function AuditLogViewer({ profiles }: AuditLogViewerProps) {
                               : 'bg-red-500/20 text-red-400'
                           }`}
                         >
-                          {entry.result}
+                          {entry.result === 'success'
+                            ? t('table.resultSuccess')
+                            : t('table.resultError')}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">
@@ -374,14 +353,18 @@ export default function AuditLogViewer({ profiles }: AuditLogViewerProps) {
                         <td colSpan={7} className="px-4 py-3 bg-gray-900/50">
                           <div className="space-y-3">
                             <div>
-                              <div className="text-xs text-gray-400 mb-1">Tool Arguments:</div>
+                              <div className="text-xs text-gray-400 mb-1">
+                                {t('expanded.toolArguments')}
+                              </div>
                               <pre className="p-3 rounded bg-gray-900 border border-gray-700 text-xs text-gray-300 font-mono overflow-x-auto whitespace-pre">
                                 {JSON.stringify(entry.toolArgs, null, 2)}
                               </pre>
                             </div>
                             {prettyResultData !== null && (
                               <div>
-                                <div className="text-xs text-gray-400 mb-1">Raw Result:</div>
+                                <div className="text-xs text-gray-400 mb-1">
+                                  {t('expanded.rawResult')}
+                                </div>
                                 <pre className="p-3 rounded bg-gray-900 border border-gray-700 text-xs text-gray-300 font-mono overflow-x-auto whitespace-pre">
                                   {prettyResultData}
                                 </pre>
@@ -403,7 +386,11 @@ export default function AuditLogViewer({ profiles }: AuditLogViewerProps) {
       {totalPages > 1 && (
         <div className="flex items-center justify-between text-sm">
           <span className="text-gray-500">
-            Showing {offset + 1}-{Math.min(offset + PAGE_SIZE, totalCount)} of {totalCount} entries
+            {t('pagination.showing', {
+              from: offset + 1,
+              to: Math.min(offset + PAGE_SIZE, totalCount),
+              total: totalCount,
+            })}
           </span>
           <div className="flex items-center gap-2">
             <button
@@ -411,17 +398,17 @@ export default function AuditLogViewer({ profiles }: AuditLogViewerProps) {
               disabled={offset === 0}
               className="px-3 py-1.5 rounded-lg border border-white/10 text-gray-400 hover:text-gray-200 hover:bg-gray-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
             >
-              Previous
+              {t('pagination.previous')}
             </button>
             <span className="text-gray-400">
-              Page {currentPage} of {totalPages}
+              {t('pagination.pageOf', { current: currentPage, total: totalPages })}
             </span>
             <button
               onClick={() => handlePageChange(offset + PAGE_SIZE)}
               disabled={offset + PAGE_SIZE >= totalCount}
               className="px-3 py-1.5 rounded-lg border border-white/10 text-gray-400 hover:text-gray-200 hover:bg-gray-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
             >
-              Next
+              {t('pagination.next')}
             </button>
           </div>
         </div>

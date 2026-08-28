@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useTranslations } from 'use-intl/react';
 import type {
   DatabaseSchema,
   TableInfo,
@@ -71,6 +72,7 @@ export default function SchemaExplorer({
   connectionLabels,
   tableOptions,
 }: SchemaExplorerProps) {
+  const t = useTranslations('sources.schemaExplorer');
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedTables, setExpandedTables] = useState<Set<string>>(new Set());
 
@@ -194,7 +196,7 @@ export default function SchemaExplorer({
   }, [schema, selectedTables]);
 
   if (!schema || schema.tables.length === 0) {
-    return <p className="text-gray-400">No tables found. Connect a database first.</p>;
+    return <p className="text-gray-400">{t('noTables')}</p>;
   }
 
   // Handle clicking a table toggle button — toggle in set (multi-open)
@@ -228,12 +230,12 @@ export default function SchemaExplorer({
     const hasWrite = enabledTools.includes('write');
     return (
       <span
-        title={`Tools: ${enabledTools.join(', ')}`}
+        title={t('toolsTitle', { tools: enabledTools.join(', ') })}
         className={`flex-shrink-0 text-[9px] px-1 py-0.5 rounded font-bold ${
           hasWrite ? 'bg-amber-500/20 text-amber-400' : 'bg-gray-700/60 text-gray-300'
         }`}
       >
-        {hasWrite ? 'W' : 'R'}
+        {hasWrite ? t('badgeWrite') : t('badgeRead')}
       </span>
     );
   };
@@ -268,7 +270,9 @@ export default function SchemaExplorer({
         {/* DB badge when showing flat (single db or search) */}
         {!connName && tableToConnection && connectionNames.length > 1 && (
           <span
-            title={`Database: ${connectionLabels?.[tableToConnection[table.name]] ?? tableToConnection[table.name]}`}
+            title={t('databaseTitle', {
+              name: connectionLabels?.[tableToConnection[table.name]] ?? tableToConnection[table.name],
+            })}
             className={`flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded border font-medium ${getConnColor(tableToConnection[table.name]).badge}`}
           >
             {connectionLabels?.[tableToConnection[table.name]] ?? tableToConnection[table.name]}
@@ -303,7 +307,7 @@ export default function SchemaExplorer({
             <h3 className="font-mono font-semibold text-os-400 text-sm">
               {table.name}
               <span className="ml-2 text-gray-500 font-normal text-xs">
-                ({table.columns.length} columns)
+                {t('columnsCountParen', { count: table.columns.length })}
               </span>
             </h3>
             {color && connName && (
@@ -318,7 +322,9 @@ export default function SchemaExplorer({
             onClick={() => toggleAllColumns(table)}
             className="text-xs text-gray-400 hover:text-gray-200 transition-colors px-2 py-1 rounded border border-white/10 hover:border-white/20"
           >
-            {selectedCols.size === table.columns.length ? 'Deselect all' : 'Select all'}
+            {selectedCols.size === table.columns.length
+              ? t('accordionDeselectAll')
+              : t('accordionSelectAll')}
           </button>
         </div>
 
@@ -328,8 +334,16 @@ export default function SchemaExplorer({
             {tableRelations.map((r, i) => {
               const isFrom = r.fromTable === table.name;
               const tooltipText = isFrom
-                ? `Foreign key: ${r.fromColumn} references ${r.toTable}.${r.toColumn}`
-                : `Foreign key: ${r.fromTable}.${r.fromColumn} references ${r.toColumn} in this table`;
+                ? t('fkFromTooltip', {
+                    fromColumn: r.fromColumn,
+                    toTable: r.toTable,
+                    toColumn: r.toColumn,
+                  })
+                : t('fkToTooltip', {
+                    fromTable: r.fromTable,
+                    fromColumn: r.fromColumn,
+                    toColumn: r.toColumn,
+                  });
               return (
                 <span
                   key={i}
@@ -368,32 +382,38 @@ export default function SchemaExplorer({
                 />
                 <span className="font-mono text-gray-200 text-xs truncate">{col.name}</span>
                 <span
-                  title={`SQL type: ${col.type}${col.nullable ? ' — accepts NULL values' : ' — NOT NULL'}`}
+                  title={
+                    col.nullable
+                      ? t('sqlTypeNullable', { type: col.type })
+                      : t('sqlTypeNotNull', { type: col.type })
+                  }
                   className={`flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded-md font-medium ring-1 ${getTypeBadgeClasses(col.type)}`}
                 >
                   {col.type}
                 </span>
                 {table.primaryKeys.includes(col.name) && (
                   <span
-                    title="Primary key — unique identifier for each row in this table."
+                    title={t('pkTitle')}
                     className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded-md font-bold bg-yellow-500/15 text-yellow-400 ring-1 ring-yellow-500/25"
                   >
-                    PK
+                    {t('pk')}
                   </span>
                 )}
                 {isFk && (
                   <span
-                    title="Foreign key — references a row in another table. Click the table to see relations."
+                    title={t('fkTitle')}
                     className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded-md font-bold bg-blue-500/15 text-blue-400 ring-1 ring-blue-500/25"
                   >
-                    FK
+                    {t('fk')}
                   </span>
                 )}
                 {piiDetections?.[table.name]?.[col.name] && (
                   <PiiBadge detection={piiDetections[table.name][col.name]} />
                 )}
                 {col.nullable && (
-                  <span className="flex-shrink-0 text-[10px] text-gray-600">null</span>
+                  <span className="flex-shrink-0 text-[10px] text-gray-600">
+                    {t('nullLabel')}
+                  </span>
                 )}
               </label>
             );
@@ -408,12 +428,12 @@ export default function SchemaExplorer({
       {/* Header row */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
         <div>
-          <h2 className="heading-md">Tables &amp; Columns</h2>
+          <h2 className="heading-md">{t('title')}</h2>
           <p className="text-sm text-gray-500 mt-1">
-            <span className="text-os-400 font-medium">{stats.tablesSelected}</span> table
-            {stats.tablesSelected !== 1 ? 's' : ''} selected,{' '}
-            <span className="text-os-400 font-medium">{stats.columnsTotal}</span> column
-            {stats.columnsTotal !== 1 ? 's' : ''} total
+            <span className="text-os-400 font-medium">{stats.tablesSelected}</span>{' '}
+            {t('tablesSelectedText', { count: stats.tablesSelected })},{' '}
+            <span className="text-os-400 font-medium">{stats.columnsTotal}</span>{' '}
+            {t('columnsTotalText', { count: stats.columnsTotal })}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -421,22 +441,18 @@ export default function SchemaExplorer({
             <button
               onClick={onScanPii}
               disabled={scanning}
-              title="Analyze all selected columns to automatically detect personal data (PII) such as emails, phone numbers, names, etc."
+              title={t('scanPiiTitle')}
               className="px-3 py-1.5 text-xs font-medium rounded-md border border-amber-600/50 text-amber-400 hover:bg-amber-900/20 hover:border-amber-500/50 transition-all duration-200 disabled:opacity-50"
             >
-              {scanning ? 'Scanning...' : 'Scan for PII'}
+              {scanning ? t('scanning') : t('scanForPii')}
             </button>
           )}
           <button
             onClick={allSelected ? deselectAllTables : selectAllTables}
-            title={
-              allSelected
-                ? 'Deselect all tables and columns in this schema.'
-                : 'Select all tables and columns in this schema to include them in the MCP server.'
-            }
+            title={allSelected ? t('deselectAllTitle') : t('selectAllTitle')}
             className="px-3 py-1.5 text-xs font-medium rounded-md border border-gray-700 text-gray-300 hover:bg-gray-800 hover:border-gray-600 transition-all duration-200"
           >
-            {allSelected ? 'Deselect All' : 'Select All'}
+            {allSelected ? t('deselectAllButton') : t('selectAllButton')}
           </button>
         </div>
       </div>
@@ -460,7 +476,7 @@ export default function SchemaExplorer({
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search tables..."
+          placeholder={t('searchPlaceholder')}
           className="input-editorial w-full sm:w-72 pl-10 text-sm"
         />
       </div>
@@ -482,7 +498,7 @@ export default function SchemaExplorer({
                   <span className={`w-2 h-2 rounded-full ${color.dot}`} />
                   <h3 className="text-sm font-semibold text-gray-200">{displayName}</h3>
                   <span className="text-xs text-gray-500">
-                    ({tables.length} table{tables.length !== 1 ? 's' : ''})
+                    {t('tableCountParen', { count: tables.length })}
                   </span>
                 </div>
 
@@ -515,7 +531,7 @@ export default function SchemaExplorer({
 
       {filteredTables.length === 0 && (
         <p className="text-gray-500 text-sm text-center py-8">
-          No tables matching &quot;{searchQuery}&quot;
+          {t('noTablesMatching', { query: searchQuery })}
         </p>
       )}
     </div>

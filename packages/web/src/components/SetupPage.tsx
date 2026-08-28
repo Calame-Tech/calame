@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslations } from 'use-intl/react';
 import { apiFetch } from '../lib/api.js';
 import { useBranding, DEFAULT_LOGO_SRC } from '../lib/branding.js';
 
@@ -7,6 +8,7 @@ interface SetupPageProps {
 }
 
 export default function SetupPage({ onSetupComplete }: SetupPageProps) {
+  const t = useTranslations('setupLogin.setupPage');
   const branding = useBranding();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -20,19 +22,19 @@ export default function SetupPage({ onSetupComplete }: SetupPageProps) {
     setError('');
 
     if (!name.trim()) {
-      setError('Name is required.');
+      setError(t('errors.nameRequired'));
       return;
     }
     if (!email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      setError('A valid email is required.');
+      setError(t('errors.emailInvalid'));
       return;
     }
     if (password.length < 8) {
-      setError('Password must be at least 8 characters.');
+      setError(t('errors.passwordTooShort'));
       return;
     }
     if (password !== confirmPassword) {
-      setError('Passwords do not match.');
+      setError(t('errors.passwordMismatch'));
       return;
     }
 
@@ -50,10 +52,10 @@ export default function SetupPage({ onSetupComplete }: SetupPageProps) {
       if (data.success) {
         onSetupComplete();
       } else {
-        setError(data.message || 'Failed to create admin account.');
+        setError(data.message || t('errors.createFailed'));
       }
     } catch {
-      setError('Connection error. Please try again.');
+      setError(t('errors.connectionError'));
     } finally {
       setLoading(false);
     }
@@ -71,13 +73,13 @@ export default function SetupPage({ onSetupComplete }: SetupPageProps) {
             />
             <h1 className="heading-lg">Calame</h1>
           </div>
-          <p className="text-gray-400 mt-2">Welcome — Create your administrator account</p>
+          <p className="text-gray-400 mt-2">{t('subtitle')}</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label htmlFor="name" className="block text-sm font-medium text-gray-300 mb-1">
-              Name <span className="text-red-400">*</span>
+              {t('form.nameLabel')} <span className="text-red-400">*</span>
             </label>
             <input
               id="name"
@@ -85,14 +87,14 @@ export default function SetupPage({ onSetupComplete }: SetupPageProps) {
               value={name}
               onChange={(e) => setName(e.target.value)}
               className="input-editorial w-full"
-              placeholder="Your name"
+              placeholder={t('form.namePlaceholder')}
               autoFocus
             />
           </div>
 
           <div>
             <label htmlFor="email" className="block text-sm font-medium text-gray-300 mb-1">
-              Email <span className="text-red-400">*</span>
+              {t('form.emailLabel')} <span className="text-red-400">*</span>
             </label>
             <input
               id="email"
@@ -100,13 +102,13 @@ export default function SetupPage({ onSetupComplete }: SetupPageProps) {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="input-editorial w-full"
-              placeholder="admin@example.com"
+              placeholder={t('form.emailPlaceholder')}
             />
           </div>
 
           <div>
             <label htmlFor="password" className="block text-sm font-medium text-gray-300 mb-1">
-              Password <span className="text-red-400">*</span>
+              {t('form.passwordLabel')} <span className="text-red-400">*</span>
             </label>
             <input
               id="password"
@@ -114,7 +116,7 @@ export default function SetupPage({ onSetupComplete }: SetupPageProps) {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="input-editorial w-full"
-              placeholder="Minimum 8 characters"
+              placeholder={t('form.passwordPlaceholder')}
             />
           </div>
 
@@ -123,7 +125,7 @@ export default function SetupPage({ onSetupComplete }: SetupPageProps) {
               htmlFor="confirmPassword"
               className="block text-sm font-medium text-gray-300 mb-1"
             >
-              Confirm Password <span className="text-red-400">*</span>
+              {t('form.confirmPasswordLabel')} <span className="text-red-400">*</span>
             </label>
             <input
               id="confirmPassword"
@@ -131,7 +133,7 @@ export default function SetupPage({ onSetupComplete }: SetupPageProps) {
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               className="input-editorial w-full"
-              placeholder="Repeat your password"
+              placeholder={t('form.confirmPasswordPlaceholder')}
             />
           </div>
 
@@ -146,7 +148,7 @@ export default function SetupPage({ onSetupComplete }: SetupPageProps) {
             disabled={loading || !name || !email || !password || !confirmPassword}
             className="w-full py-2 px-4 bg-os-700 hover:bg-os-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors"
           >
-            {loading ? 'Creating account...' : 'Create Admin Account'}
+            {loading ? t('form.submitLoading') : t('form.submitButton')}
           </button>
         </form>
       </div>

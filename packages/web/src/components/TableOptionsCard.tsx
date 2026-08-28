@@ -1,3 +1,4 @@
+import { useTranslations } from 'use-intl/react';
 import type {
   TableInfo,
   TableToolOptions,
@@ -10,14 +11,6 @@ import MaskingSelector from './MaskingSelector.js';
 import HelpTip from './HelpTip.js';
 
 const TOOLS = ['describe', 'aggregate', 'query', 'write'] as const;
-
-const TOOL_TOOLTIPS: Record<(typeof TOOLS)[number], string> = {
-  describe: 'Exposes an MCP tool that describes the table structure (columns, types, relations).',
-  aggregate:
-    'Exposes an MCP tool that runs aggregations (COUNT, SUM, AVG, GROUP BY) on this table.',
-  query: 'Exposes an MCP tool that queries raw table data with filters and pagination.',
-  write: 'Exposes an MCP tool that inserts or updates data in this table (write operations).',
-};
 
 interface TableOptionsCardProps {
   tableName: string;
@@ -40,6 +33,15 @@ export default function TableOptionsCard({
   onColumnMaskingChange,
   onPiiOverride,
 }: TableOptionsCardProps) {
+  const t = useTranslations('configGraph.tableOptions');
+
+  const TOOL_TOOLTIPS: Record<(typeof TOOLS)[number], string> = {
+    describe: t('toolTooltips.describe'),
+    aggregate: t('toolTooltips.aggregate'),
+    query: t('toolTooltips.query'),
+    write: t('toolTooltips.write'),
+  };
+
   const toggleTool = (tool: (typeof TOOLS)[number]) => {
     const current = options.enabledTools;
     const next = current.includes(tool) ? current.filter((t) => t !== tool) : [...current, tool];
@@ -55,18 +57,14 @@ export default function TableOptionsCard({
   return (
     <div className="card-primary p-4 space-y-4">
       <h4 className="text-sm font-semibold text-gray-200">
-        Table: <span className="text-os-400 font-mono">{tableName}</span>
+        {t('tableLabel')} <span className="text-os-400 font-mono">{tableName}</span>
       </h4>
 
       {/* Tools */}
       <div>
         <span className="flex items-center gap-1 text-xs font-medium text-gray-400 mb-2">
-          Tools
-          <HelpTip
-            content="Select the MCP tools exposed for this table. Each tool is a capability accessible by MCP clients."
-            maxWidth={320}
-            size="xs"
-          />
+          {t('toolsLabel')}
+          <HelpTip content={t('toolsHelp')} maxWidth={320} size="xs" />
         </span>
         <div className="flex flex-wrap gap-3">
           {TOOLS.map((tool) => (
@@ -90,12 +88,8 @@ export default function TableOptionsCard({
       {/* Max rows */}
       <div>
         <span className="flex items-center gap-1 text-xs font-medium text-gray-400 mb-1.5">
-          Max rows
-          <HelpTip
-            content="Maximum number of rows returned per query for this table. Limit enforced by the MCP server."
-            position="right"
-            size="xs"
-          />
+          {t('maxRowsLabel')}
+          <HelpTip content={t('maxRowsHelp')} position="right" size="xs" />
         </span>
         <input
           type="number"
@@ -111,12 +105,8 @@ export default function TableOptionsCard({
       {/* Filterable columns */}
       <div>
         <span className="flex items-center gap-1 text-xs font-medium text-gray-400 mb-2">
-          Filterable columns
-          <HelpTip
-            content="Columns on which MCP clients can apply WHERE filters. Unchecking a column prevents any filtering on it."
-            maxWidth={300}
-            size="xs"
-          />
+          {t('filterableColumnsLabel')}
+          <HelpTip content={t('filterableColumnsHelp')} maxWidth={300} size="xs" />
         </span>
         <div className="flex flex-wrap gap-x-3 gap-y-1.5">
           {table.columns.map((col) => (
@@ -139,12 +129,8 @@ export default function TableOptionsCard({
       {/* Groupable columns */}
       <div>
         <span className="flex items-center gap-1 text-xs font-medium text-gray-400 mb-2">
-          Groupable columns
-          <HelpTip
-            content="Columns available in GROUP BY clauses during aggregation. Unchecking a column excludes it from possible groupings."
-            maxWidth={300}
-            size="xs"
-          />
+          {t('groupableColumnsLabel')}
+          <HelpTip content={t('groupableColumnsHelp')} maxWidth={300} size="xs" />
         </span>
         <div className="flex flex-wrap gap-x-3 gap-y-1.5">
           {table.columns.map((col) => (
@@ -168,12 +154,8 @@ export default function TableOptionsCard({
       {onColumnMaskingChange && (
         <div>
           <span className="flex items-center gap-1 text-xs font-medium text-gray-400 mb-2">
-            Column Masking
-            <HelpTip
-              content="Define how each column is masked before being transmitted to MCP clients. PII columns are detected automatically."
-              maxWidth={320}
-              size="xs"
-            />
+            {t('columnMaskingLabel')}
+            <HelpTip content={t('columnMaskingHelp')} maxWidth={320} size="xs" />
           </span>
           <div className="space-y-2">
             {table.columns.map((col) => {
@@ -213,13 +195,9 @@ export default function TableOptionsCard({
                           }
                           className="text-[10px] px-1.5 py-0.5 rounded-md font-medium ring-1 bg-gray-700/30 text-gray-400 ring-gray-600/30 hover:text-indigo-400 hover:ring-indigo-500/30 hover:bg-indigo-500/10 transition-colors cursor-pointer"
                         >
-                          + PII
+                          {t('addPii')}
                         </button>
-                        <HelpTip
-                          content="Manually mark this column as personal data (PII) to apply masking"
-                          position="right"
-                          size="xs"
-                        />
+                        <HelpTip content={t('addPiiHelp')} position="right" size="xs" />
                       </div>
                     )
                   )}

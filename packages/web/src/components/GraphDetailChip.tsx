@@ -2,6 +2,7 @@
 // focused/pinned node's facts; for a pinned MCP server it additionally lists
 // the users granted access (fetched lazily by ConfigGraphView and passed in).
 
+import { useTranslations } from 'use-intl/react';
 import type { UserEntry } from '../types/schema.js';
 
 export interface ChipRow {
@@ -34,6 +35,8 @@ export default function GraphDetailChip({
   users,
   profileName,
 }: GraphDetailChipProps) {
+  const t = useTranslations('configGraph');
+  const tCommon = useTranslations('common');
   return (
     <aside
       aria-live="polite"
@@ -70,12 +73,12 @@ export default function GraphDetailChip({
           {users !== undefined && (
             <div className="pt-1.5 border-t border-white/5 mt-1.5">
               <div className="font-mono-plex text-[10px] uppercase tracking-[0.2em] text-gray-600 mb-1">
-                Users
+                {t('detailChip.usersHeading')}
               </div>
               {users === 'loading' ? (
-                <p className="text-xs text-gray-600">Loading&hellip;</p>
+                <p className="text-xs text-gray-600">{tCommon('loading')}</p>
               ) : users.length === 0 ? (
-                <p className="text-xs text-gray-600 italic">No users granted</p>
+                <p className="text-xs text-gray-600 italic">{t('detailChip.noUsersGranted')}</p>
               ) : (
                 <>
                   {users.slice(0, MAX_USERS).map((u) => {
@@ -95,7 +98,7 @@ export default function GraphDetailChip({
                   })}
                   {users.length > MAX_USERS && (
                     <p className="text-[11px] text-gray-600 mt-0.5">
-                      +{users.length - MAX_USERS} more
+                      {t('detailChip.moreCount', { count: users.length - MAX_USERS })}
                     </p>
                   )}
                 </>

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslations } from 'use-intl/react';
 import { apiFetch } from '../lib/api.js';
 import { useBranding, DEFAULT_LOGO_SRC } from '../lib/branding.js';
 
@@ -7,6 +8,7 @@ interface UserLoginPageProps {
 }
 
 export default function UserLoginPage({ onLogin }: UserLoginPageProps) {
+  const t = useTranslations('users.login');
   const branding = useBranding();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -30,10 +32,10 @@ export default function UserLoginPage({ onLogin }: UserLoginPageProps) {
       if (data.success) {
         onLogin();
       } else {
-        setError(data.message || 'Invalid credentials.');
+        setError(data.message || t('invalidCredentials'));
       }
     } catch {
-      setError('Connection error. Please try again.');
+      setError(t('connectionError'));
     } finally {
       setLoading(false);
     }
@@ -51,13 +53,13 @@ export default function UserLoginPage({ onLogin }: UserLoginPageProps) {
             />
             <h1 className="heading-lg">Calame</h1>
           </div>
-          <p className="text-gray-400 mt-2">Sign in to your account</p>
+          <p className="text-gray-400 mt-2">{t('subtitle')}</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label htmlFor="email" className="block text-sm font-medium text-gray-300 mb-1">
-              Email
+              {t('emailLabel')}
             </label>
             <input
               id="email"
@@ -65,7 +67,7 @@ export default function UserLoginPage({ onLogin }: UserLoginPageProps) {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="input-editorial w-full"
-              placeholder="your@email.com"
+              placeholder={t('emailPlaceholder')}
               autoFocus
               required
             />
@@ -73,7 +75,7 @@ export default function UserLoginPage({ onLogin }: UserLoginPageProps) {
 
           <div>
             <label htmlFor="password" className="block text-sm font-medium text-gray-300 mb-1">
-              Password
+              {t('passwordLabel')}
             </label>
             <input
               id="password"
@@ -81,7 +83,7 @@ export default function UserLoginPage({ onLogin }: UserLoginPageProps) {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="input-editorial w-full"
-              placeholder="Enter your password"
+              placeholder={t('passwordPlaceholder')}
               required
             />
           </div>
@@ -97,7 +99,7 @@ export default function UserLoginPage({ onLogin }: UserLoginPageProps) {
             disabled={loading || !email || !password}
             className="w-full py-2 px-4 bg-os-700 hover:bg-os-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors"
           >
-            {loading ? 'Signing in...' : 'Sign In'}
+            {loading ? t('signingIn') : t('signIn')}
           </button>
         </form>
       </div>

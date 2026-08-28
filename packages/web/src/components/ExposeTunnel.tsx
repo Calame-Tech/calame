@@ -8,6 +8,7 @@
 // conventions.
 
 import { useState, useCallback, useEffect } from 'react';
+import { useTranslations } from 'use-intl/react';
 import { apiFetch, getCurrentTenant } from '../lib/api.js';
 import { buildMcpUrl } from '../lib/mcp-url.js';
 import HelpTip from './HelpTip.js';
@@ -27,6 +28,7 @@ interface ExposeTunnelProps {
 
 /** Copy-to-clipboard pill for a single URL value, with its own "Copied!" feedback. */
 function CopyableUrl({ value }: { value: string }) {
+  const t = useTranslations('serveTunnel.exposeTunnel');
   const [copied, setCopied] = useState(false);
   const handleCopy = () => {
     navigator.clipboard.writeText(value).then(() => {
@@ -42,13 +44,14 @@ function CopyableUrl({ value }: { value: string }) {
     >
       <code className="text-sm text-os-400 font-mono truncate">{value}</code>
       <span className="text-xs text-gray-500 group-hover:text-os-400 transition-all duration-200 flex-shrink-0">
-        {copied ? 'Copied!' : 'Copy'}
+        {copied ? t('copied') : t('copy')}
       </span>
     </button>
   );
 }
 
 export default function ExposeTunnel({ profileName }: ExposeTunnelProps) {
+  const t = useTranslations('serveTunnel.exposeTunnel');
   const [status, setStatus] = useState<TunnelStatus | null>(null);
   const [statusLoading, setStatusLoading] = useState(true);
   const [statusError, setStatusError] = useState<string | null>(null);
@@ -71,14 +74,14 @@ export default function ExposeTunnel({ profileName }: ExposeTunnelProps) {
       if (data.success !== false) {
         setStatus(data);
       } else {
-        setStatusError(data.message || 'Failed to check the tunnel status.');
+        setStatusError(data.message || t('errors.statusCheckFailed'));
       }
     } catch {
-      setStatusError('Network error checking the tunnel status.');
+      setStatusError(t('errors.statusCheckNetworkError'));
     } finally {
       setStatusLoading(false);
     }
-  }, []);
+  }, [t]);
 
   // Fetched once on mount — no polling interval; the status is refreshed
   // explicitly after the start/stop calls resolve instead.
@@ -93,10 +96,10 @@ export default function ExposeTunnel({ profileName }: ExposeTunnelProps) {
       const res = await apiFetch('/api/tunnel/start', { method: 'POST' });
       const data = await res.json();
       if (!data.success) {
-        setStartError(data.message || 'Failed to open the tunnel.');
+        setStartError(data.message || t('errors.startFailed'));
       }
     } catch {
-      setStartError('Network error opening the tunnel.');
+      setStartError(t('errors.startNetworkError'));
     } finally {
       setStarting(false);
       fetchStatus().catch(() => {});
@@ -110,10 +113,10 @@ export default function ExposeTunnel({ profileName }: ExposeTunnelProps) {
       const res = await apiFetch('/api/tunnel/stop', { method: 'POST' });
       const data = await res.json();
       if (!data.success) {
-        setStopError(data.message || 'Failed to stop the tunnel.');
+        setStopError(data.message || t('errors.stopFailed'));
       }
     } catch {
-      setStopError('Network error stopping the tunnel.');
+      setStopError(t('errors.stopNetworkError'));
     } finally {
       setStopping(false);
       fetchStatus().catch(() => {});
@@ -127,49 +130,31 @@ export default function ExposeTunnel({ profileName }: ExposeTunnelProps) {
   return (
     <div className="card-primary p-4">
       <div className="flex items-center gap-2 mb-1">
-        <h4 className="text-sm font-semibold text-gray-300">Remote access — Copilot & ChatGPT</h4>
-        <HelpTip
-          content="Cloud AI platforms like Microsoft 365 Copilot and ChatGPT run in the cloud and can't reach a server on this machine directly. This opens a secure Cloudflare tunnel so they can connect to this MCP server over the public internet."
-          position="right"
-          size="xs"
-        />
+        <h4 className="text-sm font-semibold text-gray-300">{t('heading')}</h4>
+        <HelpTip content={t('headingHelp')} position="right" size="xs" />
       </div>
-      <p className="text-xs text-gray-600 mb-3">
-        The public URL changes every time the tunnel restarts, and this machine needs to stay on and
-        connected for it to keep working. Intended for evaluation — use a server deployment of
-        Calame for production.
-      </p>
-      <p className="text-xs text-gray-600 mb-3">
-        Privacy: your files and database never leave this machine — only the content of MCP requests
-        and responses transits, encrypted, through Cloudflare&apos;s network (and every endpoint
-        still requires your API token). For a setup where traffic terminates on your own
-        infrastructure, use a server deployment. See docs/security-tunnel.md for the full threat
-        model.
-      </p>
+      <p className="text-xs text-gray-600 mb-3">{t('intro1')}</p>
+      <p className="text-xs text-gray-600 mb-3">{t('intro2')}</p>
 
       {statusLoading ? (
-        <p className="text-sm text-gray-500">Checking tunnel status…</p>
+        <p className="text-sm text-gray-500">{t('checkingStatus')}</p>
       ) : statusError ? (
         <div className="p-3 rounded-lg bg-red-950/30 border border-red-800/50 text-red-400 text-sm">
           {statusError}
         </div>
       ) : status && !status.available ? (
-        <p className="text-sm text-gray-500">
-          {status.unavailableReason || 'Remote access is not available on this instance.'}
-        </p>
+        <p className="text-sm text-gray-500">{status.unavailableReason || t('unavailable')}</p>
       ) : status?.running && mcpUrl ? (
         <div className="space-y-3">
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-green-500 shadow-lg shadow-green-500/30" />
-            <span className="text-sm font-medium text-green-400">Tunnel active</span>
+            <span className="text-sm font-medium text-green-400">{t('active')}</span>
           </div>
           <div>
-            <p className="text-xs text-gray-500 mb-1">MCP URL for this server</p>
+            <p className="text-xs text-gray-500 mb-1">{t('urlLabel')}</p>
             <CopyableUrl value={mcpUrl} />
           </div>
-          <p className="text-xs text-gray-500">
-            This endpoint still requires an API token — create one in the API Keys tab above.
-          </p>
+          <p className="text-xs text-gray-500">{t('tokenNote')}</p>
           {stopError && (
             <div className="p-3 rounded-lg bg-red-950/30 border border-red-800/50 text-red-400 text-sm">
               {stopError}
@@ -181,7 +166,7 @@ export default function ExposeTunnel({ profileName }: ExposeTunnelProps) {
             disabled={stopping}
             className="px-4 py-2 rounded-lg bg-red-600/20 text-red-400 hover:bg-red-600/30 text-sm font-medium transition-all duration-200 disabled:opacity-50"
           >
-            {stopping ? 'Stopping…' : 'Stop tunnel'}
+            {stopping ? t('stoppingButton') : t('stopButton')}
           </button>
         </div>
       ) : (
@@ -209,7 +194,7 @@ export default function ExposeTunnel({ profileName }: ExposeTunnelProps) {
                 />
               </svg>
             )}
-            {starting ? 'Opening secure tunnel… (up to 30 s)' : 'Expose this server'}
+            {starting ? t('startingButton') : t('startButton')}
           </button>
           {startError && (
             <div className="p-3 rounded-lg bg-red-950/30 border border-red-800/50 text-red-400 text-sm">
@@ -230,26 +215,24 @@ export default function ExposeTunnel({ profileName }: ExposeTunnelProps) {
             className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
             aria-expanded={copilotGuideOpen}
           >
-            Microsoft Copilot (Copilot Studio)
+            {t('guides.copilot.toggle')}
           </button>
           {copilotGuideOpen && (
             <ol className="mt-2 space-y-1.5 text-xs text-gray-500 list-decimal list-inside">
-              <li>In Copilot Studio: Tools → Add a tool → New tool → Model Context Protocol.</li>
+              <li>{t('guides.copilot.step1')}</li>
               <li>
-                Paste the Server URL:
+                {t('guides.copilot.step2Label')}
                 {mcpUrl ? (
                   <div className="mt-1">
                     <CopyableUrl value={mcpUrl} />
                   </div>
                 ) : (
-                  <span className="text-gray-600"> start the tunnel above to get this URL.</span>
+                  <span className="text-gray-600">{t('guides.startTunnelHint')}</span>
                 )}
               </li>
-              <li>Authentication: API key. Location: Query. Parameter name: token.</li>
-              <li>
-                Paste your Calame API token (create one in the API Keys tab above), then Create.
-              </li>
-              <li>Add the new tool to your agent.</li>
+              <li>{t('guides.copilot.step3')}</li>
+              <li>{t('guides.copilot.step4')}</li>
+              <li>{t('guides.copilot.step5')}</li>
             </ol>
           )}
         </div>
@@ -260,25 +243,22 @@ export default function ExposeTunnel({ profileName }: ExposeTunnelProps) {
             className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
             aria-expanded={chatGptGuideOpen}
           >
-            ChatGPT (developer mode connectors)
+            {t('guides.chatGpt.toggle')}
           </button>
           {chatGptGuideOpen && (
             <ol className="mt-2 space-y-1.5 text-xs text-gray-500 list-decimal list-inside">
-              <li>In ChatGPT: Settings → Connectors → Add custom connector.</li>
+              <li>{t('guides.chatGpt.step1')}</li>
               <li>
-                Paste the URL:
+                {t('guides.chatGpt.step2Label')}
                 {mcpUrl ? (
                   <div className="mt-1">
                     <CopyableUrl value={mcpUrl} />
                   </div>
                 ) : (
-                  <span className="text-gray-600"> start the tunnel above to get this URL.</span>
+                  <span className="text-gray-600">{t('guides.startTunnelHint')}</span>
                 )}
               </li>
-              <li>
-                ChatGPT has no separate auth field here — it requires the token in the URL itself:
-                append &quot;?token=&lt;your token&gt;&quot; to the URL above.
-              </li>
+              <li>{t('guides.chatGpt.step3')}</li>
             </ol>
           )}
         </div>

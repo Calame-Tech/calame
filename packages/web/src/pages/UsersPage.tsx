@@ -3,6 +3,7 @@
 
 import { useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
+import { useTranslations } from 'use-intl/react';
 import { PageHeader, SegmentedControl } from '../components/ui/index.js';
 import UserManagement from '../components/UserManagement.js';
 import UserAccessMatrix from '../components/UserAccessMatrix.js';
@@ -18,26 +19,28 @@ interface UsersPageProps {
 type UsersTab = 'users' | 'matrix';
 
 export default function UsersPage({ view, setView, profiles }: UsersPageProps) {
+  const t = useTranslations('users');
+  const tCommon = useTranslations('common');
   const [tab, setTab] = useState<UsersTab>('users');
 
   return (
     <div className="space-y-4">
       <PageHeader
         breadcrumb={[
-          { label: 'Dashboard', onClick: () => setView({ page: 'dashboard' }) },
-          { label: 'Users' },
+          { label: tCommon('dashboard'), onClick: () => setView({ page: 'dashboard' }) },
+          { label: t('page.breadcrumbUsers') },
         ]}
-        title="Users & Access"
-        description="Manage administrator accounts and end-user access to your MCP servers."
+        title={t('page.title')}
+        description={t('page.description')}
         actions={
           <SegmentedControl<UsersTab>
-            ariaLabel="Users view"
+            ariaLabel={t('page.viewAriaLabel')}
             options={[
-              { value: 'users', label: 'Users' },
+              { value: 'users', label: t('page.tabUsers') },
               {
                 value: 'matrix',
-                label: 'Access matrix',
-                description: 'Audit which users can reach which MCP servers',
+                label: t('page.tabMatrix'),
+                description: t('page.tabMatrixDescription'),
               },
             ]}
             value={tab}

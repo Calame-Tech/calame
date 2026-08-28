@@ -5,6 +5,7 @@
 // schema dot + engine badge).
 
 import type { Dispatch, ReactNode, SetStateAction } from 'react';
+import { useTranslations } from 'use-intl/react';
 import HelpTip from '../HelpTip.js';
 import {
   getConfigurationTableNames,
@@ -87,9 +88,10 @@ function StageCard({ eyebrow, value, sub, footer, onClick, delayMs }: StageCardP
 }
 
 function ViewAllLink({ onClick }: { onClick: () => void }) {
+  const t = useTranslations('dashboard.pipeline');
   return (
     <button type="button" onClick={onClick} className="mt-0.5 w-full text-left px-2">
-      <span className="eyebrow-accent hover:text-os-300 transition-colors">View all &rarr;</span>
+      <span className="eyebrow-accent hover:text-os-300 transition-colors">{t('viewAll')}</span>
     </button>
   );
 }
@@ -106,6 +108,7 @@ export default function PipelineStrip({
   activeMcpCount,
   totalMcpCount,
 }: PipelineStripProps) {
+  const t = useTranslations('dashboard.pipeline');
   const sourceCount = connections.length + ragSourceCount;
   const maskedConfigCount = configurations.filter((cfg) =>
     Object.values(getConfigurationColumnMasking(cfg)).some((cols) =>
@@ -124,23 +127,18 @@ export default function PipelineStrip({
         onClick={() => setView({ page: 'connections' })}
         eyebrow={
           <span className="inline-flex items-center gap-1.5">
-            SOURCES
-            <HelpTip
-              content="Manage sources connecting to PostgreSQL, MySQL or SQLite databases and knowledge bases"
-              position="bottom"
-            />
+            {t('sources.eyebrow')}
+            <HelpTip content={t('sources.help')} position="bottom" />
           </span>
         }
         value={sourceCount}
         sub={
           <>
             <span className={connectedCount > 0 ? 'text-emerald-400' : ''}>
-              {connectedCount} connected
+              {t('sources.connected', { count: connectedCount })}
             </span>
             {ragSourceCount > 0 && (
-              <span>
-                {ragSourceCount} knowledge base{ragSourceCount !== 1 ? 's' : ''}
-              </span>
+              <span>{t('sources.knowledgeBaseCount', { count: ragSourceCount })}</span>
             )}
           </>
         }
@@ -154,7 +152,7 @@ export default function PipelineStrip({
                   <div className="flex items-center gap-2 min-w-0">
                     <div
                       className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${hasSchema ? 'bg-emerald-400' : 'bg-gray-600'}`}
-                      title={hasSchema ? 'Connected and schema loaded' : 'Not connected'}
+                      title={hasSchema ? t('sources.connectedTooltip') : t('sources.notConnectedTooltip')}
                     />
                     <span className="font-mono-plex text-xs text-gray-300 truncate">
                       {conn.label || conn.name}
@@ -169,7 +167,9 @@ export default function PipelineStrip({
               );
             })}
             {connections.length === 0 && (
-              <p className="text-[10px] text-gray-600 text-center py-2 eyebrow">No sources yet</p>
+              <p className="text-[10px] text-gray-600 text-center py-2 eyebrow">
+                {t('sources.empty')}
+              </p>
             )}
             <ViewAllLink onClick={() => setView({ page: 'connections' })} />
           </div>
@@ -184,25 +184,28 @@ export default function PipelineStrip({
         onClick={() => setView({ page: 'configurations' })}
         eyebrow={
           <span className="inline-flex items-center gap-1.5">
-            DATA CONFIGURATIONS
-            <HelpTip
-              content="Configure which tables and columns from your databases are exposed to AI clients"
-              position="bottom"
-            />
+            {t('dataConfigurations.eyebrow')}
+            <HelpTip content={t('dataConfigurations.help')} position="bottom" />
           </span>
         }
         value={configurations.length}
         sub={
           <>
-            {maskedConfigCount > 0 && <span>{maskedConfigCount} with PII masking</span>}
-            {writeConfigCount > 0 && <span>{writeConfigCount} with write access</span>}
-            {maskedConfigCount === 0 && writeConfigCount === 0 && <span>read-only exposure</span>}
+            {maskedConfigCount > 0 && (
+              <span>{t('dataConfigurations.withPiiMasking', { count: maskedConfigCount })}</span>
+            )}
+            {writeConfigCount > 0 && (
+              <span>{t('dataConfigurations.withWriteAccess', { count: writeConfigCount })}</span>
+            )}
+            {maskedConfigCount === 0 && writeConfigCount === 0 && (
+              <span>{t('dataConfigurations.readOnlyExposure')}</span>
+            )}
           </>
         }
         footer={
           <div className="space-y-0 max-h-32 overflow-y-auto">
             {configurations.slice(0, 4).map((cfg) => {
-              const tCount = getConfigurationTableNames(cfg).length;
+              const tableCount = getConfigurationTableNames(cfg).length;
               return (
                 <button
                   key={cfg.name}
@@ -212,14 +215,14 @@ export default function PipelineStrip({
                 >
                   <span className="font-mono-plex text-xs text-gray-300 truncate">{cfg.label}</span>
                   <span className="font-mono-plex text-[10px] text-gray-500 flex-shrink-0">
-                    {tCount} table{tCount !== 1 ? 's' : ''}
+                    {t('dataConfigurations.tableCount', { count: tableCount })}
                   </span>
                 </button>
               );
             })}
             {configurations.length === 0 && (
               <p className="text-[10px] text-gray-600 text-center py-2 eyebrow">
-                No Data Configurations
+                {t('dataConfigurations.empty')}
               </p>
             )}
             <ViewAllLink onClick={() => setView({ page: 'configurations' })} />
@@ -235,24 +238,23 @@ export default function PipelineStrip({
         onClick={() => setView({ page: 'mcp-list' })}
         eyebrow={
           <span className="inline-flex items-center gap-1.5">
-            MCP SERVERS
-            <HelpTip
-              content="Start, stop and manage your MCP servers exposed to AI clients"
-              position="bottom"
-            />
+            {t('mcpServers.eyebrow')}
+            <HelpTip content={t('mcpServers.help')} position="bottom" />
           </span>
         }
         value={
           <>
             {totalMcpCount}{' '}
             <span className="text-base text-gray-500 font-normal tracking-normal">
-              &middot; {activeMcpCount} active
+              {t('mcpServers.activeSuffix', { count: activeMcpCount })}
             </span>
           </>
         }
         sub={
           <span className={activeMcpCount > 0 ? 'text-emerald-400' : ''}>
-            {activeMcpCount > 0 ? `serving on port ${serveStatus.port}` : 'no server running'}
+            {activeMcpCount > 0
+              ? t('mcpServers.servingOnPort', { port: serveStatus.port })
+              : t('mcpServers.noServerRunning')}
           </span>
         }
         footer={
@@ -280,13 +282,15 @@ export default function PipelineStrip({
                   <span
                     className={`font-mono-plex text-[10px] px-2 py-0.5 rounded-full flex-shrink-0 ${pillClasses}`}
                   >
-                    {pActive ? 'ON' : 'OFF'}
+                    {pActive ? t('mcpServers.on') : t('mcpServers.off')}
                   </span>
                 </button>
               );
             })}
             {profiles.length === 0 && (
-              <p className="text-[10px] text-gray-600 text-center py-2 eyebrow">No servers</p>
+              <p className="text-[10px] text-gray-600 text-center py-2 eyebrow">
+                {t('mcpServers.empty')}
+              </p>
             )}
             <ViewAllLink onClick={() => setView({ page: 'mcp-list' })} />
           </div>

@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { useTranslations } from 'use-intl/react';
 
 export interface DarkSelectOption {
   value: string;
@@ -28,11 +29,13 @@ export default function DarkSelect({
   options,
   onChange,
   disabled = false,
-  placeholder = 'Select…',
+  placeholder,
   ariaLabel,
   className = '',
   size = 'sm',
 }: DarkSelectProps) {
+  const t = useTranslations('common');
+  const effectivePlaceholder = placeholder ?? t('selectPlaceholder');
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -75,7 +78,7 @@ export default function DarkSelect({
         aria-label={ariaLabel}
         className={`inline-flex items-center justify-between gap-2 rounded-lg bg-gray-900 border border-gray-700 text-gray-100 hover:border-gray-600 focus:outline-none focus:ring-2 focus:ring-os-500/40 focus:border-os-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors w-full ${sizeClasses}`}
       >
-        <span className="truncate">{selected?.label ?? placeholder}</span>
+        <span className="truncate">{selected?.label ?? effectivePlaceholder}</span>
         <span
           aria-hidden="true"
           className={`text-gray-500 transition-transform duration-150 shrink-0 ${
@@ -123,7 +126,7 @@ export default function DarkSelect({
               );
             })}
             {options.length === 0 && (
-              <li className="px-3 py-2 text-xs text-gray-500 italic">No option available</li>
+              <li className="px-3 py-2 text-xs text-gray-500 italic">{t('noOptionAvailable')}</li>
             )}
           </ul>
         </div>

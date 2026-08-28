@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo } from 'react';
+import { useTranslations } from 'use-intl/react';
 import { apiFetch, getCurrentTenant } from '../lib/api.js';
 import type { AuthMode, Config, Profile, ServeStatus } from '../types/schema.js';
 import { getProfileTableNames, getProfileRelationalSources } from '../lib/profile-accessors.js';
@@ -14,24 +15,6 @@ const AUTH_MODE_STYLES: Record<AuthMode, string> = {
   sso: 'bg-purple-700/20 text-purple-400 border border-purple-600/30',
   oauth: 'bg-green-700/20 text-green-400 border border-green-600/30',
   external: 'bg-orange-700/20 text-orange-400 border border-orange-600/30',
-};
-
-const AUTH_MODE_LABELS: Record<AuthMode, string> = {
-  open: 'Open',
-  token: 'API Key',
-  calame: 'Calame',
-  sso: 'SSO',
-  oauth: 'OAuth',
-  external: 'External',
-};
-
-const AUTH_MODE_DESCRIPTIONS: Record<AuthMode, string> = {
-  open: 'Open access without authentication — use in development only.',
-  token: 'Authentication via API key (Bearer token).',
-  calame: 'Authentication via Calame (requires a Calame account).',
-  sso: 'SSO authentication via your enterprise identity provider.',
-  oauth: 'OAuth 2.0 authentication with the standard authorization flow.',
-  external: 'Authentication handled by an external proxy or service.',
 };
 
 interface ServePanelProps {
@@ -59,6 +42,8 @@ export default function ServePanel({
   onDeleteProfile,
   onPreviewProfile,
 }: ServePanelProps) {
+  const t = useTranslations('serveTunnel.servePanel');
+  const tCommon = useTranslations('common');
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newLabel, setNewLabel] = useState('');
   const [newName, setNewName] = useState('');
@@ -97,18 +82,18 @@ export default function ServePanel({
         });
         const data = await res.json();
         if (data.success === false) {
-          setError(data.message || `Failed to start MCP server "${profileName}".`);
+          setError(data.message || t('errors.startFailed', { name: profileName }));
         } else {
           // Trigger an immediate status refresh in App.tsx instead of polling locally
           onServeAction?.();
         }
       } catch {
-        setError(`Network error starting MCP server "${profileName}".`);
+        setError(t('errors.startNetworkError', { name: profileName }));
       } finally {
         setTogglingProfile(null);
       }
     },
-    [onServeAction, config.serverName],
+    [onServeAction, config.serverName, t],
   );
 
   // Stop a single profile
@@ -124,17 +109,17 @@ export default function ServePanel({
         });
         const data = await res.json();
         if (data.success === false) {
-          setError(data.message || `Failed to stop MCP server "${profileName}".`);
+          setError(data.message || t('errors.stopFailed', { name: profileName }));
         } else {
           onServeAction?.();
         }
       } catch {
-        setError(`Network error stopping MCP server "${profileName}".`);
+        setError(t('errors.stopNetworkError', { name: profileName }));
       } finally {
         setTogglingProfile(null);
       }
     },
-    [onServeAction],
+    [onServeAction, t],
   );
 
   // Stop all profiles
@@ -145,16 +130,16 @@ export default function ServePanel({
       const res = await apiFetch('/api/serve/stop', { method: 'POST' });
       const data = await res.json();
       if (data.success === false) {
-        setError(data.message || 'Failed to stop all servers.');
+        setError(data.message || t('errors.stopAllFailed'));
       } else {
         onServeAction?.();
       }
     } catch {
-      setError('Network error stopping servers.');
+      setError(t('errors.stopAllNetworkError'));
     } finally {
       setStoppingAll(false);
     }
-  }, [onServeAction]);
+  }, [onServeAction, t]);
 
   // --- DASHBOARD VIEW ---
   return (
@@ -169,9 +154,9 @@ export default function ServePanel({
               }`}
             />
             <div>
-              <h2 className="heading-md">MCP Servers</h2>
+              <h2 className="heading-md">{t('heading')}</h2>
               <p className="text-sm text-gray-500">
-                {activeCount}/{allProfiles.length} active
+                {t('activeCount', { active: activeCount, total: allProfiles.length })}
               </p>
             </div>
           </div>
@@ -182,13 +167,9 @@ export default function ServePanel({
                 disabled={stoppingAll}
                 className="px-4 py-2 rounded-lg bg-red-600/20 text-red-400 hover:bg-red-600/30 text-sm font-medium transition-all duration-200 disabled:opacity-50"
               >
-                {stoppingAll ? 'Stopping...' : 'Stop All'}
+                {stoppingAll ? t('stopAllButtonStopping') : t('stopAllButton')}
               </button>
-              <HelpTip
-                content="Stop all currently active MCP servers at once."
-                position="left"
-                size="sm"
-              />
+              <HelpTip content={t('stopAllTooltip')} position="left" size="sm" />
             </div>
           )}
         </div>
@@ -214,7 +195,7 @@ export default function ServePanel({
                   setNewName(slugifyProfileName(e.target.value));
                   setCreateError(null);
                 }}
-                placeholder="MCP name..."
+                placeholder={t('createForm.namePlaceholder')}
                 autoFocus
                 className="input-editorial w-full text-sm"
               />
@@ -226,7 +207,7 @@ export default function ServePanel({
                 onClick={() => {
                   if (!onCreateProfile || !newLabel.trim() || !newName.trim()) return;
                   if (profiles.some((p) => p.name === newName)) {
-                    setCreateError(`A profile named "${newName}" already exists.`);
+                    setCreateError(t('createForm.duplicateName', { name: newName }));
                     return;
                   }
                   onCreateProfile(newName, newLabel);
@@ -238,7 +219,7 @@ export default function ServePanel({
                 disabled={!newLabel.trim() || !newName.trim()}
                 className="px-3 py-1.5 rounded-lg bg-os-700 hover:bg-os-600 text-white text-xs font-medium transition-all duration-200 disabled:opacity-50"
               >
-                Create
+                {t('createForm.create')}
               </button>
               <button
                 onClick={() => {
@@ -249,7 +230,7 @@ export default function ServePanel({
                 }}
                 className="px-3 py-1.5 rounded-lg text-gray-400 hover:text-gray-200 text-xs font-medium transition-all duration-200"
               >
-                Cancel
+                {tCommon('cancel')}
               </button>
             </div>
           </div>
@@ -259,7 +240,7 @@ export default function ServePanel({
             className="rounded-xl border-2 border-dashed border-white/10 bg-gray-800/20 p-6 flex flex-col items-center justify-center gap-2 hover:border-os-500 hover:bg-gray-800/40 transition-all duration-200 text-gray-500 hover:text-os-400 min-h-[140px]"
           >
             <span className="text-3xl font-light">+</span>
-            <span className="text-sm font-medium">New MCP Server</span>
+            <span className="text-sm font-medium">{t('newServerCard')}</span>
           </button>
         )}
 
@@ -279,6 +260,9 @@ export default function ServePanel({
           const profileSources = getProfileRelationalSources(profile);
 
           const profileIdx = profiles.findIndex((p) => p.name === profile.name);
+          const authMode = profile.authMode ?? 'token';
+          const responseModeIsRaw = (profile.responseMode ?? 'friendly') === 'raw';
+          const responseModeLabel = responseModeIsRaw ? t('responseMode.technical') : t('responseMode.natural');
 
           return (
             <div
@@ -299,13 +283,13 @@ export default function ServePanel({
                     }}
                     className="px-2 py-0.5 text-xs bg-red-600 hover:bg-red-500 text-white rounded transition-all duration-200"
                   >
-                    Yes
+                    {t('deleteConfirm.yes')}
                   </button>
                   <button
                     onClick={() => setConfirmDeleteProfile(null)}
                     className="px-2 py-0.5 text-xs bg-gray-600 hover:bg-gray-500 text-white rounded transition-all duration-200"
                   >
-                    No
+                    {t('deleteConfirm.no')}
                   </button>
                 </div>
               ) : (
@@ -314,9 +298,9 @@ export default function ServePanel({
                     e.stopPropagation();
                     setConfirmDeleteProfile(profile.name);
                   }}
-                  title={`Delete this MCP server and its configuration`}
+                  title={t('deleteTooltip')}
                   className="absolute top-2 right-2 p-1 text-gray-500 hover:text-red-400 transition-all duration-200 rounded hover:bg-red-500/10 z-10"
-                  aria-label={`Delete MCP server ${profile.label || profile.name}`}
+                  aria-label={t('deleteAriaLabel', { name: profile.label || profile.name })}
                 >
                   <svg
                     className="w-4 h-4"
@@ -345,35 +329,33 @@ export default function ServePanel({
                     {profile.label || profile.name}
                   </p>
                   <span
-                    className={`flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium ${AUTH_MODE_STYLES[profile.authMode ?? 'token']}`}
-                    aria-label={`Auth mode: ${AUTH_MODE_LABELS[profile.authMode ?? 'token']}`}
-                    title={`Authentication mode: ${AUTH_MODE_DESCRIPTIONS[profile.authMode ?? 'token']}`}
+                    className={`flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium ${AUTH_MODE_STYLES[authMode]}`}
+                    aria-label={t('authMode.ariaLabel', { mode: t(`authMode.labels.${authMode}`) })}
+                    title={t('authMode.tooltip', { description: t(`authMode.descriptions.${authMode}`) })}
                   >
-                    {AUTH_MODE_LABELS[profile.authMode ?? 'token']}
+                    {t(`authMode.labels.${authMode}`)}
                   </span>
                   <span
                     className={`flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                      (profile.responseMode ?? 'friendly') === 'raw'
+                      responseModeIsRaw
                         ? 'bg-orange-700/20 text-orange-400 border border-orange-600/30'
                         : 'bg-green-700/20 text-green-400 border border-green-600/30'
                     }`}
-                    aria-label={`Response mode: ${(profile.responseMode ?? 'friendly') === 'raw' ? 'Technical' : 'Natural'}`}
+                    aria-label={t('responseMode.ariaLabel', { mode: responseModeLabel })}
                     title={
-                      (profile.responseMode ?? 'friendly') === 'raw'
-                        ? 'Technical mode: table and column names are visible in responses'
-                        : 'Natural mode: responses are phrased in plain language'
+                      responseModeIsRaw
+                        ? t('responseMode.technicalTooltip')
+                        : t('responseMode.naturalTooltip')
                     }
                   >
-                    {(profile.responseMode ?? 'friendly') === 'raw' ? 'Technical' : 'Natural'}
+                    {responseModeLabel}
                   </span>
                 </div>
                 {profile.label && profile.label !== profile.name && (
                   <p className="text-xs text-gray-500 mb-2 font-mono truncate">{profile.name}</p>
                 )}
                 <p className="text-xs text-gray-500 font-mono truncate mb-1">{endpoint}</p>
-                <p className="text-xs text-gray-500">
-                  {tableCount} table{tableCount !== 1 ? 's' : ''}
-                </p>
+                <p className="text-xs text-gray-500">{t('tableCount', { count: tableCount })}</p>
                 {profileSources.length > 0 && (
                   <p className="text-xs text-gray-600 mt-0.5 truncate">
                     {profileSources.join(', ')}
@@ -386,7 +368,7 @@ export default function ServePanel({
                     className="mt-2 flex items-center gap-2"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <span className="text-xs text-gray-500 flex-shrink-0">Chat:</span>
+                    <span className="text-xs text-gray-500 flex-shrink-0">{t('chatLabel')}</span>
                     <code className="text-xs text-os-400 bg-gray-800/50 px-2 py-0.5 rounded font-mono truncate min-w-0">
                       {window.location.origin}/chat/{encodeURIComponent(profile.name)}
                     </code>
@@ -398,11 +380,11 @@ export default function ServePanel({
                           setTimeout(() => setCopiedChatLink(null), 2000);
                         });
                       }}
-                      aria-label={`Copy chat link for ${profile.label || profile.name}`}
-                      title="Copy the shareable chat link for this MCP server (accessible without the Calame interface)"
+                      aria-label={t('copyChatLinkAriaLabel', { name: profile.label || profile.name })}
+                      title={t('copyChatLinkTooltip')}
                       className="flex-shrink-0 text-xs text-gray-500 hover:text-gray-300 transition-colors focus:outline-none focus:ring-1 focus:ring-os-500 rounded"
                     >
-                      {copiedChatLink === profile.name ? 'Copied!' : 'Copy'}
+                      {copiedChatLink === profile.name ? t('copied') : t('copy')}
                     </button>
                   </div>
                 )}
@@ -416,11 +398,11 @@ export default function ServePanel({
                       e.stopPropagation();
                       onPreviewProfile(profile.name);
                     }}
-                    title="Preview this MCP server's configuration without starting it"
+                    title={t('previewTooltip')}
                     className="text-xs text-os-400 hover:text-os-300 transition-colors focus:outline-none focus:ring-1 focus:ring-os-500 rounded"
-                    aria-label={`Preview MCP server ${profile.label || profile.name}`}
+                    aria-label={t('previewAriaLabel', { name: profile.label || profile.name })}
                   >
-                    Preview
+                    {t('previewButton')}
                   </button>
                 )}
                 {!onPreviewProfile && <span />}
@@ -458,13 +440,13 @@ export default function ServePanel({
                         />
                       </svg>
                     ) : isActive ? (
-                      'Stop'
+                      t('toggle.stop')
                     ) : (
-                      'Start'
+                      t('toggle.start')
                     )}
                   </button>
                   <HelpTip
-                    content={isActive ? 'Stop this MCP server' : 'Start this MCP server'}
+                    content={isActive ? t('toggle.stopTooltip') : t('toggle.startTooltip')}
                     position="top"
                     size="xs"
                   />

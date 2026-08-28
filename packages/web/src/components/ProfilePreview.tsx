@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslations } from 'use-intl/react';
 import { apiFetch } from '../lib/api.js';
 
 interface PreviewColumn {
@@ -26,6 +27,8 @@ interface ProfilePreviewProps {
 }
 
 export default function ProfilePreview({ profileName, onClose }: ProfilePreviewProps) {
+  const t = useTranslations('mcpList.preview');
+  const tCommon = useTranslations('common');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<PreviewData | null>(null);
@@ -42,7 +45,8 @@ export default function ProfilePreview({ profileName, onClose }: ProfilePreviewP
         });
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
-          const msg = (body as { message?: string }).message || `Error ${res.status}`;
+          const msg =
+            (body as { message?: string }).message || t('errors.statusFallback', { status: res.status });
           throw new Error(msg);
         }
         const body = await res.json();
@@ -50,14 +54,14 @@ export default function ProfilePreview({ profileName, onClose }: ProfilePreviewP
         setData(preview);
       } catch (err) {
         if ((err as Error).name === 'AbortError') return;
-        setError((err as Error).message || 'Failed to load preview.');
+        setError((err as Error).message || t('errors.loadFailed'));
       } finally {
         setLoading(false);
       }
     })();
 
     return () => controller.abort();
-  }, [profileName]);
+  }, [profileName, t]);
 
   const totalColumns = data?.tables.reduce((acc, t) => acc + t.columns.length, 0) ?? 0;
   const maskedColumns =
@@ -84,7 +88,7 @@ export default function ProfilePreview({ profileName, onClose }: ProfilePreviewP
     <div
       role="dialog"
       aria-modal="true"
-      aria-label={`MCP Server preview: ${profileName}`}
+      aria-label={t('dialogAriaLabel', { name: profileName })}
       className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
       onClick={handleBackdropClick}
     >
@@ -92,11 +96,14 @@ export default function ProfilePreview({ profileName, onClose }: ProfilePreviewP
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-lg font-semibold text-gray-100">
-            MCP Server Preview: <span className="text-os-400 font-mono">{profileName}</span>
+            {t.rich('heading', {
+              profileName,
+              name: (chunks) => <span className="text-os-400 font-mono">{chunks}</span>,
+            })}
           </h2>
           <button
             onClick={onClose}
-            aria-label="Close preview"
+            aria-label={t('closeAriaLabel')}
             className="p-1.5 rounded-lg text-gray-500 hover:text-gray-200 hover:bg-gray-700/60 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-os-500"
           >
             <svg
@@ -129,14 +136,14 @@ export default function ProfilePreview({ profileName, onClose }: ProfilePreviewP
                 d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
               />
             </svg>
-            Loading preview...
+            {t('loading')}
           </div>
         )}
 
         {/* Error state */}
         {!loading && error && (
           <div className="rounded-lg bg-red-950/30 border border-red-800/50 p-4 text-red-400 text-sm">
-            <p className="font-medium mb-1">Failed to load preview</p>
+            <p className="font-medium mb-1">{t('errorHeading')}</p>
             <p className="text-red-500">{error}</p>
           </div>
         )}
@@ -147,24 +154,29 @@ export default function ProfilePreview({ profileName, onClose }: ProfilePreviewP
             {/* Summary */}
             <div className="mb-6 flex items-center gap-4 text-sm text-gray-400">
               <span>
-                <span className="text-gray-200 font-medium">{data.tables.length}</span> table
-                {data.tables.length !== 1 ? 's' : ''}
+                {t.rich('summary.tables', {
+                  count: data.tables.length,
+                  b: (chunks) => <span className="text-gray-200 font-medium">{chunks}</span>,
+                })}
               </span>
               <span className="text-gray-600">•</span>
               <span>
-                <span className="text-gray-200 font-medium">{totalColumns}</span> column
-                {totalColumns !== 1 ? 's' : ''}
+                {t.rich('summary.columns', {
+                  count: totalColumns,
+                  b: (chunks) => <span className="text-gray-200 font-medium">{chunks}</span>,
+                })}
               </span>
               <span className="text-gray-600">•</span>
               <span>
-                <span className="text-yellow-400 font-medium">{maskedColumns}</span> masked
+                {t.rich('summary.masked', {
+                  count: maskedColumns,
+                  b: (chunks) => <span className="text-yellow-400 font-medium">{chunks}</span>,
+                })}
               </span>
             </div>
 
             {data.tables.length === 0 && (
-              <p className="text-gray-500 text-sm text-center py-8">
-                No tables found in this MCP server.
-              </p>
+              <p className="text-gray-500 text-sm text-center py-8">{t('emptyTables')}</p>
             )}
 
             {/* Table cards */}
@@ -187,17 +199,24 @@ export default function ProfilePreview({ profileName, onClose }: ProfilePreviewP
 
                 {/* Row count */}
                 <p className="text-xs text-gray-500 mb-3">
-                  {table.rowCount.toLocaleString()} row{table.rowCount !== 1 ? 's' : ''}
+                  {tCommon('rowCount', { count: table.rowCount })}
                 </p>
 
                 {/* Columns table */}
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm" aria-label={`Columns of table ${table.name}`}>
+                  <table
+                    className="w-full text-sm"
+                    aria-label={t('columnsTable.ariaLabel', { name: table.name })}
+                  >
                     <thead>
                       <tr className="text-gray-500 text-xs border-b border-white/5">
-                        <th className="text-left pb-2 pr-4 font-medium">Column</th>
-                        <th className="text-left pb-2 pr-4 font-medium">Type</th>
-                        <th className="text-left pb-2 font-medium">Status</th>
+                        <th className="text-left pb-2 pr-4 font-medium">
+                          {t('columnsTable.colColumn')}
+                        </th>
+                        <th className="text-left pb-2 pr-4 font-medium">
+                          {t('columnsTable.colType')}
+                        </th>
+                        <th className="text-left pb-2 font-medium">{t('columnsTable.colStatus')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -211,11 +230,11 @@ export default function ProfilePreview({ profileName, onClose }: ProfilePreviewP
                           </td>
                           <td className="py-1.5">
                             {!col.visible ? (
-                              <span className="text-red-400 text-xs">Hidden</span>
+                              <span className="text-red-400 text-xs">{t('status.hidden')}</span>
                             ) : col.masking ? (
                               <span className="text-yellow-400 text-xs">{col.masking}</span>
                             ) : (
-                              <span className="text-green-400 text-xs">Visible</span>
+                              <span className="text-green-400 text-xs">{t('status.visible')}</span>
                             )}
                           </td>
                         </tr>
@@ -227,7 +246,7 @@ export default function ProfilePreview({ profileName, onClose }: ProfilePreviewP
                 {/* Sample row */}
                 {table.sampleRow && (
                   <div className="mt-3">
-                    <p className="text-xs text-gray-500 mb-1">Sample row (with masking applied):</p>
+                    <p className="text-xs text-gray-500 mb-1">{t('sampleRowLabel')}</p>
                     <pre className="text-xs bg-gray-900/60 rounded p-2 overflow-x-auto text-gray-300 leading-relaxed">
                       {JSON.stringify(table.sampleRow, null, 2)}
                     </pre>

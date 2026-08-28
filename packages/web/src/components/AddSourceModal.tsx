@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { useTranslations } from 'use-intl/react';
 
 export interface AddSourceModalProps {
   isOpen: boolean;
@@ -53,6 +54,7 @@ export default function AddSourceModal({
   ragEnabled,
   ragDisabledReason,
 }: AddSourceModalProps) {
+  const t = useTranslations('sources.addSourceModal');
   const dialogRef = useRef<HTMLDivElement>(null);
 
   // Close on Escape key
@@ -77,8 +79,7 @@ export default function AddSourceModal({
 
   if (!isOpen) return null;
 
-  const kbDisabledTitle =
-    ragDisabledReason ?? 'Knowledge base features are unavailable on this instance';
+  const kbDisabledTitle = ragDisabledReason ?? t('kbDisabledDefault');
 
   return (
     /* Overlay */
@@ -100,12 +101,12 @@ export default function AddSourceModal({
         {/* Header */}
         <div className="flex items-center justify-between mb-5">
           <h2 id="add-source-modal-title" className="text-base font-semibold text-gray-100">
-            Add a source
+            {t('title')}
           </h2>
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close modal"
+            aria-label={t('closeAriaLabel')}
             className="p-1.5 rounded-lg text-gray-500 hover:text-gray-200 hover:bg-gray-800 transition-colors focus:outline-none focus:ring-2 focus:ring-os-500"
           >
             <svg
@@ -122,9 +123,7 @@ export default function AddSourceModal({
           </button>
         </div>
 
-        <p className="text-sm text-gray-400 mb-5">
-          Choose the type of data source you want to connect.
-        </p>
+        <p className="text-sm text-gray-400 mb-5">{t('description')}</p>
 
         {/* Kind picker cards */}
         <div className="grid grid-cols-2 gap-3">
@@ -139,9 +138,9 @@ export default function AddSourceModal({
             </span>
             <div className="text-center">
               <p className="text-sm font-medium text-gray-200 group-hover:text-os-300 transition-colors">
-                Database
+                {t('databaseLabel')}
               </p>
-              <p className="text-xs text-gray-500 mt-0.5">PostgreSQL, MySQL, SQLite</p>
+              <p className="text-xs text-gray-500 mt-0.5">{t('databaseHint')}</p>
             </div>
           </button>
 
@@ -157,9 +156,9 @@ export default function AddSourceModal({
               </span>
               <div className="text-center">
                 <p className="text-sm font-medium text-gray-200 group-hover:text-os-300 transition-colors">
-                  Knowledge base
+                  {t('knowledgeBaseLabel')}
                 </p>
-                <p className="text-xs text-gray-500 mt-0.5">Documents &amp; RAG</p>
+                <p className="text-xs text-gray-500 mt-0.5">{t('knowledgeBaseHint')}</p>
               </div>
             </button>
           ) : (
@@ -170,11 +169,11 @@ export default function AddSourceModal({
             >
               <span className="text-gray-600">{IconBookOpen}</span>
               <div className="text-center">
-                <p className="text-sm font-medium text-gray-500">Knowledge base</p>
-                <p className="text-xs text-gray-600 mt-0.5">Documents &amp; RAG</p>
+                <p className="text-sm font-medium text-gray-500">{t('knowledgeBaseLabel')}</p>
+                <p className="text-xs text-gray-600 mt-0.5">{t('knowledgeBaseHint')}</p>
               </div>
               <span className="text-[10px] text-gray-600 select-none" aria-hidden="true">
-                Not available
+                {t('notAvailable')}
               </span>
             </div>
           )}

@@ -1,38 +1,13 @@
+import { useTranslations } from 'use-intl/react';
 import type { ColumnMasking, MaskingMode } from '../types/schema.js';
 
-const MODES: { value: MaskingMode; label: string; description: string }[] = [
-  {
-    value: 'none',
-    label: 'None',
-    description: 'No masking — the raw value is exposed as-is.',
-  },
-  {
-    value: 'exclude',
-    label: 'Exclude',
-    description: 'Completely excludes this column from results returned by the MCP server.',
-  },
-  {
-    value: 'hash',
-    label: 'Hash',
-    description:
-      'Replaces the value with its SHA-256 hash. Allows comparison without revealing the real data.',
-  },
-  {
-    value: 'truncate',
-    label: 'Truncate',
-    description:
-      'Masks part of the value, keeping only the configured number of leading and/or trailing characters.',
-  },
-  {
-    value: 'replace',
-    label: 'Replace',
-    description: 'Replaces the entire value with a fixed string (e.g. [MASKED]).',
-  },
-  {
-    value: 'aggregate_only',
-    label: 'Aggregate only',
-    description: 'Allows only aggregates (COUNT, SUM…). Individual values are not accessible.',
-  },
+const MODE_VALUES: MaskingMode[] = [
+  'none',
+  'exclude',
+  'hash',
+  'truncate',
+  'replace',
+  'aggregate_only',
 ];
 
 interface MaskingSelectorProps {
@@ -41,6 +16,14 @@ interface MaskingSelectorProps {
 }
 
 export default function MaskingSelector({ masking, onChange }: MaskingSelectorProps) {
+  const t = useTranslations('settingsPanels.masking');
+  const MODES: { value: MaskingMode; label: string; description: string }[] = MODE_VALUES.map(
+    (value) => ({
+      value,
+      label: t(`modes.${value}.label`),
+      description: t(`modes.${value}.description`),
+    }),
+  );
   const currentMode = MODES.find((m) => m.value === masking.maskingMode);
 
   return (
@@ -58,7 +41,7 @@ export default function MaskingSelector({ masking, onChange }: MaskingSelectorPr
           }
           onChange(updated);
         }}
-        title={currentMode?.description ?? 'Select a masking mode for this column.'}
+        title={currentMode?.description ?? t('selector.defaultTitle')}
         className="px-2 py-1 rounded bg-gray-800/80 border border-white/10 text-gray-200 text-xs focus:outline-none focus:border-os-500 focus:ring-1 focus:ring-os-500/30"
       >
         {MODES.map((m) => (
@@ -70,7 +53,7 @@ export default function MaskingSelector({ masking, onChange }: MaskingSelectorPr
 
       {masking.maskingMode === 'truncate' && (
         <div className="flex items-center gap-1.5 text-xs text-gray-400">
-          <span>Show</span>
+          <span>{t('selector.truncate.show')}</span>
           <input
             type="number"
             min={0}
@@ -85,10 +68,10 @@ export default function MaskingSelector({ masking, onChange }: MaskingSelectorPr
                 },
               })
             }
-            title="Number of characters to keep from the start of the value."
+            title={t('selector.truncate.showFirstTitle')}
             className="w-12 px-1.5 py-0.5 rounded bg-gray-800 border border-white/10 text-gray-200 text-xs focus:outline-none focus:border-os-500"
           />
-          <span>first /</span>
+          <span>{t('selector.truncate.first')}</span>
           <input
             type="number"
             min={0}
@@ -103,10 +86,10 @@ export default function MaskingSelector({ masking, onChange }: MaskingSelectorPr
                 },
               })
             }
-            title="Number of characters to keep from the end of the value."
+            title={t('selector.truncate.showLastTitle')}
             className="w-12 px-1.5 py-0.5 rounded bg-gray-800 border border-white/10 text-gray-200 text-xs focus:outline-none focus:border-os-500"
           />
-          <span>last</span>
+          <span>{t('selector.truncate.last')}</span>
         </div>
       )}
 
@@ -116,7 +99,7 @@ export default function MaskingSelector({ masking, onChange }: MaskingSelectorPr
           value={masking.replaceValue ?? '[MASKED]'}
           onChange={(e) => onChange({ ...masking, replaceValue: e.target.value })}
           placeholder="[MASKED]"
-          title="Fixed value that will replace the real data in all responses."
+          title={t('selector.replace.title')}
           className="w-32 px-2 py-0.5 rounded bg-gray-800 border border-white/10 text-gray-200 text-xs focus:outline-none focus:border-os-500"
         />
       )}

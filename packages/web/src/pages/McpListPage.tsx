@@ -4,6 +4,7 @@
 
 import { useCallback } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
+import { useTranslations } from 'use-intl/react';
 import { PageHeader } from '../components/ui/index.js';
 import ServePanel from '../components/ServePanel.js';
 import type { Config, Profile, ServeStatus } from '../types/schema.js';
@@ -32,6 +33,9 @@ export default function McpListPage({
   handleProfileDelete,
   setPreviewProfile,
 }: McpListPageProps) {
+  const t = useTranslations('mcpList');
+  const tCommon = useTranslations('common');
+
   // Navigate to MCP detail from ServePanel
   const handleSelectProfile = useCallback((profileName: string) => {
     setView({ page: 'mcp-detail', profileName });
@@ -41,11 +45,11 @@ export default function McpListPage({
     <div className="space-y-4">
       <PageHeader
         breadcrumb={[
-          { label: 'Dashboard', onClick: () => setView({ page: 'dashboard' }) },
-          { label: 'MCP Servers' },
+          { label: tCommon('dashboard'), onClick: () => setView({ page: 'dashboard' }) },
+          { label: t('title') },
         ]}
-        title="MCP Servers"
-        description="Manage your MCP servers. Start, stop, and configure access for each MCP server."
+        title={t('title')}
+        description={t('description')}
       />
       <div className="mt-4">
         <ServePanel

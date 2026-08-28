@@ -3,6 +3,7 @@
 // with every profile available in the filter dropdown.
 
 import type { Dispatch, SetStateAction } from 'react';
+import { useTranslations } from 'use-intl/react';
 import { PageHeader } from '../components/ui/index.js';
 import AuditLogViewer from '../components/AuditLogViewer.js';
 import type { Profile } from '../types/schema.js';
@@ -14,15 +15,17 @@ interface AuditLogPageProps {
 }
 
 export default function AuditLogPage({ setView, profiles }: AuditLogPageProps) {
+  const t = useTranslations('auditLog');
+  const tCommon = useTranslations('common');
   return (
     <div className="space-y-4">
       <PageHeader
         breadcrumb={[
-          { label: 'Dashboard', onClick: () => setView({ page: 'dashboard' }) },
-          { label: 'Audit Log' },
+          { label: tCommon('dashboard'), onClick: () => setView({ page: 'dashboard' }) },
+          { label: t('title') },
         ]}
-        title="Audit Log"
-        description="Every tool call served by your MCP servers."
+        title={t('title')}
+        description={t('description')}
       />
       <AuditLogViewer profiles={profiles} />
     </div>

@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslations } from 'use-intl/react';
 import { cn } from './cn.js';
 
 export interface BreadcrumbItem {
@@ -16,9 +17,10 @@ export interface BreadcrumbProps {
  * for actionable crumbs. Used both standalone and inside PageHeader.
  */
 export function Breadcrumb({ items, className }: BreadcrumbProps): React.ReactElement | null {
+  const t = useTranslations('common');
   if (!items || items.length === 0) return null;
   return (
-    <nav aria-label="Breadcrumb" className={className}>
+    <nav aria-label={t('breadcrumbAriaLabel')} className={className}>
       <ol className="flex items-center gap-1.5 flex-wrap">
         {items.map((item, index) => {
           const isLast = index === items.length - 1;

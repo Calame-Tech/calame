@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import { useTranslations } from 'use-intl/react';
 import {
   getCurrentTenant,
   setCurrentTenant,
@@ -83,6 +84,7 @@ export default function WorkspaceSwitcher({
   className,
   onManageWorkspaces,
 }: WorkspaceSwitcherProps) {
+  const t = useTranslations('tenants.switcher');
   const [tenant] = useState<string>(() => getCurrentTenant());
   const isNonDefault = tenant !== 'default';
   const [open, setOpen] = useState(false);
@@ -149,7 +151,7 @@ export default function WorkspaceSwitcher({
   const handleCreate = () => {
     const trimmed = newInput.trim();
     if (!TENANT_ID_REGEX.test(trimmed)) {
-      setInputError('Invalid format — letters, digits, hyphens and underscores only (1-64 chars).');
+      setInputError(t('invalidFormat'));
       return;
     }
     setInputError(null);
@@ -162,7 +164,7 @@ export default function WorkspaceSwitcher({
   };
 
   // All known tenants to display: 'default' is always first, then history sorted.
-  const allTenants = ['default', ...history.filter((t) => t !== 'default')];
+  const allTenants = ['default', ...history.filter((id) => id !== 'default')];
 
   const toggleLabel = isNonDefault ? tenant : 'default';
 
@@ -182,7 +184,7 @@ export default function WorkspaceSwitcher({
         }
         aria-haspopup="listbox"
         aria-expanded={open}
-        aria-label={`Current workspace: ${toggleLabel}. Click to change.`}
+        aria-label={t('currentWorkspaceAriaLabel', { workspace: toggleLabel })}
         className={[
           'w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs transition-colors',
           'focus:outline-none focus:ring-2 focus:ring-os-500/60',
@@ -217,8 +219,8 @@ export default function WorkspaceSwitcher({
       {isNonDefault && (
         <span
           className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-violet-500 border border-gray-950"
-          aria-label="Non-default workspace active"
-          title={`Workspace "${tenant}" active`}
+          aria-label={t('nonDefaultIndicatorAriaLabel')}
+          title={t('workspaceActiveTitle', { tenant })}
         />
       )}
 
@@ -230,26 +232,26 @@ export default function WorkspaceSwitcher({
           <div
             ref={panelRef}
             role="dialog"
-            aria-label="Workspace switcher"
+            aria-label={t('dialogAriaLabel')}
             style={{ position: 'fixed', left: anchor.left, top: anchor.top }}
             className="w-56 rounded-xl border border-white/10 bg-gray-900/95 backdrop-blur-xl shadow-xl shadow-black/40 z-50 overflow-hidden"
           >
             {/* Header */}
             <div className="px-3 py-2 border-b border-white/8">
               <p className="font-mono-plex text-[10px] uppercase tracking-widest text-gray-500 select-none">
-                Workspace
+                {t('headerLabel')}
               </p>
             </div>
 
             {/* Known workspace list */}
-            <ul role="listbox" aria-label="Available workspaces" className="py-1">
-              {allTenants.map((t) => {
-                const isActive = tenant === t;
+            <ul role="listbox" aria-label={t('availableWorkspacesAriaLabel')} className="py-1">
+              {allTenants.map((workspaceId) => {
+                const isActive = tenant === workspaceId;
                 return (
-                  <li key={t} role="option" aria-selected={isActive}>
+                  <li key={workspaceId} role="option" aria-selected={isActive}>
                     <button
                       type="button"
-                      onClick={() => handleSelect(t)}
+                      onClick={() => handleSelect(workspaceId)}
                       className={[
                         'w-full flex items-center gap-2 px-3 py-1.5 text-xs transition-colors',
                         isActive
@@ -257,7 +259,7 @@ export default function WorkspaceSwitcher({
                           : 'text-gray-300 hover:bg-white/5 hover:text-gray-100',
                       ].join(' ')}
                     >
-                      <span className="flex-1 text-left truncate font-medium">{t}</span>
+                      <span className="flex-1 text-left truncate font-medium">{workspaceId}</span>
                       {isActive && <span className="text-os-400">{IconCheck}</span>}
                     </button>
                   </li>
@@ -271,7 +273,7 @@ export default function WorkspaceSwitcher({
             {/* New workspace input */}
             <div className="px-3 py-2.5">
               <p className="font-mono-plex text-[10px] uppercase tracking-widest text-gray-600 mb-2 select-none">
-                New workspace
+                {t('newWorkspaceHeading')}
               </p>
               <div className="flex gap-1.5">
                 <input
@@ -283,9 +285,9 @@ export default function WorkspaceSwitcher({
                     setInputError(null);
                   }}
                   onKeyDown={handleInputKeyDown}
-                  placeholder="my-workspace"
+                  placeholder={t('newWorkspacePlaceholder')}
                   maxLength={64}
-                  aria-label="New workspace name"
+                  aria-label={t('newWorkspaceAriaLabel')}
                   aria-describedby={inputError ? 'ws-input-error' : undefined}
                   className={[
                     'flex-1 min-w-0 bg-white/5 border rounded-lg px-2 py-1 text-xs text-gray-200',
@@ -299,7 +301,7 @@ export default function WorkspaceSwitcher({
                   disabled={!newInput.trim()}
                   className="px-2.5 py-1 rounded-lg bg-os-500/20 text-os-300 text-xs font-medium hover:bg-os-500/30 disabled:opacity-40 disabled:cursor-not-allowed transition-colors focus:outline-none focus:ring-2 focus:ring-os-500/60"
                 >
-                  OK
+                  {t('okButton')}
                 </button>
               </div>
               {inputError && (
@@ -326,7 +328,7 @@ export default function WorkspaceSwitcher({
                     }}
                     className="w-full text-left text-xs text-gray-400 hover:text-gray-100 focus:outline-none focus:text-gray-100"
                   >
-                    Manage workspaces &rarr;
+                    {t('manageWorkspacesLink')}
                   </button>
                 </div>
               </>

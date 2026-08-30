@@ -1,10 +1,18 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render as rtlRender, screen } from '@testing-library/react';
+import type { ReactElement } from 'react';
+import type { RenderOptions } from '@testing-library/react';
 import LoginPage from '../components/LoginPage.js';
 import SetupPage from '../components/SetupPage.js';
 import ChatEntryPage from '../components/ChatEntryPage.js';
 import SchemaExplorer from '../components/SchemaExplorer.js';
 import SourcesPage from '../components/SourcesPage.js';
+import { I18nProvider } from '../i18n/I18nProvider.js';
+
+/** Renders with the i18n context every component here now requires. */
+function render(ui: ReactElement, options?: RenderOptions) {
+  return rtlRender(ui, { wrapper: I18nProvider, ...options });
+}
 
 describe('App smoke tests', () => {
   it('LoginPage renders without error', () => {

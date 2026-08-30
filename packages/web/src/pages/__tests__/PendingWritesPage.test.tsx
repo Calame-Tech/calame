@@ -1,9 +1,9 @@
 // PendingWritesPage component tests (Lot C — governance UX overhaul).
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { screen, fireEvent } from '@testing-library/react';
 import PendingWritesPage from '../PendingWritesPage.js';
-import { installFetchMock, flushEffects } from './testUtils.js';
+import { render, installFetchMock, flushEffects } from './testUtils.js';
 
 describe('PendingWritesPage', () => {
   afterEach(() => {

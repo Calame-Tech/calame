@@ -1,9 +1,9 @@
 // AuditLogPage component tests (Lot C — governance UX overhaul).
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { screen, fireEvent } from '@testing-library/react';
 import AuditLogPage from '../AuditLogPage.js';
-import { installFetchMock, flushEffects, makeProfile } from './testUtils.js';
+import { render, installFetchMock, flushEffects, makeProfile } from './testUtils.js';
 
 describe('AuditLogPage', () => {
   afterEach(() => {

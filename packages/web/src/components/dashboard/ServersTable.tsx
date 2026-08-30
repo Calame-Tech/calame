@@ -3,6 +3,7 @@
 
 import { useMemo } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
+import { useTranslations } from 'use-intl/react';
 import { EmptyState } from '../ui/index.js';
 import { buildProfileSparkSeries, countByProfile24h } from './activity-stats.js';
 import type { AuditLogEntry, Profile, ServeStatus } from '../../types/schema.js';
@@ -37,26 +38,23 @@ export default function ServersTable({
   serveStatus,
   recentActivity,
 }: ServersTableProps) {
+  const t = useTranslations('dashboard.serversTable');
   const counts24h = useMemo(() => countByProfile24h(recentActivity), [recentActivity]);
+  const headers = t.raw('table.headers') as string[];
 
   return (
     <div className="card-primary p-4 anim-rise-in" style={{ animationDelay: '200ms' }}>
-      <h2 className="text-sm font-semibold text-gray-100">Servers</h2>
-      <p className="font-mono-plex text-[11px] text-gray-500 mb-3">
-        status &middot; activity 24h &middot; trend 7d
-      </p>
+      <h2 className="text-sm font-semibold text-gray-100">{t('title')}</h2>
+      <p className="font-mono-plex text-[11px] text-gray-500 mb-3">{t('caption')}</p>
 
       {profiles.length === 0 ? (
-        <EmptyState
-          title="No MCP servers"
-          description="Create a server to expose your data configurations to AI clients."
-        />
+        <EmptyState title={t('emptyTitle')} description={t('emptyDescription')} />
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr>
-                {['Server', 'Status', 'Auth', 'Activity 24h', 'Trend'].map((h, i) => (
+                {headers.map((h, i) => (
                   <th
                     key={h}
                     className={`font-mono-plex text-[10px] uppercase tracking-widest text-gray-600 font-semibold px-2.5 py-1.5 border-b border-white/5 ${i === 3 ? 'text-right' : 'text-left'}`}
@@ -97,11 +95,11 @@ export default function ServersTable({
                             : 'bg-white/5 text-gray-400'
                         }`}
                       >
-                        {active ? 'ACTIVE' : 'STOPPED'}
+                        {active ? t('statusActive') : t('statusStopped')}
                       </span>
                     </td>
                     <td className="px-2.5 py-2 border-b border-white/[0.035] font-mono-plex text-xs text-gray-400">
-                      {p.authMode ?? 'open'}
+                      {p.authMode ?? t('authOpenFallback')}
                     </td>
                     <td className="px-2.5 py-2 border-b border-white/[0.035] font-mono-plex text-xs text-gray-300 text-right tabular-nums">
                       {count}

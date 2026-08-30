@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useTranslations } from 'use-intl/react';
 import { apiFetch } from '../lib/api.js';
 import type {
   DatabaseSchema,
@@ -26,31 +27,7 @@ interface ConnectionStatus {
   sshConfig?: SshTunnelConfig;
 }
 
-const DB_OPTIONS: {
-  type: DatabaseType;
-  label: string;
-  placeholder: string;
-  helpText: string;
-}[] = [
-  {
-    type: 'postgresql',
-    label: 'PostgreSQL',
-    placeholder: 'postgresql://user:password@localhost:5432/mydb',
-    helpText: 'Format: postgresql://user:password@host:port/database',
-  },
-  {
-    type: 'mysql',
-    label: 'MySQL',
-    placeholder: 'mysql://user:password@localhost:3306/mydb',
-    helpText: 'Format: mysql://user:password@host:port/database',
-  },
-  {
-    type: 'sqlite',
-    label: 'SQLite',
-    placeholder: 'sqlite:///path/to/database.db',
-    helpText: 'Format: sqlite:///path/to/database.db',
-  },
-];
+const DB_TYPES: DatabaseType[] = ['postgresql', 'mysql', 'sqlite'];
 
 /** Generate a slug from a label: lowercase, spaces to hyphens, strip special chars */
 function slugify(label: string): string {
@@ -75,6 +52,8 @@ export default function ConnectionManager({
   onSchemaLoaded,
   editConnectionName,
 }: ConnectionManagerProps) {
+  const t = useTranslations('connectionManager');
+  const tCommon = useTranslations('common');
   // Remote statuses keyed by connection name
   const [statuses, setStatuses] = useState<Record<string, ConnectionStatus>>({});
   // Form visibility
@@ -221,15 +200,21 @@ export default function ConnectionManager({
         setRevealPassword('');
       } else {
         setRevealStatus('error');
-        setRevealError(data.message || 'Incorrect password.');
+        setRevealError(data.message || t('form.incorrectPassword'));
       }
     } catch {
       setRevealStatus('error');
-      setRevealError('Failed to reach the server.');
+      setRevealError(t('form.failedToReachServer'));
     }
   };
 
-  const activeDbOption = DB_OPTIONS.find((o) => o.type === formDbType)!;
+  const dbOptions = DB_TYPES.map((type) => ({
+    type,
+    label: t(`dbTypes.${type}.label`),
+    placeholder: t(`dbTypes.${type}.placeholder`),
+    helpText: t(`dbTypes.${type}.helpText`),
+  }));
+  const activeDbOption = dbOptions.find((o) => o.type === formDbType)!;
 
   // ── Start editing a connection ─────────────────────────────────
   const startEdit = (name: string) => {
@@ -342,14 +327,14 @@ export default function ConnectionManager({
       const data = await res.json();
       if (data.success) {
         setFormStatus('success');
-        setFormMessage('Connection successful!');
+        setFormMessage(t('form.connectionSuccessful'));
       } else {
         setFormStatus('error');
-        setFormMessage(data.message || 'Connection test failed.');
+        setFormMessage(data.message || t('form.connectionTestFailed'));
       }
     } catch {
       setFormStatus('error');
-      setFormMessage('Failed to reach the server.');
+      setFormMessage(t('form.failedToReachServer'));
     }
   };
 
@@ -365,7 +350,7 @@ export default function ConnectionManager({
     if (!formConnStr || !formName || !formLabel) return;
     if (nameAlreadyExists) {
       setFormStatus('error');
-      setFormMessage(`A connection with identifier "${formName}" already exists.`);
+      setFormMessage(t('form.identifierExists', { name: formName }));
       return;
     }
     setFormStatus('connecting');
@@ -393,7 +378,7 @@ export default function ConnectionManager({
       const data = await res.json();
       if (!data.success) {
         setFormStatus('error');
-        setFormMessage(data.message || 'Failed to create connection.');
+        setFormMessage(data.message || t('form.failedToCreate'));
         return;
       }
 
@@ -452,7 +437,7 @@ export default function ConnectionManager({
       resetForm();
     } catch {
       setFormStatus('error');
-      setFormMessage('Failed to reach the server.');
+      setFormMessage(t('form.failedToReachServer'));
     }
   };
 
@@ -492,7 +477,7 @@ export default function ConnectionManager({
   };
 
   // Determine form title based on mode
-  const formTitle = editingConnection ? 'Edit database' : 'New database';
+  const formTitle = editingConnection ? t('form.titleEdit') : t('form.titleNew');
 
   return (
     <div className="space-y-4">
@@ -514,8 +499,8 @@ export default function ConnectionManager({
           </svg>
         </div>
         <div>
-          <h2 className="heading-md">Databases</h2>
-          <p className="text-sm text-gray-500">Manage your database connections</p>
+          <h2 className="heading-md">{t('header.title')}</h2>
+          <p className="text-sm text-gray-500">{t('header.subtitle')}</p>
         </div>
       </div>
 
@@ -536,17 +521,17 @@ export default function ConnectionManager({
                 <div className="absolute top-2 right-2 flex items-center gap-1">
                   <button
                     onClick={() => handleDelete(name)}
-                    title="Confirm permanent deletion"
+                    title={t('card.confirmDeleteTitle')}
                     className="px-2 py-0.5 text-xs bg-red-600 hover:bg-red-500 text-white rounded transition-all duration-200"
                   >
-                    Yes
+                    {t('card.yes')}
                   </button>
                   <button
                     onClick={() => setConfirmDelete(null)}
-                    title="Cancel deletion"
+                    title={t('card.cancelDeleteTitle')}
                     className="px-2 py-0.5 text-xs bg-gray-600 hover:bg-gray-500 text-white rounded transition-all duration-200"
                   >
-                    No
+                    {t('card.no')}
                   </button>
                 </div>
               ) : (
@@ -554,7 +539,7 @@ export default function ConnectionManager({
                   {/* Edit button */}
                   <button
                     onClick={() => startEdit(name)}
-                    title="Edit this connection's configuration"
+                    title={t('card.editTitle')}
                     className="p-1 text-gray-500 hover:text-os-400 transition-all duration-200 rounded hover:bg-os-500/10"
                   >
                     <svg
@@ -574,7 +559,7 @@ export default function ConnectionManager({
                   {/* Delete button */}
                   <button
                     onClick={() => setConfirmDelete(name)}
-                    title="Remove this connection from the list"
+                    title={t('card.deleteTitle')}
                     className="p-1 text-gray-500 hover:text-red-400 transition-all duration-200 rounded hover:bg-red-500/10"
                   >
                     <svg
@@ -593,7 +578,7 @@ export default function ConnectionManager({
               {/* Status dot + name */}
               <div className="flex items-center gap-2 mb-2 pr-16">
                 <span
-                  title={connected ? 'Active connection' : 'Not connected — click Edit to connect'}
+                  title={connected ? t('card.statusActive') : t('card.statusInactive')}
                   className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${
                     connected ? 'bg-green-400 shadow-sm shadow-green-400/50' : 'bg-gray-500'
                   }`}
@@ -608,34 +593,34 @@ export default function ConnectionManager({
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
                   <span
-                    title={`Database: ${dbType}`}
+                    title={t('card.databaseTypeTooltip', { type: dbType })}
                     className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border ${DB_TYPE_COLORS[dbType]}`}
                   >
                     {dbType}
                   </span>
                   {remote?.sslConfig?.enabled && (
                     <span
-                      title="SSL/TLS encryption enabled on this connection"
+                      title={t('card.sslTooltip')}
                       className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-700/20 text-green-400 border border-green-600/30"
                     >
-                      SSL
+                      {t('card.sslBadge')}
                     </span>
                   )}
                   {remote?.sshConfig?.enabled && (
                     <span
-                      title="SSH tunnel enabled — connecting via a bastion server"
+                      title={t('card.sshTooltip')}
                       className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-700/20 text-purple-400 border border-purple-600/30"
                     >
-                      SSH
+                      {t('card.sshBadge')}
                     </span>
                   )}
                 </div>
                 {connected && tableCount > 0 ? (
                   <span className="text-xs text-gray-400">
-                    {tableCount} table{tableCount !== 1 ? 's' : ''}
+                    {t('card.tableCount', { count: tableCount })}
                   </span>
                 ) : !connected && remote ? (
-                  <span className="text-xs text-gray-500 italic">Not connected</span>
+                  <span className="text-xs text-gray-500 italic">{t('card.notConnected')}</span>
                 ) : null}
               </div>
             </div>
@@ -662,7 +647,7 @@ export default function ConnectionManager({
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
           </svg>
           <span className="mt-2 text-sm text-gray-500 group-hover:text-os-400 transition-all duration-200">
-            Add database
+            {t('addCard')}
           </span>
         </button>
       </div>
@@ -675,13 +660,13 @@ export default function ConnectionManager({
           {/* Label */}
           <div>
             <label className="block eyebrow mb-1.5">
-              Name <span className="text-red-400">*</span>
+              {t('form.nameLabel')} <span className="text-red-400">*</span>
             </label>
             <input
               type="text"
               value={formLabel}
               onChange={(e) => setFormLabel(e.target.value)}
-              placeholder="My Production DB"
+              placeholder={t('form.namePlaceholder')}
               className="input-editorial w-full"
             />
           </div>
@@ -702,13 +687,13 @@ export default function ConnectionManager({
               >
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
               </svg>
-              Customize identifier
+              {t('form.customizeIdentifier')}
             </button>
 
             {/* Identifier (slug) field — shown only when toggled */}
             {showIdentifier && (
               <div className="mt-2">
-                <label className="block eyebrow mb-1.5">Identifier</label>
+                <label className="block eyebrow mb-1.5">{t('form.identifierLabel')}</label>
                 <input
                   type="text"
                   value={formName}
@@ -716,14 +701,14 @@ export default function ConnectionManager({
                     setFormNameManual(true);
                     setFormName(slugify(e.target.value));
                   }}
-                  placeholder="my-production-db"
+                  placeholder={t('form.identifierPlaceholder')}
                   className="input-editorial w-full"
                 />
                 {!formNameManual && formName && !nameAlreadyExists && (
-                  <p className="mt-1 text-xs text-gray-500">Auto-generated from name</p>
+                  <p className="mt-1 text-xs text-gray-500">{t('form.autoGenerated')}</p>
                 )}
                 {nameAlreadyExists && (
-                  <p className="mt-1 text-xs text-red-400">This identifier is already taken</p>
+                  <p className="mt-1 text-xs text-red-400">{t('form.identifierTaken')}</p>
                 )}
               </div>
             )}
@@ -731,19 +716,22 @@ export default function ConnectionManager({
             {/* Show auto-generated hint when identifier is hidden */}
             {!showIdentifier && formName && !nameAlreadyExists && (
               <p className="mt-1 text-xs text-gray-500">
-                Identifier: <span className="font-mono">{formName}</span> (auto-generated)
+                {t.rich('form.identifierAutoHint', {
+                  name: formName,
+                  mono: (chunks) => <span className="font-mono">{chunks}</span>,
+                })}
               </p>
             )}
             {!showIdentifier && nameAlreadyExists && (
-              <p className="mt-1 text-xs text-red-400">This identifier is already taken</p>
+              <p className="mt-1 text-xs text-red-400">{t('form.identifierTaken')}</p>
             )}
           </div>
 
           {/* Database type */}
           <div>
-            <p className="eyebrow mb-3">Database Type</p>
+            <p className="eyebrow mb-3">{t('form.databaseTypeLabel')}</p>
             <div className="flex flex-col gap-3">
-              {DB_OPTIONS.map((opt) => (
+              {dbOptions.map((opt) => (
                 <label
                   key={opt.type}
                   className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all duration-200 ${
@@ -772,7 +760,7 @@ export default function ConnectionManager({
           {/* Connection string */}
           <div>
             <label className="block eyebrow mb-1.5">
-              Connection string <span className="text-red-400">*</span>
+              {t('form.connectionStringLabel')} <span className="text-red-400">*</span>
             </label>
             <div className="relative">
               <input
@@ -805,18 +793,18 @@ export default function ConnectionManager({
                 }}
                 title={
                   hasSavedConnStr && !connStringRevealed && !formConnStr
-                    ? 'Reveal the connection string (admin password required)'
+                    ? t('form.revealTitle')
                     : showPassword
-                      ? 'Hide the connection string'
-                      : 'Show the connection string in plain text'
+                      ? t('form.hideTitle')
+                      : t('form.showTitle')
                 }
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-500 hover:text-gray-300"
               >
                 {hasSavedConnStr && !connStringRevealed && !formConnStr
-                  ? 'Show'
+                  ? t('form.show')
                   : showPassword
-                    ? 'Hide'
-                    : 'Show'}
+                    ? t('form.hide')
+                    : t('form.show')}
               </button>
             </div>
             <p className="mt-1.5 text-xs text-gray-500">{activeDbOption.helpText}</p>
@@ -824,15 +812,13 @@ export default function ConnectionManager({
             {/* Admin password prompt to reveal connection string */}
             {showRevealPrompt && (
               <div className="mt-3 p-3 rounded-lg border border-os-600/40 bg-os-900/20 space-y-2">
-                <p className="text-xs text-gray-300">
-                  Enter your admin password to reveal the connection string.
-                </p>
+                <p className="text-xs text-gray-300">{t('form.revealPrompt')}</p>
                 <div className="flex items-center gap-2">
                   <input
                     type="password"
                     value={revealPassword}
                     onChange={(e) => setRevealPassword(e.target.value)}
-                    placeholder="Admin password"
+                    placeholder={t('form.adminPasswordPlaceholder')}
                     autoFocus
                     className="input-editorial flex-1 text-sm"
                     onKeyDown={(e) => {
@@ -845,7 +831,7 @@ export default function ConnectionManager({
                     disabled={!revealPassword || revealStatus === 'loading'}
                     className="px-3 py-1.5 bg-os-700 hover:bg-os-600 disabled:opacity-50 rounded-lg text-sm font-medium transition-all duration-200"
                   >
-                    {revealStatus === 'loading' ? '...' : 'OK'}
+                    {revealStatus === 'loading' ? '...' : t('form.ok')}
                   </button>
                   <button
                     type="button"
@@ -856,7 +842,7 @@ export default function ConnectionManager({
                     }}
                     className="px-2 py-1.5 text-gray-500 hover:text-gray-300 text-sm transition-all duration-200"
                   >
-                    Cancel
+                    {tCommon('cancel')}
                   </button>
                 </div>
                 {revealStatus === 'error' && <p className="text-xs text-red-400">{revealError}</p>}
@@ -883,18 +869,14 @@ export default function ConnectionManager({
                   >
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                   </svg>
-                  SSL/TLS Settings
+                  {t('ssl.sectionTitle')}
                   {sslEnabled && (
                     <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-700/30 text-green-400 border border-green-600/30">
-                      enabled
+                      {t('ssl.enabledBadge')}
                     </span>
                   )}
                 </button>
-                <HelpTip
-                  content="Encrypt the connection with TLS certificates — recommended for any production database"
-                  position="right"
-                  maxWidth={300}
-                />
+                <HelpTip content={t('ssl.help')} position="right" maxWidth={300} />
               </div>
 
               {sslExpanded && (
@@ -906,45 +888,39 @@ export default function ConnectionManager({
                       onChange={(e) => setSslEnabled(e.target.checked)}
                       className="rounded border-gray-600 bg-gray-700 text-os-500 focus:ring-os-500/30 focus:ring-offset-0"
                     />
-                    <span className="text-sm text-gray-300">Enable SSL/TLS</span>
+                    <span className="text-sm text-gray-300">{t('ssl.enableCheckbox')}</span>
                   </label>
 
                   {sslEnabled && (
                     <>
                       <div>
-                        <label className="block eyebrow mb-1">CA Certificate (PEM)</label>
+                        <label className="block eyebrow mb-1">{t('ssl.caLabel')}</label>
                         <textarea
                           value={sslCa}
                           onChange={(e) => setSslCa(e.target.value)}
                           rows={4}
-                          placeholder={
-                            '-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----'
-                          }
+                          placeholder={t('ssl.caPlaceholder')}
                           className="input-editorial w-full text-xs resize-none"
                         />
-                        <p className="mt-1 text-xs text-gray-600">
-                          Paste your server CA certificate in PEM format.
-                        </p>
+                        <p className="mt-1 text-xs text-gray-600">{t('ssl.caHint')}</p>
                       </div>
                       <div>
-                        <label className="block eyebrow mb-1">
-                          Client Certificate (PEM, optional)
-                        </label>
+                        <label className="block eyebrow mb-1">{t('ssl.certLabel')}</label>
                         <textarea
                           value={sslCert}
                           onChange={(e) => setSslCert(e.target.value)}
                           rows={3}
-                          placeholder="-----BEGIN CERTIFICATE-----"
+                          placeholder={t('ssl.certPlaceholder')}
                           className="input-editorial w-full text-xs resize-none"
                         />
                       </div>
                       <div>
-                        <label className="block eyebrow mb-1">Client Key (PEM, optional)</label>
+                        <label className="block eyebrow mb-1">{t('ssl.keyLabel')}</label>
                         <textarea
                           value={sslKey}
                           onChange={(e) => setSslKey(e.target.value)}
                           rows={3}
-                          placeholder="-----BEGIN PRIVATE KEY-----"
+                          placeholder={t('ssl.keyPlaceholder')}
                           className="input-editorial w-full text-xs resize-none"
                         />
                       </div>
@@ -956,18 +932,13 @@ export default function ConnectionManager({
                           className="rounded border-gray-600 bg-gray-700 text-os-500 focus:ring-os-500/30 focus:ring-offset-0"
                         />
                         <span className="flex items-center gap-1.5 text-sm text-gray-300">
-                          Verify server certificate
-                          <HelpTip
-                            content="If disabled, the server certificate will not be verified — leaves the connection vulnerable to MITM attacks"
-                            position="right"
-                            maxWidth={300}
-                          />
+                          {t('ssl.verifyCheckbox')}
+                          <HelpTip content={t('ssl.verifyHelp')} position="right" maxWidth={300} />
                         </span>
                       </label>
                       {!sslRejectUnauthorized && (
                         <p className="text-xs text-yellow-500/80 bg-yellow-900/10 border border-yellow-700/30 rounded px-2 py-1">
-                          Warning: disabling certificate verification exposes you to
-                          man-in-the-middle attacks.
+                          {t('ssl.verifyWarning')}
                         </p>
                       )}
                     </>
@@ -995,18 +966,14 @@ export default function ConnectionManager({
                 >
                   <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                 </svg>
-                SSH Tunnel
+                {t('ssh.sectionTitle')}
                 {sshEnabled && (
                   <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-700/30 text-purple-400 border border-purple-600/30">
-                    enabled
+                    {t('ssh.enabledBadge')}
                   </span>
                 )}
               </button>
-              <HelpTip
-                content="Connect through an SSH bastion to reach databases on private networks"
-                position="right"
-                maxWidth={320}
-              />
+              <HelpTip content={t('ssh.help')} position="right" maxWidth={320} />
             </div>
 
             {sshExpanded && (
@@ -1018,31 +985,35 @@ export default function ConnectionManager({
                     onChange={(e) => setSshEnabled(e.target.checked)}
                     className="rounded border-gray-600 bg-gray-700 text-os-500 focus:ring-os-500/30 focus:ring-offset-0"
                   />
-                  <span className="text-sm text-gray-300">Enable SSH Tunnel</span>
+                  <span className="text-sm text-gray-300">{t('ssh.enableCheckbox')}</span>
                 </label>
 
                 {sshEnabled && (
                   <>
                     {/* Visual connection diagram */}
                     <div className="text-xs text-gray-500 bg-gray-800/50 rounded p-2 font-mono">
-                      Calame → SSH ({sshHost || '...'}:{sshPort}) → DB ({sshDbHost || '...'}:
-                      {sshDbPort})
+                      {t('ssh.diagram', {
+                        host: sshHost || '...',
+                        port: sshPort,
+                        dbHost: sshDbHost || '...',
+                        dbPort: sshDbPort,
+                      })}
                     </div>
 
                     {/* SSH Host + Port */}
                     <div className="grid grid-cols-3 gap-2">
                       <div className="col-span-2">
-                        <label className="block eyebrow mb-1">SSH Host</label>
+                        <label className="block eyebrow mb-1">{t('ssh.hostLabel')}</label>
                         <input
                           type="text"
                           value={sshHost}
                           onChange={(e) => setSshHost(e.target.value)}
-                          placeholder="bastion.example.com"
+                          placeholder={t('ssh.hostPlaceholder')}
                           className="input-editorial w-full text-xs"
                         />
                       </div>
                       <div>
-                        <label className="block eyebrow mb-1">SSH Port</label>
+                        <label className="block eyebrow mb-1">{t('ssh.portLabel')}</label>
                         <input
                           type="number"
                           value={sshPort}
@@ -1054,31 +1025,31 @@ export default function ConnectionManager({
 
                     {/* SSH Username */}
                     <div>
-                      <label className="block eyebrow mb-1">SSH Username</label>
+                      <label className="block eyebrow mb-1">{t('ssh.usernameLabel')}</label>
                       <input
                         type="text"
                         value={sshUsername}
                         onChange={(e) => setSshUsername(e.target.value)}
-                        placeholder="ec2-user"
+                        placeholder={t('ssh.usernamePlaceholder')}
                         className="input-editorial w-full text-xs"
                       />
                     </div>
 
                     {/* Private Key */}
                     <div>
-                      <label className="block eyebrow mb-1">Private Key (PEM)</label>
+                      <label className="block eyebrow mb-1">{t('ssh.privateKeyLabel')}</label>
                       <textarea
                         value={sshPrivateKey}
                         onChange={(e) => setSshPrivateKey(e.target.value)}
                         rows={4}
-                        placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+                        placeholder={t('ssh.privateKeyPlaceholder')}
                         className="input-editorial w-full text-xs resize-none"
                       />
                     </div>
 
                     {/* Password */}
                     <div>
-                      <label className="block eyebrow mb-1">Password (if no key)</label>
+                      <label className="block eyebrow mb-1">{t('ssh.passwordLabel')}</label>
                       <input
                         type="password"
                         value={sshPassword}
@@ -1090,17 +1061,17 @@ export default function ConnectionManager({
                     {/* Remote DB Host + Port */}
                     <div className="grid grid-cols-3 gap-2">
                       <div className="col-span-2">
-                        <label className="block eyebrow mb-1">DB Host (from bastion)</label>
+                        <label className="block eyebrow mb-1">{t('ssh.dbHostLabel')}</label>
                         <input
                           type="text"
                           value={sshDbHost}
                           onChange={(e) => setSshDbHost(e.target.value)}
-                          placeholder="10.0.1.5"
+                          placeholder={t('ssh.dbHostPlaceholder')}
                           className="input-editorial w-full text-xs"
                         />
                       </div>
                       <div>
-                        <label className="block eyebrow mb-1">DB Port</label>
+                        <label className="block eyebrow mb-1">{t('ssh.dbPortLabel')}</label>
                         <input
                           type="number"
                           value={sshDbPort}
@@ -1153,12 +1124,9 @@ export default function ConnectionManager({
                   />
                 </svg>
               )}
-              {formStatus === 'testing' ? 'Testing...' : 'Test'}
+              {formStatus === 'testing' ? t('form.testing') : t('form.test')}
             </button>
-            <HelpTip
-              content="Test the connection without saving — verifies that the parameters are correct."
-              position="top"
-            />
+            <HelpTip content={t('form.testHelp')} position="top" />
 
             <button
               onClick={handleConnect}
@@ -1188,18 +1156,15 @@ export default function ConnectionManager({
                   />
                 </svg>
               )}
-              {formStatus === 'connecting' ? 'Connecting...' : 'Connect'}
+              {formStatus === 'connecting' ? t('form.connecting') : t('form.connect')}
             </button>
-            <HelpTip
-              content="Save and establish the connection — the schema will be imported automatically."
-              position="top"
-            />
+            <HelpTip content={t('form.connectHelp')} position="top" />
 
             <button
               onClick={resetForm}
               className="px-4 py-2 text-gray-400 hover:text-gray-200 rounded-lg font-medium text-sm transition-all duration-200"
             >
-              Cancel
+              {tCommon('cancel')}
             </button>
           </div>
         </div>

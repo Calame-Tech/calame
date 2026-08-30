@@ -4,6 +4,7 @@
 // and the dashboard "pending approvals" tile.
 
 import type { Dispatch, SetStateAction } from 'react';
+import { useTranslations } from 'use-intl/react';
 import { PageHeader } from '../components/ui/index.js';
 import PendingQueries from '../components/PendingQueries.js';
 import type { View } from '../router/index.js';
@@ -17,15 +18,17 @@ interface PendingWritesPageProps {
 }
 
 export default function PendingWritesPage({ setView, onCountChange }: PendingWritesPageProps) {
+  const t = useTranslations('pendingWrites');
+  const tCommon = useTranslations('common');
   return (
     <div className="space-y-4">
       <PageHeader
         breadcrumb={[
-          { label: 'Dashboard', onClick: () => setView({ page: 'dashboard' }) },
-          { label: 'Pending Writes' },
+          { label: tCommon('dashboard'), onClick: () => setView({ page: 'dashboard' }) },
+          { label: t('page.title') },
         ]}
-        title="Pending Writes"
-        description="Write operations proposed by LLMs, awaiting human approval."
+        title={t('page.title')}
+        description={t('page.description')}
       />
       <PendingQueries
         onPendingCountChange={() => onCountChange?.()}

@@ -6,6 +6,7 @@
 // machines. Mirrors TokenManager.tsx's fetch/copy/error conventions.
 
 import { useState, useCallback, useEffect } from 'react';
+import { useTranslations } from 'use-intl/react';
 import { apiFetch, getCurrentTenant } from '../lib/api.js';
 import HelpTip from './HelpTip.js';
 
@@ -28,6 +29,8 @@ interface ConnectClaudeDesktopProps {
 }
 
 export default function ConnectClaudeDesktop({ profileName }: ConnectClaudeDesktopProps) {
+  const t = useTranslations('serveTunnel.connectClaudeDesktop');
+  const tCommon = useTranslations('common');
   const [status, setStatus] = useState<ClaudeDesktopStatus | null>(null);
   const [statusLoading, setStatusLoading] = useState(true);
   const [statusError, setStatusError] = useState<string | null>(null);
@@ -51,14 +54,14 @@ export default function ConnectClaudeDesktop({ profileName }: ConnectClaudeDeskt
       if (data.success !== false) {
         setStatus(data);
       } else {
-        setStatusError(data.message || 'Failed to check Claude Desktop status.');
+        setStatusError(data.message || t('errors.statusCheckFailed'));
       }
     } catch {
-      setStatusError('Network error checking Claude Desktop status.');
+      setStatusError(t('errors.statusCheckNetworkError'));
     } finally {
       setStatusLoading(false);
     }
-  }, []);
+  }, [t]);
 
   // Fetched eagerly on mount — this section lives in the default-visible
   // "Exposed Data" tab of the MCP detail page, so mount time is effectively
@@ -88,10 +91,10 @@ export default function ConnectClaudeDesktop({ profileName }: ConnectClaudeDeskt
         setConnectResult({ configPath: data.configPath });
         fetchStatus().catch(() => {});
       } else {
-        setConnectError(data.message || 'Failed to connect to Claude Desktop.');
+        setConnectError(data.message || t('errors.connectFailed'));
       }
     } catch {
-      setConnectError('Network error connecting to Claude Desktop.');
+      setConnectError(t('errors.connectNetworkError'));
     } finally {
       setConnecting(false);
     }
@@ -109,10 +112,10 @@ export default function ConnectClaudeDesktop({ profileName }: ConnectClaudeDeskt
       if (data.success) {
         setSnippet(data.snippet ?? '');
       } else {
-        setSnippetError(data.message || 'Failed to load the manual configuration snippet.');
+        setSnippetError(data.message || t('errors.snippetLoadFailed'));
       }
     } catch {
-      setSnippetError('Network error loading the manual configuration snippet.');
+      setSnippetError(t('errors.snippetLoadNetworkError'));
     } finally {
       setSnippetLoading(false);
     }
@@ -137,16 +140,12 @@ export default function ConnectClaudeDesktop({ profileName }: ConnectClaudeDeskt
   return (
     <div className="card-primary p-4">
       <div className="flex items-center gap-2 mb-3">
-        <h4 className="text-sm font-semibold text-gray-300">Connect your AI</h4>
-        <HelpTip
-          content="Wire this MCP server into Claude Desktop, or grab a manual snippet for other MCP clients."
-          position="right"
-          size="xs"
-        />
+        <h4 className="text-sm font-semibold text-gray-300">{t('heading')}</h4>
+        <HelpTip content={t('headingHelp')} position="right" size="xs" />
       </div>
 
       {statusLoading ? (
-        <p className="text-sm text-gray-500">Checking for Claude Desktop…</p>
+        <p className="text-sm text-gray-500">{t('checkingStatus')}</p>
       ) : statusError ? (
         <div className="p-3 rounded-lg bg-red-950/30 border border-red-800/50 text-red-400 text-sm">
           {statusError}
@@ -155,21 +154,19 @@ export default function ConnectClaudeDesktop({ profileName }: ConnectClaudeDeskt
         <div className="space-y-2">
           {connectResult ? (
             <div className="p-3 rounded-lg border border-green-700/30 bg-green-900/10">
-              <p className="text-sm text-green-400 font-medium">
-                Connected — restart Claude Desktop to see your tools.
-              </p>
+              <p className="text-sm text-green-400 font-medium">{t('connectedMessage')}</p>
               <p className="text-xs text-gray-500 mt-1">{connectResult.configPath}</p>
             </div>
           ) : alreadyConnected ? (
             <div className="flex items-center justify-between gap-3">
-              <p className="text-sm text-gray-500">Already connected to Claude Desktop</p>
+              <p className="text-sm text-gray-500">{t('alreadyConnected')}</p>
               <button
                 type="button"
                 onClick={handleConnect}
                 disabled={connecting}
                 className="text-xs text-os-400 hover:text-os-300 transition-colors disabled:opacity-50 flex-shrink-0"
               >
-                {connecting ? 'Reconfiguring…' : 'Reconfigure'}
+                {connecting ? t('reconfiguringButton') : t('reconfigureButton')}
               </button>
             </div>
           ) : (
@@ -179,7 +176,7 @@ export default function ConnectClaudeDesktop({ profileName }: ConnectClaudeDeskt
               disabled={connecting}
               className="px-4 py-2 rounded-lg bg-os-700 hover:bg-os-600 text-white text-sm font-medium transition-all duration-200 disabled:opacity-50"
             >
-              {connecting ? 'Connecting…' : 'Connect to Claude Desktop'}
+              {connecting ? t('connectingButton') : t('connectButton')}
             </button>
           )}
           {connectError && (
@@ -189,7 +186,7 @@ export default function ConnectClaudeDesktop({ profileName }: ConnectClaudeDeskt
           )}
         </div>
       ) : status?.supported ? (
-        <p className="text-sm text-gray-500">Claude Desktop wasn&apos;t found on this machine.</p>
+        <p className="text-sm text-gray-500">{t('notFound')}</p>
       ) : null}
 
       {/* Manual fallback — always available, secondary/collapsed by default.
@@ -208,17 +205,18 @@ export default function ConnectClaudeDesktop({ profileName }: ConnectClaudeDeskt
           className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
           aria-expanded={snippetOpen}
         >
-          Other clients / another machine
+          {t('manualToggle')}
         </button>
         {snippetOpen && (
           <div className="mt-2 space-y-2">
             <p className="text-xs text-gray-600">
-              Replace <code className="text-gray-500">&lt;YOUR-CALAME-HOST&gt;</code> and{' '}
-              <code className="text-gray-500">&lt;TOKEN&gt;</code> with your Calame host and an API
-              key.
+              {t.rich('snippetHostPlaceholder', {
+                code1: (chunks) => <code className="text-gray-500">&lt;{chunks}&gt;</code>,
+                code2: (chunks) => <code className="text-gray-500">&lt;{chunks}&gt;</code>,
+              })}
             </p>
             {snippetLoading ? (
-              <p className="text-xs text-gray-500">Loading…</p>
+              <p className="text-xs text-gray-500">{tCommon('loading')}</p>
             ) : snippetError ? (
               <p className="text-xs text-red-400">{snippetError}</p>
             ) : snippet ? (
@@ -231,7 +229,7 @@ export default function ConnectClaudeDesktop({ profileName }: ConnectClaudeDeskt
                   onClick={handleCopySnippet}
                   className="absolute top-2 right-2 px-2 py-1 text-xs rounded border border-gray-600 text-gray-400 hover:text-gray-200 hover:bg-gray-700 transition-colors"
                 >
-                  {snippetCopied ? 'Copied!' : 'Copy'}
+                  {snippetCopied ? t('copied') : t('copy')}
                 </button>
               </div>
             ) : null}

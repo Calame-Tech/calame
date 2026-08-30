@@ -5,6 +5,44 @@ every commit. Newest first.
 
 ---
 
+## 2026-08-28 — i18n FR/EN : revue de code finale avant envoi (app + `Calame-website`, uncommitted)
+
+Avant envoi, `/code-review high` sur les deux dépôts (agents dédiés, diff complet). App : 8 signalements, 4 vrais bugs de traduction corrigés (texte resté en anglais dans une phrase française — `UserAccessMatrix.tsx` mode d'accès, `ConfigGraphView.tsx` mode d'auth, `PiiBadge.tsx` fallback de catégorie perdu à la migration, `AuditLogViewer.tsx` badge Résultat non traduit) + 2 correctifs rapides (options de langue non dérivées du tableau `LOCALES`, `Intl.RelativeTimeFormat` reconstruit à chaque rendu). 2 pistes d'optimisation notées mais non traitées (formats de date dupliqués dans 5 fichiers, chargement anticipé des deux bundles de locale) — améliorations réelles mais pas des bugs, remises à plus tard.
+
+Site : 4 signalements, tous corrigés — dont un **bug critique** repéré uniquement parce que l'agent a testé en conditions réelles (build + curl), pas juste lu le code : le matcher du middleware next-intl réécrivait `/opengraph-image` vers `/en/opengraph-image` (route inexistante) → 404 sur l'image de partage social de **tout le site**, sur tous les réseaux (Twitter/X, Slack, Discord, LinkedIn...). En corrigeant le matcher, un **second bug pré-existant et sans lien avec l'i18n** est apparu, jusque-là masqué par le 404 : le raccourci CSS `background: 'gradient(...), #030712'` fait planter le rendu Satori de `next/og` (`Invalid background image`) — corrigé en séparant `backgroundColor`/`backgroundImage`. Les 2 autres signalements (URLs Stripe non préfixées par la locale, `/fr/checkout/` codé en dur dans `robots.ts` au lieu d'être dérivé de `routing.locales`) étaient des bugs latents, pas encore déclenchés en prod.
+
+Vert des deux côtés après corrections : typecheck, lint, build, 2327/2328 tests (app) ; typecheck, lint, build + vérification live du PNG généré (site). Toujours pas committé.
+
+**Why:** l'utilisateur a demandé une dernière revue avant d'envoyer un diff de 132 fichiers.
+**How to apply:** toujours faire vérifier une revue de code en conditions réelles (build + requête HTTP réelle), pas seulement une lecture statique — c'est exactement ce qui a débusqué le double bug middleware/opengraph-image, invisible à la simple lecture du diff.
+
+---
+
+## 2026-08-27 — i18n FR/EN : extraction en masse terminée (app + `Calame-website`, uncommitted)
+
+Suite du lot du 2026-08-25 : sur demande explicite, extraction de tout le reste via des vagues d'agents en parallèle (Workflow tool — agents d'extraction, un agent de fusion des catalogues JSON, un agent de vérification typecheck/lint/test par vague).
+
+- **App calame** : 19 namespaces au total (les 10 du lot précédent + `auditLog`, `sidebar`, `dashboard`, `mcpList`, `users`, `tenants`, `settingsPanels`, `pendingWrites`, `connections`, `serveTunnel`, `setupLogin`) — 86 fichiers touchés. Reste hors scope, comme prévu : les ~25 messages d'erreur backend bruts (nécessitent des codes d'erreur côté API).
+- **Site calame.dev** : les 6 pages restantes traduites (accueil, tarifs, docs, contact, confidentialité, checkout) — 42 fichiers touchés, dont `lib/pricing.ts` enfin converti en builder de traductions (`lib/license.ts` s'est avéré être de la logique crypto de clés de licence sans aucun texte utilisateur — pas besoin d'y toucher).
+- **Incidents de parcours** : une vague a subi une panne réseau API transitoire (11/13 agents en échec `ENOTFOUND`) — fichiers partiels restaurés via `git checkout` avant retry, mais ce revert a écrasé par erreur une correction antérieure de la session (`DashboardPage.tsx`, signature de `timeAgo`), détectée par un test qui plantait puis recorrigée à la main. Deux namespaces trop profonds côté site (`home.clients.visual`, `home.flow.diagram`) cassaient l'inférence de type de next-intl — corrigés en restant à un niveau de namespace. Un module partagé (`pages/lazy.tsx`, fallback RAG) manqué par toutes les vagues (n'appartenait à aucun lot assigné) — repéré par un grep final et corrigé.
+- Vert des deux côtés : typecheck, lint, build, 2327/2328 tests (app) ; typecheck, lint, build avec tous les `[locale]` toujours en SSG (site).
+- **Toujours pas committé** — diffs volumineux (86 fichiers app, 42 fichiers site), en attente de revue utilisateur.
+
+---
+
+## 2026-08-25 — i18n FR/EN : lot 1, fondation + page pilote (app + `Calame-website`, uncommitted)
+
+Objectif : servir l'app et le site en français en plus de l'anglais. Aucune brique i18n n'existait avant (tout en dur, `lang="en"` codé en dur des deux côtés). Lot 1 = poser l'architecture des deux côtés + traduire un écran témoin chacun, pour validation avant l'extraction en masse du reste.
+
+- **Choix techniques** : `use-intl` côté app (SPA React/Vite), `next-intl` côté site (Next App Router, 19/22 composants sont des Server Components → une lib à contexte React aurait forcé `'use client'` partout). Même API (`useTranslations`), même format ICU des deux côtés.
+- **App calame** (`packages/web`) : `I18nProvider` (localStorage `calame-locale` + détection navigateur), sélecteur de langue (icône globe) dans le footer Sidebar, page pilote `SettingsPage` traduite (onglets + contenu, desktop **et** mobile — le panneau est dupliqué). Formatters `Intl.*` remplaçant les 4 dates en `en-US` dur + le `timeAgo` du dashboard + le pluriel anglais manuel de `ProfilePreview`. Vérifié en navigateur réel (Playwright, pas juste les tests) : bascule live, persistance au reload, auto-détection FR fonctionnelle. ~25 endroits affichent encore des erreurs backend brutes en anglais (nécessiterait des codes d'erreur côté API — hors scope de ce lot).
+- **Site `Calame-website`** : toutes les routes déplacées sous `src/app/[locale]/`, `localePrefix: 'as-needed'` (EN aux URLs actuelles inchangées, FR en `/fr/...`, hreflang + sitemap + robots à jour). Page pilote `/download` entièrement traduite (rich-text pour l'italique mi-phrase, `t.raw` pour les listes, apostrophes converties en typographiques pour éviter le piège d'échappement ICU). `ui/button.tsx` et `logo.tsx` basculés sur le `Link` locale-aware — sans ça le préfixe `/fr` sautait sur tous les CTA (repéré en cours de route, pas dans le plan initial). `lib/pricing.ts`/`license.ts`/`contact-schema.ts` **volontairement pas touchés** : les convertir sans peupler leurs messages aurait cassé `/pricing` et `/contact`, qui gardent leur copy anglaise statique jusqu'à leur propre lot.
+- **Piège rencontré** : `pnpm format` dans `Calame-website` reformate tout le dépôt (glob prettier large, pas de scope) — a touché ~35 fichiers sans rapport (skills Claude, README, composants jamais édités) avant d'être repéré et annulé sélectivement (`git checkout` sur les fichiers non concernés, contenu restauré verbatim sur les pages déplacées-mais-pas-éditées).
+- Vert des deux côtés : typecheck, lint, build (site : 21/21 pages générées, `/en/download` et `/fr/download` tous deux en SSG), tests (app : 2327 passés, 4 fichiers de test adaptés pour fournir le contexte i18n).
+- **Pas committé** — diffs scopés (app : ~14 fichiers ; site : ~14 fichiers + 6 nouveaux), en attente de revue utilisateur.
+
+---
+
 ## 2026-08-19 — RAG : modèle d'embedding local embarqué, activé par défaut (9 phases, uncommitted)
 
 Point de départ : activer le RAG exigeait de configurer à la main un provider d'embeddings distant — les users non-dev ne savaient pas ce que c'était, et le texte brut partait chez un tiers à chaque ingestion *et* chaque recherche, contredisant la promesse « vos données restent sur votre PC ». Décision utilisateur explicite : lancer maintenant (« la promesse du produit n'est pas tenue »), local par défaut mais providers distants conservés comme choix.

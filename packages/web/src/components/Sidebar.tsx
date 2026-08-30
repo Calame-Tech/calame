@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslations } from 'use-intl/react';
 import { useBranding, DEFAULT_LOGO_SRC } from '../lib/branding.js';
 import { Button } from './ui/index.js';
 import WorkspaceSwitcher from './WorkspaceSwitcher.js';
@@ -271,58 +272,6 @@ const IconLogout = (
   </svg>
 );
 
-const NAV_SECTIONS: NavSection[] = [
-  {
-    label: 'Workspace',
-    items: [
-      { page: 'dashboard', label: 'Dashboard', icon: IconHome },
-      {
-        page: 'mcp-list',
-        label: 'MCP Servers',
-        activeWhen: ['mcp-detail'],
-        icon: IconServerStack,
-      },
-      {
-        page: 'configurations',
-        label: 'Data Configurations',
-        activeWhen: ['config-detail'],
-        icon: IconRectangleStack,
-      },
-      {
-        page: 'sources',
-        label: 'Sources',
-        // Highlight this entry when on the legacy 'connections' or 'knowledge' pages too
-        activeWhen: ['connections', 'knowledge'],
-        icon: IconCircleStack,
-      },
-    ],
-  },
-  {
-    label: 'Govern',
-    items: [
-      {
-        page: 'pending-writes',
-        label: 'Pending Writes',
-        icon: IconCheckBadge,
-      },
-      {
-        page: 'audit-log',
-        label: 'Audit Log',
-        icon: IconListBullet,
-      },
-    ],
-  },
-  {
-    label: 'Admin',
-    items: [
-      { page: 'users', label: 'Users', icon: IconUsers },
-      { page: 'tenants', label: 'Workspaces', icon: IconBuildingOffice },
-      { page: 'metrics', label: 'Metrics', icon: IconChartBar },
-      { page: 'settings', label: 'Settings', icon: IconCog },
-    ],
-  },
-];
-
 /** Derive initials from an email address or display name */
 function getInitials(email?: string): string {
   if (!email) return 'A';
@@ -347,6 +296,8 @@ export default function Sidebar({
 }: SidebarProps) {
   const branding = useBranding();
   const [isOpen, setIsOpen] = useState(false);
+  const t = useTranslations('sidebar');
+  const tCommon = useTranslations('common');
 
   // Lock body scroll when the mobile drawer is open
   useEffect(() => {
@@ -361,9 +312,61 @@ export default function Sidebar({
     setIsOpen(false);
   };
 
-  const displayEmail = user?.email ?? 'Admin';
-  const displayRole = user?.role ?? 'Administrator';
+  const displayEmail = user?.email ?? t('fallbackAdmin');
+  const displayRole = user?.role ?? t('fallbackAdministrator');
   const initials = getInitials(user?.email);
+
+  const navSections: NavSection[] = [
+    {
+      label: t('sections.workspace'),
+      items: [
+        { page: 'dashboard', label: tCommon('dashboard'), icon: IconHome },
+        {
+          page: 'mcp-list',
+          label: t('nav.mcpServers'),
+          activeWhen: ['mcp-detail'],
+          icon: IconServerStack,
+        },
+        {
+          page: 'configurations',
+          label: t('nav.dataConfigurations'),
+          activeWhen: ['config-detail'],
+          icon: IconRectangleStack,
+        },
+        {
+          page: 'sources',
+          label: t('nav.sources'),
+          // Highlight this entry when on the legacy 'connections' or 'knowledge' pages too
+          activeWhen: ['connections', 'knowledge'],
+          icon: IconCircleStack,
+        },
+      ],
+    },
+    {
+      label: t('sections.govern'),
+      items: [
+        {
+          page: 'pending-writes',
+          label: t('nav.pendingWrites'),
+          icon: IconCheckBadge,
+        },
+        {
+          page: 'audit-log',
+          label: t('nav.auditLog'),
+          icon: IconListBullet,
+        },
+      ],
+    },
+    {
+      label: t('sections.admin'),
+      items: [
+        { page: 'users', label: t('nav.users'), icon: IconUsers },
+        { page: 'tenants', label: t('nav.workspaces'), icon: IconBuildingOffice },
+        { page: 'metrics', label: t('nav.metrics'), icon: IconChartBar },
+        { page: 'settings', label: t('nav.settings'), icon: IconCog },
+      ],
+    },
+  ];
 
   return (
     <>
@@ -371,7 +374,7 @@ export default function Sidebar({
       <button
         type="button"
         onClick={() => setIsOpen((prev) => !prev)}
-        aria-label="Toggle navigation menu"
+        aria-label={t('toggleMenu')}
         aria-expanded={isOpen}
         className="fixed top-4 left-4 z-50 md:hidden p-2 rounded-lg bg-gray-900/80 backdrop-blur-sm border border-gray-800/80 text-gray-300 hover:text-gray-100 focus:outline-none focus:ring-2 focus:ring-orange-500"
       >
@@ -419,7 +422,7 @@ export default function Sidebar({
 
       {/* Navigation drawer */}
       <nav
-        aria-label="Main navigation"
+        aria-label={t('mainNavigation')}
         className={[
           // Base styles shared by mobile and desktop. No backdrop-blur: the
           // sidebar is a full-height sticky surface always on screen, so its
@@ -448,7 +451,7 @@ export default function Sidebar({
                 Calame
               </p>
               <p className="font-mono-plex text-[10px] uppercase tracking-widest text-gray-500 leading-tight">
-                MCP proxy
+                {t('brand.tagline')}
               </p>
             </div>
           </div>
@@ -461,7 +464,7 @@ export default function Sidebar({
 
         {/* Navigation sections — flex-1 so user footer is pushed to the bottom */}
         <div className="flex-1 flex flex-col mt-3 overflow-y-auto">
-          {NAV_SECTIONS.map((section, sectionIndex) => (
+          {navSections.map((section, sectionIndex) => (
             <div
               key={section.label}
               className={['flex flex-col w-full', sectionIndex > 0 ? 'mt-4' : ''].join(' ')}
@@ -500,7 +503,7 @@ export default function Sidebar({
                             notification bell's badge (red circle, '9+' cap). */}
                         {badgeCount > 0 && (
                           <span
-                            aria-label={`${badgeCount} pending write${badgeCount === 1 ? '' : 's'}`}
+                            aria-label={t('pendingWriteBadge', { count: badgeCount })}
                             className="ml-auto flex items-center justify-center min-w-[1rem] h-4 px-1 rounded-full bg-red-500 text-[10px] font-semibold text-white"
                           >
                             {badgeCount > 9 ? '9+' : badgeCount}
@@ -546,9 +549,9 @@ export default function Sidebar({
                   variant="ghost"
                   size="sm"
                   onClick={onLogout}
-                  aria-label="Log out"
+                  aria-label={t('logout')}
                   className="flex-shrink-0 p-1 text-gray-400 hover:text-gray-100"
-                  title="Log out"
+                  title={t('logout')}
                 >
                   {IconLogout}
                 </Button>

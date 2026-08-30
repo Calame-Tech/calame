@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useTranslations } from 'use-intl/react';
 import { apiFetch, getCurrentTenant } from '../lib/api.js';
 import type { Profile, TokenEntry } from '../types/schema.js';
 import { buildMcpPath } from '../lib/mcp-url.js';
 import HelpTip from './HelpTip.js';
+import { useLocale } from '../i18n/I18nProvider.js';
 
 interface TokenManagerProps {
   profiles: Profile[];
@@ -10,6 +12,9 @@ interface TokenManagerProps {
 }
 
 export default function TokenManager({ profiles, port }: TokenManagerProps) {
+  const t = useTranslations('connections.tokenManager');
+  const tCommon = useTranslations('common');
+  const { locale } = useLocale();
   const [tokens, setTokens] = useState<TokenEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -44,14 +49,14 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
       if (data.success !== false) {
         setTokens(data.tokens ?? []);
       } else {
-        setError(data.message || 'Failed to load API keys.');
+        setError(data.message || t('errors.loadFailed'));
       }
     } catch {
-      setError('Network error loading API keys.');
+      setError(t('errors.loadNetworkError'));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     fetchTokens();
@@ -78,10 +83,10 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
         setNewLabel('');
         fetchTokens();
       } else {
-        setError(data.message || 'Failed to generate API key.');
+        setError(data.message || t('errors.generateFailed'));
       }
     } catch {
-      setError('Network error generating API key.');
+      setError(t('errors.generateNetworkError'));
     } finally {
       setGenerating(false);
     }
@@ -102,10 +107,10 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
         setRevealingTokenId(null);
         setRevealPassword('');
       } else {
-        setRevealError(data.message || 'Failed to reveal API key.');
+        setRevealError(data.message || t('errors.revealFailed'));
       }
     } catch {
-      setRevealError('Connection error.');
+      setRevealError(t('errors.revealConnectionError'));
     }
   };
 
@@ -120,12 +125,12 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
       const res = await apiFetch(`/api/tokens/${encodeURIComponent(id)}`, { method: 'DELETE' });
       const data = await res.json();
       if (data.success !== false) {
-        setTokens((prev) => prev.filter((t) => t.id !== id));
+        setTokens((prev) => prev.filter((entry) => entry.id !== id));
       } else {
-        setError(data.message || 'Failed to revoke API key.');
+        setError(data.message || t('errors.revokeFailed'));
       }
     } catch {
-      setError('Network error revoking API key.');
+      setError(t('errors.revokeNetworkError'));
     }
   };
 
@@ -141,7 +146,7 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
 
   const formatDate = (iso: string) => {
     const d = new Date(iso);
-    return d.toLocaleDateString('en-US', {
+    return d.toLocaleDateString(locale, {
       month: 'short',
       day: 'numeric',
       year: 'numeric',
@@ -153,7 +158,7 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
   // Group tokens by profile
   const tokensByProfile: Record<string, TokenEntry[]> = {};
   for (const profile of profiles) {
-    tokensByProfile[profile.name] = tokens.filter((t) => t.profileName === profile.name);
+    tokensByProfile[profile.name] = tokens.filter((entry) => entry.profileName === profile.name);
   }
 
   return (
@@ -182,12 +187,8 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
               />
             </svg>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-yellow-400 mb-1">
-                API key generated (token) - copy it now!
-              </p>
-              <p className="text-xs text-yellow-500/70 mb-3">
-                This API key will only be shown once. Store it securely.
-              </p>
+              <p className="text-sm font-medium text-yellow-400 mb-1">{t('newToken.heading')}</p>
+              <p className="text-xs text-yellow-500/70 mb-3">{t('newToken.warning')}</p>
               <div className="flex items-center gap-2">
                 <code className="flex-1 px-3 py-2 rounded bg-gray-900 border border-gray-700 text-sm text-gray-100 font-mono truncate">
                   {newlyGenerated.token}
@@ -196,7 +197,7 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                   onClick={() => handleCopy(newlyGenerated.token, 'new-token')}
                   className="px-3 py-2 rounded-lg bg-os-700 hover:bg-os-600 text-white text-sm font-medium transition-all duration-200 flex-shrink-0"
                 >
-                  {copied === 'new-token' ? 'Copied!' : 'Copy'}
+                  {copied === 'new-token' ? t('copied') : t('copy')}
                 </button>
               </div>
 
@@ -213,8 +214,7 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                   <>
                     <div className="mt-3">
                       <p className="text-xs text-gray-400 mb-1">
-                        claude.ai (paste this URL in Customize &gt; Connectors — Organization
-                        settings &gt; Connectors for Team/Enterprise):
+                        {t('newToken.claudeAiInstructions')}
                       </p>
                       <div className="flex items-center gap-2">
                         <code className="flex-1 px-3 py-2 rounded bg-gray-900 border border-gray-700 text-xs text-os-400 font-mono truncate">
@@ -224,21 +224,22 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                           onClick={() => handleCopy(mcpUrl, 'mcp-url')}
                           className="px-3 py-2 rounded-lg bg-os-700 hover:bg-os-600 text-white text-xs font-medium transition-all duration-200 flex-shrink-0"
                         >
-                          {copied === 'mcp-url' ? 'Copied!' : 'Copy URL'}
+                          {copied === 'mcp-url' ? t('copied') : t('newToken.copyUrlButton')}
                         </button>
                       </div>
                       {window.location.hostname === 'localhost' && (
                         <p className="text-xs text-gray-600 mt-1">
-                          For remote access, expose via ngrok:{' '}
-                          <code className="text-gray-500">ngrok http {port}</code> then replace the
-                          origin.
+                          {t.rich('newToken.ngrokHint', {
+                            port,
+                            code: (chunks) => <code className="text-gray-500">{chunks}</code>,
+                          })}
                         </p>
                       )}
                     </div>
 
                     {/* MCP client config for Claude Desktop */}
                     <div className="mt-3">
-                      <p className="text-xs text-gray-400 mb-1">Claude Desktop / Cursor config:</p>
+                      <p className="text-xs text-gray-400 mb-1">{t('newToken.configLabel')}</p>
                       <div className="relative">
                         <pre className="p-3 rounded bg-gray-900 border border-gray-700 text-xs text-gray-300 font-mono overflow-x-auto whitespace-pre">{`{
   "mcpServers": {
@@ -270,7 +271,7 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                           }
                           className="absolute top-2 right-2 px-2 py-1 text-xs rounded border border-gray-600 text-gray-400 hover:text-gray-200 hover:bg-gray-700 transition-colors"
                         >
-                          {copied === 'config-snippet' ? 'Copied!' : 'Copy'}
+                          {copied === 'config-snippet' ? t('copied') : t('copy')}
                         </button>
                       </div>
                     </div>
@@ -282,7 +283,7 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                 onClick={() => setNewlyGenerated(null)}
                 className="mt-3 text-xs text-gray-500 hover:text-gray-300 transition-colors"
               >
-                Dismiss
+                {t('newToken.dismiss')}
               </button>
             </div>
           </div>
@@ -290,7 +291,7 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
       )}
 
       {loading ? (
-        <div className="text-center py-8 text-gray-500 text-sm">Loading API keys...</div>
+        <div className="text-center py-8 text-gray-500 text-sm">{t('loading')}</div>
       ) : (
         profiles.map((profile) => {
           const profileTokens = tokensByProfile[profile.name] ?? [];
@@ -301,7 +302,7 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                   <h3 className="text-sm font-medium text-gray-200">{profile.label}</h3>
                   <span className="text-xs text-gray-500 font-mono">({profile.name})</span>
                   <span className="px-2 py-0.5 rounded-full text-xs bg-gray-700 text-gray-400">
-                    {profileTokens.length} API key{profileTokens.length !== 1 ? 's' : ''}
+                    {t('apiKeyCount', { count: profileTokens.length })}
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5">
@@ -317,10 +318,10 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                     }}
                     className="px-4 py-2 rounded-lg bg-os-700 hover:bg-os-600 text-white text-sm font-medium transition-all duration-200"
                   >
-                    Generate API Key
+                    {t('generateButton')}
                   </button>
                   <HelpTip
-                    content="Generate a new API key for this MCP server. The key will only be displayed once."
+                    content={t('generateHelpTip')}
                     position="left"
                     maxWidth={280}
                     size="xs"
@@ -333,12 +334,12 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                 <div className="px-4 py-3 border-b border-white/5 bg-gray-800/30">
                   <div className="flex items-end gap-3">
                     <div className="flex-1">
-                      <label className="block eyebrow mb-1">API Key Label</label>
+                      <label className="block eyebrow mb-1">{t('generateForm.labelField')}</label>
                       <input
                         type="text"
                         value={newLabel}
                         onChange={(e) => setNewLabel(e.target.value)}
-                        placeholder="e.g. Claude Desktop, CI/CD..."
+                        placeholder={t('generateForm.labelPlaceholder')}
                         className="input-editorial w-full text-sm"
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') handleGenerate(profile.name);
@@ -356,13 +357,9 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                         disabled={generating || !newLabel.trim()}
                         className="px-4 py-2 rounded-lg bg-os-700 hover:bg-os-600 text-white text-sm font-medium transition-all duration-200 disabled:opacity-50"
                       >
-                        {generating ? 'Generating...' : 'Create'}
+                        {generating ? t('generateForm.generating') : t('generateForm.create')}
                       </button>
-                      <HelpTip
-                        content="Create the API key with the given label. This key will authenticate a specific MCP client."
-                        position="top"
-                        size="xs"
-                      />
+                      <HelpTip content={t('generateForm.createHelpTip')} position="top" size="xs" />
                     </div>
                     <button
                       onClick={() => {
@@ -371,7 +368,7 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                       }}
                       className="px-3 py-2 rounded-lg border border-white/10 text-gray-400 hover:text-gray-200 text-sm transition-colors"
                     >
-                      Cancel
+                      {tCommon('cancel')}
                     </button>
                   </div>
                 </div>
@@ -399,10 +396,10 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                                   }}
                                   className="text-xs text-os-400 hover:text-os-300 transition-colors"
                                 >
-                                  Reveal
+                                  {t('tokenRow.reveal')}
                                 </button>
                                 <HelpTip
-                                  content="Reveal the full API key value (admin password required)"
+                                  content={t('tokenRow.revealHelpTip')}
                                   position="top"
                                   size="xs"
                                 />
@@ -410,8 +407,14 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                             )}
                           </div>
                           <div className="flex items-center gap-3 text-xs text-gray-500">
-                            <span>Created {formatDate(tok.createdAt)}</span>
-                            {tok.lastUsedAt && <span>Last used {formatDate(tok.lastUsedAt)}</span>}
+                            <span>
+                              {t('tokenRow.created', { date: formatDate(tok.createdAt) })}
+                            </span>
+                            {tok.lastUsedAt && (
+                              <span>
+                                {t('tokenRow.lastUsed', { date: formatDate(tok.lastUsedAt) })}
+                              </span>
+                            )}
                           </div>
                         </div>
                         <div className="flex items-center gap-1.5">
@@ -423,13 +426,15 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                                 : 'bg-red-600/20 text-red-400 hover:bg-red-600/30'
                             }`}
                           >
-                            {confirmRevoke === tok.id ? 'Confirm Revoke' : 'Revoke'}
+                            {confirmRevoke === tok.id
+                              ? t('tokenRow.confirmRevoke')
+                              : t('tokenRow.revoke')}
                           </button>
                           <HelpTip
                             content={
                               confirmRevoke === tok.id
-                                ? 'Click a second time to confirm permanently revoking this API key.'
-                                : 'Revoke this API key — clients using it will be disconnected immediately.'
+                                ? t('tokenRow.confirmRevokeHelpTip')
+                                : t('tokenRow.revokeHelpTip')
                             }
                             position="left"
                             maxWidth={280}
@@ -441,15 +446,13 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                       {/* Inline admin password prompt */}
                       {revealingTokenId === tok.id && !revealedTokens[tok.id] && (
                         <div className="mt-2 p-3 rounded-lg border border-os-600/40 bg-os-900/20 space-y-2">
-                          <p className="text-xs text-gray-300">
-                            Enter admin password to reveal this API key.
-                          </p>
+                          <p className="text-xs text-gray-300">{t('tokenRow.revealPrompt')}</p>
                           <div className="flex gap-2">
                             <input
                               type="password"
                               value={revealPassword}
                               onChange={(e) => setRevealPassword(e.target.value)}
-                              placeholder="Admin password"
+                              placeholder={t('tokenRow.passwordPlaceholder')}
                               autoFocus
                               onKeyDown={(e) => {
                                 if (e.key === 'Enter') handleReveal(tok.id);
@@ -465,7 +468,7 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                               onClick={() => handleReveal(tok.id)}
                               className="px-3 py-1 text-xs rounded-lg bg-os-700 hover:bg-os-600 text-white transition-all duration-200"
                             >
-                              OK
+                              {t('tokenRow.ok')}
                             </button>
                             <button
                               onClick={() => {
@@ -475,7 +478,7 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                               }}
                               className="px-3 py-1 text-xs rounded-lg border border-gray-700 text-gray-400 hover:text-gray-200 transition-colors"
                             >
-                              Cancel
+                              {tCommon('cancel')}
                             </button>
                           </div>
                           {revealError && <p className="text-xs text-red-400">{revealError}</p>}
@@ -491,10 +494,10 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                             </code>
                             <button
                               onClick={() => handleCopy(revealedTokens[tok.id], `reveal-${tok.id}`)}
-                              title="Copy the API key to the clipboard"
+                              title={t('tokenRow.copyTooltip')}
                               className="text-xs text-gray-400 hover:text-gray-200 transition-colors flex-shrink-0"
                             >
-                              {copied === `reveal-${tok.id}` ? 'Copied!' : 'Copy'}
+                              {copied === `reveal-${tok.id}` ? t('copied') : t('copy')}
                             </button>
                             <button
                               onClick={() =>
@@ -506,7 +509,7 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                               }
                               className="text-xs text-gray-500 hover:text-gray-300 transition-colors flex-shrink-0"
                             >
-                              Hide
+                              {t('tokenRow.hide')}
                             </button>
                           </div>
                         </div>
@@ -515,9 +518,7 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                   ))}
                 </div>
               ) : (
-                <div className="px-4 py-6 text-center text-gray-500 text-sm">
-                  No API keys for this MCP server. Generate one to connect MCP clients.
-                </div>
+                <div className="px-4 py-6 text-center text-gray-500 text-sm">{t('emptyState')}</div>
               )}
             </div>
           );
@@ -526,18 +527,14 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
 
       {/* Endpoint URL reference */}
       <div className="card-primary p-4">
-        <h3 className="eyebrow mb-2">MCP Endpoints</h3>
+        <h3 className="eyebrow mb-2">{t('endpoints.heading')}</h3>
         <p className="text-xs text-gray-500 mb-3">
-          Each profile has its own MCP endpoint
-          {getCurrentTenant() !== 'default' && (
-            <>
-              {' '}
-              — URLs include the workspace id (
-              <code className="text-os-400">{getCurrentTenant()}</code>) so external MCP clients
-              reach the right workspace
-            </>
-          )}
-          :
+          {getCurrentTenant() !== 'default'
+            ? t.rich('endpoints.descriptionTenant', {
+                tenant: getCurrentTenant(),
+                code: (chunks) => <code className="text-os-400">{chunks}</code>,
+              })
+            : t('endpoints.descriptionDefault')}
         </p>
         <div className="space-y-1">
           {profiles.map((profile) => {
@@ -548,10 +545,10 @@ export default function TokenManager({ profiles, port }: TokenManagerProps) {
                 <code className="text-xs text-os-400 font-mono">{url}</code>
                 <button
                   onClick={() => handleCopy(url, `url-${profile.name}`)}
-                  title="Copy the MCP endpoint URL to the clipboard"
+                  title={t('endpoints.copyTooltip')}
                   className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
                 >
-                  {copied === `url-${profile.name}` ? 'Copied!' : 'Copy'}
+                  {copied === `url-${profile.name}` ? t('copied') : t('copy')}
                 </button>
               </div>
             );

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslations } from 'use-intl/react';
 import { apiFetch } from '../lib/api.js';
 import { Eyebrow } from './ui/Eyebrow.js';
 
@@ -25,28 +26,32 @@ interface ActivateResult {
   mcpUrls: Array<{ profileName: string; url: string }>;
 }
 
-/** Returns a password strength level (0-3) and a label */
-function passwordStrength(pw: string): { level: number; label: string; color: string } {
-  if (pw.length === 0) return { level: 0, label: '', color: '' };
-  if (pw.length < 8) return { level: 1, label: 'Too short', color: 'bg-rose-500' };
-  if (pw.length < 12) return { level: 2, label: 'Fair', color: 'bg-amber-400' };
-  if (pw.length < 16) return { level: 3, label: 'Good', color: 'bg-emerald-400' };
-  return { level: 4, label: 'Strong', color: 'bg-emerald-400' };
+type PasswordStrengthKey = 'tooShort' | 'fair' | 'good' | 'strong' | null;
+
+/** Returns a password strength level (0-3) and a translation key for the label */
+function passwordStrength(pw: string): { level: number; key: PasswordStrengthKey; color: string } {
+  if (pw.length === 0) return { level: 0, key: null, color: '' };
+  if (pw.length < 8) return { level: 1, key: 'tooShort', color: 'bg-rose-500' };
+  if (pw.length < 12) return { level: 2, key: 'fair', color: 'bg-amber-400' };
+  if (pw.length < 16) return { level: 3, key: 'good', color: 'bg-emerald-400' };
+  return { level: 4, key: 'strong', color: 'bg-emerald-400' };
 }
 
+type AccessModeBadgeKey = 'mcp' | 'chat' | 'mcpAndChat';
+
 /** Access mode badge styles */
-function accessModeBadge(mode: string): { label: string; className: string } {
+function accessModeBadge(mode: string): { key: AccessModeBadgeKey; className: string } {
   if (mode === 'mcp') {
-    return { label: 'MCP', className: 'bg-os-500/10 text-os-300 border border-os-500/20' };
+    return { key: 'mcp', className: 'bg-os-500/10 text-os-300 border border-os-500/20' };
   }
   if (mode === 'chat') {
     return {
-      label: 'Chat',
+      key: 'chat',
       className: 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/20',
     };
   }
   return {
-    label: 'MCP + Chat',
+    key: 'mcpAndChat',
     className:
       'bg-gradient-to-r from-os-500/10 to-emerald-500/10 text-os-200 border border-os-500/20',
   };
@@ -72,6 +77,7 @@ function buildConfigSnippet(result: ActivateResult): string {
 }
 
 export default function WelcomePage({ code }: WelcomePageProps) {
+  const t = useTranslations('onboarding.welcome');
   const [data, setData] = useState<OnboardingData | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -91,10 +97,10 @@ export default function WelcomePage({ code }: WelcomePageProps) {
         if (result.success) {
           setData(result);
         } else {
-          setError(result.message || 'Invalid onboarding link.');
+          setError(result.message || t('errors.invalidLink'));
         }
       } catch {
-        setError('Failed to load onboarding data.');
+        setError(t('errors.loadFailed'));
       } finally {
         setLoading(false);
       }
@@ -104,11 +110,11 @@ export default function WelcomePage({ code }: WelcomePageProps) {
   const handleActivate = async () => {
     setPasswordError('');
     if (password.length < 8) {
-      setPasswordError('Password must be at least 8 characters.');
+      setPasswordError(t('errors.passwordTooShort'));
       return;
     }
     if (password !== confirmPassword) {
-      setPasswordError('Passwords do not match.');
+      setPasswordError(t('errors.passwordMismatch'));
       return;
     }
     setActivating(true);
@@ -123,10 +129,10 @@ export default function WelcomePage({ code }: WelcomePageProps) {
         setActivateResult(result);
         setActivated(true);
       } else {
-        setError(result.message || 'Failed to activate.');
+        setError(result.message || t('errors.activateFailed'));
       }
     } catch {
-      setError('Connection error.');
+      setError(t('errors.connectionError'));
     } finally {
       setActivating(false);
     }
@@ -158,7 +164,9 @@ export default function WelcomePage({ code }: WelcomePageProps) {
               d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
             />
           </svg>
-          <span className="font-mono-plex text-xs tracking-widest uppercase">Loading</span>
+          <span className="font-mono-plex text-xs tracking-widest uppercase">
+            {t('loadingState')}
+          </span>
         </div>
       </div>
     );
@@ -184,10 +192,10 @@ export default function WelcomePage({ code }: WelcomePageProps) {
             </svg>
           </div>
           <p className="font-mono-plex text-[10px] uppercase tracking-[0.25em] text-rose-400/70 mb-2">
-            Invalid Link
+            {t('errorState.invalidLinkLabel')}
           </p>
           <h1 className="font-display text-2xl font-light text-white mb-3">
-            Something went wrong.
+            {t('errorState.heading')}
           </h1>
           <p className="text-gray-400 text-sm leading-relaxed">{error}</p>
         </div>
@@ -202,9 +210,9 @@ export default function WelcomePage({ code }: WelcomePageProps) {
   const currentStep = activated ? 3 : 2;
 
   const steps = [
-    { n: 1, label: 'Verify access' },
-    { n: 2, label: 'Set password' },
-    { n: 3, label: 'Get your access token' },
+    { n: 1, label: t('leftColumn.steps.verifyAccess') },
+    { n: 2, label: t('leftColumn.steps.setPassword') },
+    { n: 3, label: t('leftColumn.steps.getAccessToken') },
   ];
 
   return (
@@ -222,18 +230,18 @@ export default function WelcomePage({ code }: WelcomePageProps) {
           {/* Top — logo + headline */}
           <div className="animate-fade-in-up">
             <div className="mb-4">
-              <Eyebrow accent>MCP ACCESS</Eyebrow>
+              <Eyebrow accent>{t('leftColumn.eyebrow')}</Eyebrow>
             </div>
             <p className="font-display text-4xl font-light text-white tracking-tight mb-8">
               Calame
             </p>
             <h1 className="font-display font-light text-6xl leading-[0.95] text-white mb-5">
-              Welcome,
+              {t('leftColumn.welcomeHeading')}
               <br />
               <span className="text-os-300">{user.name}.</span>
             </h1>
             <p className="text-gray-400 max-w-sm leading-relaxed text-sm">
-              Activate your account to access your MCP servers.
+              {t('leftColumn.subheading')}
             </p>
           </div>
 
@@ -280,7 +288,7 @@ export default function WelcomePage({ code }: WelcomePageProps) {
                     </p>
                     {isActive && (
                       <span className="font-mono-plex text-[9px] uppercase tracking-widest text-os-400">
-                        Current step
+                        {t('leftColumn.currentStepLabel')}
                       </span>
                     )}
                   </div>
@@ -294,7 +302,7 @@ export default function WelcomePage({ code }: WelcomePageProps) {
             className="font-mono-plex text-[10px] text-gray-700 tracking-wider animate-fade-in-up"
             style={{ animationDelay: '160ms' }}
           >
-            Powered by Calame
+            {t('leftColumn.poweredBy')}
           </p>
         </div>
 
@@ -310,7 +318,7 @@ export default function WelcomePage({ code }: WelcomePageProps) {
           {/* Section — Your Access */}
           <div className="animate-fade-in-up" style={{ animationDelay: '80ms' }}>
             <div className="flex items-center gap-3 mb-4 hairline pt-4">
-              <Eyebrow>Your Access</Eyebrow>
+              <Eyebrow>{t('rightColumn.yourAccessEyebrow')}</Eyebrow>
             </div>
             <div className="space-y-2">
               {user.profiles.map((p) => {
@@ -327,12 +335,12 @@ export default function WelcomePage({ code }: WelcomePageProps) {
                       <span
                         className={`font-mono-plex text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full ${badge.className}`}
                       >
-                        {badge.label}
+                        {t(`accessModeBadge.${badge.key}`)}
                       </span>
                     </div>
                     {p.tables.length > 0 && (
                       <span className="font-mono-plex text-[10px] text-gray-500 bg-white/5 px-2 py-0.5 rounded-full shrink-0 ml-3">
-                        {p.tables.length} table{p.tables.length > 1 ? 's' : ''}
+                        {t('rightColumn.tableCount', { count: p.tables.length })}
                       </span>
                     )}
                   </div>
@@ -348,11 +356,9 @@ export default function WelcomePage({ code }: WelcomePageProps) {
               style={{ animationDelay: '160ms' }}
             >
               <h2 className="font-display text-2xl font-light text-white mb-1">
-                Set up your account
+                {t('rightColumn.setup.title')}
               </h2>
-              <p className="text-gray-500 text-sm mb-6">
-                Choose a password to secure your Calame account.
-              </p>
+              <p className="text-gray-500 text-sm mb-6">{t('rightColumn.setup.description')}</p>
 
               <div className="space-y-4 max-w-sm">
                 <div>
@@ -360,7 +366,7 @@ export default function WelcomePage({ code }: WelcomePageProps) {
                     className="block font-mono-plex text-[10px] uppercase tracking-widest text-gray-500 mb-2"
                     htmlFor="password"
                   >
-                    Password
+                    {t('rightColumn.setup.passwordLabel')}
                   </label>
                   <input
                     id="password"
@@ -368,7 +374,7 @@ export default function WelcomePage({ code }: WelcomePageProps) {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     className="input-editorial w-full text-sm"
-                    placeholder="Minimum 8 characters"
+                    placeholder={t('rightColumn.setup.passwordPlaceholder')}
                     minLength={8}
                     autoComplete="new-password"
                   />
@@ -385,9 +391,9 @@ export default function WelcomePage({ code }: WelcomePageProps) {
                           />
                         ))}
                       </div>
-                      {pwStrength.label && (
+                      {pwStrength.key && (
                         <p className="font-mono-plex text-[10px] text-gray-500">
-                          {pwStrength.label}
+                          {t(`passwordStrength.${pwStrength.key}`)}
                         </p>
                       )}
                     </div>
@@ -399,7 +405,7 @@ export default function WelcomePage({ code }: WelcomePageProps) {
                     className="block font-mono-plex text-[10px] uppercase tracking-widest text-gray-500 mb-2"
                     htmlFor="confirm-password"
                   >
-                    Confirm password
+                    {t('rightColumn.setup.confirmPasswordLabel')}
                   </label>
                   <input
                     id="confirm-password"
@@ -407,7 +413,7 @@ export default function WelcomePage({ code }: WelcomePageProps) {
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     className="input-editorial w-full text-sm"
-                    placeholder="Repeat your password"
+                    placeholder={t('rightColumn.setup.confirmPasswordPlaceholder')}
                     autoComplete="new-password"
                   />
                 </div>
@@ -422,13 +428,13 @@ export default function WelcomePage({ code }: WelcomePageProps) {
                   onClick={handleActivate}
                   disabled={!password || !confirmPassword || activating}
                   className="flex items-center justify-center gap-2 w-full py-3 px-6 bg-gradient-to-r from-os-600 to-os-500 hover:from-os-500 hover:to-os-400 disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-os-600/20 text-white font-medium tracking-wide rounded-lg transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-os-500/50"
-                  aria-label="Activate my account"
+                  aria-label={t('rightColumn.setup.activateAriaLabel')}
                 >
                   {activating ? (
-                    'Activating…'
+                    t('rightColumn.setup.activating')
                   ) : (
                     <>
-                      Activate My Account
+                      {t('rightColumn.setup.activateButton')}
                       <svg
                         className="w-4 h-4"
                         viewBox="0 0 16 16"
@@ -446,7 +452,7 @@ export default function WelcomePage({ code }: WelcomePageProps) {
                 </button>
 
                 <p className="font-mono-plex text-[10px] text-gray-600 text-center tracking-wide">
-                  You will receive your MCP access token after activation.
+                  {t('rightColumn.setup.footerNote')}
                 </p>
               </div>
             </div>
@@ -471,9 +477,11 @@ export default function WelcomePage({ code }: WelcomePageProps) {
                   </div>
                   <div>
                     <span className="font-mono-plex text-[10px] uppercase tracking-[0.3em] text-emerald-400">
-                      Account Activated
+                      {t('rightColumn.activated.badge')}
                     </span>
-                    <p className="text-gray-500 text-xs mt-0.5">Your credentials have been set.</p>
+                    <p className="text-gray-500 text-xs mt-0.5">
+                      {t('rightColumn.activated.credentialsSet')}
+                    </p>
                   </div>
                 </div>
 
@@ -487,7 +495,7 @@ export default function WelcomePage({ code }: WelcomePageProps) {
 
                   <div className="relative">
                     <div className="flex items-center gap-2 mb-1">
-                      <Eyebrow accent>Your Access Token</Eyebrow>
+                      <Eyebrow accent>{t('rightColumn.activated.tokenEyebrow')}</Eyebrow>
                     </div>
                     <div className="flex items-center gap-2 mb-4">
                       <svg
@@ -503,7 +511,7 @@ export default function WelcomePage({ code }: WelcomePageProps) {
                         />
                       </svg>
                       <span className="font-mono-plex text-[10px] uppercase tracking-[0.2em] text-amber-400/80">
-                        Copy it now — you can reveal it later from your account with your password
+                        {t('rightColumn.activated.tokenWarning')}
                       </span>
                     </div>
 
@@ -516,9 +524,9 @@ export default function WelcomePage({ code }: WelcomePageProps) {
                       <button
                         onClick={() => copyToClipboard(activateResult.plaintextToken, 'token')}
                         className="shrink-0 px-4 py-3 bg-os-600/20 hover:bg-os-600/30 border border-os-500/20 text-os-300 text-xs font-mono-plex rounded-lg transition-all duration-200 focus:outline-none focus:ring-1 focus:ring-os-500/40"
-                        aria-label="Copy token to clipboard"
+                        aria-label={t('rightColumn.activated.copyTokenAriaLabel')}
                       >
-                        {copied === 'token' ? 'Copied!' : 'Copy'}
+                        {copied === 'token' ? t('copied') : t('copy')}
                       </button>
                     </div>
                   </div>
@@ -528,7 +536,7 @@ export default function WelcomePage({ code }: WelcomePageProps) {
                 {activateResult.mcpUrls.length > 0 && (
                   <div className="card-primary p-6">
                     <div className="flex items-center justify-between mb-4">
-                      <Eyebrow>MCP Endpoints</Eyebrow>
+                      <Eyebrow>{t('rightColumn.activated.endpointsEyebrow')}</Eyebrow>
                       <button
                         onClick={() =>
                           copyToClipboard(
@@ -539,9 +547,9 @@ export default function WelcomePage({ code }: WelcomePageProps) {
                           )
                         }
                         className="font-mono-plex text-[10px] uppercase tracking-wider text-os-400/70 hover:text-os-300 transition-colors focus:outline-none"
-                        aria-label="Copy all endpoint URLs"
+                        aria-label={t('rightColumn.activated.copyAllAriaLabel')}
                       >
-                        {copied === 'all-urls' ? 'Copied!' : 'Copy all'}
+                        {copied === 'all-urls' ? t('copied') : t('copyAll')}
                       </button>
                     </div>
                     <div className="space-y-2">
@@ -561,9 +569,11 @@ export default function WelcomePage({ code }: WelcomePageProps) {
                           <button
                             onClick={() => copyToClipboard(m.url, m.profileName)}
                             className="shrink-0 px-2.5 py-1.5 bg-white/5 hover:bg-white/10 border border-white/5 text-gray-400 hover:text-gray-200 text-[10px] font-mono-plex rounded-md transition-all duration-200 focus:outline-none focus:ring-1 focus:ring-os-500/30"
-                            aria-label={`Copy URL for ${m.profileName}`}
+                            aria-label={t('rightColumn.activated.copyUrlAriaLabel', {
+                              profileName: m.profileName,
+                            })}
                           >
-                            {copied === m.profileName ? 'Done' : 'Copy'}
+                            {copied === m.profileName ? t('done') : t('copy')}
                           </button>
                         </div>
                       ))}
@@ -575,15 +585,15 @@ export default function WelcomePage({ code }: WelcomePageProps) {
                 {activateResult.mcpUrls.length > 0 && (
                   <div className="card-primary overflow-hidden">
                     <div className="flex items-center justify-between px-6 py-4 hairline-b">
-                      <Eyebrow>Configuration</Eyebrow>
+                      <Eyebrow>{t('rightColumn.activated.configEyebrow')}</Eyebrow>
                       <button
                         onClick={() =>
                           copyToClipboard(buildConfigSnippet(activateResult), 'config')
                         }
                         className="font-mono-plex text-[10px] uppercase tracking-wider text-os-400/70 hover:text-os-300 transition-colors focus:outline-none"
-                        aria-label="Copy configuration snippet"
+                        aria-label={t('rightColumn.activated.copyConfigAriaLabel')}
                       >
-                        {copied === 'config' ? 'Copied!' : 'Copy'}
+                        {copied === 'config' ? t('copied') : t('copy')}
                       </button>
                     </div>
                     <div className="relative">
@@ -597,7 +607,7 @@ export default function WelcomePage({ code }: WelcomePageProps) {
                     </div>
                     <div className="px-6 py-3 border-t border-white/[0.04]">
                       <p className="text-gray-500 text-xs">
-                        Add this to your MCP client configuration file.
+                        {t('rightColumn.activated.configFooterNote')}
                       </p>
                     </div>
                   </div>
@@ -609,7 +619,7 @@ export default function WelcomePage({ code }: WelcomePageProps) {
                     href="/login"
                     className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-os-600 to-os-500 hover:from-os-500 hover:to-os-400 text-white font-medium tracking-wide rounded-lg shadow-lg shadow-os-600/20 transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-os-500/50"
                   >
-                    Go to My Account
+                    {t('rightColumn.activated.goToAccountButton')}
                     <svg
                       className="w-4 h-4"
                       viewBox="0 0 16 16"
@@ -624,7 +634,7 @@ export default function WelcomePage({ code }: WelcomePageProps) {
                     </svg>
                   </a>
                   <p className="font-mono-plex text-[10px] text-gray-600 mt-3 tracking-wide">
-                    Sign in anytime with your email and password.
+                    {t('rightColumn.activated.signInNote')}
                   </p>
                 </div>
               </div>

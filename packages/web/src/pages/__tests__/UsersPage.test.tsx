@@ -1,9 +1,9 @@
 // UsersPage component tests (Phase 3 #16).
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { screen, fireEvent } from '@testing-library/react';
 import UsersPage from '../UsersPage.js';
-import { makeProfile, installFetchMock, flushEffects } from './testUtils.js';
+import { render, makeProfile, installFetchMock, flushEffects } from './testUtils.js';
 
 function renderPage(setView = vi.fn()) {
   render(<UsersPage view={{ page: 'users' }} setView={setView} profiles={[makeProfile()]} />);

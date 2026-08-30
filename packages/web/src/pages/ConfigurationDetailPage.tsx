@@ -4,6 +4,7 @@
 
 import { useState, useMemo, useEffect, lazy, Suspense } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
+import { useTranslations } from 'use-intl/react';
 import { apiFetch } from '../lib/api.js';
 import { Button, EmptyState, Eyebrow, Breadcrumb } from '../components/ui/index.js';
 import HelpTip from '../components/HelpTip.js';
@@ -39,11 +40,8 @@ const RagAccessSelector = lazy(() =>
     .then((m) => ({ default: m.RagAccessSelector }))
     .catch(() => ({
       default: function RagAccessSelectorUnavailable() {
-        return (
-          <div className="p-6 text-sm text-gray-400 text-center">
-            RAG features are not available on this instance.
-          </div>
-        );
+        const t = useTranslations('configurationDetail');
+        return <div className="p-6 text-sm text-gray-400 text-center">{t('ragUnavailable')}</div>;
       },
     })),
 );
@@ -86,9 +84,12 @@ export default function ConfigurationDetailPage({
   handleGlobalMaskingRulesChange,
 }: ConfigurationDetailPageProps) {
   const { ragEnabled } = useSession();
+  const t = useTranslations('configurationDetail');
+  const tCommon = useTranslations('common');
   // Reported up from ConfigurationDetailView (Lot D3) so the breadcrumb and
   // "manage connections" links can warn before discarding unsaved edits.
   const [isDirty, setIsDirty] = useState(false);
+  const guardedNav = (fn: () => void) => guardedNavigate(isDirty, fn, t('unsavedChangesConfirm'));
 
   return (
     <div className="max-w-7xl mx-auto">
@@ -96,25 +97,24 @@ export default function ConfigurationDetailPage({
         className="mb-4"
         items={[
           {
-            label: 'Dashboard',
-            onClick: () => guardedNavigate(isDirty, () => setView({ page: 'dashboard' })),
+            label: tCommon('dashboard'),
+            onClick: () => guardedNav(() => setView({ page: 'dashboard' })),
           },
           ...(view.backTo?.page === 'mcp-detail'
             ? [
                 {
-                  label: 'MCP Servers',
-                  onClick: () => guardedNavigate(isDirty, () => setView({ page: 'mcp-list' })),
+                  label: t('breadcrumb.mcpServers'),
+                  onClick: () => guardedNav(() => setView({ page: 'mcp-list' })),
                 },
                 {
-                  label: 'Server',
-                  onClick: () => guardedNavigate(isDirty, () => setView(view.backTo!)),
+                  label: t('breadcrumb.server'),
+                  onClick: () => guardedNav(() => setView(view.backTo!)),
                 },
               ]
             : [
                 {
-                  label: 'Data Configurations',
-                  onClick: () =>
-                    guardedNavigate(isDirty, () => setView({ page: 'configurations' })),
+                  label: t('breadcrumb.dataConfigurations'),
+                  onClick: () => guardedNav(() => setView({ page: 'configurations' })),
                 },
               ]),
           {
@@ -138,12 +138,10 @@ export default function ConfigurationDetailPage({
         onPiiOverride={handlePiiOverride}
         onGlobalMaskingRulesChange={handleGlobalMaskingRulesChange}
         onNavigateToConnections={() =>
-          guardedNavigate(isDirty, () => setView({ page: 'connections', backTo: view }))
+          guardedNav(() => setView({ page: 'connections', backTo: view }))
         }
         onNavigateToEditConnection={(c: string) =>
-          guardedNavigate(isDirty, () =>
-            setView({ page: 'connections', backTo: view, editConnectionName: c }),
-          )
+          guardedNav(() => setView({ page: 'connections', backTo: view, editConnectionName: c }))
         }
         onDirtyChange={setIsDirty}
         ragEnabled={ragEnabled}
@@ -199,6 +197,8 @@ function ConfigurationDetailView({
   ragEnabled = false,
   onDirtyChange,
 }: ConfigurationDetailViewProps) {
+  const t = useTranslations('configurationDetail');
+  const tCommon = useTranslations('common');
   const config = configurations.find((c) => c.name === configName);
 
   // Local editing state
@@ -439,7 +439,7 @@ function ConfigurationDetailView({
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } else {
-      setSaveError('Save failed — check console for details.');
+      setSaveError(t('header.saveFailed'));
       setTimeout(() => setSaveError(null), 5000);
     }
   };
@@ -494,7 +494,7 @@ function ConfigurationDetailView({
   };
 
   if (!config && configName) {
-    return <EmptyState title={`Configuration "${configName}" not found.`} className="py-10" />;
+    return <EmptyState title={t('notFound', { name: configName })} className="py-10" />;
   }
 
   const tableCount = Object.keys(localSelectedTables).length;
@@ -519,7 +519,7 @@ function ConfigurationDetailView({
                   className="input-editorial text-lg font-semibold border-os-500"
                 />
                 <Button variant="ghost" size="sm" onClick={() => setEditingLabel(false)}>
-                  OK
+                  {t('header.confirmLabel')}
                 </Button>
               </div>
             ) : (
@@ -546,16 +546,12 @@ function ConfigurationDetailView({
                     {configName}
                   </span>
                 )}
-                <HelpTip
-                  content="Click to rename this Data Configuration"
-                  position="right"
-                  size="xs"
-                />
+                <HelpTip content={t('header.renameHint')} position="right" size="xs" />
               </h2>
             )}
             <p className="text-sm text-gray-500 mt-1">
-              {[...selectedConns].length} source{[...selectedConns].length !== 1 ? 's' : ''}{' '}
-              &middot; {tableCount} table{tableCount !== 1 ? 's' : ''}
+              {t('header.sourceCount', { count: selectedConns.size })} ·{' '}
+              {t('header.tableCount', { count: tableCount })}
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -563,7 +559,7 @@ function ConfigurationDetailView({
             <Button
               onClick={handleSave}
               disabled={!isDirty}
-              title={!isDirty ? 'No changes' : undefined}
+              title={!isDirty ? t('header.noChanges') : undefined}
               variant={saved ? 'ghost' : saveError ? 'ghost' : 'primary'}
               className={
                 saved
@@ -574,12 +570,12 @@ function ConfigurationDetailView({
               }
             >
               {saved ? (
-                'Saved!'
+                t('header.saved')
               ) : saveError ? (
-                'Error'
+                t('header.error')
               ) : (
                 <>
-                  Save changes
+                  {t('header.saveChanges')}
                   {isDirty && (
                     <span
                       aria-hidden="true"
@@ -591,18 +587,22 @@ function ConfigurationDetailView({
             </Button>
             {confirmDelete ? (
               <div className="flex items-center gap-1">
-                <span className="text-xs text-gray-400 mr-1">Are you sure?</span>
+                <span className="text-xs text-gray-400 mr-1">
+                  {t('header.confirmDeleteQuestion')}
+                </span>
                 <Button variant="danger" size="sm" onClick={handleDelete} disabled={deleting}>
-                  {deleting ? 'Deleting...' : 'Yes, delete'}
+                  {deleting ? t('header.deleting') : t('header.yesDelete')}
                 </Button>
                 <Button variant="secondary" size="sm" onClick={() => setConfirmDelete(false)}>
-                  Cancel
+                  {tCommon('cancel')}
                 </Button>
               </div>
             ) : (
               <button
-                onClick={() => guardedNavigate(isDirty, () => setConfirmDelete(true))}
-                title="Delete this Data Configuration"
+                onClick={() =>
+                  guardedNavigate(isDirty, () => setConfirmDelete(true), t('unsavedChangesConfirm'))
+                }
+                title={t('header.deleteTitle')}
                 className="p-2 text-gray-500 hover:text-rose-400 transition-all duration-200 rounded-lg hover:bg-rose-500/10"
               >
                 <svg
@@ -629,8 +629,8 @@ function ConfigurationDetailView({
         <div className="flex gap-0">
           {(
             [
-              { id: 'databases', label: 'Databases', disabled: false },
-              { id: 'knowledge', label: 'Knowledge bases', disabled: !ragEnabled },
+              { id: 'databases', label: t('tabs.databases'), disabled: false },
+              { id: 'knowledge', label: t('tabs.knowledgeBases'), disabled: !ragEnabled },
             ] as const
           ).map((tab) => {
             const isActive = activeConfigTab === tab.id;
@@ -641,7 +641,7 @@ function ConfigurationDetailView({
                   type="button"
                   disabled
                   aria-disabled="true"
-                  title="RAG knowledge bases are not available on this instance."
+                  title={t('tabs.knowledgeDisabledTitle')}
                   className="px-5 py-3 text-sm font-medium border-b-2 border-transparent text-gray-600 cursor-not-allowed opacity-50"
                 >
                   {tab.label}
@@ -674,14 +674,14 @@ function ConfigurationDetailView({
           {/* Connections selection */}
           <div className="card-primary p-4">
             <div className="mb-3">
-              <Eyebrow>Databases</Eyebrow>
+              <Eyebrow>{t('tabs.databases')}</Eyebrow>
             </div>
             {availableConnectionNames.length === 0 ? (
               <div className="text-center py-4">
-                <p className="text-sm text-gray-500 mb-3">No databases connected yet.</p>
+                <p className="text-sm text-gray-500 mb-3">{t('databasesTab.noDatabases')}</p>
                 {onNavigateToConnections && (
                   <Button variant="primary" onClick={onNavigateToConnections}>
-                    + Add a Database
+                    {t('databasesTab.addDatabase')}
                   </Button>
                 )}
               </div>
@@ -709,7 +709,9 @@ function ConfigurationDetailView({
                           {conn?.label ?? connName}
                           {hasSchema && (
                             <span className="text-xs text-gray-500">
-                              ({connectionSchemas[connName].tables.length} tables)
+                              {t('tablesCount', {
+                                count: connectionSchemas[connName].tables.length,
+                              })}
                             </span>
                           )}
                         </button>
@@ -719,7 +721,7 @@ function ConfigurationDetailView({
                               e.stopPropagation();
                               onNavigateToEditConnection(connName);
                             }}
-                            title="Edit this source's settings"
+                            title={t('databasesTab.editSourceTitle')}
                             className="p-0.5 text-gray-500 hover:text-os-400 transition-colors"
                           >
                             <svg
@@ -746,7 +748,7 @@ function ConfigurationDetailView({
                     onClick={() => onNavigateToConnections()}
                     className="text-xs text-os-400 hover:text-os-300 transition-colors mt-2 inline-flex items-center gap-1"
                   >
-                    Manage databases &rarr;
+                    {t('databasesTab.manageDatabases')}
                   </button>
                 )}
               </div>
@@ -780,7 +782,7 @@ function ConfigurationDetailView({
           {Object.keys(localSelectedTables).length > 0 && (
             <div className="card-primary p-4">
               <div className="mb-3">
-                <Eyebrow>Advanced: Table Options &amp; Masking</Eyebrow>
+                <Eyebrow>{t('databasesTab.advancedEyebrow')}</Eyebrow>
               </div>
               <ConfigPanel
                 config={{
@@ -837,7 +839,7 @@ function ConfigurationDetailView({
                     d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                   />
                 </svg>
-                Loading…
+                {tCommon('loading')}
               </div>
             }
           >

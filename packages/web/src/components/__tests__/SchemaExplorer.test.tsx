@@ -2,9 +2,17 @@
 // `tableOptions` prop that surfaces a compact R/W badge on selected tables.
 
 import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render as rtlRender, screen } from '@testing-library/react';
+import type { ReactElement } from 'react';
+import type { RenderOptions } from '@testing-library/react';
 import SchemaExplorer from '../SchemaExplorer.js';
+import { I18nProvider } from '../../i18n/I18nProvider.js';
 import type { DatabaseSchema } from '../../types/schema.js';
+
+/** Renders with the i18n context the component now requires. */
+function render(ui: ReactElement, options?: RenderOptions) {
+  return rtlRender(ui, { wrapper: I18nProvider, ...options });
+}
 
 const schema: DatabaseSchema = {
   tables: [

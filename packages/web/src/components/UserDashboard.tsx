@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslations } from 'use-intl/react';
 import { apiFetch } from '../lib/api.js';
 import type { AccessMode } from '../types/schema.js';
 import UserChatPanel from './UserChatPanel.js';
@@ -20,6 +21,7 @@ interface UserInfo {
 type DashboardView = 'chat' | 'profile';
 
 export default function UserDashboard({ onLogout }: { onLogout: () => void }) {
+  const t = useTranslations('users.dashboard');
   const branding = useBranding();
   const [user, setUser] = useState<UserInfo | null>(null);
   const [profiles, setProfiles] = useState<UserProfile[]>([]);
@@ -54,7 +56,7 @@ export default function UserDashboard({ onLogout }: { onLogout: () => void }) {
           if (data.chatEnabled) setChatEnabled(true);
         }
       } catch {
-        setError('Failed to load account data.');
+        setError(t('loadError'));
       } finally {
         setLoading(false);
       }
@@ -89,22 +91,17 @@ export default function UserDashboard({ onLogout }: { onLogout: () => void }) {
         setShowRevealPrompt(false);
         setRevealPassword('');
       } else {
-        setRevealError(data.message || 'Incorrect password.');
+        setRevealError(data.message || t('revealIncorrectPassword'));
       }
     } catch {
-      setRevealError('Connection error.');
+      setRevealError(t('connectionError'));
     } finally {
       setRevealLoading(false);
     }
   };
 
   const handleRegenerateToken = async () => {
-    if (
-      !confirm(
-        'Regenerate your access token? Your current token will stop working immediately. You will need to update your MCP client configuration.',
-      )
-    )
-      return;
+    if (!confirm(t('regenerateTokenConfirm'))) return;
     setError('');
     try {
       const res = await apiFetch('/api/auth/user-regenerate-token', {
@@ -118,7 +115,7 @@ export default function UserDashboard({ onLogout }: { onLogout: () => void }) {
         setError(data.message);
       }
     } catch {
-      setError('Failed to regenerate token.');
+      setError(t('regenerateTokenFailed'));
     }
   };
 
@@ -134,15 +131,15 @@ export default function UserDashboard({ onLogout }: { onLogout: () => void }) {
       });
       const data = await res.json();
       if (data.success) {
-        setPwMessage('Password updated successfully.');
+        setPwMessage(t('passwordUpdated'));
         setCurrentPw('');
         setNewPw('');
         setShowChangePassword(false);
       } else {
-        setPwMessage(data.message || 'Failed to change password.');
+        setPwMessage(data.message || t('passwordChangeFailed'));
       }
     } catch {
-      setPwMessage('Connection error.');
+      setPwMessage(t('connectionError'));
     }
   };
 
@@ -160,7 +157,7 @@ export default function UserDashboard({ onLogout }: { onLogout: () => void }) {
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
-        <div className="text-gray-400">Loading...</div>
+        <div className="text-gray-400">{t('loading')}</div>
       </div>
     );
   }
@@ -209,7 +206,7 @@ export default function UserDashboard({ onLogout }: { onLogout: () => void }) {
               onClick={handleLogout}
               className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-400 text-sm rounded-lg transition-colors border border-gray-700"
             >
-              Sign out
+              {t('signOut')}
             </button>
           </div>
         </div>
@@ -237,8 +234,8 @@ export default function UserDashboard({ onLogout }: { onLogout: () => void }) {
       {view === 'chat' && !hasChatAccess && chatProfiles.length > 0 && (
         <main className="flex-1 flex items-center justify-center p-6">
           <div className="text-center">
-            <p className="text-gray-400 mb-2">Chat is not yet configured by the administrator.</p>
-            <p className="text-sm text-gray-600">Contact your admin to enable AI chat.</p>
+            <p className="text-gray-400 mb-2">{t('chatNotConfigured')}</p>
+            <p className="text-sm text-gray-600">{t('contactAdmin')}</p>
           </div>
         </main>
       )}
@@ -266,20 +263,20 @@ export default function UserDashboard({ onLogout }: { onLogout: () => void }) {
                     d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18"
                   />
                 </svg>
-                Back to chat
+                {t('backToChat')}
               </button>
             )}
 
             {/* Profile info */}
             <div className="card-primary p-4">
-              <h2 className="heading-md mb-3">My Profile</h2>
+              <h2 className="heading-md mb-3">{t('profileHeading')}</h2>
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
-                  <span className="text-gray-500">Name</span>
+                  <span className="text-gray-500">{t('nameLabel')}</span>
                   <p className="text-white">{user?.name}</p>
                 </div>
                 <div>
-                  <span className="text-gray-500">Email</span>
+                  <span className="text-gray-500">{t('emailLabel')}</span>
                   <p className="text-white">{user?.email}</p>
                 </div>
               </div>
@@ -288,14 +285,16 @@ export default function UserDashboard({ onLogout }: { onLogout: () => void }) {
                   onClick={() => setShowChangePassword(!showChangePassword)}
                   className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm rounded transition-colors"
                 >
-                  Change Password
+                  {t('changePassword')}
                 </button>
               </div>
 
               {showChangePassword && (
                 <form onSubmit={handleChangePassword} className="mt-4 space-y-3 max-w-sm">
                   <div>
-                    <label className="block text-xs text-gray-400 mb-1">Current password</label>
+                    <label className="block text-xs text-gray-400 mb-1">
+                      {t('currentPasswordLabel')}
+                    </label>
                     <input
                       type="password"
                       value={currentPw}
@@ -305,7 +304,7 @@ export default function UserDashboard({ onLogout }: { onLogout: () => void }) {
                   </div>
                   <div>
                     <label className="block text-xs text-gray-400 mb-1">
-                      New password (min 8 characters)
+                      {t('newPasswordLabel')}
                     </label>
                     <input
                       type="password"
@@ -321,7 +320,7 @@ export default function UserDashboard({ onLogout }: { onLogout: () => void }) {
                     type="submit"
                     className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded"
                   >
-                    Update Password
+                    {t('updatePasswordButton')}
                   </button>
                 </form>
               )}
@@ -329,12 +328,12 @@ export default function UserDashboard({ onLogout }: { onLogout: () => void }) {
 
             {/* Token section */}
             <div className="card-primary p-4">
-              <h2 className="heading-md mb-3">My Access Token</h2>
+              <h2 className="heading-md mb-3">{t('tokenHeading')}</h2>
 
               {newToken ? (
                 <div className="bg-green-900/30 border border-green-700 rounded-lg p-4 mb-4">
                   <p className="text-green-300 text-sm font-medium mb-2">
-                    New access token generated — copy it now.
+                    {t('newTokenGenerated')}
                   </p>
                   <div className="flex items-center gap-2">
                     <code className="flex-1 bg-gray-900 px-3 py-2 rounded text-green-300 text-sm font-mono break-all">
@@ -344,7 +343,7 @@ export default function UserDashboard({ onLogout }: { onLogout: () => void }) {
                       onClick={() => copyToClipboard(newToken, 'token')}
                       className={`px-3 py-2 ${copied === 'token' ? 'bg-green-700 text-green-200' : 'bg-gray-700 hover:bg-gray-600 text-white'} text-sm rounded transition-colors`}
                     >
-                      {copied === 'token' ? 'Copied!' : 'Copy'}
+                      {copied === 'token' ? t('copied') : t('copy')}
                     </button>
                   </div>
                 </div>
@@ -359,7 +358,7 @@ export default function UserDashboard({ onLogout }: { onLogout: () => void }) {
                         onClick={() => setShowRevealPrompt(!showRevealPrompt)}
                         className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded transition-colors flex-shrink-0"
                       >
-                        Show
+                        {t('show')}
                       </button>
                     )}
                     {revealedToken && (
@@ -368,13 +367,13 @@ export default function UserDashboard({ onLogout }: { onLogout: () => void }) {
                           onClick={() => copyToClipboard(revealedToken, 'token')}
                           className={`px-3 py-2 ${copied === 'token' ? 'bg-green-700 text-green-200' : 'bg-gray-700 hover:bg-gray-600 text-white'} text-sm rounded transition-colors flex-shrink-0`}
                         >
-                          {copied === 'token' ? 'Copied!' : 'Copy'}
+                          {copied === 'token' ? t('copied') : t('copy')}
                         </button>
                         <button
                           onClick={() => setRevealedToken(null)}
                           className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded transition-colors flex-shrink-0"
                         >
-                          Hide
+                          {t('hide')}
                         </button>
                       </>
                     )}
@@ -383,15 +382,13 @@ export default function UserDashboard({ onLogout }: { onLogout: () => void }) {
                   {/* Password prompt to reveal token */}
                   {showRevealPrompt && !revealedToken && (
                     <div className="mt-2 p-3 rounded-lg border border-os-600/40 bg-os-900/20 space-y-2">
-                      <p className="text-xs text-gray-300">
-                        Enter your password to reveal your access token.
-                      </p>
+                      <p className="text-xs text-gray-300">{t('revealPrompt')}</p>
                       <div className="flex items-center gap-2">
                         <input
                           type="password"
                           value={revealPassword}
                           onChange={(e) => setRevealPassword(e.target.value)}
-                          placeholder="Your password"
+                          placeholder={t('passwordPlaceholder')}
                           autoFocus
                           className="input-editorial flex-1 text-sm"
                           onKeyDown={(e) => {
@@ -403,7 +400,7 @@ export default function UserDashboard({ onLogout }: { onLogout: () => void }) {
                           disabled={!revealPassword || revealLoading}
                           className="px-3 py-1.5 bg-os-700 hover:bg-os-600 disabled:opacity-50 rounded-lg text-sm font-medium transition-all duration-200"
                         >
-                          {revealLoading ? '...' : 'OK'}
+                          {revealLoading ? t('revealVerifying') : t('revealOk')}
                         </button>
                         <button
                           onClick={() => {
@@ -413,7 +410,7 @@ export default function UserDashboard({ onLogout }: { onLogout: () => void }) {
                           }}
                           className="px-2 py-1.5 text-gray-500 hover:text-gray-300 text-sm"
                         >
-                          Cancel
+                          {t('cancel')}
                         </button>
                       </div>
                       {revealError && <p className="text-xs text-red-400">{revealError}</p>}
@@ -427,7 +424,7 @@ export default function UserDashboard({ onLogout }: { onLogout: () => void }) {
                   onClick={handleRegenerateToken}
                   className="text-xs text-gray-400 hover:text-red-400 transition-colors"
                 >
-                  Regenerate access token
+                  {t('regenerateTokenLink')}
                 </button>
                 {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
               </div>
@@ -435,10 +432,10 @@ export default function UserDashboard({ onLogout }: { onLogout: () => void }) {
 
             {/* MCP Access */}
             <div className="card-primary p-4">
-              <h2 className="heading-md mb-3">My MCP Servers</h2>
+              <h2 className="heading-md mb-3">{t('mcpServersHeading')}</h2>
 
               {profiles.length === 0 ? (
-                <p className="text-sm text-gray-500">No MCP servers assigned to your account.</p>
+                <p className="text-sm text-gray-500">{t('noMcpServers')}</p>
               ) : (
                 <div className="space-y-4">
                   {profiles.map((p) => (
@@ -447,16 +444,16 @@ export default function UserDashboard({ onLogout }: { onLogout: () => void }) {
                         <h3 className="text-white font-medium">{p.profileName}</h3>
                         <span className="text-xs px-2 py-0.5 rounded bg-blue-900/50 text-blue-300 border border-blue-800">
                           {p.accessMode === 'both'
-                            ? 'MCP + Chat'
+                            ? t('accessModeBoth')
                             : p.accessMode === 'mcp'
-                              ? 'MCP only'
-                              : 'Chat only'}
+                              ? t('accessModeMcp')
+                              : t('accessModeChat')}
                         </span>
                       </div>
 
                       {p.mcpUrl && (
                         <div className="mb-3">
-                          <p className="text-xs text-gray-500 mb-1">Endpoint</p>
+                          <p className="text-xs text-gray-500 mb-1">{t('endpointLabel')}</p>
                           <div className="flex items-center gap-2">
                             <code className="flex-1 bg-gray-800 px-2 py-1 rounded text-blue-300 text-xs font-mono break-all">
                               {p.mcpUrl}
@@ -465,7 +462,7 @@ export default function UserDashboard({ onLogout }: { onLogout: () => void }) {
                               onClick={() => copyToClipboard(p.mcpUrl!, p.profileName + '-url')}
                               className={`px-2 py-1 ${copied === p.profileName + '-url' ? 'bg-green-700 text-green-200' : 'bg-gray-700 hover:bg-gray-600 text-white'} text-xs rounded transition-colors flex-shrink-0`}
                             >
-                              {copied === p.profileName + '-url' ? 'Copied!' : 'Copy'}
+                              {copied === p.profileName + '-url' ? t('copied') : t('copy')}
                             </button>
                           </div>
                         </div>
@@ -473,14 +470,14 @@ export default function UserDashboard({ onLogout }: { onLogout: () => void }) {
 
                       {p.allowedTables && (
                         <div className="mb-3">
-                          <p className="text-xs text-gray-500 mb-1">Accessible tables</p>
+                          <p className="text-xs text-gray-500 mb-1">{t('accessibleTablesLabel')}</p>
                           <div className="flex flex-wrap gap-1">
-                            {p.allowedTables.map((t) => (
+                            {p.allowedTables.map((tableName) => (
                               <span
-                                key={t}
+                                key={tableName}
                                 className="text-xs px-1.5 py-0.5 rounded bg-gray-800 text-gray-400 border border-gray-700"
                               >
-                                {t}
+                                {tableName}
                               </span>
                             ))}
                           </div>
@@ -491,7 +488,7 @@ export default function UserDashboard({ onLogout }: { onLogout: () => void }) {
                       {p.mcpUrl && (newToken || tokenPreview) && (
                         <details className="mt-2">
                           <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-300">
-                            Show configuration snippet
+                            {t('showConfigSnippet')}
                           </summary>
                           <pre className="mt-2 bg-gray-800 p-3 rounded text-xs text-gray-300 overflow-x-auto">
                             {JSON.stringify(

@@ -1,3 +1,4 @@
+import { useTranslations } from 'use-intl/react';
 import type { GlobalMaskingRule, PiiCategory, MaskingMode } from '../types/schema.js';
 import HelpTip from './HelpTip.js';
 
@@ -12,12 +13,12 @@ const PII_CATEGORIES: PiiCategory[] = [
   'ssn',
   'encrypted',
 ];
-const MASKING_MODES: { value: MaskingMode; label: string }[] = [
-  { value: 'exclude', label: 'Exclude' },
-  { value: 'hash', label: 'Hash' },
-  { value: 'truncate', label: 'Truncate' },
-  { value: 'replace', label: 'Replace' },
-  { value: 'aggregate_only', label: 'Aggregate only' },
+const MASKING_MODE_VALUES: MaskingMode[] = [
+  'exclude',
+  'hash',
+  'truncate',
+  'replace',
+  'aggregate_only',
 ];
 
 interface GlobalMaskingRulesProps {
@@ -26,6 +27,10 @@ interface GlobalMaskingRulesProps {
 }
 
 export default function GlobalMaskingRules({ rules, onRulesChange }: GlobalMaskingRulesProps) {
+  const t = useTranslations('settingsPanels.masking');
+  const MASKING_MODES: { value: MaskingMode; label: string }[] = MASKING_MODE_VALUES.map(
+    (value) => ({ value, label: t(`modes.${value}.label`) }),
+  );
   const addRule = () => {
     // Pick first category not already used
     const used = new Set(rules.map((r) => r.piiCategory));
@@ -47,32 +52,22 @@ export default function GlobalMaskingRules({ rules, onRulesChange }: GlobalMaski
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <span className="flex items-center gap-1 text-xs font-medium text-gray-400">
-          Global Masking Rules
-          <HelpTip
-            content="Rules automatically applied to all PII columns of a given category, across all tables."
-            maxWidth={300}
-            size="xs"
-          />
+          {t('global.title')}
+          <HelpTip content={t('global.headerHelpTip')} maxWidth={300} size="xs" />
         </span>
         <div className="flex items-center gap-1">
           <button
             onClick={addRule}
             className="text-xs px-2 py-1 rounded border border-white/10 text-gray-300 hover:bg-gray-800 hover:border-white/20 transition-colors"
           >
-            + Add Rule
+            {t('global.addRule')}
           </button>
-          <HelpTip
-            content="Add a new global masking rule for a PII category."
-            position="left"
-            size="xs"
-          />
+          <HelpTip content={t('global.addRuleHelpTip')} position="left" size="xs" />
         </div>
       </div>
-      <p className="text-xs text-gray-500">
-        Apply a default masking mode to all detected PII columns of a given category.
-      </p>
+      <p className="text-xs text-gray-500">{t('global.description')}</p>
       {rules.length === 0 && (
-        <p className="text-xs text-gray-600 italic">No global rules defined.</p>
+        <p className="text-xs text-gray-600 italic">{t('global.emptyState')}</p>
       )}
       {rules.map((rule, i) => (
         <div key={i} className="flex items-center gap-2 flex-wrap">
@@ -84,15 +79,11 @@ export default function GlobalMaskingRules({ rules, onRulesChange }: GlobalMaski
             >
               {PII_CATEGORIES.map((c) => (
                 <option key={c} value={c}>
-                  {c}
+                  {t(`global.piiCategoryLabels.${c}`)}
                 </option>
               ))}
             </select>
-            <HelpTip
-              content="PII category this rule applies to (email, phone, name, etc.)."
-              position="bottom"
-              size="xs"
-            />
+            <HelpTip content={t('global.categoryHelpTip')} position="bottom" size="xs" />
           </div>
           <span className="text-xs text-gray-500">&rarr;</span>
           <div className="flex items-center gap-1">
@@ -107,12 +98,7 @@ export default function GlobalMaskingRules({ rules, onRulesChange }: GlobalMaski
                 </option>
               ))}
             </select>
-            <HelpTip
-              content="Masking mode: Exclude (removes the column), Hash (SHA-256 hash), Truncate (keeps N leading/trailing characters), Replace (fixed value), Aggregate only (blocks raw queries)."
-              maxWidth={320}
-              position="bottom"
-              size="xs"
-            />
+            <HelpTip content={t('global.modeHelpTip')} maxWidth={320} position="bottom" size="xs" />
           </div>
           {rule.defaultMode === 'truncate' && (
             <div className="flex items-center gap-1 text-xs text-gray-400">
@@ -147,11 +133,7 @@ export default function GlobalMaskingRules({ rules, onRulesChange }: GlobalMaski
                 }
                 className="w-10 px-1 py-0.5 rounded bg-gray-800 border border-white/10 text-gray-200 text-xs"
               />
-              <HelpTip
-                content="Number of characters preserved at the start / end of the value."
-                position="bottom"
-                size="xs"
-              />
+              <HelpTip content={t('global.truncateHelpTip')} position="bottom" size="xs" />
             </div>
           )}
           {rule.defaultMode === 'replace' && (
@@ -162,18 +144,14 @@ export default function GlobalMaskingRules({ rules, onRulesChange }: GlobalMaski
                 onChange={(e) => updateRule(i, { replaceValue: e.target.value })}
                 className="w-28 px-2 py-0.5 rounded bg-gray-800 border border-white/10 text-gray-200 text-xs"
               />
-              <HelpTip
-                content="Replacement value displayed in place of the sensitive data."
-                position="bottom"
-                size="xs"
-              />
+              <HelpTip content={t('global.replaceHelpTip')} position="bottom" size="xs" />
             </div>
           )}
           <button
             onClick={() => removeRule(i)}
-            title="Delete this rule"
+            title={t('global.deleteRuleTitle')}
             className="text-gray-500 hover:text-red-400 text-xs transition-colors"
-            aria-label="Delete this masking rule"
+            aria-label={t('global.deleteRuleAriaLabel')}
           >
             &times;
           </button>

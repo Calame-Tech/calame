@@ -5,6 +5,21 @@
 // query-count metric.
 
 import type { AuditLogEntry } from '../../types/schema.js';
+import type { Locale } from '../../i18n/locale.js';
+import { formatDate } from '../../i18n/formatters.js';
+
+// Cached per locale — there are only ever two, and timeAgo() runs inside
+// list renders (recent-activity feed), so this avoids rebuilding the
+// formatter on every row/tick.
+const relativeTimeFormatters = new Map<Locale, Intl.RelativeTimeFormat>();
+function getRelativeTimeFormat(locale: Locale): Intl.RelativeTimeFormat {
+  let rtf = relativeTimeFormatters.get(locale);
+  if (!rtf) {
+    rtf = new Intl.RelativeTimeFormat(locale, { numeric: 'always', style: 'short' });
+    relativeTimeFormatters.set(locale, rtf);
+  }
+  return rtf;
+}
 
 export interface DayPoint {
   /** Short label, e.g. "Fri 8". */
@@ -85,13 +100,19 @@ export function buildProfileSparkSeries(
 }
 
 /** Human "time ago" formatting shared by the feed and the status ribbon. */
-export function timeAgo(timestamp: string, now = Date.now()): string {
+export function timeAgo(
+  timestamp: string,
+  locale: Locale,
+  messages: { justNow: string },
+  now = Date.now(),
+): string {
   const time = new Date(timestamp);
   const diffMs = now - time.getTime();
   const diffMin = Math.floor(diffMs / 60000);
   const diffHour = Math.floor(diffMs / 3600000);
-  if (diffMin < 1) return 'just now';
-  if (diffMin < 60) return `${diffMin}m ago`;
-  if (diffHour < 24) return `${diffHour}h ago`;
-  return time.toLocaleDateString();
+  if (diffMin < 1) return messages.justNow;
+  const rtf = getRelativeTimeFormat(locale);
+  if (diffMin < 60) return rtf.format(-diffMin, 'minute');
+  if (diffHour < 24) return rtf.format(-diffHour, 'hour');
+  return formatDate(time, locale);
 }

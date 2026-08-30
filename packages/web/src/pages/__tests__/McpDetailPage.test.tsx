@@ -1,9 +1,10 @@
 // McpDetailPage component tests (Phase 3 #16).
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { screen, fireEvent } from '@testing-library/react';
 import McpDetailPage from '../McpDetailPage.js';
 import {
+  render,
   makeServeStatus,
   makeConfig,
   makeProfile,

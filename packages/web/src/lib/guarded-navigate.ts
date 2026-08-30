@@ -4,8 +4,8 @@
  * "Manage databases", delete) so in-progress edits are never silently
  * discarded by a stray click away from the page (Lot D3).
  */
-export function guardedNavigate(isDirty: boolean, fn: () => void): void {
-  if (isDirty && !window.confirm('You have unsaved changes. Leave without saving?')) {
+export function guardedNavigate(isDirty: boolean, fn: () => void, confirmMessage: string): void {
+  if (isDirty && !window.confirm(confirmMessage)) {
     return;
   }
   fn();

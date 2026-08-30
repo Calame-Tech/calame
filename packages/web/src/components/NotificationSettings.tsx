@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useTranslations } from 'use-intl/react';
 import { apiFetch } from '../lib/api.js';
 import HelpTip from './HelpTip.js';
 
@@ -24,13 +25,14 @@ interface TestResults {
   email?: ChannelResult;
 }
 
-const CHANNEL_LABELS: Record<keyof TestResults, string> = {
-  inApp: 'In-app',
-  webhook: 'Webhook',
-  email: 'Email',
-};
-
 export default function NotificationSettings() {
+  const t = useTranslations('settingsPanels.notifications');
+  const tCommon = useTranslations('common');
+  const CHANNEL_LABELS: Record<keyof TestResults, string> = {
+    inApp: t('channels.inApp'),
+    webhook: t('channels.webhook'),
+    email: t('channels.email'),
+  };
   const [webhookEnabled, setWebhookEnabled] = useState(false);
   const [webhookUrl, setWebhookUrl] = useState('');
   const [webhookSecret, setWebhookSecret] = useState('');
@@ -93,15 +95,15 @@ export default function NotificationSettings() {
       });
       const data = await res.json();
       if (data.success) {
-        setSaveResult({ ok: true, message: 'Saved successfully.' });
+        setSaveResult({ ok: true, message: t('messages.savedSuccess') });
         if (data.settings) {
           setWebhookSecret((data.settings as NotificationSettingsData).webhookSecret ?? '');
         }
       } else {
-        setSaveResult({ ok: false, message: data.message || 'Failed to save.' });
+        setSaveResult({ ok: false, message: data.message || t('messages.saveFailed') });
       }
     } catch {
-      setSaveResult({ ok: false, message: 'Connection error.' });
+      setSaveResult({ ok: false, message: t('messages.connectionError') });
     } finally {
       setSaving(false);
       setTimeout(() => setSaveResult(null), 3000);
@@ -123,7 +125,7 @@ export default function NotificationSettings() {
       });
       const saveData = await saveRes.json();
       if (!saveData.success) {
-        setTestError(saveData.message || 'Could not save settings before testing.');
+        setTestError(saveData.message || t('messages.saveBeforeTestFailed'));
         return;
       }
       if (saveData.settings) {
@@ -139,33 +141,27 @@ export default function NotificationSettings() {
       if (data.success) {
         setTestResults(data.results as TestResults);
       } else {
-        setTestError(data.message || 'Test failed.');
+        setTestError(data.message || t('messages.testFailed'));
       }
     } catch {
-      setTestError('Connection error.');
+      setTestError(t('messages.connectionError'));
     } finally {
       setTesting(false);
     }
   };
 
   if (loading) {
-    return <div className="text-gray-400 text-sm">Loading notification settings...</div>;
+    return <div className="text-gray-400 text-sm">{t('loading')}</div>;
   }
 
   return (
     <div className="space-y-6">
       <div>
         <div className="flex items-center gap-2">
-          <h2 className="heading-md">Notifications</h2>
-          <HelpTip
-            content="Get notified in-app, via webhook, or by email whenever a write request enters the human-approval queue."
-            position="right"
-            maxWidth={320}
-          />
+          <h2 className="heading-md">{t('title')}</h2>
+          <HelpTip content={t('helpTip')} position="right" maxWidth={320} />
         </div>
-        <p className="text-sm text-gray-500 mt-1">
-          Choose how you want to be alerted when a write request is pending approval.
-        </p>
+        <p className="text-sm text-gray-500 mt-1">{t('description')}</p>
       </div>
 
       {/* Webhook */}
@@ -176,26 +172,26 @@ export default function NotificationSettings() {
             checked={webhookEnabled}
             onChange={(e) => setWebhookEnabled(e.target.checked)}
           />
-          Webhook
+          {t('channels.webhook')}
         </label>
 
         <div>
           <label htmlFor="notif-webhook-url" className="text-sm text-gray-400 mb-1 block">
-            Webhook URL
+            {t('webhook.urlLabel')}
           </label>
           <input
             id="notif-webhook-url"
             type="text"
             value={webhookUrl}
             onChange={(e) => setWebhookUrl(e.target.value)}
-            placeholder="https://hooks.slack.com/services/…"
+            placeholder={t('webhook.urlPlaceholder')}
             className="input-editorial w-full text-sm"
           />
         </div>
 
         <div>
           <label htmlFor="notif-webhook-secret" className="text-sm text-gray-400 mb-1 block">
-            Webhook Secret
+            {t('webhook.secretLabel')}
           </label>
           <input
             id="notif-webhook-secret"
@@ -205,15 +201,12 @@ export default function NotificationSettings() {
             placeholder={SECRET_MASK}
             className="input-editorial w-full text-sm"
           />
-          <p className="text-xs text-gray-600 mt-1">
-            Signs the Generic JSON payload (X-Calame-Signature header). Leave unchanged to keep the
-            current secret.
-          </p>
+          <p className="text-xs text-gray-600 mt-1">{t('webhook.secretHelp')}</p>
         </div>
 
         <div>
           <label htmlFor="notif-webhook-format" className="text-sm text-gray-400 mb-1 block">
-            Format
+            {t('webhook.formatLabel')}
           </label>
           <select
             id="notif-webhook-format"
@@ -221,8 +214,8 @@ export default function NotificationSettings() {
             onChange={(e) => setWebhookFormat(e.target.value === 'slack' ? 'slack' : 'json')}
             className="input-editorial w-full text-sm"
           >
-            <option value="json">Generic JSON</option>
-            <option value="slack">Slack</option>
+            <option value="json">{t('webhook.formatOptions.json')}</option>
+            <option value="slack">{t('webhook.formatOptions.slack')}</option>
           </select>
         </div>
       </div>
@@ -235,19 +228,19 @@ export default function NotificationSettings() {
             checked={emailEnabled}
             onChange={(e) => setEmailEnabled(e.target.checked)}
           />
-          Email
+          {t('channels.email')}
         </label>
 
         <div>
           <label htmlFor="notif-email-recipients" className="text-sm text-gray-400 mb-1 block">
-            Recipients (one email per line)
+            {t('email.recipientsLabel')}
           </label>
           <textarea
             id="notif-email-recipients"
             value={emailRecipientsText}
             onChange={(e) => setEmailRecipientsText(e.target.value)}
             rows={4}
-            placeholder={'alice@example.com\nbob@example.com'}
+            placeholder={t('email.recipientsPlaceholder')}
             className="input-editorial w-full text-sm"
           />
         </div>
@@ -260,14 +253,14 @@ export default function NotificationSettings() {
           disabled={saving}
           className="px-4 py-2 rounded-lg bg-os-700 hover:bg-os-600 text-white text-sm font-medium transition-all duration-200 disabled:opacity-50 shadow-md shadow-os-900/20"
         >
-          {saving ? 'Saving...' : 'Save'}
+          {saving ? t('actions.saving') : tCommon('save')}
         </button>
         <button
           onClick={handleTest}
           disabled={testing}
           className="px-4 py-2 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-300 text-sm font-medium transition-all duration-200 disabled:opacity-50"
         >
-          {testing ? 'Sending...' : 'Send test notification'}
+          {testing ? t('actions.sending') : t('actions.sendTest')}
         </button>
         {saveResult && (
           <span className={`text-sm ${saveResult.ok ? 'text-green-400' : 'text-red-400'}`}>
@@ -297,7 +290,9 @@ export default function NotificationSettings() {
                 }`}
               >
                 <span className="font-medium">{CHANNEL_LABELS[channel]}</span>
-                <span>{result.ok ? 'OK' : result.error || 'Failed'}</span>
+                <span>
+                  {result.ok ? t('testResults.ok') : result.error || t('testResults.failed')}
+                </span>
               </div>
             );
           })}

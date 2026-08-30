@@ -1,9 +1,9 @@
 // ConfigurationsPage component tests (Phase 3 #16).
 
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { screen, fireEvent } from '@testing-library/react';
 import ConfigurationsPage from '../ConfigurationsPage.js';
-import { makeProfile, makeServeStatus } from './testUtils.js';
+import { render, makeProfile, makeServeStatus } from './testUtils.js';
 import type { Configuration, NamedConnection, Profile } from '../../types/schema.js';
 
 function renderPage({

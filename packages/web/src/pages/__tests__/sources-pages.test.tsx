@@ -3,12 +3,12 @@
 // grouped in a single file.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { screen, fireEvent } from '@testing-library/react';
 import SourcesPage from '../SourcesPage.js';
 import ConnectionsPage from '../ConnectionsPage.js';
 import KnowledgePage from '../KnowledgePage.js';
 import { useSession } from '../../context/SessionContext.js';
-import { makeSession, installFetchMock, flushEffects } from './testUtils.js';
+import { render, makeSession, installFetchMock, flushEffects } from './testUtils.js';
 
 vi.mock('../../context/SessionContext.js', () => ({
   useSession: vi.fn(),

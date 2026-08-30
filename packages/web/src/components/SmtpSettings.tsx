@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslations } from 'use-intl/react';
 import { apiFetch } from '../lib/api.js';
 import HelpTip from './HelpTip.js';
 
@@ -14,6 +15,8 @@ interface SmtpConfig {
 const DEFAULT_PORT = 587;
 
 export default function SmtpSettings() {
+  const t = useTranslations('settingsPanels.smtp');
+  const tCommon = useTranslations('common');
   const [host, setHost] = useState('');
   const [port, setPort] = useState<number>(DEFAULT_PORT);
   const [username, setUsername] = useState('');
@@ -75,11 +78,11 @@ export default function SmtpSettings() {
         setRevealPassword('');
       } else {
         setRevealStatus('error');
-        setRevealError(data.message || 'Incorrect password.');
+        setRevealError(data.message || t('messages.incorrectPassword'));
       }
     } catch {
       setRevealStatus('error');
-      setRevealError('Failed to reach the server.');
+      setRevealError(t('messages.failedToReachServer'));
     }
   };
 
@@ -106,13 +109,13 @@ export default function SmtpSettings() {
       });
       const data = await res.json();
       if (data.success) {
-        setSaveResult({ ok: true, message: 'Saved successfully.' });
+        setSaveResult({ ok: true, message: t('messages.savedSuccess') });
         setConfigured(true);
       } else {
-        setSaveResult({ ok: false, message: data.message || 'Failed to save.' });
+        setSaveResult({ ok: false, message: data.message || t('messages.saveFailed') });
       }
     } catch {
-      setSaveResult({ ok: false, message: 'Connection error.' });
+      setSaveResult({ ok: false, message: t('messages.connectionError') });
     } finally {
       setSaving(false);
       setTimeout(() => setSaveResult(null), 3000);
@@ -131,20 +134,20 @@ export default function SmtpSettings() {
       });
       const data = await res.json();
       if (data.success) {
-        setTestResult({ success: true, message: data.message || 'Connection OK.' });
+        setTestResult({ success: true, message: data.message || t('messages.connectionOk') });
         setConfigured(true);
       } else {
-        setTestResult({ success: false, message: data.message || 'Test failed.' });
+        setTestResult({ success: false, message: data.message || t('messages.testFailed') });
       }
     } catch {
-      setTestResult({ success: false, message: 'Connection error.' });
+      setTestResult({ success: false, message: t('messages.connectionError') });
     } finally {
       setTesting(false);
     }
   };
 
   if (loading) {
-    return <div className="text-gray-400 text-sm">Loading SMTP settings...</div>;
+    return <div className="text-gray-400 text-sm">{t('loading')}</div>;
   }
 
   return (
@@ -153,16 +156,10 @@ export default function SmtpSettings() {
       <div className="flex items-center justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <h2 className="heading-md">Email / SMTP Settings</h2>
-            <HelpTip
-              content="SMTP (Simple Mail Transfer Protocol) is used to send invitation emails to new users. Without SMTP configuration, invitations cannot be sent automatically."
-              position="right"
-              maxWidth={300}
-            />
+            <h2 className="heading-md">{t('title')}</h2>
+            <HelpTip content={t('helpTip')} position="right" maxWidth={300} />
           </div>
-          <p className="text-sm text-gray-500 mt-1">
-            Configure SMTP to send invitation emails to users.
-          </p>
+          <p className="text-sm text-gray-500 mt-1">{t('description')}</p>
         </div>
         <div className="flex items-center gap-2">
           <div
@@ -171,7 +168,7 @@ export default function SmtpSettings() {
             }`}
           />
           <span className="text-sm text-gray-400">
-            {configured ? 'Configured' : 'Not configured'}
+            {configured ? t('status.configured') : t('status.notConfigured')}
           </span>
         </div>
       </div>
@@ -180,20 +177,16 @@ export default function SmtpSettings() {
       <div>
         <div className="flex items-center gap-1.5 mb-1">
           <label htmlFor="smtp-host" className="text-sm text-gray-400">
-            SMTP Host <span className="text-red-400">*</span>
+            {t('host.label')} <span className="text-red-400">*</span>
           </label>
-          <HelpTip
-            content="Hostname of the outgoing SMTP server. Common examples: smtp.gmail.com (Gmail), smtp.office365.com (Microsoft 365), email-smtp.eu-west-1.amazonaws.com (Amazon SES). Ask your email provider for this value."
-            position="right"
-            maxWidth={340}
-          />
+          <HelpTip content={t('host.help')} position="right" maxWidth={340} />
         </div>
         <input
           id="smtp-host"
           type="text"
           value={host}
           onChange={(e) => setHost(e.target.value)}
-          placeholder="smtp.gmail.com"
+          placeholder={t('host.placeholder')}
           className="input-editorial w-full text-sm"
         />
       </div>
@@ -202,13 +195,9 @@ export default function SmtpSettings() {
       <div>
         <div className="flex items-center gap-1.5 mb-1">
           <label htmlFor="smtp-port" className="text-sm text-gray-400">
-            SMTP Port <span className="text-red-400">*</span>
+            {t('port.label')} <span className="text-red-400">*</span>
           </label>
-          <HelpTip
-            content="TCP port of the SMTP server. Standard ports: 25 (SMTP without encryption, often blocked), 465 (SMTPS — SSL/TLS from connection), 587 (SMTP + STARTTLS — recommended for most modern servers). When in doubt, use 587."
-            position="right"
-            maxWidth={340}
-          />
+          <HelpTip content={t('port.help')} position="right" maxWidth={340} />
         </div>
         <input
           id="smtp-port"
@@ -219,29 +208,23 @@ export default function SmtpSettings() {
           max={65535}
           className="input-editorial w-full text-sm"
         />
-        <p className="text-xs text-gray-600 mt-1">
-          Common ports: 25 (SMTP), 465 (SSL), 587 (STARTTLS)
-        </p>
+        <p className="text-xs text-gray-600 mt-1">{t('port.hint')}</p>
       </div>
 
       {/* Username */}
       <div>
         <div className="flex items-center gap-1.5 mb-1">
           <label htmlFor="smtp-username" className="text-sm text-gray-400">
-            Username
+            {t('username.label')}
           </label>
-          <HelpTip
-            content="Login identifier for the SMTP server. For Gmail or Microsoft 365, this is typically your full email address. Some corporate SMTP servers use a separate identifier."
-            position="right"
-            maxWidth={320}
-          />
+          <HelpTip content={t('username.help')} position="right" maxWidth={320} />
         </div>
         <input
           id="smtp-username"
           type="text"
           value={username}
           onChange={(e) => setUsername(e.target.value)}
-          placeholder="user@example.com"
+          placeholder={t('username.placeholder')}
           className="input-editorial w-full text-sm"
         />
       </div>
@@ -250,13 +233,9 @@ export default function SmtpSettings() {
       <div>
         <div className="flex items-center gap-1.5 mb-1">
           <label htmlFor="smtp-password" className="text-sm text-gray-400">
-            Password
+            {t('password.label')}
           </label>
-          <HelpTip
-            content="SMTP password, stored encrypted on the server. For Gmail, use an App Password rather than your main account password. For Amazon SES, use the SMTP secret key generated in the AWS console."
-            position="right"
-            maxWidth={340}
-          />
+          <HelpTip content={t('password.help')} position="right" maxWidth={340} />
         </div>
         <div className="relative">
           <input
@@ -285,22 +264,24 @@ export default function SmtpSettings() {
             }}
             className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-500 hover:text-gray-300"
           >
-            {isPasswordMasked ? 'Show' : showPassword ? 'Hide' : 'Show'}
+            {isPasswordMasked
+              ? t('password.show')
+              : showPassword
+                ? t('password.hide')
+                : t('password.show')}
           </button>
         </div>
 
         {/* Admin password prompt to reveal SMTP password */}
         {showRevealPrompt && (
           <div className="mt-2 p-3 rounded-lg border border-os-600/40 bg-os-900/20 space-y-2">
-            <p className="text-xs text-gray-300">
-              Enter your admin password to reveal the SMTP password.
-            </p>
+            <p className="text-xs text-gray-300">{t('password.revealPrompt')}</p>
             <div className="flex items-center gap-2">
               <input
                 type="password"
                 value={revealPassword}
                 onChange={(e) => setRevealPassword(e.target.value)}
-                placeholder="Admin password"
+                placeholder={t('password.adminPasswordPlaceholder')}
                 autoFocus
                 className="input-editorial flex-1 text-sm"
                 onKeyDown={(e) => {
@@ -313,7 +294,7 @@ export default function SmtpSettings() {
                 disabled={!revealPassword || revealStatus === 'loading'}
                 className="px-3 py-1.5 bg-os-700 hover:bg-os-600 disabled:opacity-50 rounded-lg text-sm font-medium transition-all duration-200"
               >
-                {revealStatus === 'loading' ? '...' : 'OK'}
+                {revealStatus === 'loading' ? '...' : t('password.ok')}
               </button>
               <button
                 type="button"
@@ -324,7 +305,7 @@ export default function SmtpSettings() {
                 }}
                 className="px-2 py-1.5 text-gray-500 hover:text-gray-300 text-sm transition-all duration-200"
               >
-                Cancel
+                {tCommon('cancel')}
               </button>
             </div>
             {revealStatus === 'error' && <p className="text-xs text-red-400">{revealError}</p>}
@@ -333,9 +314,7 @@ export default function SmtpSettings() {
 
         {!showRevealPrompt && (
           <p className="text-xs text-gray-600 mt-1">
-            {isPasswordMasked
-              ? 'Click "Show" to reveal with admin password.'
-              : 'If left unchanged, the existing password is kept on the server.'}
+            {isPasswordMasked ? t('password.hintMasked') : t('password.hintUnchanged')}
           </p>
         )}
       </div>
@@ -344,20 +323,16 @@ export default function SmtpSettings() {
       <div>
         <div className="flex items-center gap-1.5 mb-1">
           <label htmlFor="smtp-from" className="text-sm text-gray-400">
-            From Address
+            {t('fromAddress.label')}
           </label>
-          <HelpTip
-            content="Email address displayed as the sender in invitation emails. Can include a display name, e.g. Calame &lt;noreply@example.com&gt;. This address must be authorized by your SMTP provider (verified domain on Amazon SES, alias in Gmail, etc.)."
-            position="right"
-            maxWidth={340}
-          />
+          <HelpTip content={t('fromAddress.help')} position="right" maxWidth={340} />
         </div>
         <input
           id="smtp-from"
           type="text"
           value={fromAddress}
           onChange={(e) => setFromAddress(e.target.value)}
-          placeholder="Calame <noreply@example.com>"
+          placeholder={t('fromAddress.placeholder')}
           className="input-editorial w-full text-sm"
         />
       </div>
@@ -367,18 +342,18 @@ export default function SmtpSettings() {
         <button
           onClick={handleSave}
           disabled={saving}
-          title="Saves the SMTP configuration on the server. Invitation emails will use these settings starting with the next invitation."
+          title={t('actions.saveTooltip')}
           className="px-4 py-2 rounded-lg bg-os-700 hover:bg-os-600 text-white text-sm font-medium transition-all duration-200 disabled:opacity-50 shadow-md shadow-os-900/20"
         >
-          {saving ? 'Saving...' : 'Save'}
+          {saving ? t('actions.saving') : tCommon('save')}
         </button>
         <button
           onClick={handleTest}
           disabled={testing}
-          title='Sends a test email to the "From" address to verify the SMTP connection works correctly before saving.'
+          title={t('actions.testTooltip')}
           className="px-4 py-2 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-300 text-sm font-medium transition-all duration-200 disabled:opacity-50"
         >
-          {testing ? 'Testing...' : 'Test Connection'}
+          {testing ? t('actions.testing') : t('actions.testConnection')}
         </button>
 
         {saveResult && (

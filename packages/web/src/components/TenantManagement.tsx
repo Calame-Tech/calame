@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useTranslations } from 'use-intl/react';
 import { apiFetch, apiGet, getCurrentTenant, removeTenantFromHistory } from '../lib/api.js';
 import { Button, Card, EmptyState } from './ui/index.js';
 
@@ -30,17 +31,6 @@ interface TenantsListResponse {
   tenants?: TenantSummary[];
   message?: string;
 }
-
-/** Resource columns shown in the table. Keys must align with the camelCase
- *  count names emitted by GET /api/tenants. */
-const RESOURCE_COLUMNS: Array<{ key: string; label: string }> = [
-  { key: 'profiles', label: 'MCP Servers' },
-  { key: 'configurations', label: 'Data Configurations' },
-  { key: 'aiSettings', label: 'AI Settings' },
-  { key: 'tokens', label: 'API Keys' },
-  { key: 'users', label: 'Users' },
-  { key: 'ragSources', label: 'RAG Sources' },
-];
 
 const LockIcon = (
   <svg
@@ -75,6 +65,21 @@ const CheckIcon = (
 );
 
 export default function TenantManagement() {
+  const t = useTranslations('tenants.management');
+  const tResourceColumns = useTranslations('tenants.resourceColumns');
+  const tCommon = useTranslations('common');
+
+  /** Resource columns shown in the table. Keys must align with the camelCase
+   *  count names emitted by GET /api/tenants. */
+  const RESOURCE_COLUMNS: Array<{ key: string; label: string }> = [
+    { key: 'profiles', label: tResourceColumns('profiles') },
+    { key: 'configurations', label: tResourceColumns('configurations') },
+    { key: 'aiSettings', label: tResourceColumns('aiSettings') },
+    { key: 'tokens', label: tResourceColumns('tokens') },
+    { key: 'users', label: tResourceColumns('users') },
+    { key: 'ragSources', label: tResourceColumns('ragSources') },
+  ];
+
   const [tenants, setTenants] = useState<TenantSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -95,7 +100,7 @@ export default function TenantManagement() {
       if (data.success && data.tenants) {
         setTenants(data.tenants);
       } else {
-        setError(data.message ?? 'Failed to load tenants.');
+        setError(data.message ?? t('errors.loadFailed'));
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -104,7 +109,7 @@ export default function TenantManagement() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     fetchTenants();
@@ -131,7 +136,7 @@ export default function TenantManagement() {
   const performDelete = async () => {
     if (!pendingDelete) return;
     if (confirmInput !== pendingDelete.id) {
-      setDeleteError(`Please type exactly "${pendingDelete.id}" to confirm deletion.`);
+      setDeleteError(t('modal.confirmMismatch', { id: pendingDelete.id }));
       return;
     }
 
@@ -147,7 +152,7 @@ export default function TenantManagement() {
       });
       const data = (await res.json()) as { success: boolean; message?: string };
       if (!res.ok || !data.success) {
-        setDeleteError(data.message ?? `Delete failed with status ${res.status}.`);
+        setDeleteError(data.message ?? t('modal.deleteFailedStatus', { status: res.status }));
         setDeleting(false);
         return;
       }
@@ -167,7 +172,7 @@ export default function TenantManagement() {
   if (loading) {
     return (
       <Card className="p-6">
-        <p className="text-sm text-gray-400">Loading workspaces…</p>
+        <p className="text-sm text-gray-400">{t('loading')}</p>
       </Card>
     );
   }
@@ -175,30 +180,23 @@ export default function TenantManagement() {
   if (error) {
     return (
       <Card className="p-6 border border-red-500/30 bg-red-500/5">
-        <p className="text-sm text-red-300">Error: {error}</p>
+        <p className="text-sm text-red-300">{t('error', { error })}</p>
         <Button variant="secondary" size="sm" onClick={handleRefresh} className="mt-3">
-          Retry
+          {t('retry')}
         </Button>
       </Card>
     );
   }
 
   if (tenants.length === 0) {
-    return (
-      <EmptyState
-        title="No workspace found"
-        description="Workspaces are created implicitly by the first INSERT. Use the workspace switcher in the sidebar to switch to a new context."
-      />
-    );
+    return <EmptyState title={t('empty.title')} description={t('empty.description')} />;
   }
 
   return (
     <div className="space-y-4">
       {/* Action bar */}
       <div className="flex items-center justify-between gap-3">
-        <p className="text-sm text-gray-400">
-          {tenants.length} active workspace{tenants.length > 1 ? 's' : ''} on this instance.
-        </p>
+        <p className="text-sm text-gray-400">{t('activeCount', { count: tenants.length })}</p>
         <Button
           variant="secondary"
           size="sm"
@@ -206,7 +204,7 @@ export default function TenantManagement() {
           disabled={refreshing}
           aria-busy={refreshing}
         >
-          {refreshing ? 'Refreshing…' : 'Refresh'}
+          {refreshing ? t('refreshing') : t('refresh')}
         </Button>
       </div>
 
@@ -216,7 +214,9 @@ export default function TenantManagement() {
           <table className="w-full text-sm">
             <thead className="bg-white/5 border-b border-white/10">
               <tr>
-                <th className="text-left px-4 py-2.5 font-medium text-gray-300">Workspace</th>
+                <th className="text-left px-4 py-2.5 font-medium text-gray-300">
+                  {t('table.workspace')}
+                </th>
                 {RESOURCE_COLUMNS.map((col) => (
                   <th
                     key={col.key}
@@ -225,8 +225,12 @@ export default function TenantManagement() {
                     {col.label}
                   </th>
                 ))}
-                <th className="text-right px-3 py-2.5 font-medium text-gray-300">Total</th>
-                <th className="text-right px-4 py-2.5 font-medium text-gray-300 w-32">Actions</th>
+                <th className="text-right px-3 py-2.5 font-medium text-gray-300">
+                  {t('table.total')}
+                </th>
+                <th className="text-right px-4 py-2.5 font-medium text-gray-300 w-32">
+                  {t('table.actions')}
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -244,20 +248,20 @@ export default function TenantManagement() {
                         <span className="font-medium text-gray-200">{tenant.id}</span>
                         {isDefault && (
                           <span
-                            title="The default workspace cannot be deleted — it's the implicit context for single-workspace installations."
+                            title={t('badges.defaultTooltip')}
                             className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-gray-700/50 text-gray-400 text-[10px] font-mono-plex"
                           >
                             {LockIcon}
-                            DEFAULT
+                            {t('badges.default')}
                           </span>
                         )}
                         {isCurrent && !isDefault && (
                           <span
-                            title="Active workspace — switch to another workspace before you can delete this one."
+                            title={t('badges.activeTooltip')}
                             className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-violet-500/15 text-violet-300 text-[10px] font-mono-plex border border-violet-500/30"
                           >
                             {CheckIcon}
-                            ACTIVE
+                            {t('badges.active')}
                           </span>
                         )}
                       </div>
@@ -281,10 +285,10 @@ export default function TenantManagement() {
                         onClick={() => openDeleteModal(tenant)}
                         title={
                           isDefault
-                            ? 'The default workspace cannot be deleted.'
+                            ? t('deleteButton.defaultTitle')
                             : isCurrent
-                              ? 'Switch to another workspace before you can delete this one.'
-                              : `Permanently delete "${tenant.id}"`
+                              ? t('deleteButton.currentTitle')
+                              : t('deleteButton.title', { id: tenant.id })
                         }
                         className={
                           isProtected
@@ -292,7 +296,7 @@ export default function TenantManagement() {
                             : 'text-red-400 hover:bg-red-500/10 hover:text-red-300'
                         }
                       >
-                        Delete
+                        {t('deleteButton.label')}
                       </Button>
                     </td>
                   </tr>
@@ -305,9 +309,9 @@ export default function TenantManagement() {
 
       {/* Hint footer */}
       <p className="text-xs text-gray-500 leading-relaxed">
-        Workspaces are created implicitly: the first write with a given{' '}
-        <code className="font-mono-plex text-gray-400">tenant_id</code> is enough to materialize a
-        new workspace. To create one, use the workspace switcher in the sidebar.
+        {t.rich('hintFooter', {
+          code: (chunks) => <code className="font-mono-plex text-gray-400">{chunks}</code>,
+        })}
       </p>
 
       {/* Confirm modal */}
@@ -324,22 +328,24 @@ export default function TenantManagement() {
         >
           <Card className="max-w-lg w-full p-6 border border-red-500/30 bg-gray-950">
             <h2 id="tenant-delete-modal-title" className="text-lg font-semibold text-red-300 mb-3">
-              Permanently delete this workspace?
+              {t('modal.title')}
             </h2>
             <p className="text-sm text-gray-300 leading-relaxed">
-              You are about to delete the workspace{' '}
-              <code className="font-mono-plex text-red-300 bg-red-500/10 px-1.5 py-0.5 rounded">
-                {pendingDelete.id}
-              </code>
-              . This action is <strong className="text-red-300">irreversible</strong> and will
-              delete all MCP Servers, Data Configurations, RAG sources, API keys, users, and data
-              associated with this workspace.
+              {t.rich('modal.body', {
+                id: pendingDelete.id,
+                code: (chunks) => (
+                  <code className="font-mono-plex text-red-300 bg-red-500/10 px-1.5 py-0.5 rounded">
+                    {chunks}
+                  </code>
+                ),
+                b: (chunks) => <strong className="text-red-300">{chunks}</strong>,
+              })}
             </p>
 
             {/* Resource summary */}
             <div className="mt-4 p-3 rounded-lg bg-white/5 border border-white/10">
               <p className="text-xs text-gray-500 font-mono-plex uppercase tracking-wider mb-2">
-                Data that will be deleted
+                {t('modal.dataHeading')}
               </p>
               <ul className="space-y-1">
                 {RESOURCE_COLUMNS.map((col) => {
@@ -353,9 +359,7 @@ export default function TenantManagement() {
                   );
                 })}
                 {pendingDelete.totalResources === 0 && (
-                  <li className="text-xs text-gray-500 italic">
-                    No resources — deletion is idempotent.
-                  </li>
+                  <li className="text-xs text-gray-500 italic">{t('modal.noResources')}</li>
                 )}
               </ul>
             </div>
@@ -363,8 +367,10 @@ export default function TenantManagement() {
             {/* Typed confirmation input */}
             <div className="mt-5">
               <label htmlFor="tenant-confirm-input" className="block text-xs text-gray-400 mb-1.5">
-                Type <code className="font-mono-plex text-red-300">{pendingDelete.id}</code> to
-                confirm:
+                {t.rich('modal.typeToConfirm', {
+                  id: pendingDelete.id,
+                  code: (chunks) => <code className="font-mono-plex text-red-300">{chunks}</code>,
+                })}
               </label>
               <input
                 id="tenant-confirm-input"
@@ -389,7 +395,7 @@ export default function TenantManagement() {
             {/* Action buttons */}
             <div className="mt-6 flex items-center justify-end gap-2">
               <Button variant="secondary" size="md" onClick={closeDeleteModal} disabled={deleting}>
-                Cancel
+                {tCommon('cancel')}
               </Button>
               <Button
                 variant="danger"
@@ -398,7 +404,7 @@ export default function TenantManagement() {
                 disabled={deleting || confirmInput !== pendingDelete.id}
                 loading={deleting}
               >
-                {deleting ? 'Deleting…' : 'Permanently delete'}
+                {deleting ? t('modal.deleting') : t('modal.confirmButton')}
               </Button>
             </div>
           </Card>

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslations } from 'use-intl/react';
 import type {
   Config,
   DatabaseSchema,
@@ -47,6 +48,7 @@ export default function ConfigPanel({
   onGlobalMaskingRulesChange,
   onPiiOverride,
 }: ConfigPanelProps) {
+  const t = useTranslations('configurationDetail');
   // Open by default (Lot D2): write/masking status should be visible without an
   // extra click — this was the "hidden unless you dig into Advanced" gap.
   const [advancedOpen, setAdvancedOpen] = useState(true);
@@ -110,13 +112,13 @@ export default function ConfigPanel({
                   d="M9 5l7 7-7 7"
                 />
               </svg>
-              Table Tools &amp; Masking
+              {t('panel.tableToolsAndMasking')}
               <span className="text-xs text-gray-500 font-normal">
-                ({activeTables.length} tables)
+                {t('tablesCount', { count: activeTables.length })}
               </span>
             </button>
             <HelpTip
-              content="Configure each table individually: exposed tools, row limit, filterable/groupable columns, and sensitive data masking."
+              content={t('panel.tableToolsHelp')}
               maxWidth={320}
               position="right"
               size="xs"
@@ -130,14 +132,10 @@ export default function ConfigPanel({
                   type="text"
                   value={tableFilter}
                   onChange={(e) => setTableFilter(e.target.value)}
-                  placeholder="Filter tables..."
+                  placeholder={t('panel.filterPlaceholder')}
                   className="input-editorial flex-1 text-sm"
                 />
-                <HelpTip
-                  content="Filter the displayed tables by name."
-                  position="right"
-                  size="xs"
-                />
+                <HelpTip content={t('panel.filterHelp')} position="right" size="xs" />
               </div>
               {activeTables
                 .filter(({ name }) => name.toLowerCase().includes(tableFilter.toLowerCase()))

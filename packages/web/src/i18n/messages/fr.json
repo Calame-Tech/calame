@@ -1,0 +1,2221 @@
+{
+  "common": {
+    "save": "Enregistrer",
+    "cancel": "Annuler",
+    "justNow": "à l’instant",
+    "rowCount": "{count, plural, one {# ligne} other {# lignes}}",
+    "dashboard": "Tableau de bord",
+    "loading": "Chargement…",
+    "breadcrumbAriaLabel": "Fil d’Ariane",
+    "noOptionAvailable": "Aucune option disponible",
+    "selectPlaceholder": "Sélectionner…"
+  },
+  "language": {
+    "label": "Langue",
+    "en": "Anglais",
+    "fr": "Français"
+  },
+  "settings": {
+    "title": "Paramètres",
+    "description": "Configurez l’IA, l’e-mail, le SSO, l’image de marque et les notifications de votre instance Calame.",
+    "navAriaLabel": "Navigation des paramètres",
+    "tabs": {
+      "ai": {
+        "label": "Fournisseur IA",
+        "description": "Configurer Claude ou OpenAI"
+      },
+      "email": {
+        "label": "E-mail (SMTP)",
+        "description": "Serveur de messagerie sortante"
+      },
+      "sso": {
+        "label": "Authentification unique (OIDC)",
+        "description": "Fournisseur d’identité SSO"
+      },
+      "branding": {
+        "label": "Image de marque",
+        "description": "Logo, couleurs et favicon"
+      },
+      "notifications": {
+        "label": "Notifications",
+        "description": "Alertes dans l’application, webhook et e-mail"
+      },
+      "language": {
+        "label": "Langue",
+        "description": "Choisissez la langue utilisée dans l’interface"
+      }
+    },
+    "sso": {
+      "unavailable": "Les fonctionnalités SSO ne sont pas disponibles sur cette instance."
+    }
+  },
+  "mcpDetail": {
+    "breadcrumb": {
+      "mcpServers": "Serveurs MCP"
+    },
+    "newConfigurationLabel": "Nouvelle configuration",
+    "notFound": {
+      "message": "Serveur MCP « {name} » introuvable.",
+      "backButton": "← Retour aux serveurs MCP"
+    },
+    "header": {
+      "statusRunningTooltip": "Serveur MCP en cours d’exécution",
+      "statusStoppedTooltip": "Serveur MCP arrêté",
+      "renameTooltip": "Cliquez pour renommer ce serveur MCP",
+      "statusActive": "Actif",
+      "statusInactive": "Inactif",
+      "dataConfigCount": "{count, plural, one {# configuration de données} other {# configurations de données}}",
+      "tableCount": "{count, plural, one {# table} other {# tables}}",
+      "refreshTooltip": "Recharger la configuration sans redémarrer le serveur",
+      "startTooltip": "Démarrer ce serveur MCP",
+      "stopTooltip": "Arrêter ce serveur MCP",
+      "start": "Démarrer",
+      "stop": "Arrêter",
+      "deleteConfirm": "Supprimer ?",
+      "yes": "Oui",
+      "no": "Non",
+      "deleteTooltip": "Supprimer ce serveur MCP"
+    },
+    "errors": {
+      "startFailed": "Échec du démarrage du serveur MCP « {name} ».",
+      "startNetworkError": "Erreur réseau lors du démarrage du serveur MCP « {name} ».",
+      "stopFailed": "Échec de l’arrêt du serveur MCP « {name} ».",
+      "stopNetworkError": "Erreur réseau lors de l’arrêt du serveur MCP « {name} ».",
+      "refreshFailed": "Échec de l’actualisation.",
+      "refreshNetworkError": "Erreur réseau lors de l’actualisation.",
+      "saveLabelFailed": "Échec de l’enregistrement du nouveau nom."
+    },
+    "endpoint": {
+      "label": "Point de terminaison",
+      "tooltip": "URL du point de terminaison MCP à configurer dans Claude Desktop, Cursor ou VS Code"
+    },
+    "chat": {
+      "label": "Chat",
+      "tooltip": "Lien partageable vers l’interface de discussion pour vos utilisateurs finaux"
+    },
+    "copy": {
+      "copied": "Copié !",
+      "copy": "Copier"
+    },
+    "responseMode": {
+      "label": "Mode de réponse",
+      "error": "Erreur lors du changement de mode de réponse",
+      "toggling": "...",
+      "technical": "Technique",
+      "natural": "Naturel",
+      "toggleAriaLabel": "Basculer le mode de réponse",
+      "tooltip": "En mode Naturel, les réponses sont formulées en langage simple, sans termes techniques. En mode Technique, les noms des tables et colonnes de la base de données sous-jacente sont visibles."
+    },
+    "authMode": {
+      "label": "Authentification du chat",
+      "openWarning": "Attention : ce serveur MCP sera accessible sans aucune authentification.",
+      "options": {
+        "token": {
+          "label": "Clé API",
+          "desc": "Clé API Calame",
+          "tooltip": "Les utilisateurs s’authentifient avec une clé API générée par Calame. Idéal pour un accès programmatique."
+        },
+        "calame": {
+          "label": "Calame",
+          "desc": "Compte utilisateur",
+          "tooltip": "Les utilisateurs se connectent avec leur e-mail et mot de passe Calame."
+        },
+        "sso": {
+          "label": "SSO",
+          "desc": "Fournisseur OIDC",
+          "tooltip": "Authentification via votre SSO d’entreprise (Azure AD, Okta, Keycloak). Configurez-le dans Paramètres."
+        },
+        "oauth": {
+          "label": "OAuth",
+          "desc": "GitHub, Google...",
+          "tooltip": "Les utilisateurs se connectent via GitHub, Google, GitLab ou un fournisseur OAuth personnalisé."
+        },
+        "external": {
+          "label": "Externe",
+          "desc": "Validation par API externe",
+          "tooltip": "Les jetons d’accès sont validés par votre propre point de terminaison API. Utile pour s’intégrer à un système d’authentification existant."
+        },
+        "open": {
+          "label": "Ouvert",
+          "desc": "Sans authentification",
+          "tooltip": "Accès ouvert sans aucune authentification. À utiliser avec précaution — n’importe qui peut interroger ce serveur."
+        }
+      }
+    },
+    "scoping": {
+      "unavailable": "Les fonctionnalités de délimitation des données ne sont pas disponibles sur cette instance."
+    },
+    "external": {
+      "validationUrlLabel": "URL de validation",
+      "validationUrlPlaceholder": "https://your-app.com/api/validate-token",
+      "validationUrlHelp": "Calame appellera cette URL avec le jeton de l’utilisateur pour le valider.",
+      "headerNameLabel": "Nom d’en-tête (optionnel)",
+      "headerNamePlaceholder": "Authorization (par défaut)",
+      "headerTemplateLabel": "Modèle d’en-tête (optionnel)",
+      "headerTemplatePlaceholder": "Bearer '{token}' (par défaut)",
+      "headerTemplateHelp": "Utilisez '{token}' comme espace réservé. Exemples : « Bearer '{token}' », « Token '{token}' », « '{token}' »",
+      "emailFieldLabel": "Champ e-mail",
+      "optionalSuffix": "(optionnel)",
+      "emailFieldPlaceholder": "email (par défaut)",
+      "nameFieldLabel": "Champ nom",
+      "nameFieldPlaceholder": "name (par défaut)",
+      "dotNotationHelp": "Notation par points prise en charge (ex. « user.profile.email »).",
+      "autoCreateUsersLabel": "Créer automatiquement les utilisateurs",
+      "autoCreateEnabled": "Les utilisateurs validés par l’API externe seront automatiquement créés dans Calame.",
+      "autoCreateDisabled": "Seuls les utilisateurs Calame existants seront acceptés. Les nouveaux utilisateurs seront rejetés."
+    },
+    "oauth": {
+      "providerLabel": "Fournisseur OAuth",
+      "providers": {
+        "github": "GitHub",
+        "google": "Google",
+        "gitlab": "GitLab",
+        "custom": "Personnalisé"
+      },
+      "clientIdLabel": "ID client",
+      "clientIdPlaceholder": "your-client-id",
+      "clientSecretLabel": "Secret client",
+      "clientSecretPlaceholder": "your-client-secret",
+      "authUrlLabel": "URL d’autorisation",
+      "tokenUrlLabel": "URL du jeton",
+      "userinfoUrlLabel": "URL des informations utilisateur",
+      "urlPlaceholder": "https://..."
+    },
+    "tabs": {
+      "tables": {
+        "label": "Données exposées",
+        "tooltip": "Gérer les configurations de données et les tables accessibles via ce serveur MCP"
+      },
+      "connect": {
+        "label": "Connexion",
+        "tooltip": "Connectez un client IA à ce serveur et choisissez le paramètre IA qui alimente son chat"
+      },
+      "users": {
+        "label": "Utilisateurs",
+        "tooltip": "Consulter et gérer les utilisateurs ayant accès à ce serveur MCP"
+      },
+      "tokens": {
+        "label": "Clés API",
+        "tooltip": "Créer et révoquer des clés API pour l’authentification programmatique"
+      },
+      "scoping": {
+        "label": "Délimitation des données",
+        "tooltip": "Configurer l’isolation des données par utilisateur (au niveau des lignes)"
+      },
+      "audit": {
+        "label": "Journal d’audit",
+        "tooltip": "Consulter l’historique des requêtes et des accès à ce serveur"
+      }
+    },
+    "tables": {
+      "assignedHeading": "Configurations de données associées",
+      "newButton": "Nouveau",
+      "newTooltip": "Créer une nouvelle configuration de données et l’associer à ce serveur",
+      "emptyState": "Aucune configuration de données disponible. Cliquez sur « + Nouveau » pour en créer une.",
+      "editTooltip": "Modifier cette configuration de données",
+      "configSummary": "({tableCount, plural, one {# table} other {# tables}}, {sourceCount, plural, one {# source} other {# sources}})",
+      "effectiveHeading": "Tables effectives (fusionnées à partir de {count, plural, one {# configuration} other {# configurations}})",
+      "noTablesSelected": "Aucune table sélectionnée dans les configurations.",
+      "colsLabel": "{count} col.",
+      "toolTitle": "Outil : {tool}"
+    },
+    "users": {
+      "heading": "Utilisateurs ayant accès à {name}"
+    }
+  },
+  "configurationDetail": {
+    "tablesCount": "({count} tables)",
+    "notFound": "Configuration « {name} » introuvable.",
+    "ragUnavailable": "Les fonctionnalités RAG ne sont pas disponibles sur cette instance.",
+    "unsavedChangesConfirm": "Vous avez des modifications non enregistrées. Quitter sans enregistrer ?",
+    "breadcrumb": {
+      "mcpServers": "Serveurs MCP",
+      "server": "Serveur",
+      "dataConfigurations": "Configurations de données"
+    },
+    "header": {
+      "renameHint": "Cliquez pour renommer cette configuration de données",
+      "confirmLabel": "OK",
+      "sourceCount": "{count, plural, one {# source} other {# sources}}",
+      "tableCount": "{count, plural, one {# table} other {# tables}}",
+      "saveChanges": "Enregistrer les modifications",
+      "saved": "Enregistré !",
+      "error": "Erreur",
+      "noChanges": "Aucune modification",
+      "saveFailed": "Échec de l’enregistrement — consultez la console pour plus de détails.",
+      "confirmDeleteQuestion": "Êtes-vous sûr ?",
+      "deleting": "Suppression...",
+      "yesDelete": "Oui, supprimer",
+      "deleteTitle": "Supprimer cette configuration de données"
+    },
+    "tabs": {
+      "databases": "Bases de données",
+      "knowledgeBases": "Bases de connaissances",
+      "knowledgeDisabledTitle": "Les bases de connaissances RAG ne sont pas disponibles sur cette instance."
+    },
+    "databasesTab": {
+      "noDatabases": "Aucune base de données connectée pour l’instant.",
+      "addDatabase": "+ Ajouter une base de données",
+      "editSourceTitle": "Modifier les paramètres de cette source",
+      "manageDatabases": "Gérer les bases de données →",
+      "advancedEyebrow": "Avancé : options de table et masquage"
+    },
+    "panel": {
+      "tableToolsAndMasking": "Outils de table et masquage",
+      "tableToolsHelp": "Configurez chaque table individuellement : outils exposés, limite de lignes, colonnes filtrables/groupables et masquage des données sensibles.",
+      "filterPlaceholder": "Filtrer les tables...",
+      "filterHelp": "Filtre les tables affichées par nom."
+    }
+  },
+  "configGraph": {
+    "emptyState": {
+      "title": "Rien à représenter pour l’instant",
+      "description": "Ajoutez une source, une configuration de données ou un serveur MCP pour visualiser le flux de données."
+    },
+    "graph": {
+      "ariaLabel": "Graphe interactif des sources, configurations de données et serveurs MCP",
+      "nodeAriaLabel": "{kind} {label}"
+    },
+    "words": {
+      "source": "source",
+      "config": "config",
+      "server": "serveur",
+      "dataConfiguration": "configuration de données",
+      "mcpServer": "serveur MCP",
+      "knowledgeBase": "base de connaissances"
+    },
+    "node": {
+      "knowledge": "connaissances",
+      "srcCount": "{count} src",
+      "maskedCount": "{count} masqués",
+      "statusActive": "ACTIF",
+      "statusStopped": "ARRÊTÉ"
+    },
+    "chip": {
+      "typeLabel": "Type",
+      "usedByLabel": "Utilisé par",
+      "usedByCount": "{count, plural, one {# configuration} other {# configurations}}",
+      "sourcesLabel": "Sources",
+      "tablesLabel": "Tables",
+      "maskedColumnsLabel": "Colonnes masquées",
+      "mountedByLabel": "Monté par",
+      "authLabel": "Auth",
+      "statusLabel": "Statut",
+      "configurationsLabel": "Configurations",
+      "statusActiveLower": "actif",
+      "statusStoppedLower": "arrêté"
+    },
+    "authModeLabels": {
+      "open": "Ouvert",
+      "token": "Clé API",
+      "calame": "Calame",
+      "sso": "SSO",
+      "oauth": "OAuth",
+      "external": "Externe"
+    },
+    "legend": {
+      "dashedStopped": "pointillés = arrêté"
+    },
+    "resetLayout": {
+      "button": "Réinitialiser la disposition",
+      "tooltip": "Effacer la disposition enregistrée et restaurer l’ordre calculé"
+    },
+    "detailChip": {
+      "usersHeading": "Utilisateurs",
+      "noUsersGranted": "Aucun utilisateur autorisé",
+      "moreCount": "+{count} de plus"
+    },
+    "tableOptions": {
+      "tableLabel": "Table :",
+      "toolsLabel": "Outils",
+      "toolsHelp": "Sélectionnez les outils MCP exposés pour cette table. Chaque outil est une capacité accessible par les clients MCP.",
+      "toolTooltips": {
+        "describe": "Expose un outil MCP qui décrit la structure de la table (colonnes, types, relations).",
+        "aggregate": "Expose un outil MCP qui exécute des agrégations (COUNT, SUM, AVG, GROUP BY) sur cette table.",
+        "query": "Expose un outil MCP qui interroge les données brutes de la table avec filtres et pagination.",
+        "write": "Expose un outil MCP qui insère ou met à jour des données dans cette table (opérations d’écriture)."
+      },
+      "maxRowsLabel": "Lignes max",
+      "maxRowsHelp": "Nombre maximal de lignes renvoyées par requête pour cette table. Limite appliquée par le serveur MCP.",
+      "filterableColumnsLabel": "Colonnes filtrables",
+      "filterableColumnsHelp": "Colonnes sur lesquelles les clients MCP peuvent appliquer des filtres WHERE. Décocher une colonne empêche tout filtrage sur celle-ci.",
+      "groupableColumnsLabel": "Colonnes groupables",
+      "groupableColumnsHelp": "Colonnes disponibles dans les clauses GROUP BY lors de l’agrégation. Décocher une colonne l’exclut des regroupements possibles.",
+      "columnMaskingLabel": "Masquage des colonnes",
+      "columnMaskingHelp": "Définissez comment chaque colonne est masquée avant d’être transmise aux clients MCP. Les colonnes PII sont détectées automatiquement.",
+      "addPii": "+ PII",
+      "addPiiHelp": "Marquez manuellement cette colonne comme donnée personnelle (PII) pour appliquer un masquage"
+    }
+  },
+  "userManagement": {
+    "title": "Utilisateurs",
+    "statusTooltip": {
+      "active": "Compte actif — l’utilisateur peut se connecter et utiliser son accès MCP.",
+      "disabled": "Compte désactivé — l’accès a été révoqué. L’utilisateur ne peut plus s’authentifier.",
+      "invited": "Invitation envoyée — le compte deviendra actif une fois l’inscription terminée par l’utilisateur.",
+      "fallback": "Statut : {status}"
+    },
+    "accessMode": {
+      "both": "MCP + Chat",
+      "mcp": "MCP uniquement",
+      "chat": "Chat uniquement"
+    },
+    "customAttributes": {
+      "title": "Attributs personnalisés",
+      "saving": "Enregistrement...",
+      "add": "+ Ajouter",
+      "keyPlaceholder": "Clé",
+      "valuePlaceholder": "Valeur",
+      "empty": "Aucun attribut personnalisé."
+    },
+    "detail": {
+      "email": "E-mail :",
+      "role": "Rôle :",
+      "status": "Statut :",
+      "created": "Créé le :",
+      "disabledReason": "Motif de désactivation :",
+      "invitationLink": {
+        "title": "Lien d’invitation",
+        "expires": "Expire le {date}",
+        "expired": "Le lien d’invitation a expiré."
+      },
+      "accountActivated": "Compte activé."
+    },
+    "mcpAccess": {
+      "title": "Accès aux serveurs MCP",
+      "addTooltip": "Accorder à cet utilisateur l’accès à un serveur MCP supplémentaire.",
+      "addButton": "+ Ajouter un MCP",
+      "tables": "tables : {tables}",
+      "revokeTooltip": "Révoquer l’accès de cet utilisateur à ce serveur MCP.",
+      "selectPlaceholder": "Sélectionner un MCP...",
+      "addSubmit": "Ajouter"
+    },
+    "errors": {
+      "addProfileFailed": "Échec de l’ajout du serveur MCP.",
+      "cannotRemoveLastProfile": "Impossible de supprimer le dernier serveur MCP. Supprimez plutôt l’utilisateur.",
+      "removeProfileFailed": "Échec de la suppression du serveur MCP.",
+      "loadFailed": "Échec du chargement des utilisateurs.",
+      "profileRequired": "Au moins un serveur MCP avec un nom est requis.",
+      "createFailed": "Échec de la création de l’utilisateur.",
+      "disableFailed": "Échec de la désactivation de l’utilisateur.",
+      "enableFailed": "Échec de l’activation de l’utilisateur.",
+      "regenerateTokenFailed": "Échec de la régénération du jeton d’accès.",
+      "deleteFailed": "Échec de la suppression de l’utilisateur.",
+      "resendInvitationFailed": "Échec du renvoi de l’invitation."
+    },
+    "prompts": {
+      "disableReason": "Motif de désactivation (facultatif) :"
+    },
+    "confirmations": {
+      "regenerateToken": "Régénérer le jeton d’accès ? L’ancien jeton cessera de fonctionner immédiatement.",
+      "deleteUser": "Supprimer définitivement cet utilisateur ? Cette action est irréversible."
+    },
+    "import": {
+      "heading": "Importation groupée d’utilisateurs",
+      "description": "Collez un tableau JSON ou des données CSV. Format CSV : la première ligne contient les en-têtes (e-mail requis), les colonnes supplémentaires deviennent des attributs personnalisés.",
+      "defaultProfileLabel": "Serveur MCP par défaut :",
+      "noneOption": "Aucun (mise à jour uniquement)",
+      "toggleOpen": "Importer",
+      "toggleCancel": "Annuler l’import",
+      "submitting": "Importation...",
+      "invalidFormat": "Format invalide. Utilisez un tableau JSON ou un CSV avec en-têtes.",
+      "invalidArray": "Un tableau JSON d’objets utilisateur est attendu.",
+      "failed": "Échec de l’importation.",
+      "result": {
+        "created": "{count, plural, one {# créé} other {# créés}}",
+        "updated": "{count} mis à jour",
+        "errorsCount": "{count, plural, one {# erreur} other {# erreurs}}",
+        "errorLine": "Ligne {line}"
+      }
+    },
+    "createForm": {
+      "title": "Créer un utilisateur",
+      "nameLabel": "Nom",
+      "emailLabel": "E-mail",
+      "roleLabel": "Rôle",
+      "roleHelp": "Admin : accès complet à la gestion des utilisateurs, aux clés API et à la configuration. Utilisateur : accès limité aux seuls serveurs MCP autorisés.",
+      "rateLimitLabel": "Limite de débit (req/min, 0 = illimité)",
+      "rateLimitHelp": "Limite le nombre de requêtes par minute pour cet utilisateur. Entrez 0 pour ne fixer aucune limite.",
+      "roleUser": "Utilisateur",
+      "roleAdmin": "Admin",
+      "addProfile": "+ Ajouter un profil",
+      "selectProfilePlaceholder": "Sélectionner un serveur MCP",
+      "accessModeTooltip": "MCP : accès API uniquement. Chat : interface de chat dans le navigateur uniquement. Les deux : accès complet aux deux modes.",
+      "addAttribute": "+ Ajouter un attribut",
+      "attrKeyPlaceholder": "Clé (ex. client_id)",
+      "attrValuePlaceholder": "Valeur (ex. CLT-00042)",
+      "noAttributesHint": "Aucun attribut personnalisé. Utilisé pour le cloisonnement des données lorsque l’e-mail de l’utilisateur n’est pas l’identifiant utilisé dans la base de données.",
+      "sendInvitationLabel": "Envoyer un e-mail d’invitation",
+      "sendInvitationHelp": "Envoie automatiquement à l’utilisateur un e-mail contenant son lien d’inscription."
+    },
+    "filters": {
+      "searchPlaceholder": "Rechercher par nom ou e-mail...",
+      "allStatuses": "Tous les statuts",
+      "statusActive": "Actif",
+      "statusDisabled": "Désactivé",
+      "statusInvited": "Invité",
+      "allProfiles": "Tous les serveurs MCP"
+    },
+    "table": {
+      "loading": "Chargement des utilisateurs...",
+      "empty": "Aucun utilisateur pour le moment. Cliquez sur « + Nouvel utilisateur » pour en créer un.",
+      "colName": "Nom",
+      "colEmail": "E-mail",
+      "colMcpServers": "Serveurs MCP",
+      "colStatus": "Statut",
+      "colLastActive": "Dernière activité",
+      "colActions": "Actions",
+      "profileTooltip": "Serveur MCP : {name} — Mode d’accès : {mode}"
+    },
+    "actions": {
+      "newUser": "+ Nouvel utilisateur",
+      "copy": "Copier",
+      "copied": "Copié !",
+      "dismiss": "Ignorer",
+      "disable": "Désactiver",
+      "disableTooltip": "Désactiver le compte — l’utilisateur ne pourra plus se connecter.",
+      "enable": "Activer",
+      "enableTooltip": "Réactiver le compte et générer un nouveau jeton d’accès.",
+      "resend": "Renvoyer l’invitation",
+      "resendTooltip": "Renvoyer l’e-mail d’invitation avec un nouveau lien d’inscription.",
+      "regenerate": "Nouveau jeton d’accès",
+      "regenerateTooltip": "Générer un nouveau jeton d’accès — l’ancien sera immédiatement invalidé.",
+      "delete": "Supprimer",
+      "deleteTooltip": "Supprimer définitivement cet utilisateur et tous ses accès. Cette action est irréversible."
+    },
+    "tokenModal": {
+      "title": "Jeton d’accès généré",
+      "description": "Copiez-le maintenant — vous pourrez le révéler plus tard depuis votre compte avec votre mot de passe.",
+      "onboardingLink": "Lien d’intégration :"
+    }
+  },
+  "connectionManager": {
+    "header": {
+      "title": "Bases de données",
+      "subtitle": "Gérez vos connexions aux bases de données"
+    },
+    "card": {
+      "confirmDeleteTitle": "Confirmer la suppression définitive",
+      "yes": "Oui",
+      "cancelDeleteTitle": "Annuler la suppression",
+      "no": "Non",
+      "editTitle": "Modifier la configuration de cette connexion",
+      "deleteTitle": "Retirer cette connexion de la liste",
+      "statusActive": "Connexion active",
+      "statusInactive": "Non connecté — cliquez sur Modifier pour vous connecter",
+      "databaseTypeTooltip": "Base de données : {type}",
+      "sslBadge": "SSL",
+      "sslTooltip": "Chiffrement SSL/TLS activé sur cette connexion",
+      "sshBadge": "SSH",
+      "sshTooltip": "Tunnel SSH activé — connexion via un serveur bastion",
+      "tableCount": "{count, plural, one {# table} other {# tables}}",
+      "notConnected": "Non connecté"
+    },
+    "addCard": "Ajouter une base de données",
+    "form": {
+      "titleNew": "Nouvelle base de données",
+      "titleEdit": "Modifier la base de données",
+      "nameLabel": "Nom",
+      "namePlaceholder": "Ma base de production",
+      "customizeIdentifier": "Personnaliser l’identifiant",
+      "identifierLabel": "Identifiant",
+      "identifierPlaceholder": "ma-base-production",
+      "autoGenerated": "Généré automatiquement à partir du nom",
+      "identifierTaken": "Cet identifiant est déjà utilisé",
+      "identifierAutoHint": "Identifiant : <mono>{name}</mono> (généré automatiquement)",
+      "databaseTypeLabel": "Type de base de données",
+      "connectionStringLabel": "Chaîne de connexion",
+      "revealTitle": "Afficher la chaîne de connexion (mot de passe administrateur requis)",
+      "hideTitle": "Masquer la chaîne de connexion",
+      "showTitle": "Afficher la chaîne de connexion en clair",
+      "show": "Afficher",
+      "hide": "Masquer",
+      "revealPrompt": "Saisissez votre mot de passe administrateur pour afficher la chaîne de connexion.",
+      "adminPasswordPlaceholder": "Mot de passe administrateur",
+      "ok": "OK",
+      "identifierExists": "Une connexion avec l’identifiant « {name} » existe déjà.",
+      "connectionSuccessful": "Connexion réussie !",
+      "connectionTestFailed": "Le test de connexion a échoué.",
+      "failedToReachServer": "Impossible de joindre le serveur.",
+      "failedToCreate": "Échec de la création de la connexion.",
+      "incorrectPassword": "Mot de passe incorrect.",
+      "test": "Tester",
+      "testing": "Test en cours…",
+      "testHelp": "Teste la connexion sans l’enregistrer — vérifie que les paramètres sont corrects.",
+      "connect": "Connecter",
+      "connecting": "Connexion en cours…",
+      "connectHelp": "Enregistre et établit la connexion — le schéma sera importé automatiquement."
+    },
+    "ssl": {
+      "sectionTitle": "Paramètres SSL/TLS",
+      "enabledBadge": "activé",
+      "help": "Chiffre la connexion avec des certificats TLS — recommandé pour toute base de données de production",
+      "enableCheckbox": "Activer SSL/TLS",
+      "caLabel": "Certificat CA (PEM)",
+      "caPlaceholder": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----",
+      "caHint": "Collez le certificat CA de votre serveur au format PEM.",
+      "certLabel": "Certificat client (PEM, optionnel)",
+      "certPlaceholder": "-----BEGIN CERTIFICATE-----",
+      "keyLabel": "Clé client (PEM, optionnelle)",
+      "keyPlaceholder": "-----BEGIN PRIVATE KEY-----",
+      "verifyCheckbox": "Vérifier le certificat du serveur",
+      "verifyHelp": "Si désactivé, le certificat du serveur ne sera pas vérifié — la connexion devient vulnérable aux attaques de l’intercepteur (MITM)",
+      "verifyWarning": "Attention : désactiver la vérification du certificat vous expose à des attaques de l’intercepteur (man-in-the-middle)."
+    },
+    "ssh": {
+      "sectionTitle": "Tunnel SSH",
+      "enabledBadge": "activé",
+      "help": "Se connecte via un bastion SSH pour atteindre des bases de données sur des réseaux privés",
+      "enableCheckbox": "Activer le tunnel SSH",
+      "diagram": "Calame → SSH ({host}:{port}) → BD ({dbHost}:{dbPort})",
+      "hostLabel": "Hôte SSH",
+      "hostPlaceholder": "bastion.example.com",
+      "portLabel": "Port SSH",
+      "usernameLabel": "Nom d’utilisateur SSH",
+      "usernamePlaceholder": "ec2-user",
+      "privateKeyLabel": "Clé privée (PEM)",
+      "privateKeyPlaceholder": "-----BEGIN OPENSSH PRIVATE KEY-----",
+      "passwordLabel": "Mot de passe (si pas de clé)",
+      "dbHostLabel": "Hôte de la base (depuis le bastion)",
+      "dbHostPlaceholder": "10.0.1.5",
+      "dbPortLabel": "Port de la base"
+    },
+    "dbTypes": {
+      "postgresql": {
+        "label": "PostgreSQL",
+        "placeholder": "postgresql://user:password@localhost:5432/mydb",
+        "helpText": "Format : postgresql://user:password@host:port/database"
+      },
+      "mysql": {
+        "label": "MySQL",
+        "placeholder": "mysql://user:password@localhost:3306/mydb",
+        "helpText": "Format : mysql://user:password@host:port/database"
+      },
+      "sqlite": {
+        "label": "SQLite",
+        "placeholder": "sqlite:///path/to/database.db",
+        "helpText": "Format : sqlite:///path/to/database.db"
+      }
+    }
+  },
+  "aiSettings": {
+    "loading": "Chargement des paramètres IA...",
+    "title": "Paramètres IA",
+    "titleHelp": "Configurez un ou plusieurs fournisseurs LLM. Chaque serveur MCP peut être associé à plusieurs paramètres, et l’utilisateur du chat choisit celui à utiliser.",
+    "description": "Définissez les fournisseurs IA que vos serveurs MCP peuvent utiliser. Associez-les par serveur MCP dans l’éditeur de serveur MCP.",
+    "newSettingButton": "+ Nouveau paramètre IA",
+    "emptyState": "Aucun paramètre IA pour le moment. Cliquez sur <span>+ Nouveau paramètre IA</span> pour en créer un.",
+    "status": {
+      "configured": "Configuré",
+      "notConfigured": "Non configuré"
+    },
+    "builtInBadge": "Intégré",
+    "builtInBadgeTitle": "Fourni avec Calame — s’exécute sur cette machine, ne peut pas être supprimé",
+    "list": {
+      "testButton": "Tester",
+      "testingButton": "Test en cours…",
+      "deleteButton": "Supprimer",
+      "deleteDisabledTitle": "Le fournisseur local intégré ne peut pas être supprimé"
+    },
+    "providers": {
+      "local": {
+        "label": "Local (inclus)",
+        "desc": "S’exécute sur ce PC — aucune clé API, rien ne quitte votre machine"
+      },
+      "anthropic": {
+        "label": "Anthropic",
+        "desc": "API Claude"
+      },
+      "openrouter": {
+        "label": "OpenRouter",
+        "desc": "Passerelle multi-modèles"
+      },
+      "custom": {
+        "label": "Personnalisé",
+        "desc": "Compatible OpenAI (Ollama, vLLM...)"
+      }
+    },
+    "form": {
+      "newTitle": "Nouveau paramètre IA",
+      "editTitle": "Modifier « {name} »",
+      "close": "Fermer",
+      "nameLabel": "Nom",
+      "namePlaceholder": "prod-claude",
+      "nameHelp": "Identifiant unique (minuscules, tiret, underscore). Ne peut plus être modifié ensuite.",
+      "labelLabel": "Libellé",
+      "labelPlaceholder": "Claude de production",
+      "providerLabel": "Fournisseur",
+      "providerHelp": "Local exécute le modèle EmbeddingGemma fourni sur cette machine pour le RAG — aucune clé API, rien ne quitte votre PC. Anthropic donne un accès direct aux modèles Claude pour le chat. OpenRouter est une passerelle multi-modèles. Personnalisé permet d’utiliser un serveur local compatible OpenAI tel qu’Ollama ou vLLM.",
+      "localProviderNote": "Il s’agit du fournisseur local intégré — seul le libellé peut être modifié.",
+      "capabilitiesLabel": "Capacités",
+      "capabilitiesHelp": "Chat : ce paramètre peut être utilisé pour des conversations avec le LLM. Embeddings : ce paramètre peut générer des vecteurs pour le RAG (OpenAI/Ollama uniquement).",
+      "chatLabel": "Chat",
+      "chatModelLabel": "Modèle (Chat)",
+      "chatModelPlaceholder": {
+        "anthropic": "claude-sonnet-4-20250514",
+        "openrouter": "anthropic/claude-sonnet-4",
+        "custom": "llama3, mistral, etc."
+      },
+      "embeddingsLabel": "Embeddings",
+      "embeddingsNotAvailable": "Non disponible",
+      "embeddingsNotAvailableTitle": "Anthropic ne propose pas de modèles d’embeddings — utilisez OpenAI, Ollama ou un point de terminaison personnalisé",
+      "embeddingsAlwaysOn": "Toujours actif",
+      "embeddingsAlwaysOnTitle": "Toujours actif — s’exécute sur cette machine, aucune configuration nécessaire",
+      "embeddingsModelLabel": "Modèle d’embeddings",
+      "embeddingsModelInfo": "{model} · {dimensions} dimensions · {maxTokens} tokens · 100+ langues",
+      "modelFilesNotFound": "Fichiers du modèle introuvables sur le disque. Exécutez <code>pnpm model:fetch</code>, ou réinstallez l’application.",
+      "localPrivacyNote": "Les documents et les requêtes de recherche sont vectorisés sur cette machine. Rien n’est envoyé à un service tiers.",
+      "thirdPartyLicenses": "Licences tierces",
+      "thirdPartyLicensesTitle": "EmbeddingGemma est distribué sous les conditions d’utilisation de Gemma — voir third_party/NOTICES.md dans l’installation pour la liste complète des licences fournies",
+      "embeddingsModelPlaceholder": "text-embedding-3-small, nomic-embed-text, etc.",
+      "rerankLabel": "Rerank",
+      "rerankDescription": "Utilisé par la recherche hybride RAG pour réordonner les résultats selon leur pertinence (API Cohere). Lorsqu’un paramètre de rerank valide est configuré, il s’active automatiquement — aucun interrupteur supplémentaire nécessaire.",
+      "rerankModelLabel": "Modèle de rerank",
+      "rerankModelPlaceholder": "rerank-multilingual-v3.0",
+      "rerankModelNote": "Nom du modèle Cohere. <code>rerank-multilingual-v3.0</code> convient aux corpus mixtes FR/EN. <code>rerank-english-v3.0</code> est réservé à l’anglais.",
+      "apiKeyLabel": {
+        "openrouter": "Clé API OpenRouter",
+        "anthropic": "Clé API Anthropic"
+      },
+      "apiKeyPlaceholder": {
+        "openrouter": "sk-or-...",
+        "anthropic": "sk-ant-..."
+      },
+      "showApiKey": "Afficher",
+      "hideApiKey": "Masquer",
+      "apiKeyOptionalLabel": "Clé API (facultatif)",
+      "apiKeyOptionalPlaceholder": "Laisser vide si non requis",
+      "baseUrlLabel": "URL de base",
+      "baseUrlPlaceholder": "http://localhost:11434/v1",
+      "saving": "Enregistrement...",
+      "createSetting": "Créer le paramètre",
+      "saveChanges": "Enregistrer les modifications",
+      "testing": "Test en cours...",
+      "testConnection": "Tester la connexion"
+    },
+    "errors": {
+      "nameFormat": "Le nom doit comporter 1 à 64 caractères : lettres minuscules, chiffres, tiret, underscore.",
+      "labelRequired": "Le libellé est requis.",
+      "apiKeyRequired": "La clé API est requise pour ce fournisseur.",
+      "baseUrlRequired": "L’URL de base est requise pour le fournisseur personnalisé.",
+      "capabilityRequired": "Au moins une capacité doit être sélectionnée (Chat ou Embeddings).",
+      "embeddingModelRequired": "Le modèle d’embeddings est requis lorsque la capacité Embeddings est activée.",
+      "rerankModelRequired": "Le modèle de rerank est requis lorsque la capacité rerank est activée.",
+      "failedToSave": "Échec de l’enregistrement.",
+      "connectionError": "Erreur de connexion."
+    },
+    "saveResult": {
+      "saved": "Enregistré."
+    },
+    "testResult": {
+      "connectionOk": "Connexion OK : « {response} »",
+      "testFailed": "Échec du test."
+    },
+    "quickTest": {
+      "ok": "{label} : OK — « {response} »",
+      "failed": "{label} : {message}",
+      "connectionError": "{label} : erreur de connexion."
+    },
+    "confirmDelete": "Supprimer le paramètre IA « {label} » ?",
+    "router": {
+      "title": "Routeur LLM / Classificateur",
+      "titleHelp": "Pipeline en deux étapes : un classificateur léger analyse chaque message avant le LLM principal. Il détecte les tentatives d’injection de prompt et les requêtes hors sujet, réduisant les coûts et améliorant la sécurité.",
+      "description": "Pipeline en deux étapes : un classificateur léger détecte l’intention et bloque les tentatives d’injection avant que le LLM principal ne traite la requête.",
+      "enableLabel": "Activer",
+      "classifierProviderLabel": "Fournisseur du classificateur",
+      "classifierProviderOptions": {
+        "anthropic": "Anthropic (Claude)",
+        "openrouter": "OpenRouter",
+        "custom": "Personnalisé / Ollama"
+      },
+      "classifierModelLabel": "Modèle du classificateur",
+      "classifierModelPlaceholder": {
+        "anthropic": "claude-haiku-4-5-20251001",
+        "other": "gpt-4o-mini"
+      },
+      "classifierApiKeyLabel": "Clé API du classificateur",
+      "classifierApiKeyPlaceholder": "sk-...",
+      "classifierApiKeyHelp": "Laisser vide pour utiliser la même clé que le fournisseur principal.",
+      "classifierEndpointLabel": "Point de terminaison du classificateur",
+      "classifierEndpointPlaceholder": "http://localhost:11434/v1",
+      "injectionThresholdLabel": "Seuil de détection d’injection : {threshold}%",
+      "thresholdMin": "50 % (agressif)",
+      "thresholdMax": "100 % (permissif)",
+      "saveButton": "Enregistrer les paramètres du routeur",
+      "saveResult": {
+        "saved": "Paramètres du routeur enregistrés.",
+        "failed": "Échec de l’enregistrement du routeur."
+      }
+    },
+    "assignment": {
+      "help": "Sélectionnez les paramètres IA que les clients de chat de ce MCP peuvent utiliser. Utilisez ↑/↓ pour réordonner ; la première entrée est celle par défaut. Laissez vide pour revenir au paramètre par défaut global.",
+      "noSettingDefault": "Aucun paramètre · défaut global",
+      "selectedCount": "{count} sélectionné(s)",
+      "manageButton": "Gérer les paramètres IA →",
+      "manageButtonTitle": "Ouvrir la page Paramètres IA (vous pourrez revenir via le fil d’Ariane)",
+      "emptyState": "Aucun paramètre IA défini pour le moment. Créez-en un depuis le panneau Paramètres IA.",
+      "defaultBadge": "défaut",
+      "deletedFallback": "{name} (supprimé ?)",
+      "moveUp": "Monter",
+      "moveDown": "Descendre",
+      "remove": "Supprimer",
+      "addSetting": "Ajouter un paramètre :"
+    }
+  },
+  "metrics": {
+    "title": "Métriques",
+    "description": "Volume de requêtes, utilisation des outils et performance dans le temps.",
+    "barChart": {
+      "noData": "Aucune donnée pour cette période.",
+      "ariaLabel": "Graphique à barres des requêtes dans le temps",
+      "tooltip": "{label} : {count, plural, one {# requête} other {# requêtes}}"
+    },
+    "horizontalBar": {
+      "ariaLabel": "{label} : {count}"
+    },
+    "donut": {
+      "ariaLabel": "Succès {successPct} %, Erreur {errorPct} %",
+      "successCaption": "SUCCÈS",
+      "success": "Succès",
+      "error": "Erreur"
+    },
+    "poolRing": {
+      "ariaLabel": "{active} actifs sur {total} au total"
+    },
+    "poolStatBar": {
+      "ariaLabel": "{label} : {value}"
+    },
+    "updatedSecondsAgo": "Mis à jour il y a {seconds}s",
+    "updatedMinutesAgo": "Mis à jour il y a {minutes}min",
+    "errors": {
+      "loadFailed": "Échec du chargement des métriques. Le point de terminaison des métriques n’est peut-être pas encore disponible."
+    },
+    "eyebrowAnalytics": "ANALYSES",
+    "eyebrowLive": "EN DIRECT",
+    "period": {
+      "ariaLabel": "Période",
+      "h24": {
+        "label": "24h",
+        "description": "Dernières 24 heures"
+      },
+      "d7": {
+        "label": "7j",
+        "description": "7 derniers jours"
+      },
+      "d30": {
+        "label": "30j",
+        "description": "30 derniers jours"
+      }
+    },
+    "loadingMetrics": "Chargement des métriques...",
+    "kpi": {
+      "totalRequests": {
+        "eyebrow": "Total des requêtes",
+        "hint": "sur la période sélectionnée"
+      },
+      "successRate": {
+        "eyebrow": "Taux de réussite",
+        "hint": "{count} appels réussis"
+      },
+      "avgResponse": {
+        "eyebrow": "Réponse moyenne",
+        "hintWeighted": "pondérée sur tous les profils",
+        "hintNoData": "Aucune donnée"
+      },
+      "activePools": {
+        "eyebrow": "Pools actifs",
+        "hint": "{active} actifs / {idle} inactifs"
+      }
+    },
+    "requestsOverTime": {
+      "title": "Requêtes dans le temps",
+      "help": "Nombre total d’appels d’outils MCP agrégés par heure sur la période sélectionnée.",
+      "totalLabel": "{count} au total"
+    },
+    "successVsErrors": {
+      "title": "Réussites vs erreurs",
+      "help": "Répartition des appels d’outils réussis et échoués sur la période sélectionnée.",
+      "empty": "Aucune requête enregistrée."
+    },
+    "topTools": {
+      "title": "Outils les plus utilisés",
+      "help": "Outils MCP les plus fréquemment appelés sur la période sélectionnée, classés par nombre d’appels.",
+      "empty": "Aucune utilisation d’outil enregistrée."
+    },
+    "topApiKeys": {
+      "title": "Clés API les plus actives",
+      "help": "Clés API les plus actives, classées par nombre de requêtes effectuées.",
+      "empty": "Aucune activité de clé API enregistrée."
+    },
+    "avgResponseTime": {
+      "title": "Temps de réponse moyen par serveur MCP",
+      "help": "Temps de réponse moyen par serveur MCP. Vert < 100 ms, jaune 100–500 ms, rouge > 500 ms.",
+      "empty": "Aucune donnée de temps de réponse disponible.",
+      "tableAriaLabel": "Temps de réponse moyen par serveur MCP",
+      "colServer": "Serveur MCP",
+      "colAvgResponse": "Réponse moyenne",
+      "colRequests": "Requêtes"
+    },
+    "poolStats": {
+      "title": "Statistiques des pools de connexions",
+      "help": "État en temps réel des pools de connexions à la base de données : connexions actives, inactives et en attente.",
+      "totalConnections": "{count} connexions au total",
+      "activeTooltip": "Connexions en train de traiter des requêtes.",
+      "active": "Actives",
+      "idleTooltip": "Connexions ouvertes disponibles pour réutilisation.",
+      "idle": "Inactives",
+      "waitingTooltip": "Requêtes en attente d’une connexion. Des valeurs élevées indiquent une saturation du pool.",
+      "waiting": "En attente",
+      "saturated": "Pool saturé — {count} en attente"
+    }
+  },
+  "chat": {
+    "emptyState": {
+      "title": "Posez n’importe quelle question sur vos données",
+      "examples": [
+        "Combien de lignes contient la table users ?",
+        "Montre-moi les 5 commandes les plus récentes",
+        "Quelles tables sont disponibles ?"
+      ]
+    },
+    "usage": {
+      "tokens": "{count} jetons",
+      "cacheSuffix": " · cache {percent} %"
+    },
+    "aiSelector": {
+      "label": "IA :",
+      "ariaLabel": "Fournisseur d’IA"
+    },
+    "input": {
+      "placeholder": "Posez une question sur vos données…",
+      "ariaLabel": "Champ de saisie du message de chat"
+    },
+    "actions": {
+      "send": "Envoyer",
+      "sendAriaLabel": "Envoyer le message",
+      "stop": "Arrêter",
+      "stopAriaLabel": "Arrêter la génération",
+      "logout": "Déconnexion",
+      "signOut": "Se déconnecter",
+      "accessChat": "Accéder au chat",
+      "signIn": "Se connecter"
+    },
+    "errors": {
+      "linkUnavailable": "Ce lien de chat n’est pas disponible.",
+      "inactive": "Ce chat est actuellement inactif.",
+      "loadFailed": "Impossible de charger le serveur MCP.",
+      "connection": "Erreur de connexion. Veuillez réessayer."
+    },
+    "loadingAriaLabel": "Chargement",
+    "errorPage": {
+      "title": "Chat indisponible"
+    },
+    "denied": {
+      "title": "Accès refusé",
+      "signedInAs": "Vous êtes connecté en tant que <b>{email}</b>, mais votre compte n’a pas accès à <b>{label}</b>.",
+      "noAccess": "Votre compte n’a pas accès à <b>{label}</b>.",
+      "contactAdmin": "Contactez votre administrateur pour demander l’accès."
+    },
+    "tokenLogin": {
+      "subtitle": "Saisissez votre clé API Calame pour commencer à discuter.",
+      "apiKeyLabel": "Clé API",
+      "apiKeyPlaceholder": "fmcp_...",
+      "invalidKey": "Clé API invalide. Veuillez réessayer.",
+      "verifying": "Vérification…"
+    },
+    "calameLogin": {
+      "subtitle": "Connectez-vous avec votre compte Calame.",
+      "emailLabel": "Adresse e-mail",
+      "emailPlaceholder": "email@example.com",
+      "passwordLabel": "Mot de passe",
+      "passwordPlaceholder": "••••••••",
+      "invalidCredentials": "E-mail ou mot de passe invalide.",
+      "signingIn": "Connexion en cours…"
+    },
+    "externalLogin": {
+      "subtitle": "Saisissez votre jeton d’accès pour commencer à discuter.",
+      "tokenLabel": "Jeton d’accès",
+      "tokenPlaceholder": "Votre jeton d’accès…",
+      "tokenInvalid": "Échec de la validation du jeton.",
+      "validating": "Validation en cours…"
+    },
+    "oauthLogin": {
+      "subtitle": "Connectez-vous pour accéder à ce chat.",
+      "defaultProvider": "OAuth",
+      "signInWith": "Se connecter avec {provider}"
+    },
+    "panel": {
+      "heading": "Discutez avec votre base de données",
+      "description": "Posez des questions en langage naturel. L’IA interrogera votre base de données à l’aide des outils MCP et vous répondra.",
+      "loading": "Chargement…",
+      "noActiveServer": "Aucun serveur MCP actif. Démarrez d’abord un serveur MCP pour utiliser le chat.",
+      "testingAgainst": "Test en cours sur :",
+      "serverToTestLabel": "Serveur MCP à tester :",
+      "serverToTestAriaLabel": "Serveur MCP à tester",
+      "aiAvailableCount": "{count} disponibles",
+      "usingLabel": "Utilise",
+      "assignMore": "Attribuez-en davantage depuis la page de détail du MCP",
+      "configureAiSettings": "Configurez dans les paramètres IA",
+      "aiNotConfigured": "L’IA n’est pas configurée. Rendez-vous dans <b>Paramètres IA</b> pour configurer un fournisseur et une clé API.",
+      "placeholderNoServer": "Démarrez d’abord un serveur MCP",
+      "placeholderAiNotConfigured": "Configurez d’abord l’IA dans les paramètres",
+      "provider": {
+        "custom": "Personnalisé"
+      }
+    }
+  },
+  "onboarding": {
+    "wizard": {
+      "ariaLabel": "Assistant de configuration",
+      "stepIndicator": "Étape {step} sur {total}",
+      "skipSetup": "Passer la configuration",
+      "connecting": "Connexion...",
+      "networkError": "Erreur réseau. Veuillez réessayer.",
+      "step1": {
+        "stepLabel": "Étape 1",
+        "title": "Connectez votre première base de données",
+        "description": "Connectez-vous à une base de données pour commencer à explorer vos données et créer des serveurs MCP.",
+        "quickStart": {
+          "title": "Démarrage rapide",
+          "description": "Utilisez notre base de données logistique de démonstration pour découvrir Calame sans aucune configuration.",
+          "useDemoButton": "Utiliser la base de démonstration (SQLite)"
+        },
+        "orDivider": "ou connectez la vôtre",
+        "form": {
+          "connectionNameLabel": "Nom de la connexion",
+          "connectionNamePlaceholder": "ex. Production DB",
+          "dbTypeLabel": "Type de base de données",
+          "dbTypeOptions": {
+            "postgresql": "PostgreSQL",
+            "mysql": "MySQL",
+            "sqlite": "SQLite"
+          },
+          "connectionStringLabel": "Chaîne de connexion",
+          "submitButton": "Connecter"
+        },
+        "errors": {
+          "connectionNameRequired": "Le nom de la connexion est requis.",
+          "connectionStringRequired": "La chaîne de connexion est requise.",
+          "connectionFailed": "Échec de la connexion."
+        }
+      },
+      "step2": {
+        "stepLabel": "Étape 2",
+        "title": "Sélectionnez les tables à exposer",
+        "description": "Choisissez les tables de <name>{connectionName}</name> qui seront accessibles via votre serveur MCP. Toutes les colonnes sont incluses par défaut.",
+        "loadingSchema": "Chargement du schéma...",
+        "noTables": "Aucune table trouvée dans cette base de données.",
+        "tablesSelected": "{checked} / {total} tables sélectionnées",
+        "selectAll": "Tout sélectionner",
+        "deselectAll": "Tout désélectionner",
+        "colCount": "{count, plural, one {# colonne} other {# colonnes}}",
+        "continueButton": "Continuer",
+        "errors": {
+          "schemaLoadFailed": "Échec du chargement du schéma."
+        }
+      },
+      "step3": {
+        "stepLabel": "Étape 3",
+        "title": "Nommez votre serveur MCP",
+        "description": "Votre serveur MCP exposera {count, plural, one {# table} other {# tables}} de <name>{connectionName}</name>.",
+        "form": {
+          "nameLabel": "Nom du serveur MCP",
+          "defaultProfileName": "Mon premier serveur MCP",
+          "backButton": "Retour",
+          "creating": "Création...",
+          "submitButton": "Créer le serveur MCP et l’activer"
+        },
+        "errors": {
+          "nameRequired": "Le nom du serveur MCP est requis.",
+          "nameInvalid": "Le nom du serveur MCP doit contenir au moins une lettre ou un chiffre.",
+          "noTablesSelected": "Sélectionnez au moins une table à l’étape précédente.",
+          "configCreateFailed": "Échec de la création de la configuration de données.",
+          "profileCreateFailed": "Échec de la création du serveur MCP."
+        }
+      },
+      "step4": {
+        "stepLabel": "Étape 4",
+        "title": "Tout est prêt !",
+        "readyText": "Votre serveur MCP est prêt.",
+        "createdText": "Le serveur MCP <name>{profileName}</name> a été créé.",
+        "urlCard": {
+          "title": "URL du serveur MCP",
+          "description": "Ajoutez cette URL à votre client MCP (Cursor, Claude Desktop, etc.)",
+          "copyAriaLabel": "Copier l’URL MCP",
+          "copiedAriaLabel": "URL copiée"
+        },
+        "goToDashboardButton": "Aller au tableau de bord",
+        "fineTuneLink": "Affiner les tables, outils et masquage →"
+      }
+    },
+    "welcome": {
+      "loadingState": "Chargement",
+      "errors": {
+        "invalidLink": "Lien d’intégration invalide.",
+        "loadFailed": "Échec du chargement des données d’intégration.",
+        "passwordTooShort": "Le mot de passe doit contenir au moins 8 caractères.",
+        "passwordMismatch": "Les mots de passe ne correspondent pas.",
+        "activateFailed": "Échec de l’activation.",
+        "connectionError": "Erreur de connexion."
+      },
+      "errorState": {
+        "invalidLinkLabel": "Lien invalide",
+        "heading": "Une erreur est survenue."
+      },
+      "passwordStrength": {
+        "tooShort": "Trop court",
+        "fair": "Correct",
+        "good": "Bon",
+        "strong": "Fort"
+      },
+      "accessModeBadge": {
+        "mcp": "MCP",
+        "chat": "Chat",
+        "mcpAndChat": "MCP + Chat"
+      },
+      "leftColumn": {
+        "eyebrow": "ACCÈS MCP",
+        "welcomeHeading": "Bienvenue,",
+        "subheading": "Activez votre compte pour accéder à vos serveurs MCP.",
+        "steps": {
+          "verifyAccess": "Vérifier l’accès",
+          "setPassword": "Définir le mot de passe",
+          "getAccessToken": "Obtenir votre jeton d’accès"
+        },
+        "currentStepLabel": "Étape actuelle",
+        "poweredBy": "Propulsé par Calame"
+      },
+      "rightColumn": {
+        "yourAccessEyebrow": "Votre accès",
+        "tableCount": "{count, plural, one {# table} other {# tables}}",
+        "setup": {
+          "title": "Configurez votre compte",
+          "description": "Choisissez un mot de passe pour sécuriser votre compte Calame.",
+          "passwordLabel": "Mot de passe",
+          "passwordPlaceholder": "Minimum 8 caractères",
+          "confirmPasswordLabel": "Confirmer le mot de passe",
+          "confirmPasswordPlaceholder": "Répétez votre mot de passe",
+          "activateAriaLabel": "Activer mon compte",
+          "activating": "Activation…",
+          "activateButton": "Activer mon compte",
+          "footerNote": "Vous recevrez votre jeton d’accès MCP après l’activation."
+        },
+        "activated": {
+          "badge": "Compte activé",
+          "credentialsSet": "Vos identifiants ont été définis.",
+          "tokenEyebrow": "Votre jeton d’accès",
+          "tokenWarning": "Copiez-le maintenant — vous pourrez le révéler plus tard depuis votre compte avec votre mot de passe",
+          "copyTokenAriaLabel": "Copier le jeton dans le presse-papiers",
+          "endpointsEyebrow": "Points d’accès MCP",
+          "copyAllAriaLabel": "Copier toutes les URL des points d’accès",
+          "copyUrlAriaLabel": "Copier l’URL de {profileName}",
+          "configEyebrow": "Configuration",
+          "copyConfigAriaLabel": "Copier l’extrait de configuration",
+          "configFooterNote": "Ajoutez ceci au fichier de configuration de votre client MCP.",
+          "goToAccountButton": "Accéder à mon compte",
+          "signInNote": "Connectez-vous à tout moment avec votre e-mail et votre mot de passe."
+        }
+      },
+      "copied": "Copié !",
+      "copy": "Copier",
+      "copyAll": "Tout copier",
+      "done": "Terminé"
+    }
+  },
+  "sources": {
+    "configurationsPage": {
+      "title": "Configurations de données",
+      "newButton": "+ Nouvelle configuration de données",
+      "newHelpTip": "Créez une nouvelle configuration de données pour définir quelles tables et colonnes exposer",
+      "viewAriaLabel": "Vue des configurations",
+      "viewList": "Liste",
+      "viewGraph": "Graphique",
+      "viewGraphDescription": "Retracer comment les sources alimentent les serveurs",
+      "switchToGraphHint": "Passez en vue Graphique pour retracer comment les sources alimentent les serveurs.",
+      "graphHint": "Faites glisser les nœuds pour les réorganiser. Survolez pour retracer un chemin de données complet, <b>cliquez pour l’épingler</b>.",
+      "namePlaceholder": "Nom de la configuration",
+      "labelPlaceholder": "Nom d’affichage",
+      "create": "Créer",
+      "emptyTitle": "Aucune configuration de données",
+      "emptyDescription": "Créez-en une pour définir les tables à exposer.",
+      "deleteConfirm": "Supprimer la configuration « {label} » ?",
+      "deleteTitle": "Supprimer cette configuration de données",
+      "sourceCount": "{count, plural, one {# source} other {# sources}}",
+      "configurationCount": "{count, plural, one {# configuration} other {# configurations}}",
+      "serverCount": "{count, plural, one {# serveur} other {# serveurs}}",
+      "tableCount": "{count, plural, one {# table} other {# tables}}",
+      "writeToolTitle": "Outil d’écriture activé sur {count} table(s)",
+      "writeBadge": "écriture sur {count, plural, one {# table} other {# tables}}",
+      "maskedColumnsTitle": "{count} colonne(s) masquée(s)",
+      "maskedColumnsBadge": "{count, plural, one {# colonne masquée} other {# colonnes masquées}}",
+      "mountedByPrefix": "Monté par",
+      "stopped": "(arrêté)",
+      "notMounted": "Non monté par aucun serveur"
+    },
+    "sourcesPage": {
+      "kbDisabledDefault": "Les fonctionnalités de base de connaissances ne sont pas disponibles sur cette instance",
+      "tabDatabases": "Bases de données",
+      "tabKnowledge": "Bases de connaissances",
+      "title": "Sources",
+      "description": "Gérez les connexions aux bases de données et les bases de connaissances utilisées par vos serveurs MCP.",
+      "addSource": "Ajouter une source",
+      "itemsAriaLabel": "{count} éléments",
+      "loadingKnowledgeBases": "Chargement des bases de connaissances…",
+      "kbUnavailableTitle": "Bases de connaissances indisponibles",
+      "kbUnavailableDescription": "La fonctionnalité RAG (génération augmentée par récupération) n’est pas disponible sur cette instance."
+    },
+    "addSourceModal": {
+      "kbDisabledDefault": "Les fonctionnalités de base de connaissances ne sont pas disponibles sur cette instance",
+      "title": "Ajouter une source",
+      "closeAriaLabel": "Fermer la fenêtre",
+      "description": "Choisissez le type de source de données à connecter.",
+      "databaseLabel": "Base de données",
+      "databaseHint": "PostgreSQL, MySQL, SQLite",
+      "knowledgeBaseLabel": "Base de connaissances",
+      "knowledgeBaseHint": "Documents & RAG",
+      "notAvailable": "Non disponible"
+    },
+    "schemaExplorer": {
+      "noTables": "Aucune table trouvée. Connectez d’abord une base de données.",
+      "toolsTitle": "Outils : {tools}",
+      "badgeWrite": "É",
+      "badgeRead": "L",
+      "databaseTitle": "Base de données : {name}",
+      "columnsCountParen": "({count} colonnes)",
+      "accordionDeselectAll": "Tout désélectionner",
+      "accordionSelectAll": "Tout sélectionner",
+      "fkFromTooltip": "Clé étrangère : {fromColumn} référence {toTable}.{toColumn}",
+      "fkToTooltip": "Clé étrangère : {fromTable}.{fromColumn} référence {toColumn} dans cette table",
+      "sqlTypeNullable": "Type SQL : {type} — accepte les valeurs NULL",
+      "sqlTypeNotNull": "Type SQL : {type} — NOT NULL",
+      "pk": "PK",
+      "pkTitle": "Clé primaire — identifiant unique de chaque ligne de cette table.",
+      "fk": "FK",
+      "fkTitle": "Clé étrangère — référence une ligne d’une autre table. Cliquez sur la table pour voir les relations.",
+      "nullLabel": "null",
+      "title": "Tables et colonnes",
+      "tablesSelectedText": "{count, plural, one {table sélectionnée} other {tables sélectionnées}}",
+      "columnsTotalText": "{count, plural, one {colonne au total} other {colonnes au total}}",
+      "scanPiiTitle": "Analyser toutes les colonnes sélectionnées pour détecter automatiquement les données personnelles (PII) telles que les e-mails, numéros de téléphone, noms, etc.",
+      "scanning": "Analyse en cours...",
+      "scanForPii": "Rechercher des PII",
+      "deselectAllTitle": "Désélectionner toutes les tables et colonnes de ce schéma.",
+      "selectAllTitle": "Sélectionner toutes les tables et colonnes de ce schéma pour les inclure dans le serveur MCP.",
+      "deselectAllButton": "Tout désélectionner",
+      "selectAllButton": "Tout sélectionner",
+      "searchPlaceholder": "Rechercher des tables...",
+      "tableCountParen": "({count, plural, one {# table} other {# tables}})",
+      "noTablesMatching": "Aucune table ne correspond à « {query} »"
+    }
+  },
+  "auditLog": {
+    "title": "Journal d’audit",
+    "description": "Chaque appel d’outil traité par vos serveurs MCP.",
+    "viewer": {
+      "filters": {
+        "mcpServerLabel": "Serveur MCP",
+        "mcpServerHelp": "Filtrer les entrées par serveur MCP.",
+        "allServers": "Tous les serveurs MCP",
+        "fromLabel": "Du",
+        "fromHelp": "Afficher uniquement les entrées à partir de cette date.",
+        "toLabel": "Au",
+        "toHelp": "Afficher uniquement les entrées jusqu’à cette date incluse."
+      },
+      "autoRefresh": {
+        "label": "Actualisation automatique",
+        "help": "Actualise automatiquement le journal toutes les 5 secondes."
+      },
+      "export": {
+        "jsonButton": "Exporter en JSON",
+        "jsonTooltip": "Télécharger toutes les entrées filtrées au format JSON.",
+        "csvButton": "Exporter en CSV",
+        "csvTooltip": "Télécharger toutes les entrées filtrées au format CSV (compatible Excel)."
+      },
+      "table": {
+        "colTime": "Heure",
+        "colTimeTooltip": "Horodatage de l’appel d’outil.",
+        "colServer": "Serveur MCP",
+        "colServerTooltip": "Serveur MCP ayant traité la requête.",
+        "colTool": "Outil",
+        "colToolTooltip": "Nom de l’outil MCP appelé.",
+        "colResult": "Résultat",
+        "colResultTooltip": "Résultat de l’exécution : succès ou erreur.",
+        "colDuration": "Durée",
+        "colDurationTooltip": "Temps d’exécution total de l’outil, en millisecondes ou en secondes.",
+        "colSummary": "Résumé",
+        "colSummaryTooltip": "Bref résumé du résultat ou de l’erreur renvoyée.",
+        "loading": "Chargement du journal d’audit...",
+        "empty": "Aucune entrée de journal d’audit trouvée.",
+        "resultSuccessTooltip": "L’outil s’est exécuté sans erreur.",
+        "resultErrorTooltip": "L’outil a échoué. Cliquez sur la ligne pour voir les détails.",
+        "resultSuccess": "succès",
+        "resultError": "erreur"
+      },
+      "expanded": {
+        "toolArguments": "Arguments de l’outil :",
+        "rawResult": "Résultat brut :"
+      },
+      "pagination": {
+        "showing": "Affichage de {from} à {to} sur {total} entrées",
+        "previous": "Précédent",
+        "pageOf": "Page {current} sur {total}",
+        "next": "Suivant"
+      },
+      "errors": {
+        "loadFailed": "Échec du chargement du journal d’audit.",
+        "networkError": "Erreur réseau lors du chargement du journal d’audit."
+      }
+    }
+  },
+  "sidebar": {
+    "sections": {
+      "workspace": "Espace de travail",
+      "govern": "Gouvernance",
+      "admin": "Administration"
+    },
+    "nav": {
+      "mcpServers": "Serveurs MCP",
+      "dataConfigurations": "Configurations de données",
+      "sources": "Sources",
+      "pendingWrites": "Écritures en attente",
+      "auditLog": "Journal d’audit",
+      "users": "Utilisateurs",
+      "workspaces": "Espaces de travail",
+      "metrics": "Métriques",
+      "settings": "Paramètres"
+    },
+    "brand": {
+      "tagline": "Proxy MCP"
+    },
+    "toggleMenu": "Basculer le menu de navigation",
+    "mainNavigation": "Navigation principale",
+    "pendingWriteBadge": "{count, plural, one {# écriture en attente} other {# écritures en attente}}",
+    "logout": "Se déconnecter",
+    "fallbackAdmin": "Admin",
+    "fallbackAdministrator": "Administrateur"
+  },
+  "dashboard": {
+    "description": "Vue d’ensemble de vos serveurs MCP, sources et activité.",
+    "getStarted": "Commencer",
+    "newServer": "Nouveau serveur MCP",
+    "quickNav": {
+      "users": {
+        "label": "UTILISATEURS",
+        "description": "Gérer les comptes utilisateurs et les autorisations"
+      },
+      "settings": {
+        "label": "PARAMÈTRES",
+        "description": "IA, e-mail, SSO, image de marque et notifications"
+      },
+      "metrics": {
+        "label": "MÉTRIQUES",
+        "description": "Analyses d’utilisation et performance"
+      }
+    },
+    "attention": {
+      "title": "Nécessite votre attention",
+      "itemCount": "{count, plural, one {# élément} other {# éléments}}",
+      "allClear": "Tout est en ordre — rien ne nécessite votre attention.",
+      "writeRequestBanner": "{count, plural, one {# demande d’écriture en attente de votre approbation} other {# demandes d’écriture en attente de votre approbation}}",
+      "review": "Examiner"
+    },
+    "pii": {
+      "title": "Protection PII",
+      "subtitle": "masquage des colonnes",
+      "maskedColumnsLabel": "{count, plural, one {colonne masquée dans} other {colonnes masquées dans}}",
+      "configShare": "{used} sur {total, plural, one {# configuration} other {# configurations}}",
+      "ariaLabel": "{used} sur {total} configurations utilisent le masquage",
+      "empty": "Aucune configuration de données pour le moment — le masquage se définit par configuration."
+    },
+    "recentActivity": {
+      "title": "Activité récente",
+      "eventsCount": "{count} événements",
+      "auditLogCaption": "journal d’audit",
+      "statusSuccess": "Succès",
+      "statusError": "Erreur",
+      "openAuditLog": "Ouvrir le journal d’audit"
+    },
+    "pipeline": {
+      "viewAll": "Tout voir →",
+      "sources": {
+        "eyebrow": "SOURCES",
+        "help": "Gérer les sources connectées aux bases PostgreSQL, MySQL ou SQLite et aux bases de connaissances",
+        "connected": "{count} connectée(s)",
+        "knowledgeBaseCount": "{count, plural, one {# base de connaissances} other {# bases de connaissances}}",
+        "connectedTooltip": "Connectée, schéma chargé",
+        "notConnectedTooltip": "Non connectée",
+        "empty": "Aucune source pour le moment"
+      },
+      "dataConfigurations": {
+        "eyebrow": "CONFIGURATIONS DE DONNÉES",
+        "help": "Configurer les tables et colonnes de vos bases de données exposées aux clients IA",
+        "withPiiMasking": "{count} avec masquage PII",
+        "withWriteAccess": "{count} avec accès en écriture",
+        "readOnlyExposure": "exposition en lecture seule",
+        "tableCount": "{count, plural, one {# table} other {# tables}}",
+        "empty": "Aucune configuration de données"
+      },
+      "mcpServers": {
+        "eyebrow": "SERVEURS MCP",
+        "help": "Démarrer, arrêter et gérer vos serveurs MCP exposés aux clients IA",
+        "activeSuffix": "· {count} actif(s)",
+        "servingOnPort": "en service sur le port {port}",
+        "noServerRunning": "aucun serveur en cours d’exécution",
+        "on": "ON",
+        "off": "OFF",
+        "empty": "Aucun serveur"
+      }
+    },
+    "activityChart": {
+      "title": "Activité",
+      "caption": "appels d’outils · 7 derniers jours · tous les serveurs",
+      "ariaLabel": "Activité par jour sur les 7 derniers jours, jusqu’à {max} appels d’outils",
+      "tooltip": "<b>{count}</b> {count, plural, one {appel d’outil} other {appels d’outils}} · {label}",
+      "emptyState": "Pas encore assez d’activité pour tracer un graphique — les données apparaissent une fois que vos serveurs ont été utilisés pendant au moins deux jours.",
+      "byServerAriaLabel": "Activité par serveur, dernières 24 heures",
+      "byServerCaption": "par serveur · dernières 24h",
+      "barTooltip": "{count, plural, one {# appel d’outil} other {# appels d’outils}} · 24h"
+    },
+    "serversTable": {
+      "title": "Serveurs",
+      "caption": "statut · activité 24h · tendance 7j",
+      "emptyTitle": "Aucun serveur MCP",
+      "emptyDescription": "Créez un serveur pour exposer vos configurations de données aux clients IA.",
+      "table": {
+        "headers": [
+          "Serveur",
+          "Statut",
+          "Auth",
+          "Activité 24h",
+          "Tendance"
+        ]
+      },
+      "statusActive": "ACTIF",
+      "statusStopped": "ARRÊTÉ",
+      "authOpenFallback": "ouvert"
+    }
+  },
+  "mcpList": {
+    "title": "Serveurs MCP",
+    "description": "Gérez vos serveurs MCP. Démarrez, arrêtez et configurez l’accès pour chaque serveur MCP.",
+    "users": {
+      "errors": {
+        "loadFailed": "Échec du chargement des utilisateurs.",
+        "removeFailed": "Échec de la suppression de l’utilisateur.",
+        "addFailed": "Échec de l’ajout de l’utilisateur.",
+        "createFailed": "Échec de la création de l’utilisateur."
+      },
+      "confirmRemove": "Retirer cet utilisateur de ce serveur MCP ?",
+      "newUserButton": "+ Nouvel utilisateur",
+      "addExistingButton": "+ Ajouter un utilisateur existant",
+      "tokenDisplay": {
+        "heading": "Jeton d’accès — copiez-le maintenant, affiché une seule fois",
+        "copy": "Copier",
+        "dismiss": "Ignorer"
+      },
+      "accessMode": {
+        "both": "MCP + Chat",
+        "mcp": "MCP uniquement",
+        "chat": "Chat uniquement"
+      },
+      "quickCreate": {
+        "heading": "Création rapide d’un utilisateur pour {profileName}",
+        "namePlaceholder": "Nom",
+        "emailPlaceholder": "E-mail",
+        "createButton": "Créer"
+      },
+      "addExisting": {
+        "heading": "Ajouter un utilisateur existant à {profileName}",
+        "accessModeLabel": "Mode d’accès :",
+        "addButton": "Ajouter"
+      },
+      "loading": "Chargement...",
+      "emptyState": "Aucun utilisateur n’a accès à ce serveur MCP.",
+      "table": {
+        "colName": "Nom",
+        "colEmail": "E-mail",
+        "colAccess": "Accès",
+        "colStatus": "Statut",
+        "colLastActive": "Dernière activité",
+        "removeButton": "Retirer"
+      }
+    },
+    "preview": {
+      "dialogAriaLabel": "Aperçu du serveur MCP : {name}",
+      "closeAriaLabel": "Fermer l’aperçu",
+      "heading": "Aperçu du serveur MCP : <name>{profileName}</name>",
+      "loading": "Chargement de l’aperçu...",
+      "errorHeading": "Échec du chargement de l’aperçu",
+      "errors": {
+        "statusFallback": "Erreur {status}",
+        "loadFailed": "Échec du chargement de l’aperçu."
+      },
+      "summary": {
+        "tables": "<b>{count}</b> {count, plural, one {table} other {tables}}",
+        "columns": "<b>{count}</b> {count, plural, one {colonne} other {colonnes}}",
+        "masked": "<b>{count}</b> masqués"
+      },
+      "emptyTables": "Aucune table trouvée dans ce serveur MCP.",
+      "columnsTable": {
+        "ariaLabel": "Colonnes de la table {name}",
+        "colColumn": "Colonne",
+        "colType": "Type",
+        "colStatus": "Statut"
+      },
+      "status": {
+        "hidden": "Masquée",
+        "visible": "Visible"
+      },
+      "sampleRowLabel": "Exemple de ligne (masquage appliqué) :"
+    }
+  },
+  "users": {
+    "page": {
+      "breadcrumbUsers": "Utilisateurs",
+      "title": "Utilisateurs et accès",
+      "description": "Gérez les comptes administrateurs et l’accès des utilisateurs finaux à vos serveurs MCP.",
+      "viewAriaLabel": "Vue Utilisateurs",
+      "tabUsers": "Utilisateurs",
+      "tabMatrix": "Matrice d’accès",
+      "tabMatrixDescription": "Auditez quels utilisateurs peuvent accéder à quels serveurs MCP"
+    },
+    "accessMatrix": {
+      "heading": "Matrice d’accès",
+      "legend": "utilisateurs × serveurs MCP · R = lecture · R+W = écriture autorisée · * = restreint à certaines tables",
+      "loading": "Chargement des utilisateurs…",
+      "emptyNoServers": {
+        "title": "Aucun serveur MCP",
+        "description": "Créez d’abord un serveur — la matrice associe les utilisateurs aux serveurs."
+      },
+      "emptyNoUsers": {
+        "title": "Aucun utilisateur pour le moment",
+        "description": "Accordez à un utilisateur l’accès à un serveur MCP pour peupler la matrice."
+      },
+      "colUser": "Utilisateur",
+      "noAccessTooltip": "{user} n’a pas accès à {server}",
+      "ariaNoAccess": "Aucun accès",
+      "ariaTableRestricted": "Restreint à certaines tables",
+      "modeLabel": {
+        "mcp": "MCP",
+        "chat": "Chat",
+        "both": "MCP+Chat"
+      },
+      "modeAccess": "Accès {mode}",
+      "writeAllowed": "écriture autorisée",
+      "readOnly": "lecture seule",
+      "restrictedToTables": "{count, plural, one {restreint à # table} other {restreint à # tables}}",
+      "allTables": "toutes les tables"
+    },
+    "dashboard": {
+      "loadError": "Échec du chargement des données du compte.",
+      "loading": "Chargement...",
+      "signOut": "Se déconnecter",
+      "chatNotConfigured": "Le chat n’est pas encore configuré par l’administrateur.",
+      "contactAdmin": "Contactez votre administrateur pour activer le chat IA.",
+      "backToChat": "Retour au chat",
+      "profileHeading": "Mon profil",
+      "nameLabel": "Nom",
+      "emailLabel": "E-mail",
+      "changePassword": "Changer le mot de passe",
+      "currentPasswordLabel": "Mot de passe actuel",
+      "newPasswordLabel": "Nouveau mot de passe (8 caractères minimum)",
+      "updatePasswordButton": "Mettre à jour le mot de passe",
+      "passwordUpdated": "Mot de passe mis à jour avec succès.",
+      "passwordChangeFailed": "Échec du changement de mot de passe.",
+      "connectionError": "Erreur de connexion.",
+      "tokenHeading": "Mon jeton d’accès",
+      "newTokenGenerated": "Nouveau jeton d’accès généré — copiez-le maintenant.",
+      "copy": "Copier",
+      "copied": "Copié !",
+      "show": "Afficher",
+      "hide": "Masquer",
+      "revealPrompt": "Entrez votre mot de passe pour révéler votre jeton d’accès.",
+      "passwordPlaceholder": "Votre mot de passe",
+      "revealOk": "OK",
+      "revealVerifying": "...",
+      "revealIncorrectPassword": "Mot de passe incorrect.",
+      "cancel": "Annuler",
+      "regenerateTokenConfirm": "Régénérer votre jeton d’accès ? Votre jeton actuel cessera de fonctionner immédiatement. Vous devrez mettre à jour la configuration de votre client MCP.",
+      "regenerateTokenFailed": "Échec de la régénération du jeton.",
+      "regenerateTokenLink": "Régénérer le jeton d’accès",
+      "mcpServersHeading": "Mes serveurs MCP",
+      "noMcpServers": "Aucun serveur MCP associé à votre compte.",
+      "accessModeBoth": "MCP + Chat",
+      "accessModeMcp": "MCP uniquement",
+      "accessModeChat": "Chat uniquement",
+      "endpointLabel": "Point de terminaison",
+      "accessibleTablesLabel": "Tables accessibles",
+      "showConfigSnippet": "Afficher l’extrait de configuration"
+    },
+    "login": {
+      "subtitle": "Connectez-vous à votre compte",
+      "emailLabel": "E-mail",
+      "emailPlaceholder": "votre@email.com",
+      "passwordLabel": "Mot de passe",
+      "passwordPlaceholder": "Entrez votre mot de passe",
+      "invalidCredentials": "Identifiants invalides.",
+      "connectionError": "Erreur de connexion. Veuillez réessayer.",
+      "signingIn": "Connexion en cours...",
+      "signIn": "Se connecter"
+    }
+  },
+  "tenants": {
+    "page": {
+      "title": "Espaces de travail",
+      "description": "Liste de tous les espaces de travail découverts sur cette instance. Les espaces de travail sont créés implicitement dès qu’une écriture utilise un nouvel identifiant."
+    },
+    "resourceColumns": {
+      "profiles": "Serveurs MCP",
+      "configurations": "Configurations de données",
+      "aiSettings": "Paramètres IA",
+      "tokens": "Clés API",
+      "users": "Utilisateurs",
+      "ragSources": "Sources RAG"
+    },
+    "management": {
+      "loading": "Chargement des espaces de travail…",
+      "error": "Erreur : {error}",
+      "retry": "Réessayer",
+      "errors": {
+        "loadFailed": "Échec du chargement des espaces de travail."
+      },
+      "empty": {
+        "title": "Aucun espace de travail trouvé",
+        "description": "Les espaces de travail sont créés implicitement par le premier INSERT. Utilisez le sélecteur d’espace de travail dans la barre latérale pour basculer vers un nouveau contexte."
+      },
+      "activeCount": "{count, plural, one {# espace de travail actif sur cette instance.} other {# espaces de travail actifs sur cette instance.}}",
+      "refresh": "Actualiser",
+      "refreshing": "Actualisation…",
+      "table": {
+        "workspace": "Espace de travail",
+        "total": "Total",
+        "actions": "Actions"
+      },
+      "badges": {
+        "default": "PAR DÉFAUT",
+        "defaultTooltip": "L’espace de travail par défaut ne peut pas être supprimé — c’est le contexte implicite des installations à un seul espace de travail.",
+        "active": "ACTIF",
+        "activeTooltip": "Espace de travail actif — changez d’espace de travail avant de pouvoir supprimer celui-ci."
+      },
+      "deleteButton": {
+        "label": "Supprimer",
+        "defaultTitle": "L’espace de travail par défaut ne peut pas être supprimé.",
+        "currentTitle": "Changez d’espace de travail avant de pouvoir supprimer celui-ci.",
+        "title": "Supprimer définitivement « {id} »"
+      },
+      "hintFooter": "Les espaces de travail sont créés implicitement : la première écriture utilisant un <code>tenant_id</code> donné suffit à matérialiser un nouvel espace de travail. Pour en créer un, utilisez le sélecteur d’espace de travail dans la barre latérale.",
+      "modal": {
+        "title": "Supprimer définitivement cet espace de travail ?",
+        "body": "Vous êtes sur le point de supprimer l’espace de travail <code>{id}</code>. Cette action est <b>irréversible</b> et supprimera tous les serveurs MCP, configurations de données, sources RAG, clés API, utilisateurs et données associés à cet espace de travail.",
+        "dataHeading": "Données qui seront supprimées",
+        "noResources": "Aucune ressource — la suppression est idempotente.",
+        "typeToConfirm": "Tapez <code>{id}</code> pour confirmer :",
+        "confirmMismatch": "Veuillez saisir exactement « {id} » pour confirmer la suppression.",
+        "deleteFailedStatus": "Échec de la suppression avec le statut {status}.",
+        "deleting": "Suppression…",
+        "confirmButton": "Supprimer définitivement"
+      }
+    },
+    "switcher": {
+      "invalidFormat": "Format invalide — lettres, chiffres, tirets et underscores uniquement (1 à 64 caractères).",
+      "currentWorkspaceAriaLabel": "Espace de travail actuel : {workspace}. Cliquez pour changer.",
+      "nonDefaultIndicatorAriaLabel": "Espace de travail non par défaut actif",
+      "workspaceActiveTitle": "Espace de travail « {tenant} » actif",
+      "dialogAriaLabel": "Sélecteur d’espace de travail",
+      "headerLabel": "Espace de travail",
+      "availableWorkspacesAriaLabel": "Espaces de travail disponibles",
+      "newWorkspaceHeading": "Nouvel espace de travail",
+      "newWorkspacePlaceholder": "mon-espace-de-travail",
+      "newWorkspaceAriaLabel": "Nom du nouvel espace de travail",
+      "okButton": "OK",
+      "manageWorkspacesLink": "Gérer les espaces de travail →"
+    }
+  },
+  "settingsPanels": {
+    "smtp": {
+      "loading": "Chargement des paramètres SMTP...",
+      "title": "Paramètres e-mail / SMTP",
+      "helpTip": "Le SMTP (Simple Mail Transfer Protocol) est utilisé pour envoyer les e-mails d'invitation aux nouveaux utilisateurs. Sans configuration SMTP, les invitations ne peuvent pas être envoyées automatiquement.",
+      "description": "Configurez le SMTP pour envoyer des e-mails d'invitation aux utilisateurs.",
+      "status": {
+        "configured": "Configuré",
+        "notConfigured": "Non configuré"
+      },
+      "host": {
+        "label": "Hôte SMTP",
+        "help": "Nom d'hôte du serveur SMTP sortant. Exemples courants : smtp.gmail.com (Gmail), smtp.office365.com (Microsoft 365), email-smtp.eu-west-1.amazonaws.com (Amazon SES). Demandez cette valeur à votre fournisseur de messagerie.",
+        "placeholder": "smtp.gmail.com"
+      },
+      "port": {
+        "label": "Port SMTP",
+        "help": "Port TCP du serveur SMTP. Ports standards : 25 (SMTP sans chiffrement, souvent bloqué), 465 (SMTPS — SSL/TLS dès la connexion), 587 (SMTP + STARTTLS — recommandé pour la plupart des serveurs modernes). En cas de doute, utilisez 587.",
+        "hint": "Ports courants : 25 (SMTP), 465 (SSL), 587 (STARTTLS)"
+      },
+      "username": {
+        "label": "Nom d'utilisateur",
+        "help": "Identifiant de connexion au serveur SMTP. Pour Gmail ou Microsoft 365, il s'agit généralement de votre adresse e-mail complète. Certains serveurs SMTP d'entreprise utilisent un identifiant distinct.",
+        "placeholder": "user@example.com"
+      },
+      "password": {
+        "label": "Mot de passe",
+        "help": "Mot de passe SMTP, stocké chiffré sur le serveur. Pour Gmail, utilisez un mot de passe d'application plutôt que le mot de passe principal du compte. Pour Amazon SES, utilisez la clé secrète SMTP générée dans la console AWS.",
+        "show": "Afficher",
+        "hide": "Masquer",
+        "revealPrompt": "Saisissez votre mot de passe administrateur pour révéler le mot de passe SMTP.",
+        "adminPasswordPlaceholder": "Mot de passe administrateur",
+        "ok": "OK",
+        "hintMasked": "Cliquez sur « Afficher » pour révéler avec le mot de passe administrateur.",
+        "hintUnchanged": "Si vous ne le modifiez pas, le mot de passe existant est conservé sur le serveur."
+      },
+      "fromAddress": {
+        "label": "Adresse d'expédition",
+        "help": "Adresse e-mail affichée comme expéditeur dans les e-mails d'invitation. Peut inclure un nom d'affichage, ex. Calame &lt;noreply@example.com&gt;. Cette adresse doit être autorisée par votre fournisseur SMTP (domaine vérifié sur Amazon SES, alias sur Gmail, etc.).",
+        "placeholder": "Calame <noreply@example.com>"
+      },
+      "actions": {
+        "saveTooltip": "Enregistre la configuration SMTP sur le serveur. Les e-mails d'invitation utiliseront ces paramètres dès la prochaine invitation.",
+        "saving": "Enregistrement...",
+        "testTooltip": "Envoie un e-mail de test à l'adresse « expéditeur » pour vérifier que la connexion SMTP fonctionne correctement avant l'enregistrement.",
+        "testing": "Test en cours...",
+        "testConnection": "Tester la connexion"
+      },
+      "messages": {
+        "savedSuccess": "Enregistré avec succès.",
+        "saveFailed": "Échec de l'enregistrement.",
+        "connectionError": "Erreur de connexion.",
+        "incorrectPassword": "Mot de passe incorrect.",
+        "failedToReachServer": "Impossible de joindre le serveur.",
+        "connectionOk": "Connexion OK.",
+        "testFailed": "Échec du test."
+      }
+    },
+    "branding": {
+      "title": "Image de marque",
+      "description": "Personnalisez votre instance avec un logo, un favicon, une couleur d'accent et une police personnalisés — appliqués à l'ensemble de l'instance pour tous les utilisateurs.",
+      "errors": {
+        "hexFormat": "La couleur d'accent doit être un code hexadécimal comme #5c7cfa",
+        "saveFailed": "Échec de l'enregistrement de l'image de marque",
+        "unknown": "Erreur inconnue"
+      },
+      "logo": {
+        "label": "Logo",
+        "upload": "Importer une image"
+      },
+      "favicon": {
+        "label": "Favicon",
+        "upload": "Importer un favicon"
+      },
+      "remove": "Supprimer",
+      "previewAlt": "Aperçu",
+      "accentColor": {
+        "label": "Couleur d'accent",
+        "pickerAriaLabel": "Sélecteur de couleur d'accent",
+        "hexAriaLabel": "Code hexadécimal de la couleur d'accent"
+      },
+      "resetToDefault": "Réinitialiser par défaut",
+      "font": {
+        "label": "Police",
+        "addFontPlaceholder": "Ajouter une police par son nom (ex. Poppins)",
+        "addFontAriaLabel": "Ajouter une police personnalisée",
+        "add": "Ajouter",
+        "hint": "Les polices ajoutées doivent déjà être installées sur les appareils des utilisateurs ou chargées ailleurs sur la page."
+      },
+      "preview": {
+        "label": "Aperçu",
+        "customLogoActive": "Logo personnalisé actif",
+        "defaultLogo": "Logo Calame par défaut"
+      },
+      "actions": {
+        "saving": "Enregistrement…",
+        "reset": "Réinitialiser",
+        "saved": "Enregistré !"
+      }
+    },
+    "notifications": {
+      "loading": "Chargement des paramètres de notification...",
+      "title": "Notifications",
+      "helpTip": "Soyez averti dans l'application, par webhook ou par e-mail chaque fois qu'une demande d'écriture entre dans la file d'approbation humaine.",
+      "description": "Choisissez comment vous souhaitez être alerté lorsqu'une demande d'écriture est en attente d'approbation.",
+      "channels": {
+        "inApp": "Dans l'application",
+        "webhook": "Webhook",
+        "email": "E-mail"
+      },
+      "webhook": {
+        "urlLabel": "URL du webhook",
+        "urlPlaceholder": "https://hooks.slack.com/services/…",
+        "secretLabel": "Secret du webhook",
+        "secretHelp": "Signe la charge utile JSON générique (en-tête X-Calame-Signature). Laissez inchangé pour conserver le secret actuel.",
+        "formatLabel": "Format",
+        "formatOptions": {
+          "json": "JSON générique",
+          "slack": "Slack"
+        }
+      },
+      "email": {
+        "recipientsLabel": "Destinataires (un e-mail par ligne)",
+        "recipientsPlaceholder": "alice@example.com\nbob@example.com"
+      },
+      "actions": {
+        "saving": "Enregistrement...",
+        "sendTest": "Envoyer une notification de test",
+        "sending": "Envoi..."
+      },
+      "messages": {
+        "savedSuccess": "Enregistré avec succès.",
+        "saveFailed": "Échec de l'enregistrement.",
+        "connectionError": "Erreur de connexion.",
+        "saveBeforeTestFailed": "Impossible d'enregistrer les paramètres avant le test.",
+        "testFailed": "Échec du test."
+      },
+      "testResults": {
+        "ok": "OK",
+        "failed": "Échec"
+      }
+    },
+    "masking": {
+      "modes": {
+        "none": {
+          "label": "Aucun",
+          "description": "Aucun masquage — la valeur brute est exposée telle quelle."
+        },
+        "exclude": {
+          "label": "Exclure",
+          "description": "Exclut complètement cette colonne des résultats renvoyés par le serveur MCP."
+        },
+        "hash": {
+          "label": "Hachage",
+          "description": "Remplace la valeur par son hachage SHA-256. Permet la comparaison sans révéler les données réelles."
+        },
+        "truncate": {
+          "label": "Tronquer",
+          "description": "Masque une partie de la valeur, en ne conservant que le nombre configuré de caractères en début et/ou en fin."
+        },
+        "replace": {
+          "label": "Remplacer",
+          "description": "Remplace la valeur entière par une chaîne fixe (ex. [MASKED])."
+        },
+        "aggregate_only": {
+          "label": "Agrégats uniquement",
+          "description": "Autorise uniquement les agrégats (COUNT, SUM…). Les valeurs individuelles ne sont pas accessibles."
+        }
+      },
+      "selector": {
+        "defaultTitle": "Sélectionnez un mode de masquage pour cette colonne.",
+        "truncate": {
+          "show": "Afficher",
+          "first": "premiers /",
+          "last": "derniers",
+          "showFirstTitle": "Nombre de caractères à conserver depuis le début de la valeur.",
+          "showLastTitle": "Nombre de caractères à conserver depuis la fin de la valeur."
+        },
+        "replace": {
+          "title": "Valeur fixe qui remplacera les données réelles dans toutes les réponses."
+        }
+      },
+      "global": {
+        "title": "Règles de masquage globales",
+        "headerHelpTip": "Règles appliquées automatiquement à toutes les colonnes PII d'une catégorie donnée, sur toutes les tables.",
+        "addRule": "+ Ajouter une règle",
+        "addRuleHelpTip": "Ajouter une nouvelle règle de masquage globale pour une catégorie PII.",
+        "description": "Appliquez un mode de masquage par défaut à toutes les colonnes PII détectées d'une catégorie donnée.",
+        "emptyState": "Aucune règle globale définie.",
+        "piiCategoryLabels": {
+          "email": "email",
+          "phone": "téléphone",
+          "name": "nom",
+          "address": "adresse",
+          "credit_card": "carte de crédit",
+          "password": "mot de passe",
+          "ip_address": "adresse IP",
+          "ssn": "numéro de sécurité sociale",
+          "encrypted": "chiffré"
+        },
+        "categoryHelpTip": "Catégorie PII à laquelle cette règle s'applique (email, téléphone, nom, etc.).",
+        "modeHelpTip": "Mode de masquage : Exclure (supprime la colonne), Hachage (hachage SHA-256), Tronquer (conserve N caractères en début/fin), Remplacer (valeur fixe), Agrégats uniquement (bloque les requêtes brutes).",
+        "truncateHelpTip": "Nombre de caractères conservés au début / à la fin de la valeur.",
+        "replaceHelpTip": "Valeur de remplacement affichée à la place des données sensibles.",
+        "deleteRuleTitle": "Supprimer cette règle",
+        "deleteRuleAriaLabel": "Supprimer cette règle de masquage"
+      }
+    },
+    "pii": {
+      "categoryLabels": {
+        "email": "Email",
+        "phone": "Téléphone",
+        "name": "Nom",
+        "address": "Adresse",
+        "credit_card": "Carte",
+        "password": "Mot de passe",
+        "ip_address": "IP",
+        "ssn": "NSS",
+        "encrypted": "Chiffré"
+      },
+      "confidenceLabels": {
+        "high": "Confiance élevée — les données sont très probablement sensibles.",
+        "medium": "Confiance moyenne — vérification recommandée.",
+        "low": "Confiance faible — détection incertaine.",
+        "manual": "Signalé manuellement par un administrateur."
+      },
+      "categoryDescriptions": {
+        "email": "Adresse e-mail",
+        "phone": "Numéro de téléphone",
+        "name": "Nom de personne",
+        "address": "Adresse postale",
+        "credit_card": "Numéro de carte de crédit",
+        "password": "Mot de passe ou secret",
+        "ip_address": "Adresse IP",
+        "ssn": "Numéro de sécurité sociale",
+        "encrypted": "Données chiffrées"
+      },
+      "tooltip": {
+        "manual": "PII : {description} — {confidence}",
+        "detectedBy": "PII : {description} — {confidence} Détecté par : {matchedBy}.",
+        "clickToEdit": " Cliquez pour modifier."
+      },
+      "badgeLabel": "PII:{label}",
+      "removeTag": "Retirer le tag PII"
+    }
+  },
+  "pendingWrites": {
+    "page": {
+      "title": "Écritures en attente",
+      "description": "Opérations d’écriture proposées par des LLM, en attente d’approbation humaine."
+    },
+    "filters": {
+      "pending": "En attente",
+      "approved": "Approuvées",
+      "rejected": "Rejetées",
+      "all": "Toutes"
+    },
+    "summary": {
+      "pending": "{count, plural, one {# requête en attente} other {# requêtes en attente}}",
+      "approved": "{count, plural, one {# requête approuvée} other {# requêtes approuvées}}",
+      "rejected": "{count, plural, one {# requête rejetée} other {# requêtes rejetées}}",
+      "total": "{count, plural, one {# requête au total} other {# requêtes au total}}"
+    },
+    "loadingEntries": "Chargement...",
+    "empty": {
+      "pending": "Aucune écriture en attente. Les opérations d’écriture proposées par un LLM apparaîtront ici — activez l’outil <code>write</code> sur une table dans une configuration de données.",
+      "approved": "Aucune requête d’écriture approuvée.",
+      "rejected": "Aucune requête d’écriture rejetée.",
+      "all": "Aucune requête d’écriture."
+    },
+    "badge": {
+      "status": {
+        "pending": {
+          "label": "en attente",
+          "tooltip": "En attente d’approbation par un administrateur."
+        },
+        "approved": {
+          "label": "approuvée",
+          "tooltip": "Requête approuvée et exécutée dans la base de données."
+        },
+        "rejected": {
+          "label": "rejetée",
+          "tooltip": "Requête rejetée — elle ne sera pas exécutée."
+        }
+      },
+      "mcp": {
+        "label": "MCP",
+        "tooltip": "Appel d’outil MCP — « {toolName} », transmis au serveur MCP amont après approbation."
+      },
+      "operation": {
+        "insert": {
+          "label": "insertion",
+          "tooltip": "Opération INSERT — ajoute de nouvelles lignes à la table."
+        },
+        "update": {
+          "label": "mise à jour",
+          "tooltip": "Opération UPDATE — modifie des lignes existantes dans la table."
+        },
+        "delete": {
+          "label": "suppression",
+          "tooltip": "Opération DELETE — supprime des lignes de la table. Irréversible sans sauvegarde."
+        }
+      }
+    },
+    "actions": {
+      "approve": {
+        "label": "Approuver",
+        "confirmLabel": "Confirmer l’approbation",
+        "tooltip": "Approuver et exécuter cette requête immédiatement dans la base de données.",
+        "confirmTooltip": "Cette action exécutera immédiatement un {operation} irréversible. Continuer ?"
+      },
+      "reject": {
+        "label": "Rejeter",
+        "tooltip": "Rejeter cette requête — elle ne sera pas exécutée et sera marquée comme rejetée."
+      },
+      "loadingEllipsis": "...",
+      "details": {
+        "showLabel": "Détails",
+        "hideLabel": "Masquer",
+        "showTooltip": "Afficher le SQL complet et les paramètres de cette requête.",
+        "hideTooltip": "Masquer le SQL et les paramètres de cette requête."
+      },
+      "goToProfileTooltip": "Aller au serveur MCP {profileName}"
+    },
+    "details": {
+      "toolLabel": "Outil :",
+      "argsLabel": "Arguments :",
+      "sqlLabel": "SQL :",
+      "parametersLabel": "Paramètres :",
+      "approvedAtLabel": "Approuvé le : {time}",
+      "executionResultLabel": "Résultat de l’exécution :",
+      "executionErrorLabel": "Erreur d’exécution :",
+      "idLabel": "ID : {id}"
+    }
+  },
+  "connections": {
+    "tokenManager": {
+      "loading": "Chargement des clés API...",
+      "copy": "Copier",
+      "copied": "Copié !",
+      "apiKeyCount": "{count, plural, one {# clé API} other {# clés API}}",
+      "generateButton": "Générer une clé API",
+      "generateHelpTip": "Génère une nouvelle clé API pour ce serveur MCP. La clé ne sera affichée qu’une seule fois.",
+      "emptyState": "Aucune clé API pour ce serveur MCP. Générez-en une pour connecter des clients MCP.",
+      "errors": {
+        "loadFailed": "Échec du chargement des clés API.",
+        "loadNetworkError": "Erreur réseau lors du chargement des clés API.",
+        "generateFailed": "Échec de la génération de la clé API.",
+        "generateNetworkError": "Erreur réseau lors de la génération de la clé API.",
+        "revealFailed": "Échec de l’affichage de la clé API.",
+        "revealConnectionError": "Erreur de connexion.",
+        "revokeFailed": "Échec de la révocation de la clé API.",
+        "revokeNetworkError": "Erreur réseau lors de la révocation de la clé API."
+      },
+      "newToken": {
+        "heading": "Clé API générée — copiez-la maintenant !",
+        "warning": "Cette clé API ne sera affichée qu’une seule fois. Conservez-la en lieu sûr.",
+        "claudeAiInstructions": "claude.ai (collez cette URL dans Personnaliser > Connecteurs — Paramètres de l’organisation > Connecteurs pour Équipe/Entreprise) :",
+        "copyUrlButton": "Copier l’URL",
+        "ngrokHint": "Pour un accès distant, exposez via ngrok : <code>ngrok http {port}</code> puis remplacez l’origine.",
+        "configLabel": "Configuration Claude Desktop / Cursor :",
+        "dismiss": "Ignorer"
+      },
+      "generateForm": {
+        "labelField": "Libellé de la clé API",
+        "labelPlaceholder": "ex. Claude Desktop, CI/CD...",
+        "generating": "Génération...",
+        "create": "Créer",
+        "createHelpTip": "Crée la clé API avec le libellé indiqué. Cette clé authentifiera un client MCP spécifique."
+      },
+      "tokenRow": {
+        "reveal": "Afficher",
+        "revealHelpTip": "Afficher la valeur complète de la clé API (mot de passe administrateur requis)",
+        "created": "Créée le {date}",
+        "lastUsed": "Dernière utilisation le {date}",
+        "confirmRevoke": "Confirmer la révocation",
+        "revoke": "Révoquer",
+        "revokeHelpTip": "Révoquer cette clé API — les clients qui l’utilisent seront déconnectés immédiatement.",
+        "confirmRevokeHelpTip": "Cliquez une seconde fois pour confirmer la révocation définitive de cette clé API.",
+        "revealPrompt": "Saisissez le mot de passe administrateur pour afficher cette clé API.",
+        "passwordPlaceholder": "Mot de passe administrateur",
+        "ok": "OK",
+        "copyTooltip": "Copier la clé API dans le presse-papiers",
+        "hide": "Masquer"
+      },
+      "endpoints": {
+        "heading": "Points de terminaison MCP",
+        "descriptionDefault": "Chaque profil dispose de son propre point de terminaison MCP :",
+        "descriptionTenant": "Chaque profil dispose de son propre point de terminaison MCP — les URL incluent l’identifiant de l’espace de travail (<code>{tenant}</code>) afin que les clients MCP externes atteignent le bon espace de travail :",
+        "copyTooltip": "Copier l’URL du point de terminaison MCP dans le presse-papiers"
+      }
+    }
+  },
+  "serveTunnel": {
+    "servePanel": {
+      "heading": "Serveurs MCP",
+      "activeCount": "{active}/{total} actifs",
+      "stopAllButton": "Tout arrêter",
+      "stopAllButtonStopping": "Arrêt en cours...",
+      "stopAllTooltip": "Arrêter en une seule fois tous les serveurs MCP actuellement actifs.",
+      "errors": {
+        "startFailed": "Échec du démarrage du serveur MCP « {name} ».",
+        "startNetworkError": "Erreur réseau lors du démarrage du serveur MCP « {name} ».",
+        "stopFailed": "Échec de l’arrêt du serveur MCP « {name} ».",
+        "stopNetworkError": "Erreur réseau lors de l’arrêt du serveur MCP « {name} ».",
+        "stopAllFailed": "Échec de l’arrêt de tous les serveurs.",
+        "stopAllNetworkError": "Erreur réseau lors de l’arrêt des serveurs."
+      },
+      "createForm": {
+        "namePlaceholder": "Nom du MCP...",
+        "create": "Créer",
+        "duplicateName": "Un profil nommé « {name} » existe déjà."
+      },
+      "newServerCard": "Nouveau serveur MCP",
+      "deleteConfirm": {
+        "yes": "Oui",
+        "no": "Non"
+      },
+      "deleteTooltip": "Supprimer ce serveur MCP et sa configuration",
+      "deleteAriaLabel": "Supprimer le serveur MCP {name}",
+      "authMode": {
+        "labels": {
+          "open": "Ouvert",
+          "token": "Clé API",
+          "calame": "Calame",
+          "sso": "SSO",
+          "oauth": "OAuth",
+          "external": "Externe"
+        },
+        "descriptions": {
+          "open": "Accès ouvert sans authentification — à utiliser uniquement en développement.",
+          "token": "Authentification par clé API (jeton Bearer).",
+          "calame": "Authentification via Calame (nécessite un compte Calame).",
+          "sso": "Authentification SSO via le fournisseur d’identité de votre entreprise.",
+          "oauth": "Authentification OAuth 2.0 avec le flux d’autorisation standard.",
+          "external": "Authentification gérée par un proxy ou un service externe."
+        },
+        "ariaLabel": "Mode d’authentification : {mode}",
+        "tooltip": "Mode d’authentification : {description}"
+      },
+      "responseMode": {
+        "technical": "Technique",
+        "natural": "Naturel",
+        "ariaLabel": "Mode de réponse : {mode}",
+        "technicalTooltip": "Mode Technique : les noms des tables et colonnes sont visibles dans les réponses",
+        "naturalTooltip": "Mode Naturel : les réponses sont formulées en langage simple"
+      },
+      "tableCount": "{count, plural, one {# table} other {# tables}}",
+      "chatLabel": "Chat :",
+      "copy": "Copier",
+      "copied": "Copié !",
+      "copyChatLinkAriaLabel": "Copier le lien de chat pour {name}",
+      "copyChatLinkTooltip": "Copier le lien de chat partageable pour ce serveur MCP (accessible sans l’interface Calame)",
+      "previewButton": "Aperçu",
+      "previewTooltip": "Prévisualiser la configuration de ce serveur MCP sans le démarrer",
+      "previewAriaLabel": "Aperçu du serveur MCP {name}",
+      "toggle": {
+        "start": "Démarrer",
+        "stop": "Arrêter",
+        "startTooltip": "Démarrer ce serveur MCP",
+        "stopTooltip": "Arrêter ce serveur MCP"
+      }
+    },
+    "exposeTunnel": {
+      "copy": "Copier",
+      "copied": "Copié !",
+      "errors": {
+        "statusCheckFailed": "Échec de la vérification de l’état du tunnel.",
+        "statusCheckNetworkError": "Erreur réseau lors de la vérification de l’état du tunnel.",
+        "startFailed": "Échec de l’ouverture du tunnel.",
+        "startNetworkError": "Erreur réseau lors de l’ouverture du tunnel.",
+        "stopFailed": "Échec de l’arrêt du tunnel.",
+        "stopNetworkError": "Erreur réseau lors de l’arrêt du tunnel."
+      },
+      "heading": "Accès distant — Copilot & ChatGPT",
+      "headingHelp": "Les plateformes d’IA cloud comme Microsoft 365 Copilot et ChatGPT s’exécutent dans le cloud et ne peuvent pas atteindre directement un serveur sur cette machine. Ceci ouvre un tunnel Cloudflare sécurisé pour qu’elles puissent se connecter à ce serveur MCP via l’internet public.",
+      "intro1": "L’URL publique change à chaque redémarrage du tunnel, et cette machine doit rester allumée et connectée pour qu’il continue de fonctionner. Prévu pour l’évaluation — utilisez un déploiement serveur de Calame pour la production.",
+      "intro2": "Confidentialité : vos fichiers et votre base de données ne quittent jamais cette machine — seul le contenu des requêtes et réponses MCP transite, chiffré, via le réseau de Cloudflare (et chaque point de terminaison exige toujours votre jeton API). Pour une configuration où le trafic se termine sur votre propre infrastructure, utilisez un déploiement serveur. Voir docs/security-tunnel.md pour le modèle de menace complet.",
+      "checkingStatus": "Vérification de l’état du tunnel…",
+      "unavailable": "L’accès distant n’est pas disponible sur cette instance.",
+      "active": "Tunnel actif",
+      "urlLabel": "URL MCP pour ce serveur",
+      "tokenNote": "Ce point de terminaison exige toujours un jeton API — créez-en un dans l’onglet Clés API ci-dessus.",
+      "stopButton": "Arrêter le tunnel",
+      "stoppingButton": "Arrêt en cours…",
+      "startButton": "Exposer ce serveur",
+      "startingButton": "Ouverture du tunnel sécurisé… (jusqu’à 30 s)",
+      "guides": {
+        "copilot": {
+          "toggle": "Microsoft Copilot (Copilot Studio)",
+          "step1": "Dans Copilot Studio : Outils → Ajouter un outil → Nouvel outil → Model Context Protocol.",
+          "step2Label": "Collez l’URL du serveur :",
+          "step3": "Authentification : clé API. Emplacement : Query. Nom du paramètre : token.",
+          "step4": "Collez votre jeton API Calame (créez-en un dans l’onglet Clés API ci-dessus), puis Créer.",
+          "step5": "Ajoutez le nouvel outil à votre agent."
+        },
+        "chatGpt": {
+          "toggle": "ChatGPT (connecteurs en mode développeur)",
+          "step1": "Dans ChatGPT : Paramètres → Connecteurs → Ajouter un connecteur personnalisé.",
+          "step2Label": "Collez l’URL :",
+          "step3": "ChatGPT n’a pas de champ d’authentification séparé ici — il exige le jeton directement dans l’URL : ajoutez « ?token='<'votre jeton'>' » à l’URL ci-dessus."
+        },
+        "startTunnelHint": " démarrez le tunnel ci-dessus pour obtenir cette URL."
+      }
+    },
+    "connectClaudeDesktop": {
+      "copy": "Copier",
+      "copied": "Copié !",
+      "errors": {
+        "statusCheckFailed": "Échec de la vérification de l’état de Claude Desktop.",
+        "statusCheckNetworkError": "Erreur réseau lors de la vérification de l’état de Claude Desktop.",
+        "connectFailed": "Échec de la connexion à Claude Desktop.",
+        "connectNetworkError": "Erreur réseau lors de la connexion à Claude Desktop.",
+        "snippetLoadFailed": "Échec du chargement de l’extrait de configuration manuelle.",
+        "snippetLoadNetworkError": "Erreur réseau lors du chargement de l’extrait de configuration manuelle."
+      },
+      "heading": "Connectez votre IA",
+      "headingHelp": "Connectez ce serveur MCP à Claude Desktop, ou récupérez un extrait manuel pour d’autres clients MCP.",
+      "checkingStatus": "Recherche de Claude Desktop…",
+      "connectedMessage": "Connecté — redémarrez Claude Desktop pour voir vos outils.",
+      "alreadyConnected": "Déjà connecté à Claude Desktop",
+      "reconfigureButton": "Reconfigurer",
+      "reconfiguringButton": "Reconfiguration…",
+      "connectButton": "Connecter à Claude Desktop",
+      "connectingButton": "Connexion…",
+      "notFound": "Claude Desktop est introuvable sur cette machine.",
+      "manualToggle": "Autres clients / une autre machine",
+      "snippetHostPlaceholder": "Remplacez <code1>YOUR-CALAME-HOST</code1> et <code2>TOKEN</code2> par votre hôte Calame et une clé API."
+    }
+  },
+  "setupLogin": {
+    "setupPage": {
+      "subtitle": "Bienvenue — Créez votre compte administrateur",
+      "form": {
+        "nameLabel": "Nom",
+        "namePlaceholder": "Votre nom",
+        "emailLabel": "E-mail",
+        "emailPlaceholder": "admin@example.com",
+        "passwordLabel": "Mot de passe",
+        "passwordPlaceholder": "Minimum 8 caractères",
+        "confirmPasswordLabel": "Confirmer le mot de passe",
+        "confirmPasswordPlaceholder": "Répétez votre mot de passe",
+        "submitLoading": "Création du compte…",
+        "submitButton": "Créer le compte administrateur"
+      },
+      "errors": {
+        "nameRequired": "Le nom est requis.",
+        "emailInvalid": "Une adresse e-mail valide est requise.",
+        "passwordTooShort": "Le mot de passe doit contenir au moins 8 caractères.",
+        "passwordMismatch": "Les mots de passe ne correspondent pas.",
+        "createFailed": "Échec de la création du compte administrateur.",
+        "connectionError": "Erreur de connexion. Veuillez réessayer."
+      }
+    },
+    "loginPage": {
+      "subtitle": "Connectez-vous à votre compte",
+      "form": {
+        "emailLabel": "E-mail",
+        "emailPlaceholder": "your@email.com",
+        "passwordLabel": "Mot de passe",
+        "passwordPlaceholder": "Saisissez votre mot de passe",
+        "submitLoading": "Connexion en cours…",
+        "submitButton": "Se connecter"
+      },
+      "errors": {
+        "invalidCredentials": "E-mail ou mot de passe invalide.",
+        "connectionError": "Erreur de connexion. Veuillez réessayer."
+      }
+    },
+    "notificationsBell": {
+      "bellAriaLabel": "Notifications",
+      "ariaUnreadCount": "{count} notification(s) non lue(s)",
+      "panel": {
+        "title": "Notifications",
+        "markAllRead": "Tout marquer comme lu",
+        "empty": "Aucune nouvelle notification."
+      },
+      "time": {
+        "minutesAgo": "il y a {minutes}m",
+        "hoursAgo": "il y a {hours}h",
+        "daysAgo": "il y a {days}j"
+      }
+    },
+    "helpTip": {
+      "ariaLabel": "Aide"
+    }
+  }
+}

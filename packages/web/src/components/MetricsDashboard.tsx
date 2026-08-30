@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useTranslations } from 'use-intl/react';
 import { apiFetch } from '../lib/api.js';
 import type { MetricsSummary, PoolStats } from '../types/schema.js';
 import HelpTip from './HelpTip.js';
@@ -8,6 +9,9 @@ import { KpiCard } from './ui/KpiCard.js';
 import { AnimatedNumber, useAnimatedNumber, prefersReducedMotion } from './ui/AnimatedNumber.js';
 
 type Period = '24h' | '7d' | '30d';
+
+/** Shape of the `t()` function returned by `useTranslations`, for helpers below the component. */
+type Translator = ReturnType<typeof useTranslations>;
 
 /** Returns a Tailwind text color class based on response time in ms */
 function responseTimeColor(ms: number): string {
@@ -62,11 +66,11 @@ function aggregateByTime(
 }
 
 /** SVG vertical bar chart with gradient fills, hover state, and Y-axis gridlines */
-function BarChart({ bars }: { bars: Array<{ label: string; count: number }> }) {
+function BarChart({ bars, t }: { bars: Array<{ label: string; count: number }>; t: Translator }) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
 
   if (bars.length === 0) {
-    return <p className="text-gray-500 text-sm text-center py-6">No data for this period.</p>;
+    return <p className="text-gray-500 text-sm text-center py-6">{t('barChart.noData')}</p>;
   }
 
   const maxCount = Math.max(...bars.map((b) => b.count), 1);
@@ -83,7 +87,7 @@ function BarChart({ bars }: { bars: Array<{ label: string; count: number }> }) {
 
   return (
     <div className="overflow-x-auto">
-      <svg width={svgWidth} height={svgHeight} aria-label="Requests over time bar chart" role="img">
+      <svg width={svgWidth} height={svgHeight} aria-label={t('barChart.ariaLabel')} role="img">
         <defs>
           <linearGradient id="bar-gradient" x1="0" y1="1" x2="0" y2="0">
             <stop offset="0%" stopColor="#4c6ef5" stopOpacity="0.9" />
@@ -204,7 +208,7 @@ function BarChart({ bars }: { bars: Array<{ label: string; count: number }> }) {
                   {bar.label.slice(-5)}
                 </text>
               )}
-              <title>{`${bar.label}: ${bar.count} requests`}</title>
+              <title>{t('barChart.tooltip', { label: bar.label, count: bar.count })}</title>
             </g>
           );
         })}
@@ -223,6 +227,7 @@ function HorizontalBar({
   revealed,
   delayMs = 0,
   large = false,
+  t,
 }: {
   label: string;
   count: number;
@@ -232,6 +237,7 @@ function HorizontalBar({
   revealed: boolean;
   delayMs?: number;
   large?: boolean;
+  t: Translator;
 }) {
   const pct = max > 0 ? Math.max(2, Math.round((count / max) * 100)) : 2;
   const total = max;
@@ -271,7 +277,7 @@ function HorizontalBar({
           role="progressbar"
           aria-valuenow={count}
           aria-valuemax={max}
-          aria-label={`${label}: ${count}`}
+          aria-label={t('horizontalBar.ariaLabel', { label, count })}
         />
       </div>
       <div className={`text-right shrink-0 ${large ? 'w-20' : 'w-16'}`}>
@@ -296,11 +302,13 @@ function RankedList({
   max,
   gradientId,
   emptyLabel,
+  t,
 }: {
   items: Array<{ key: string; label: string; count: number }>;
   max: number;
   gradientId: string;
   emptyLabel: string;
+  t: Translator;
 }) {
   const revealed = useMountReveal();
 
@@ -332,6 +340,7 @@ function RankedList({
           revealed={revealed}
           delayMs={Math.min(i * 50, 250)}
           large={sparse}
+          t={t}
         />
       ))}
     </div>
@@ -344,11 +353,13 @@ function DonutChart({
   errorPct,
   successCount,
   errorCount,
+  t,
 }: {
   successPct: string;
   errorPct: string;
   successCount: number;
   errorCount: number;
+  t: Translator;
 }) {
   const size = 148;
   const cx = size / 2;
@@ -381,7 +392,7 @@ function DonutChart({
         <svg
           width={size}
           height={size}
-          aria-label={`Success ${successPct}%, Error ${errorPct}%`}
+          aria-label={t('donut.ariaLabel', { successPct, errorPct })}
           role="img"
         >
           {/* Track */}
@@ -453,7 +464,7 @@ function DonutChart({
             fill="#6b7280"
             fontFamily="'IBM Plex Mono', monospace"
           >
-            SUCCESS
+            {t('donut.successCaption')}
           </text>
         </svg>
       </div>
@@ -461,7 +472,7 @@ function DonutChart({
         <div className="flex items-center justify-between text-sm rounded-lg -mx-2 px-2 py-1.5 transition-colors hover:bg-white/[0.04]">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" aria-hidden="true" />
-            <span className="text-gray-300 text-xs">Success</span>
+            <span className="text-gray-300 text-xs">{t('donut.success')}</span>
           </div>
           <div className="text-right">
             <span className="text-emerald-400 font-mono-plex text-xs font-medium">
@@ -473,7 +484,7 @@ function DonutChart({
         <div className="flex items-center justify-between text-sm rounded-lg -mx-2 px-2 py-1.5 transition-colors hover:bg-white/[0.04]">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-rose-400 inline-block" aria-hidden="true" />
-            <span className="text-gray-300 text-xs">Error</span>
+            <span className="text-gray-300 text-xs">{t('donut.error')}</span>
           </div>
           <div className="text-right">
             <span className="text-rose-400 font-mono-plex text-xs font-medium">{errorPct}%</span>
@@ -486,7 +497,7 @@ function DonutChart({
 }
 
 /** SVG pool utilization ring (circular progress) */
-function PoolRing({ active, total }: { active: number; total: number }) {
+function PoolRing({ active, total, t }: { active: number; total: number; t: Translator }) {
   const size = 56;
   const cx = size / 2;
   const cy = size / 2;
@@ -499,7 +510,12 @@ function PoolRing({ active, total }: { active: number; total: number }) {
   const animatedPct = useAnimatedNumber(total > 0 ? ratio * 100 : 0, 600);
 
   return (
-    <svg width={size} height={size} aria-label={`${active} active of ${total} total`} role="img">
+    <svg
+      width={size}
+      height={size}
+      aria-label={t('poolRing.ariaLabel', { active, total })}
+      role="img"
+    >
       {/* Track */}
       <circle
         cx={cx}
@@ -546,12 +562,14 @@ function PoolStatBar({
   total,
   color,
   dotColor,
+  t,
 }: {
   label: string;
   value: number;
   total: number;
   color: string;
   dotColor: string;
+  t: Translator;
 }) {
   const pct = total > 0 ? Math.round((value / total) * 100) : 0;
   return (
@@ -569,7 +587,7 @@ function PoolStatBar({
           aria-valuenow={value}
           aria-valuemin={0}
           aria-valuemax={total}
-          aria-label={`${label}: ${value}`}
+          aria-label={t('poolStatBar.ariaLabel', { label, value })}
         />
       </div>
       <span className="font-mono-plex text-[10px] text-gray-500 w-6 text-right shrink-0">
@@ -580,16 +598,17 @@ function PoolStatBar({
 }
 
 /** Formats a timestamp into "Updated Xs ago" */
-function formatUpdatedAgo(ts: number | null): string {
+function formatUpdatedAgo(ts: number | null, t: Translator): string {
   if (ts === null) return '';
   const diffMs = Date.now() - ts;
   const diffS = Math.round(diffMs / 1000);
-  if (diffS < 60) return `Updated ${diffS}s ago`;
+  if (diffS < 60) return t('updatedSecondsAgo', { seconds: diffS });
   const diffMin = Math.round(diffS / 60);
-  return `Updated ${diffMin}min ago`;
+  return t('updatedMinutesAgo', { minutes: diffMin });
 }
 
 export default function MetricsDashboard() {
+  const t = useTranslations('metrics');
   const [period, setPeriod] = useState<Period>('24h');
   const [metrics, setMetrics] = useState<MetricsSummary | null>(null);
   const [poolStats, setPoolStats] = useState<PoolStats[]>([]);
@@ -624,11 +643,11 @@ export default function MetricsDashboard() {
       setError('');
       setLastUpdated(Date.now());
     } catch {
-      setError('Failed to load metrics. The metrics endpoint may not be available yet.');
+      setError(t('errors.loadFailed'));
     } finally {
       setLoading(false);
     }
-  }, [period]);
+  }, [period, t]);
 
   // Initial fetch + refetch when period changes
   useEffect(() => {
@@ -646,15 +665,15 @@ export default function MetricsDashboard() {
 
   // Tick "updated X ago" label every 5s
   useEffect(() => {
-    const tick = () => setUpdatedLabel(formatUpdatedAgo(lastUpdated));
+    const tick = () => setUpdatedLabel(formatUpdatedAgo(lastUpdated, t));
     tick();
     const iv = setInterval(tick, 5_000);
     return () => clearInterval(iv);
-  }, [lastUpdated]);
+  }, [lastUpdated, t]);
 
   const bars = metrics ? aggregateByTime(metrics.requestsByHour) : [];
-  const maxToolCount = metrics ? Math.max(...metrics.topTools.map((t) => t.count), 1) : 1;
-  const maxTokenCount = metrics ? Math.max(...metrics.topTokens.map((t) => t.count), 1) : 1;
+  const maxToolCount = metrics ? Math.max(...metrics.topTools.map((tool) => tool.count), 1) : 1;
+  const maxTokenCount = metrics ? Math.max(...metrics.topTokens.map((tok) => tok.count), 1) : 1;
 
   const totalRequests = metrics ? metrics.errorRate.reduce((sum, r) => sum + r.count, 0) : 0;
   const errorCount = metrics
@@ -690,9 +709,9 @@ export default function MetricsDashboard() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 hairline-b pb-6 animate-fade-in-up">
         <div className="flex items-center gap-2">
-          <Eyebrow accent>ANALYTICS</Eyebrow>
+          <Eyebrow accent>{t('eyebrowAnalytics')}</Eyebrow>
           <span className="eyebrow text-gray-700">·</span>
-          <Eyebrow live>LIVE</Eyebrow>
+          <Eyebrow live>{t('eyebrowLive')}</Eyebrow>
         </div>
 
         <div className="flex items-center gap-3 flex-wrap">
@@ -703,13 +722,21 @@ export default function MetricsDashboard() {
           )}
           <SegmentedControl<Period>
             options={[
-              { value: '24h', label: '24h', description: 'Last 24 hours' },
-              { value: '7d', label: '7d', description: 'Last 7 days' },
-              { value: '30d', label: '30d', description: 'Last 30 days' },
+              {
+                value: '24h',
+                label: t('period.h24.label'),
+                description: t('period.h24.description'),
+              },
+              { value: '7d', label: t('period.d7.label'), description: t('period.d7.description') },
+              {
+                value: '30d',
+                label: t('period.d30.label'),
+                description: t('period.d30.description'),
+              },
             ]}
             value={period}
             onChange={setPeriod}
-            ariaLabel="Time period"
+            ariaLabel={t('period.ariaLabel')}
           />
         </div>
       </div>
@@ -737,7 +764,7 @@ export default function MetricsDashboard() {
               d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
             />
           </svg>
-          <span className="font-mono-plex text-xs tracking-widest">Loading metrics...</span>
+          <span className="font-mono-plex text-xs tracking-widest">{t('loadingMetrics')}</span>
         </div>
       ) : (
         <>
@@ -748,9 +775,9 @@ export default function MetricsDashboard() {
           >
             <KpiCard
               accent="indigo"
-              eyebrow="Total Requests"
+              eyebrow={t('kpi.totalRequests.eyebrow')}
               value={<AnimatedNumber value={totalRequests} />}
-              hint="over selected period"
+              hint={t('kpi.totalRequests.hint')}
               decoration={
                 sparklineData.length > 1 ? (
                   <svg
@@ -780,7 +807,7 @@ export default function MetricsDashboard() {
 
             <KpiCard
               accent="emerald"
-              eyebrow="Success Rate"
+              eyebrow={t('kpi.successRate.eyebrow')}
               value={
                 <span
                   className={
@@ -794,12 +821,12 @@ export default function MetricsDashboard() {
                   <AnimatedNumber value={parseFloat(successPct)} format={(n) => n.toFixed(1)} />%
                 </span>
               }
-              hint={`${successCount.toLocaleString()} successful calls`}
+              hint={t('kpi.successRate.hint', { count: successCount.toLocaleString() })}
             />
 
             <KpiCard
               accent="amber"
-              eyebrow="Avg Response"
+              eyebrow={t('kpi.avgResponse.eyebrow')}
               value={
                 avgResponseMs !== null ? (
                   <span className={responseTimeColor(avgResponseMs)}>
@@ -810,14 +837,18 @@ export default function MetricsDashboard() {
                   <span className="text-gray-600 text-2xl">—</span>
                 )
               }
-              hint={avgResponseMs !== null ? 'weighted across all profiles' : 'No data'}
+              hint={
+                avgResponseMs !== null
+                  ? t('kpi.avgResponse.hintWeighted')
+                  : t('kpi.avgResponse.hintNoData')
+              }
             />
 
             <KpiCard
               accent="blue"
-              eyebrow="Active Pools"
+              eyebrow={t('kpi.activePools.eyebrow')}
               value={poolStats.length}
-              hint={`${activePools} active / ${idlePools} idle`}
+              hint={t('kpi.activePools.hint', { active: activePools, idle: idlePools })}
             />
           </div>
 
@@ -825,9 +856,9 @@ export default function MetricsDashboard() {
           <div className="card-primary p-6 animate-fade-in-up" style={{ animationDelay: '160ms' }}>
             <div className="flex items-center justify-between mb-5">
               <h3 className="flex items-center gap-2 font-display font-light text-2xl text-gray-100">
-                Requests over time
+                {t('requestsOverTime.title')}
                 <HelpTip
-                  content="Total number of MCP tool calls aggregated by hour over the selected period."
+                  content={t('requestsOverTime.help')}
                   position="top"
                   maxWidth={280}
                   size="xs"
@@ -835,11 +866,13 @@ export default function MetricsDashboard() {
               </h3>
               {bars.length > 0 && (
                 <span className="font-mono-plex text-[10px] text-gray-600">
-                  {bars.reduce((s, b) => s + b.count, 0).toLocaleString()} total
+                  {t('requestsOverTime.totalLabel', {
+                    count: bars.reduce((s, b) => s + b.count, 0).toLocaleString(),
+                  })}
                 </span>
               )}
             </div>
-            <BarChart bars={bars} />
+            <BarChart bars={bars} t={t} />
           </div>
 
           {/* Row 2: 3-column grid */}
@@ -850,9 +883,9 @@ export default function MetricsDashboard() {
             {/* Success vs Errors */}
             <div className="card-primary p-6 flex flex-col">
               <h3 className="flex items-center gap-2 font-mono-plex uppercase tracking-widest text-[10px] text-gray-500 mb-5">
-                Success vs Errors
+                {t('successVsErrors.title')}
                 <HelpTip
-                  content="Breakdown of successful vs. failed tool calls over the selected period."
+                  content={t('successVsErrors.help')}
                   position="top"
                   maxWidth={280}
                   size="xs"
@@ -860,13 +893,16 @@ export default function MetricsDashboard() {
               </h3>
               <div className="flex-1 flex items-center justify-center">
                 {totalRequests === 0 ? (
-                  <p className="text-gray-600 text-sm text-center py-4">No requests recorded.</p>
+                  <p className="text-gray-600 text-sm text-center py-4">
+                    {t('successVsErrors.empty')}
+                  </p>
                 ) : (
                   <DonutChart
                     successPct={successPct}
                     errorPct={errorPct}
                     successCount={successCount}
                     errorCount={errorCount}
+                    t={t}
                   />
                 )}
               </div>
@@ -875,46 +911,38 @@ export default function MetricsDashboard() {
             {/* Top Tools */}
             <div className="card-primary p-6 flex flex-col">
               <h3 className="flex items-center gap-2 font-mono-plex uppercase tracking-widest text-[10px] text-gray-500 mb-5">
-                Top Tools
-                <HelpTip
-                  content="Most frequently called MCP tools over the selected period, ranked by call count."
-                  position="top"
-                  maxWidth={280}
-                  size="xs"
-                />
+                {t('topTools.title')}
+                <HelpTip content={t('topTools.help')} position="top" maxWidth={280} size="xs" />
               </h3>
               <RankedList
-                items={(metrics?.topTools ?? []).map((t) => ({
-                  key: t.toolName,
-                  label: t.toolName,
-                  count: t.count,
+                items={(metrics?.topTools ?? []).map((tool) => ({
+                  key: tool.toolName,
+                  label: tool.toolName,
+                  count: tool.count,
                 }))}
                 max={maxToolCount}
                 gradientId="bg-gradient-to-r from-os-600 to-os-400"
-                emptyLabel="No tool usage recorded."
+                emptyLabel={t('topTools.empty')}
+                t={t}
               />
             </div>
 
             {/* Top API Keys */}
             <div className="card-primary p-6 flex flex-col">
               <h3 className="flex items-center gap-2 font-mono-plex uppercase tracking-widest text-[10px] text-gray-500 mb-5">
-                Top API Keys
-                <HelpTip
-                  content="Most active API keys, ranked by number of requests made."
-                  position="top"
-                  maxWidth={280}
-                  size="xs"
-                />
+                {t('topApiKeys.title')}
+                <HelpTip content={t('topApiKeys.help')} position="top" maxWidth={280} size="xs" />
               </h3>
               <RankedList
-                items={(metrics?.topTokens ?? []).map((t) => ({
-                  key: t.tokenLabel,
-                  label: t.tokenLabel,
-                  count: t.count,
+                items={(metrics?.topTokens ?? []).map((tok) => ({
+                  key: tok.tokenLabel,
+                  label: tok.tokenLabel,
+                  count: tok.count,
                 }))}
                 max={maxTokenCount}
                 gradientId="bg-gradient-to-r from-fuchsia-600 to-pink-500"
-                emptyLabel="No API key activity recorded."
+                emptyLabel={t('topApiKeys.empty')}
+                t={t}
               />
             </div>
           </div>
@@ -922,31 +950,29 @@ export default function MetricsDashboard() {
           {/* Row 3: Avg response time by profile */}
           <div className="card-primary p-6 animate-fade-in-up" style={{ animationDelay: '320ms' }}>
             <h3 className="flex items-center gap-2 font-mono-plex uppercase tracking-widest text-[10px] text-gray-500 mb-5">
-              Average Response Time by MCP Server
+              {t('avgResponseTime.title')}
               <HelpTip
-                content="Average response time per MCP server. Green < 100 ms, yellow 100–500 ms, red > 500 ms."
+                content={t('avgResponseTime.help')}
                 position="top"
                 maxWidth={300}
                 size="xs"
               />
             </h3>
             {!metrics || metrics.avgResponseTime.length === 0 ? (
-              <p className="text-gray-600 text-sm text-center py-4">
-                No response time data available.
-              </p>
+              <p className="text-gray-600 text-sm text-center py-4">{t('avgResponseTime.empty')}</p>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full" aria-label="Average response time per MCP server">
+                <table className="w-full" aria-label={t('avgResponseTime.tableAriaLabel')}>
                   <thead>
                     <tr className="border-b border-white/5">
                       <th className="pb-3 pr-6 text-left font-mono-plex uppercase tracking-widest text-[10px] text-gray-500">
-                        MCP Server
+                        {t('avgResponseTime.colServer')}
                       </th>
                       <th className="pb-3 pr-6 text-right font-mono-plex uppercase tracking-widest text-[10px] text-gray-500">
-                        Avg Response
+                        {t('avgResponseTime.colAvgResponse')}
                       </th>
                       <th className="pb-3 text-right font-mono-plex uppercase tracking-widest text-[10px] text-gray-500">
-                        Requests
+                        {t('avgResponseTime.colRequests')}
                       </th>
                     </tr>
                   </thead>
@@ -1015,13 +1041,8 @@ export default function MetricsDashboard() {
               style={{ animationDelay: '400ms' }}
             >
               <h3 className="flex items-center gap-2 font-mono-plex uppercase tracking-widest text-[10px] text-gray-500 mb-5">
-                Connection Pool Stats
-                <HelpTip
-                  content="Real-time state of database connection pools: active, idle, and waiting connections."
-                  position="top"
-                  maxWidth={320}
-                  size="xs"
-                />
+                {t('poolStats.title')}
+                <HelpTip content={t('poolStats.help')} position="top" maxWidth={320} size="xs" />
               </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {poolStats.map((pool) => {
@@ -1036,48 +1057,51 @@ export default function MetricsDashboard() {
                       }`}
                     >
                       <div className="flex items-center gap-4">
-                        <PoolRing active={pool.stats.active} total={pool.stats.total} />
+                        <PoolRing active={pool.stats.active} total={pool.stats.total} t={t} />
                         <div className="min-w-0">
                           <p className="font-display text-xl text-gray-100 truncate">
                             {pool.connectionName}
                           </p>
                           <p className="font-mono-plex text-[10px] text-gray-500 mt-0.5">
-                            {pool.stats.total} total connections
+                            {t('poolStats.totalConnections', { count: pool.stats.total })}
                           </p>
                         </div>
                       </div>
                       <div className="space-y-2">
-                        <div title="Connections currently processing requests.">
+                        <div title={t('poolStats.activeTooltip')}>
                           <PoolStatBar
-                            label="Active"
+                            label={t('poolStats.active')}
                             value={pool.stats.active}
                             total={pool.stats.total || 1}
                             color="bg-emerald-400"
                             dotColor="bg-emerald-400"
+                            t={t}
                           />
                         </div>
-                        <div title="Open connections available for reuse.">
+                        <div title={t('poolStats.idleTooltip')}>
                           <PoolStatBar
-                            label="Idle"
+                            label={t('poolStats.idle')}
                             value={pool.stats.idle}
                             total={pool.stats.total || 1}
                             color="bg-blue-400"
                             dotColor="bg-blue-400"
+                            t={t}
                           />
                         </div>
-                        <div title="Requests waiting for a connection. High values indicate pool saturation.">
+                        <div title={t('poolStats.waitingTooltip')}>
                           <PoolStatBar
-                            label="Waiting"
+                            label={t('poolStats.waiting')}
                             value={pool.stats.waiting}
                             total={pool.stats.total || 1}
                             color="bg-amber-400"
                             dotColor="bg-amber-400"
+                            t={t}
                           />
                         </div>
                       </div>
                       {isSaturated && (
                         <p className="font-mono-plex text-[10px] uppercase tracking-wider text-amber-400/80 border-t border-amber-500/20 pt-2">
-                          Pool saturated — {pool.stats.waiting} waiting
+                          {t('poolStats.saturated', { count: pool.stats.waiting })}
                         </p>
                       )}
                     </div>

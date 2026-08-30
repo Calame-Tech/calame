@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { useTranslations } from 'use-intl/react';
 import { apiFetch } from '../lib/api.js';
 import { useBranding, DEFAULT_LOGO_SRC, BASE_FONT_OPTIONS } from '../lib/branding.js';
 import { Button } from './ui/index.js';
@@ -19,6 +20,8 @@ function fontLabel(fontFamily: string): string {
  * Branding settings panel — set a custom logo, favicon, accent color, and font.
  */
 export default function BrandingSettings() {
+  const t = useTranslations('settingsPanels.branding');
+  const tCommon = useTranslations('common');
   const branding = useBranding();
   const [logo, setLogo] = useState(branding.logo ?? '');
   const [favicon, setFavicon] = useState(branding.favicon ?? '');
@@ -58,7 +61,7 @@ export default function BrandingSettings() {
     setError('');
     setSaved(false);
     if (accentColor && !/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(accentColor)) {
-      setError('Accent color must be a hex code like #5c7cfa');
+      setError(t('errors.hexFormat'));
       setSaving(false);
       return;
     }
@@ -76,16 +79,16 @@ export default function BrandingSettings() {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || 'Failed to save branding');
+        throw new Error(data.error || t('errors.saveFailed'));
       }
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
+      setError(err instanceof Error ? err.message : t('errors.unknown'));
     } finally {
       setSaving(false);
     }
-  }, [logo, favicon, accentColor, fontFamily]);
+  }, [logo, favicon, accentColor, fontFamily, t]);
 
   const handleReset = useCallback(() => {
     setLogo('');
@@ -97,25 +100,22 @@ export default function BrandingSettings() {
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-lg font-semibold text-gray-100">Branding</h3>
-        <p className="text-sm text-gray-400 mt-1">
-          Customize your instance with a custom logo, favicon, accent color, and font — applied
-          instance-wide for every user.
-        </p>
+        <h3 className="text-lg font-semibold text-gray-100">{t('title')}</h3>
+        <p className="text-sm text-gray-400 mt-1">{t('description')}</p>
       </div>
 
       {/* Logo */}
       <div className="space-y-2">
-        <label className="block text-sm font-medium text-gray-300">Logo</label>
+        <label className="block text-sm font-medium text-gray-300">{t('logo.label')}</label>
         <div className="flex items-center gap-4">
           <img
             src={logo || DEFAULT_LOGO_SRC}
-            alt="Preview"
+            alt={t('previewAlt')}
             className="h-10 w-10 object-contain rounded border border-gray-700 bg-gray-800"
           />
           <label className="cursor-pointer">
             <input type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" />
-            <span className="text-sm text-os-400 hover:text-os-300">Upload image</span>
+            <span className="text-sm text-os-400 hover:text-os-300">{t('logo.upload')}</span>
           </label>
           {logo && (
             <button
@@ -123,7 +123,7 @@ export default function BrandingSettings() {
               onClick={() => setLogo('')}
               className="text-sm text-gray-500 hover:text-gray-300"
             >
-              Remove
+              {t('remove')}
             </button>
           )}
         </div>
@@ -131,7 +131,7 @@ export default function BrandingSettings() {
 
       {/* Favicon */}
       <div className="space-y-2">
-        <label className="block text-sm font-medium text-gray-300">Favicon</label>
+        <label className="block text-sm font-medium text-gray-300">{t('favicon.label')}</label>
         <div className="flex items-center gap-4">
           <label className="cursor-pointer">
             <input
@@ -146,7 +146,7 @@ export default function BrandingSettings() {
               }}
               className="hidden"
             />
-            <span className="text-sm text-os-400 hover:text-os-300">Upload favicon</span>
+            <span className="text-sm text-os-400 hover:text-os-300">{t('favicon.upload')}</span>
           </label>
           {favicon && (
             <button
@@ -154,7 +154,7 @@ export default function BrandingSettings() {
               onClick={() => setFavicon('')}
               className="text-sm text-gray-500 hover:text-gray-300"
             >
-              Remove
+              {t('remove')}
             </button>
           )}
         </div>
@@ -162,14 +162,14 @@ export default function BrandingSettings() {
 
       {/* Accent color */}
       <div className="space-y-2">
-        <label className="block text-sm font-medium text-gray-300">Accent color</label>
+        <label className="block text-sm font-medium text-gray-300">{t('accentColor.label')}</label>
         <div className="flex items-center gap-3">
           <input
             type="color"
             value={accentColor || DEFAULT_ACCENT_COLOR}
             onChange={(e) => setAccentColor(e.target.value)}
             className="h-9 w-9 rounded border border-gray-700 bg-gray-800 p-0.5"
-            aria-label="Accent color picker"
+            aria-label={t('accentColor.pickerAriaLabel')}
           />
           <input
             type="text"
@@ -177,7 +177,7 @@ export default function BrandingSettings() {
             onChange={(e) => setAccentColor(e.target.value.trim())}
             placeholder={DEFAULT_ACCENT_COLOR}
             className="input-editorial w-32 text-sm"
-            aria-label="Accent color hex code"
+            aria-label={t('accentColor.hexAriaLabel')}
           />
           {accentColor && (
             <button
@@ -185,7 +185,7 @@ export default function BrandingSettings() {
               onClick={() => setAccentColor('')}
               className="text-sm text-gray-500 hover:text-gray-300"
             >
-              Reset to default
+              {t('resetToDefault')}
             </button>
           )}
         </div>
@@ -193,7 +193,7 @@ export default function BrandingSettings() {
 
       {/* Font */}
       <div className="space-y-2">
-        <label className="block text-sm font-medium text-gray-300">Font</label>
+        <label className="block text-sm font-medium text-gray-300">{t('font.label')}</label>
         <div className="flex items-center gap-3">
           <select
             value={fontFamily || BASE_FONT_OPTIONS[0]}
@@ -213,7 +213,7 @@ export default function BrandingSettings() {
               onClick={() => setFontFamily('')}
               className="text-sm text-gray-500 hover:text-gray-300"
             >
-              Reset to default
+              {t('resetToDefault')}
             </button>
           )}
         </div>
@@ -222,9 +222,9 @@ export default function BrandingSettings() {
             type="text"
             value={customFontInput}
             onChange={(e) => setCustomFontInput(e.target.value)}
-            placeholder="Add a font by name (e.g. Poppins)"
+            placeholder={t('font.addFontPlaceholder')}
             className="input-editorial w-64 text-sm"
-            aria-label="Add a custom font"
+            aria-label={t('font.addFontAriaLabel')}
           />
           <button
             type="button"
@@ -232,21 +232,23 @@ export default function BrandingSettings() {
             disabled={!customFontInput.trim()}
             className="text-sm text-os-400 hover:text-os-300 disabled:opacity-40 disabled:hover:text-os-400"
           >
-            Add
+            {t('font.add')}
           </button>
         </div>
-        <p className="text-xs text-gray-500">
-          Added fonts must already be installed on users' devices or loaded elsewhere on the page.
-        </p>
+        <p className="text-xs text-gray-500">{t('font.hint')}</p>
       </div>
 
       {/* Preview */}
       <div className="space-y-2">
-        <label className="block text-sm font-medium text-gray-300">Preview</label>
+        <label className="block text-sm font-medium text-gray-300">{t('preview.label')}</label>
         <div className="flex items-center gap-3 p-3 bg-gray-800/50 rounded-lg border border-gray-700">
-          <img src={logo || DEFAULT_LOGO_SRC} alt="Preview" className="h-6 w-6 object-contain" />
+          <img
+            src={logo || DEFAULT_LOGO_SRC}
+            alt={t('previewAlt')}
+            className="h-6 w-6 object-contain"
+          />
           <span className="text-sm text-gray-300">
-            {logo ? 'Custom logo active' : 'Default Calame logo'}
+            {logo ? t('preview.customLogoActive') : t('preview.defaultLogo')}
           </span>
         </div>
       </div>
@@ -254,12 +256,12 @@ export default function BrandingSettings() {
       {/* Actions */}
       <div className="flex items-center gap-3 pt-2">
         <Button variant="primary" onClick={handleSave} disabled={saving}>
-          {saving ? 'Saving…' : 'Save'}
+          {saving ? t('actions.saving') : tCommon('save')}
         </Button>
         <Button variant="secondary" onClick={handleReset} disabled={saving}>
-          Reset
+          {t('actions.reset')}
         </Button>
-        {saved && <span className="text-sm text-green-400">Saved!</span>}
+        {saved && <span className="text-sm text-green-400">{t('actions.saved')}</span>}
         {error && <span className="text-sm text-red-400">{error}</span>}
       </div>
     </div>

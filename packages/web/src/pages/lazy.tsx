@@ -3,6 +3,7 @@
 // several pages so the same `lazy()` instance (and its loaded chunk) is reused.
 
 import { lazy } from 'react';
+import { useTranslations } from 'use-intl/react';
 
 /**
  * Lazy-loaded KnowledgeBaseManager from the ee package. The import is deferred
@@ -14,11 +15,8 @@ export const KnowledgeBaseManager = lazy(() =>
     .then((m) => ({ default: m.KnowledgeBaseManager }))
     .catch(() => ({
       default: function RagUnavailable() {
-        return (
-          <div className="p-6 text-sm text-gray-400 text-center">
-            RAG features are not available on this instance.
-          </div>
-        );
+        const t = useTranslations('configurationDetail');
+        return <div className="p-6 text-sm text-gray-400 text-center">{t('ragUnavailable')}</div>;
       },
     })),
 );

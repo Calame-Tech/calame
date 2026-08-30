@@ -2,11 +2,13 @@
 // the lazy OidcSettings import were moved verbatim from App.tsx.
 
 import { useState, lazy, Suspense } from 'react';
+import { useTranslations } from 'use-intl/react';
 import { Card, PageHeader } from '../components/ui/index.js';
 import AiSettings from '../components/AiSettings.js';
 import SmtpSettings from '../components/SmtpSettings.js';
 import BrandingSettings from '../components/BrandingSettings.js';
 import NotificationSettings from '../components/NotificationSettings.js';
+import LanguageSettings from '../components/LanguageSettings.js';
 import type { View } from '../router/index.js';
 
 /**
@@ -19,11 +21,8 @@ const OidcSettings = lazy(() =>
     .then((m) => ({ default: m.OidcSettings }))
     .catch(() => ({
       default: function OidcSettingsUnavailable() {
-        return (
-          <div className="p-6 text-sm text-gray-400 text-center">
-            SSO features are not available on this instance.
-          </div>
-        );
+        const t = useTranslations('settings.sso');
+        return <div className="p-6 text-sm text-gray-400 text-center">{t('unavailable')}</div>;
       },
     })),
 );
@@ -32,24 +31,15 @@ const OidcSettings = lazy(() =>
 // SettingsPage — tabbed layout wrapping AiSettings / SmtpSettings / OidcSettings
 // ---------------------------------------------------------------------------
 
-type SettingsTab = 'ai' | 'email' | 'sso' | 'branding' | 'notifications';
+type SettingsTab = 'ai' | 'email' | 'sso' | 'branding' | 'notifications' | 'language';
 
-interface SettingsTabItem {
-  id: SettingsTab;
-  label: string;
-  description: string;
-}
-
-const SETTINGS_TABS: SettingsTabItem[] = [
-  { id: 'ai', label: 'AI Provider', description: 'Configure Claude or OpenAI' },
-  { id: 'email', label: 'Email (SMTP)', description: 'Outgoing mail server' },
-  { id: 'sso', label: 'Single Sign-On (OIDC)', description: 'SSO identity provider' },
-  { id: 'branding', label: 'Branding', description: 'Logo, colors, and favicon' },
-  {
-    id: 'notifications',
-    label: 'Notifications',
-    description: 'In-app, webhook, and email alerts',
-  },
+const SETTINGS_TAB_IDS: SettingsTab[] = [
+  'ai',
+  'email',
+  'sso',
+  'branding',
+  'notifications',
+  'language',
 ];
 
 interface SettingsPageProps {
@@ -68,33 +58,35 @@ export default function SettingsPage({
   backTo,
   onNavigate,
 }: SettingsPageProps) {
+  const t = useTranslations('settings');
+  const tCommon = useTranslations('common');
   const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab ?? 'ai');
 
   const breadcrumb: { label: string; onClick?: () => void }[] = [
-    { label: 'Dashboard', onClick: onNavigateDashboard },
+    { label: tCommon('dashboard'), onClick: onNavigateDashboard },
   ];
   if (backTo && onNavigate) {
     breadcrumb.push({ label: backTo.label, onClick: () => onNavigate(backTo.view) });
   }
-  breadcrumb.push({ label: 'Settings' });
+  breadcrumb.push({ label: t('title') });
+
+  const loadingFallback = (
+    <div className="p-6 text-sm text-gray-500 italic">{tCommon('loading')}</div>
+  );
 
   return (
     <div className="space-y-4">
-      <PageHeader
-        breadcrumb={breadcrumb}
-        title="Settings"
-        description="Configure AI, email, SSO, branding & notifications for your Calame instance."
-      />
+      <PageHeader breadcrumb={breadcrumb} title={t('title')} description={t('description')} />
 
       {/* Mobile: horizontal scrollable tab bar */}
       <div className="flex gap-1 overflow-x-auto md:hidden border-b border-gray-800/60 pb-0">
-        {SETTINGS_TABS.map((tab) => {
-          const isActive = activeTab === tab.id;
+        {SETTINGS_TAB_IDS.map((tab) => {
+          const isActive = activeTab === tab;
           return (
             <button
-              key={tab.id}
+              key={tab}
               type="button"
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => setActiveTab(tab)}
               aria-current={isActive ? 'page' : undefined}
               className={[
                 'flex-shrink-0 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap',
@@ -103,7 +95,7 @@ export default function SettingsPage({
                   : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-600',
               ].join(' ')}
             >
-              {tab.label}
+              {t(`tabs.${tab}.label`)}
             </button>
           );
         })}
@@ -112,14 +104,14 @@ export default function SettingsPage({
       {/* Desktop: sidebar nav + content */}
       <div className="hidden md:grid md:grid-cols-[220px_1fr] md:gap-4">
         {/* Left tab nav */}
-        <nav aria-label="Settings navigation" className="flex flex-col gap-1">
-          {SETTINGS_TABS.map((tab) => {
-            const isActive = activeTab === tab.id;
+        <nav aria-label={t('navAriaLabel')} className="flex flex-col gap-1">
+          {SETTINGS_TAB_IDS.map((tab) => {
+            const isActive = activeTab === tab;
             return (
               <button
-                key={tab.id}
+                key={tab}
                 type="button"
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => setActiveTab(tab)}
                 aria-current={isActive ? 'page' : undefined}
                 className={[
                   'relative flex flex-col items-start w-full px-3 py-2.5 rounded-lg text-sm text-left transition-colors focus:outline-none focus:ring-2 focus:ring-os-400',
@@ -135,14 +127,14 @@ export default function SettingsPage({
                     className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-os-400"
                   />
                 )}
-                <span className={isActive ? 'pl-2' : undefined}>{tab.label}</span>
+                <span className={isActive ? 'pl-2' : undefined}>{t(`tabs.${tab}.label`)}</span>
                 <span
                   className={[
                     'text-xs mt-0.5 hidden md:block',
                     isActive ? 'text-gray-400 pl-2' : 'text-gray-500',
                   ].join(' ')}
                 >
-                  {tab.description}
+                  {t(`tabs.${tab}.description`)}
                 </span>
               </button>
             );
@@ -154,12 +146,13 @@ export default function SettingsPage({
           {activeTab === 'ai' && <AiSettings />}
           {activeTab === 'email' && <SmtpSettings />}
           {activeTab === 'sso' && (
-            <Suspense fallback={<div className="p-6 text-sm text-gray-500 italic">Loading…</div>}>
+            <Suspense fallback={loadingFallback}>
               <OidcSettings availableProfiles={[...allProfileNames]} />
             </Suspense>
           )}
           {activeTab === 'branding' && <BrandingSettings />}
           {activeTab === 'notifications' && <NotificationSettings />}
+          {activeTab === 'language' && <LanguageSettings />}
         </Card>
       </div>
 
@@ -168,12 +161,13 @@ export default function SettingsPage({
         {activeTab === 'ai' && <AiSettings />}
         {activeTab === 'email' && <SmtpSettings />}
         {activeTab === 'sso' && (
-          <Suspense fallback={<div className="p-6 text-sm text-gray-500 italic">Loading…</div>}>
+          <Suspense fallback={loadingFallback}>
             <OidcSettings availableProfiles={[...allProfileNames]} />
           </Suspense>
         )}
         {activeTab === 'branding' && <BrandingSettings />}
         {activeTab === 'notifications' && <NotificationSettings />}
+        {activeTab === 'language' && <LanguageSettings />}
       </Card>
     </div>
   );

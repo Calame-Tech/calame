@@ -5,8 +5,16 @@
 // connect flow, error surfacing, and the manual-snippet copy fallback.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render as rtlRender, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import type { ReactElement } from 'react';
+import type { RenderOptions } from '@testing-library/react';
 import ConnectClaudeDesktop from '../ConnectClaudeDesktop.js';
+import { I18nProvider } from '../../i18n/I18nProvider.js';
+
+/** Renders with the i18n context the component now requires. */
+function render(ui: ReactElement, options?: RenderOptions) {
+  return rtlRender(ui, { wrapper: I18nProvider, ...options });
+}
 
 function jsonResponse(body: unknown): Response {
   return {

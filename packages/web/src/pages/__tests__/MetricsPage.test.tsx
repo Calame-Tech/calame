@@ -1,9 +1,9 @@
 // MetricsPage component tests (Phase 3 #16).
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { screen, fireEvent } from '@testing-library/react';
 import MetricsPage from '../MetricsPage.js';
-import { installFetchMock, flushEffects } from './testUtils.js';
+import { render, installFetchMock, flushEffects } from './testUtils.js';
 
 describe('MetricsPage', () => {
   beforeEach(() => {

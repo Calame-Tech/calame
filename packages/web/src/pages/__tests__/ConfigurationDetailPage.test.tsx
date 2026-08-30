@@ -1,10 +1,10 @@
 // ConfigurationDetailPage component tests (Phase 3 #16).
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { screen, fireEvent } from '@testing-library/react';
 import ConfigurationDetailPage from '../ConfigurationDetailPage.js';
 import { useSession } from '../../context/SessionContext.js';
-import { makeSession, installFetchMock, flushEffects } from './testUtils.js';
+import { render, makeSession, installFetchMock, flushEffects } from './testUtils.js';
 import type { Configuration } from '../../types/schema.js';
 
 vi.mock('../../context/SessionContext.js', () => ({

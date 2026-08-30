@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { useTranslations } from 'use-intl/react';
 import type { AccessMode } from '../types/schema.js';
 import { apiFetch } from '../lib/api.js';
 import { useChatStream } from '../hooks/useChatStream.js';
@@ -23,6 +24,11 @@ interface UserChatPanelProps {
 }
 
 export default function UserChatPanel({ profiles }: UserChatPanelProps) {
+  // Reuses the `chat` namespace wholesale — this panel is functionally the
+  // same UI as ChatPanel.tsx (which already owns those messages), just wired
+  // to the authenticated end-user's own MCP profiles instead of the admin
+  // preview's active servers.
+  const t = useTranslations('chat');
   const chatProfiles = profiles.filter((p) => p.accessMode === 'chat' || p.accessMode === 'both');
 
   const [selectedProfile, setSelectedProfile] = useState(chatProfiles[0]?.profileName ?? '');
@@ -118,13 +124,13 @@ export default function UserChatPanel({ profiles }: UserChatPanelProps) {
   return (
     <div className="flex-1 flex flex-col min-h-0">
       <div className="flex items-center justify-between mb-3 flex-shrink-0">
-        <h2 className="heading-md">Chat with your database</h2>
+        <h2 className="heading-md">{t('panel.heading')}</h2>
         <div className="flex items-center gap-2">
           {/* Always visible when known — the user should never wonder which
               model is answering; a picker when there is an actual choice. */}
           {aiSettings.length > 1 ? (
             <DarkSelect
-              ariaLabel="AI provider"
+              ariaLabel={t('aiSelector.ariaLabel')}
               size="xs"
               value={selectedAi ?? ''}
               options={aiSettings.map((s) => ({ value: s.name, label: s.label }))}
@@ -132,7 +138,9 @@ export default function UserChatPanel({ profiles }: UserChatPanelProps) {
               disabled={isStreaming}
             />
           ) : aiSettings.length === 1 ? (
-            <span className="text-xs text-gray-500">AI: {aiSettings[0].label}</span>
+            <span className="text-xs text-gray-500">
+              {t('aiSelector.label')} {aiSettings[0].label}
+            </span>
           ) : null}
           {chatProfiles.length > 1 && (
             <select
@@ -155,11 +163,11 @@ export default function UserChatPanel({ profiles }: UserChatPanelProps) {
         <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 space-y-3">
           {chatMessages.length === 0 && (
             <div className="text-center text-gray-500 text-sm mt-16">
-              <p className="mb-2">Ask anything about your data</p>
+              <p className="mb-2">{t('emptyState.title')}</p>
               <div className="space-y-1 text-xs text-gray-600">
-                <p>&quot;How many rows are in the users table?&quot;</p>
-                <p>&quot;Show me the 5 most recent orders&quot;</p>
-                <p>&quot;What tables are available?&quot;</p>
+                {(t.raw('emptyState.examples') as string[]).map((example) => (
+                  <p key={example}>&quot;{example}&quot;</p>
+                ))}
               </div>
             </div>
           )}
@@ -194,9 +202,13 @@ export default function UserChatPanel({ profiles }: UserChatPanelProps) {
                     )}
                     {!msg.streaming && msg.usage && (
                       <span className="text-xs text-zinc-500 mt-1 block">
-                        {(msg.usage.input + msg.usage.output).toLocaleString()} tokens
+                        {t('usage.tokens', {
+                          count: (msg.usage.input + msg.usage.output).toLocaleString(),
+                        })}
                         {msg.usage.cacheRead
-                          ? ` · cache ${Math.round((msg.usage.cacheRead / msg.usage.input) * 100)}%`
+                          ? t('usage.cacheSuffix', {
+                              percent: Math.round((msg.usage.cacheRead / msg.usage.input) * 100),
+                            })
                           : ''}
                       </span>
                     )}
@@ -219,7 +231,7 @@ export default function UserChatPanel({ profiles }: UserChatPanelProps) {
                 handleChatSend();
               }
             }}
-            placeholder="Ask about your data..."
+            placeholder={t('input.placeholder')}
             disabled={isStreaming}
             className="input-editorial flex-1 text-sm disabled:opacity-50 resize-none overflow-hidden"
             style={{ minHeight: '38px', maxHeight: '160px' }}
@@ -234,7 +246,7 @@ export default function UserChatPanel({ profiles }: UserChatPanelProps) {
               onClick={abort}
               className="px-4 py-2 bg-red-700 hover:bg-red-600 rounded-lg text-sm font-medium transition-colors"
             >
-              Stop
+              {t('actions.stop')}
             </button>
           ) : (
             <button
@@ -242,7 +254,7 @@ export default function UserChatPanel({ profiles }: UserChatPanelProps) {
               disabled={!chatInput.trim() || isStreaming}
               className="px-4 py-2 bg-os-700 hover:bg-os-600 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
             >
-              Send
+              {t('actions.send')}
             </button>
           )}
         </div>

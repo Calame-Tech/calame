@@ -2,6 +2,7 @@
 // `view.page === 'metrics'` branch of App.tsx.
 
 import type { Dispatch, SetStateAction } from 'react';
+import { useTranslations } from 'use-intl/react';
 import { PageHeader } from '../components/ui/index.js';
 import MetricsDashboard from '../components/MetricsDashboard.js';
 import type { View } from '../router/index.js';
@@ -11,15 +12,17 @@ interface MetricsPageProps {
 }
 
 export default function MetricsPage({ setView }: MetricsPageProps) {
+  const t = useTranslations('metrics');
+  const tCommon = useTranslations('common');
   return (
     <div className="space-y-4">
       <PageHeader
         breadcrumb={[
-          { label: 'Dashboard', onClick: () => setView({ page: 'dashboard' }) },
-          { label: 'Metrics' },
+          { label: tCommon('dashboard'), onClick: () => setView({ page: 'dashboard' }) },
+          { label: t('title') },
         ]}
-        title="Metrics"
-        description="Request volume, tool usage, and performance over time."
+        title={t('title')}
+        description={t('description')}
       />
       <MetricsDashboard />
     </div>

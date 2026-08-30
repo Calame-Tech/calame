@@ -7,6 +7,21 @@ root `package.json` version flows to the Docker image and `create-calame`).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-08-30
+
+### Added
+
+- French / English internationalization across the web UI.
+
+### Changed
+
+- `@calame-ee` moved from `dependencies` to `optionalDependencies` so the open-core build installs without the enterprise package.
+
+### Fixed
+
+- PII masking oracle bypass blocked; SSRF guard added to the MCP proxy adapter.
+- `formidable` is now bundled into the packaged server (`rag-core`).
+
 ## [0.6.0] - 2026-08-20
 
 ### Added

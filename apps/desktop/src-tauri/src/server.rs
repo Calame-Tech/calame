@@ -46,18 +46,43 @@ fn pick_port() -> u16 {
 /// (`resources/server/...`, matching `bundle.resources` in
 /// `tauri.conf.json`) resolves correctly in both.
 fn resolve_server_paths(app: &AppHandle) -> Result<(String, String), String> {
-    let server_js = app
+    let server_js = resolve_resource(app, "resources/server/server.mjs")?;
+    let web_dist = resolve_resource(app, "resources/server/web")?;
+    Ok((server_js, web_dist))
+}
+
+/// Resolves `relative` under [`BaseDirectory::Resource`] and returns it as a
+/// plain string suitable for handing to the Node sidecar (argv / env vars).
+///
+/// On Windows, Tauri canonicalizes the resource directory, which yields an
+/// extended-length path (`\\?\C:\...`). That prefix disables Win32 path
+/// normalization: forward slashes are no longer accepted as separators.
+/// Node's `path.join` emits backslashes so most of the sidecar is fine, but
+/// `@huggingface/transformers` joins `env.localModelPath` with `/` and passes
+/// the result straight to onnxruntime — producing
+/// `\\?\C:\...\models/embeddinggemma-300m/onnx/model_q4.onnx`, which fails to
+/// open ("Load model from ... failed"). Stripping the prefix here keeps every
+/// consumer on ordinary `C:\...` paths (see [`strip_extended_length_prefix`]).
+fn resolve_resource(app: &AppHandle, relative: &str) -> Result<String, String> {
+    let resolved = app
         .path()
-        .resolve("resources/server/server.mjs", BaseDirectory::Resource)
-        .map_err(|err| format!("resolving resources/server/server.mjs: {err}"))?;
-    let web_dist = app
-        .path()
-        .resolve("resources/server/web", BaseDirectory::Resource)
-        .map_err(|err| format!("resolving resources/server/web: {err}"))?;
-    Ok((
-        server_js.to_string_lossy().into_owned(),
-        web_dist.to_string_lossy().into_owned(),
-    ))
+        .resolve(relative, BaseDirectory::Resource)
+        .map_err(|err| format!("resolving {relative}: {err}"))?;
+    Ok(strip_extended_length_prefix(&resolved.to_string_lossy()).into_owned())
+}
+
+/// Removes a leading Windows extended-length (verbatim) prefix:
+/// `\\?\C:\x` → `C:\x`, `\\?\UNC\server\share\x` → `\\server\share\x`.
+/// Any other string is returned unchanged.
+fn strip_extended_length_prefix(path: &str) -> std::borrow::Cow<'_, str> {
+    use std::borrow::Cow;
+    if let Some(rest) = path.strip_prefix(r"\\?\UNC\") {
+        return Cow::Owned(format!(r"\\{rest}"));
+    }
+    if let Some(rest) = path.strip_prefix(r"\\?\") {
+        return Cow::Borrowed(rest);
+    }
+    Cow::Borrowed(path)
 }
 
 /// Spawns the `node` sidecar against `port`, wiring its stdout/stderr into
@@ -70,25 +95,16 @@ fn spawn_sidecar(app: &AppHandle, port: u16) -> Result<CommandChild, String> {
     // bundled cloudflared binary lives, staged by scripts/prepare-desktop.mjs
     // at resources/server/cloudflared.exe (see
     // packages/cli/src/tunnel/cloudflared-resolve.ts).
-    let cloudflared_path = app
-        .path()
-        .resolve("resources/server/cloudflared.exe", BaseDirectory::Resource)
-        .map_err(|err| format!("resolving resources/server/cloudflared.exe: {err}"))?
-        .to_string_lossy()
-        .into_owned();
+    let cloudflared_path = resolve_resource(app, "resources/server/cloudflared.exe")?;
 
     // Default local embedding model (RAG): tells the sidecar where the
     // bundled model directory lives, staged by scripts/bundle-server.mjs
     // (step 5b) at resources/server/models/ (see
     // packages/cli/src/rag/local-model-resolve.ts). Note this points at the
     // MODELS ROOT, not the model folder itself — same "root dir + folder
-    // name inside it" shape resolveLocalModelDir expects.
-    let local_embedding_model_dir = app
-        .path()
-        .resolve("resources/server/models", BaseDirectory::Resource)
-        .map_err(|err| format!("resolving resources/server/models: {err}"))?
-        .to_string_lossy()
-        .into_owned();
+    // name inside it" shape resolveLocalModelDir expects. Must be a plain
+    // (non-`\\?\`) path — see resolve_resource.
+    let local_embedding_model_dir = resolve_resource(app, "resources/server/models")?;
 
     let command = app
         .shell()
@@ -240,4 +256,33 @@ fn show_error_dialog(app: &AppHandle, message: &str) {
         .kind(MessageDialogKind::Error)
         .title("Calame")
         .blocking_show();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::strip_extended_length_prefix;
+
+    #[test]
+    fn strips_verbatim_drive_prefix() {
+        assert_eq!(
+            strip_extended_length_prefix(r"\\?\C:\Users\x\AppData\Local\Calame\resources\models"),
+            r"C:\Users\x\AppData\Local\Calame\resources\models"
+        );
+    }
+
+    #[test]
+    fn rewrites_verbatim_unc_prefix() {
+        assert_eq!(
+            strip_extended_length_prefix(r"\\?\UNC\server\share\models"),
+            r"\\server\share\models"
+        );
+    }
+
+    #[test]
+    fn leaves_plain_paths_untouched() {
+        assert_eq!(strip_extended_length_prefix(r"C:\Calame\models"), r"C:\Calame\models");
+        assert_eq!(strip_extended_length_prefix("/opt/calame/models"), "/opt/calame/models");
+        assert_eq!(strip_extended_length_prefix(r"\\server\share"), r"\\server\share");
+        assert_eq!(strip_extended_length_prefix(""), "");
+    }
 }

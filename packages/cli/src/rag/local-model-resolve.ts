@@ -87,6 +87,33 @@ const DEFAULT_DEV_CACHE_DIR = path.resolve(
   'node_modules/.cache/calame-desktop',
 );
 
+/**
+ * Strip a leading Windows extended-length ("verbatim") path prefix (`\\?\`)
+ * from `p`, leaving everything else untouched.
+ *
+ * Why this matters here: the packaged Tauri desktop host canonicalizes
+ * `CALAME_LOCAL_EMBEDDING_MODEL_DIR` before setting it, which on Windows
+ * yields a `\\?\C:\...` (or `\\?\UNC\server\share\...`) path. That path
+ * passes `hasModel`'s existence check fine (`path.win32.join` keeps
+ * backslashes), but it is then handed to `@huggingface/transformers` as
+ * `env.localModelPath`, which builds the model file path by joining
+ * segments with forward slashes (e.g.
+ * `\\?\C:\...\models/embeddinggemma-300m/onnx/model_q4.onnx`) before
+ * passing the result straight to onnxruntime. The `\\?\` prefix tells
+ * Windows to disable path normalization for that string, and a
+ * non-normalized path may not mix `/` with `\` — so onnxruntime fails with
+ * "Load model from ... failed". Stripping the prefix here restores a
+ * normal path that Windows will normalize (and therefore accept forward
+ * slashes in) by the time it reaches onnxruntime.
+ */
+export function stripWindowsLongPathPrefix(p: string): string {
+  const uncMatch = /^\\\\\?\\UNC\\(.*)$/i.exec(p);
+  if (uncMatch) return `\\\\${uncMatch[1]}`;
+  const driveMatch = /^\\\\\?\\(.*)$/.exec(p);
+  if (driveMatch) return driveMatch[1];
+  return p;
+}
+
 function found(candidate: string): LocalModelDirResolution {
   return { path: candidate, available: true, unavailableReason: null };
 }
@@ -112,16 +139,18 @@ export function resolveLocalModelDir(opts: ResolveLocalModelDirOptions): LocalMo
   const joiner = platform === 'win32' ? path.win32 : path.posix;
 
   if (opts.overridePath) {
-    if (hasModel(opts.overridePath, modelFolderName, existsFn, joiner))
-      return found(opts.overridePath);
+    const overridePath = stripWindowsLongPathPrefix(opts.overridePath);
+    if (hasModel(overridePath, modelFolderName, existsFn, joiner)) return found(overridePath);
     return notFound(
-      `CALAME_LOCAL_EMBEDDING_MODEL_DIR is set to "${opts.overridePath}", but ` +
+      `CALAME_LOCAL_EMBEDDING_MODEL_DIR is set to "${overridePath}", but ` +
         `"${modelFolderName}/config.json" was not found there.`,
     );
   }
 
   if (opts.packaged) {
-    const baseDir = opts.packagedBaseDir ?? path.dirname(fileURLToPath(import.meta.url));
+    const baseDir = stripWindowsLongPathPrefix(
+      opts.packagedBaseDir ?? path.dirname(fileURLToPath(import.meta.url)),
+    );
     const candidate = joiner.join(baseDir, 'models');
     if (hasModel(candidate, modelFolderName, existsFn, joiner)) return found(candidate);
     return notFound(

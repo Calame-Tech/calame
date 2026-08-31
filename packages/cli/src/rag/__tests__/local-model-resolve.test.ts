@@ -1,8 +1,30 @@
 import { describe, it, expect } from 'vitest';
 import path from 'path';
-import { resolveLocalModelDir } from '../local-model-resolve.js';
+import { resolveLocalModelDir, stripWindowsLongPathPrefix } from '../local-model-resolve.js';
 
 const MODEL_FOLDER = 'embeddinggemma-300m';
+
+describe('stripWindowsLongPathPrefix', () => {
+  it('strips the drive-letter extended-length prefix', () => {
+    expect(stripWindowsLongPathPrefix('\\\\?\\C:\\Users\\X\\AppData\\Local\\Calame')).toBe(
+      'C:\\Users\\X\\AppData\\Local\\Calame',
+    );
+  });
+
+  it('strips the UNC extended-length prefix and restores the leading \\\\', () => {
+    expect(stripWindowsLongPathPrefix('\\\\?\\UNC\\server\\share\\models')).toBe(
+      '\\\\server\\share\\models',
+    );
+  });
+
+  it('leaves a plain Windows path untouched', () => {
+    expect(stripWindowsLongPathPrefix('C:\\Users\\X\\models')).toBe('C:\\Users\\X\\models');
+  });
+
+  it('leaves a POSIX path untouched', () => {
+    expect(stripWindowsLongPathPrefix('/opt/models')).toBe('/opt/models');
+  });
+});
 
 describe('resolveLocalModelDir', () => {
   describe('overridePath (CALAME_LOCAL_EMBEDDING_MODEL_DIR)', () => {
@@ -26,6 +48,42 @@ describe('resolveLocalModelDir', () => {
       expect(result.available).toBe(false);
       expect(result.unavailableReason).toContain('/opt/wrong-dir');
       expect(result.unavailableReason).toContain('CALAME_LOCAL_EMBEDDING_MODEL_DIR');
+    });
+
+    it('strips a Windows extended-length (\\\\?\\) prefix before validating and returning the path', () => {
+      const strippedPath = 'C:\\Users\\X\\AppData\\Local\\Calame\\resources\\server\\models';
+      const result = resolveLocalModelDir({
+        overridePath: '\\\\?\\' + strippedPath,
+        packaged: false,
+        platform: 'win32',
+        existsFn: (p) => p === path.win32.join(strippedPath, MODEL_FOLDER, 'config.json'),
+      });
+      expect(result).toEqual({ path: strippedPath, available: true, unavailableReason: null });
+    });
+
+    it('strips a Windows extended-length UNC (\\\\?\\UNC\\) prefix before validating and returning the path', () => {
+      const strippedPath = '\\\\server\\share\\models';
+      const result = resolveLocalModelDir({
+        overridePath: '\\\\?\\UNC\\server\\share\\models',
+        packaged: false,
+        platform: 'win32',
+        existsFn: (p) => p === path.win32.join(strippedPath, MODEL_FOLDER, 'config.json'),
+      });
+      expect(result).toEqual({ path: strippedPath, available: true, unavailableReason: null });
+    });
+
+    it('reports the stripped path in unavailableReason when the extended-length override is missing the model', () => {
+      const strippedPath = 'C:\\Users\\X\\models';
+      const result = resolveLocalModelDir({
+        overridePath: '\\\\?\\' + strippedPath,
+        packaged: false,
+        platform: 'win32',
+        existsFn: () => false,
+      });
+      expect(result.path).toBeNull();
+      expect(result.available).toBe(false);
+      expect(result.unavailableReason).toContain(strippedPath);
+      expect(result.unavailableReason).not.toContain('\\\\?\\');
     });
 
     it('is not consulted when overridePath is an empty string', () => {
@@ -77,6 +135,22 @@ describe('resolveLocalModelDir', () => {
       expect(result.unavailableReason).toContain(
         path.posix.join('/opt/calame/resources/server', 'models', MODEL_FOLDER, 'config.json'),
       );
+    });
+
+    it('strips a Windows extended-length (\\\\?\\) prefix from packagedBaseDir', () => {
+      const strippedBaseDir = 'C:\\Users\\X\\AppData\\Local\\Calame\\resources\\server';
+      const result = resolveLocalModelDir({
+        packaged: true,
+        packagedBaseDir: '\\\\?\\' + strippedBaseDir,
+        platform: 'win32',
+        existsFn: (p) =>
+          p === path.win32.join(strippedBaseDir, 'models', MODEL_FOLDER, 'config.json'),
+      });
+      expect(result).toEqual({
+        path: path.win32.join(strippedBaseDir, 'models'),
+        available: true,
+        unavailableReason: null,
+      });
     });
 
     it("defaults the base dir to this module's own directory when packagedBaseDir is omitted", () => {

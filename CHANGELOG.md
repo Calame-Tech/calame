@@ -7,6 +7,18 @@ root `package.json` version flows to the Docker image and `create-calame`).
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-08-31
+
+### Fixed
+
+- Desktop (Windows): the bundled local embedding model (EmbeddingGemma ONNX)
+  failed to load ("Load model from ... failed") when adding a document to the
+  knowledge base. Tauri's canonicalized resource path carries the Windows
+  extended-length prefix (`\\?\`), which onnxruntime rejects once
+  transformers.js joins path segments with `/`. The prefix is now stripped
+  before the path reaches the Node sidecar, and defensively in the
+  `CALAME_LOCAL_EMBEDDING_MODEL_DIR` override handling.
+
 ## [0.7.0] - 2026-08-30
 
 ### Added

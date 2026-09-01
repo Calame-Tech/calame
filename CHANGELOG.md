@@ -7,6 +7,15 @@ root `package.json` version flows to the Docker image and `create-calame`).
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-09-01
+
+### Fixed
+
+- Packaged desktop app could fail to locate the bundled local embedding
+  model (embedded resource path resolution in the Tauri sidecar), breaking
+  on-device RAG on fresh installs. Dev-mode and remote providers were
+  unaffected.
+
 ## [0.7.0] - 2026-08-30
 
 ### Added

@@ -7,7 +7,7 @@ root `package.json` version flows to the Docker image and `create-calame`).
 
 ## [Unreleased]
 
-## [0.7.2] - 2026-09-04
+## [0.7.3] - 2026-09-04
 
 ### Fixed
 
@@ -32,6 +32,9 @@ root `package.json` version flows to the Docker image and `create-calame`).
   on every sync: they are diagnosed once and then skipped until the file
   actually changes (or the source is deleted and recreated). Transient
   errors (parser crash, embedding outage) are still retried on every sync.
+- Security: transitive dependencies fast-uri and mysql2 raised above
+  recently published high-severity advisories (GHSA-jqff-g426-hqxp and
+  friends, GHSA-3f6p-5ww8-9rcr) via pnpm overrides.
 
 ## [0.7.1] - 2026-09-01
 

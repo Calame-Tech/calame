@@ -7,6 +7,8 @@ root `package.json` version flows to the Docker image and `create-calame`).
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-09-04
+
 ### Fixed
 
 - Local folder sources now skip `node_modules`, `.git` and hidden files

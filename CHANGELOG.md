@@ -7,6 +7,30 @@ root `package.json` version flows to the Docker image and `create-calame`).
 
 ## [Unreleased]
 
+### Fixed
+
+- Local folder sources now skip `node_modules`, `.git` and hidden files
+  (dotfiles) by default, and ignore files larger than 50 MB without reading
+  them. All of it is configurable: the source form gains include/exclude
+  glob filters and an "include hidden files" checkbox, and skipped-too-large
+  files are counted in the sync summary instead of disappearing silently.
+- Re-syncing a local folder no longer re-reads every file: unchanged files
+  are detected from their size + modification time (one `stat`, zero content
+  reads) and skipped before any fetch. Content is still verified by hash
+  when a file's timestamp changes without its content changing. Note: a
+  write that preserves both size and mtime is not detected — in that rare
+  case, delete and recreate the source to force a full re-read (a dedicated
+  per-source force-resync is planned as a follow-up).
+- The HTTP API now masks personal data (emails, phone numbers, …) in
+  `POST /api/rag/search` results and `GET /api/rag/documents/:id` text, with
+  the same safe-by-default configuration (`CALAME_RAG_PII_MASK`) already
+  applied to the MCP RAG tools. Previously these two endpoints returned the
+  indexed text unmasked.
+- Files in an unsupported format are no longer re-downloaded and re-analyzed
+  on every sync: they are diagnosed once and then skipped until the file
+  actually changes (or the source is deleted and recreated). Transient
+  errors (parser crash, embedding outage) are still retried on every sync.
+
 ## [0.7.1] - 2026-09-01
 
 ### Fixed

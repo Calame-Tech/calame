@@ -17,6 +17,7 @@ import { WatchManager } from '../../jobs/watch-manager.js';
 import type { ConnectorLike, RagRouteDeps } from '../types.js';
 import type { IngestionPipeline } from '../../pipeline/ingest.js';
 import type { RagJob, RagSource } from '../../types.js';
+import { RAG_LISTING_SKIP_TOO_LARGE_PREFIX } from '../../types.js';
 
 // ---------------------------------------------------------------------------
 // Test harness — capture the registered POST handler from a fake Express app
@@ -133,14 +134,15 @@ interface PreseedDoc {
   path: string;
   etag: string | null;
   deleted?: boolean;
+  ingestError?: string | null;
 }
 
 function preseedDocument(db: BetterSqlite3Database, sourceId: string, doc: PreseedDoc): string {
   const id = nanoid();
   db.prepare(
     `INSERT INTO rag_documents
-		 (id, source_id, folder_id, path, name, mime_type, size, hash, etag, last_indexed_at, deleted_at)
-		 VALUES (?, ?, NULL, ?, ?, 'text/plain', 10, 'hash-' || ?, ?, ?, ?)`,
+		 (id, source_id, folder_id, path, name, mime_type, size, hash, etag, last_indexed_at, deleted_at, ingest_error)
+		 VALUES (?, ?, NULL, ?, ?, 'text/plain', 10, 'hash-' || ?, ?, ?, ?, ?)`,
   ).run(
     id,
     sourceId,
@@ -150,6 +152,7 @@ function preseedDocument(db: BetterSqlite3Database, sourceId: string, doc: Prese
     doc.etag,
     '2026-01-01T00:00:00.000Z',
     doc.deleted ? '2026-01-02T00:00:00.000Z' : null,
+    doc.ingestError ?? null,
   );
   return id;
 }
@@ -162,6 +165,8 @@ interface ConnectorDoc {
   id: string;
   path: string;
   etag: string | null;
+  /** Listing-time skip marker (e.g. skipped-too-large) reported by the connector. */
+  ingestError?: string | null;
 }
 
 function makeConnector(docs: ConnectorDoc[]): ConnectorLike & {
@@ -194,6 +199,7 @@ function makeConnector(docs: ConnectorDoc[]): ConnectorLike & {
         etag: d.etag,
         lastIndexedAt: '2026-01-01T00:00:00.000Z',
         deletedAt: null,
+        ingestError: d.ingestError ?? null,
       }));
     }),
     fetchDocument,
@@ -1302,5 +1308,141 @@ describe('runSyncJob — circuit-breaker (consecutive failures)', () => {
     // Terminal error field describes the single failure.
     expect(job.error).toContain('1/');
     expect(job.error).toContain('first doc failed');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Unsupported docs & listing-time skips — the etag fast-path must skip docs
+// whose failure is the deterministic "unsupported format" kind (fetched and
+// diagnosed ONCE, then skipped until the etag changes), while transient
+// errors stay retryable; and listing-time too-large markers must never be
+// fetched at all.
+// ---------------------------------------------------------------------------
+
+describe('runSyncJob — unsupported docs ride the etag fast-path; too-large skips', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const UNSUPPORTED_MSG = 'No RAG parser is registered for MIME type "application/x-foo".';
+
+  it('skips an unsupported doc without fetching when its etag is unchanged', async () => {
+    const db = makeDb();
+    const source = insertSource(db);
+    preseedDocument(db, source.id, {
+      path: 'doc.odt',
+      etag: 'etag-1',
+      ingestError: UNSUPPORTED_MSG,
+    });
+
+    const connector = makeConnector([{ id: 'doc-odt', path: 'doc.odt', etag: 'etag-1' }]);
+    const pipeline = makePipelineMock();
+    const captured = makeCapturedApp();
+    const deps = makeDeps(db, connector, pipeline);
+    registerRagIndexRoutes(captured.app, deps);
+
+    await runSync(captured, source.id, deps);
+
+    // Fetched/diagnosed ONCE (in a previous sync) — this sync never fetches.
+    expect(connector.fetchDocument).not.toHaveBeenCalled();
+    expect(pipeline.ingestDocument).not.toHaveBeenCalled();
+    const job = readJob(db, source.id);
+    expect(job.status).toBe('completed');
+    expect(job.skippedByEtag).toBe(1);
+  });
+
+  it('re-fetches an unsupported doc once its etag changes', async () => {
+    const db = makeDb();
+    const source = insertSource(db);
+    preseedDocument(db, source.id, {
+      path: 'doc.odt',
+      etag: 'etag-old',
+      ingestError: UNSUPPORTED_MSG,
+    });
+
+    const connector = makeConnector([{ id: 'doc-odt', path: 'doc.odt', etag: 'etag-new' }]);
+    const pipeline = makePipelineMock();
+    const captured = makeCapturedApp();
+    const deps = makeDeps(db, connector, pipeline);
+    registerRagIndexRoutes(captured.app, deps);
+
+    await runSync(captured, source.id, deps);
+
+    expect(connector.fetchDocument).toHaveBeenCalledTimes(1);
+    expect(pipeline.ingestDocument).toHaveBeenCalledTimes(1);
+    const job = readJob(db, source.id);
+    expect(job.skippedByEtag).toBe(0);
+  });
+
+  it('still retries a doc whose previous error was transient, even on a matching etag', async () => {
+    const db = makeDb();
+    const source = insertSource(db);
+    preseedDocument(db, source.id, {
+      path: 'flaky.txt',
+      etag: 'etag-1',
+      ingestError: 'embedding endpoint unreachable',
+    });
+
+    const connector = makeConnector([{ id: 'doc-flaky', path: 'flaky.txt', etag: 'etag-1' }]);
+    const pipeline = makePipelineMock();
+    const captured = makeCapturedApp();
+    const deps = makeDeps(db, connector, pipeline);
+    registerRagIndexRoutes(captured.app, deps);
+
+    await runSync(captured, source.id, deps);
+
+    // Transient failure kinds keep the pre-existing retry-every-sync behavior.
+    expect(connector.fetchDocument).toHaveBeenCalledTimes(1);
+    expect(pipeline.ingestDocument).toHaveBeenCalledTimes(1);
+    const job = readJob(db, source.id);
+    expect(job.skippedByEtag).toBe(0);
+  });
+
+  it('pins the too-large marker prefix value (changing it is a breaking act)', () => {
+    // The connector package mirrors this constant as a literal (its prod code
+    // may only type-import rag-core); the cross-package drift check lives in
+    // rag-connectors' local-folder.test.ts, which imports THIS constant and
+    // asserts the emitted marker starts with it. This test pins the value on
+    // the rag-core side so changing it here is a conscious, reviewed act.
+    expect(RAG_LISTING_SKIP_TOO_LARGE_PREFIX).toBe('skipped-too-large:');
+  });
+
+  it('never fetches a doc the connector flagged as too large; counts it in the summary', async () => {
+    const db = makeDb();
+    const source = insertSource(db);
+
+    const connector = makeConnector([
+      {
+        id: 'doc-big',
+        path: 'big.bin',
+        etag: 'local-v1:999:1',
+        ingestError: `${RAG_LISTING_SKIP_TOO_LARGE_PREFIX} file is 999 bytes, max is 10 bytes`,
+      },
+      { id: 'doc-ok', path: 'ok.txt', etag: null },
+    ]);
+    const pipeline = makePipelineMock();
+    const onAudit = vi.fn();
+    const captured = makeCapturedApp();
+    const deps = makeDeps(db, connector, pipeline, { onAudit });
+    registerRagIndexRoutes(captured.app, deps);
+
+    await runSync(captured, source.id, deps);
+
+    // Only ok.txt is fetched/ingested — big.bin is skipped at listing time.
+    expect(connector.fetchDocument).toHaveBeenCalledTimes(1);
+    expect(pipeline.ingestDocument).toHaveBeenCalledTimes(1);
+
+    const job = readJob(db, source.id);
+    expect(job.status).toBe('completed');
+    expect(job.processedDocuments).toBe(2);
+    expect(job.error).toMatch(/larger than the source's max file size/i);
+
+    const completedCalls = onAudit.mock.calls.filter(
+      (c) => (c[0] as { type: string }).type === 'rag.sync.completed',
+    );
+    expect(completedCalls).toHaveLength(1);
+    const payload = (completedCalls[0]![0] as { payload: Record<string, unknown> }).payload;
+    expect(payload['skippedTooLarge']).toBe(1);
+    expect(payload['failures']).toBe(0);
   });
 });

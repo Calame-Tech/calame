@@ -9,6 +9,7 @@ import type { RagSearchResult } from '../types.js';
 import { embedQueryWith } from '../types.js';
 import type { RagRouteDeps } from './types.js';
 import { l2DistanceToCosineSimilarity } from '../search/hybrid-search.js';
+import { maskSearchResult, parseRagPiiConfig } from '../pii-masking.js';
 
 /**
  * Resolve the tenant id for a request, falling back to the literal
@@ -54,6 +55,16 @@ function sendError(res: Response, status: number, message: string): void {
  * embedding models in one query is an error.
  */
 export function registerRagSearchRoutes(app: Express, deps: RagRouteDeps): void {
+  // Response-time PII masking, same construction as the MCP rag_search tool
+  // (packages/cli wires parseRagPiiConfig(process.env.CALAME_RAG_PII_MASK)
+  // once at startup — safe-by-default ON). Parsed at route-registration time
+  // to match. NOTE: this HTTP route has no per-source scope context (the
+  // per-source `piiMaskingMode: 'off'` opt-out lives in the MCP source
+  // adapters), so the global config is applied unconditionally here — the
+  // safe direction: an opted-out source is masked on this endpoint rather
+  // than an opted-in one leaking.
+  const piiMasking = parseRagPiiConfig(process.env['CALAME_RAG_PII_MASK']);
+
   app.post('/api/rag/search', async (req: Request, res: Response) => {
     const parsed = searchSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -180,14 +191,17 @@ export function registerRagSearchRoutes(app: Express, deps: RagRouteDeps): void 
         });
       }
 
+      // Mask BEFORE the response leaves the process. Chunk rows in SQL keep
+      // the verbatim text (masking is response-time only, like the MCP tool).
+      const { result: maskedResult, redactionCounts } = maskSearchResult({ chunks }, piiMasking);
+
       deps.onAudit?.({
         type: 'rag.search.ok',
-        payload: { query, topK, hits: chunks.length },
+        payload: { query, topK, hits: chunks.length, piiRedacted: redactionCounts },
         timestamp: new Date().toISOString(),
       });
 
-      const result: RagSearchResult = { chunks };
-      res.json(result);
+      res.json(maskedResult);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       deps.onAudit?.({

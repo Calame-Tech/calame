@@ -81,6 +81,9 @@ const SOURCE_TYPES: readonly SourceTypeMeta[] = [
 
 interface LocalConfig {
   rootPath: string;
+  includeGlobs?: string[];
+  excludeGlobs?: string[];
+  includeHidden?: boolean;
 }
 
 interface S3Config {
@@ -288,6 +291,15 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
 
   // ---- local fields ----
   const [rootPath, setRootPath] = useState(extractRootPath(initial?.config));
+  const [localIncludeGlobs, setLocalIncludeGlobs] = useState(
+    extractGlobsAsText(initial?.config, 'includeGlobs'),
+  );
+  const [localExcludeGlobs, setLocalExcludeGlobs] = useState(
+    extractGlobsAsText(initial?.config, 'excludeGlobs'),
+  );
+  const [localIncludeHidden, setLocalIncludeHidden] = useState(
+    extractBool(initial?.config, 'includeHidden'),
+  );
 
   // ---- s3 fields ----
   const [s3Bucket, setS3Bucket] = useState(extractStr(initial?.config, 'bucket'));
@@ -560,9 +572,17 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
   // Payload builders
   // ---------------------------------------------------------------------------
 
-  const buildLocalConfig = (): LocalConfig => ({
-    rootPath: rootPath.trim(),
-  });
+  const buildLocalConfig = (): LocalConfig => {
+    const config: LocalConfig = { rootPath: rootPath.trim() };
+    const ig = parseGlobs(localIncludeGlobs);
+    if (ig.length > 0) config.includeGlobs = ig;
+    const eg = parseGlobs(localExcludeGlobs);
+    if (eg.length > 0) config.excludeGlobs = eg;
+    // Only sent when it differs from the connector default (false) — keeps
+    // the persisted config minimal, same pattern as gdrive `recursive`.
+    if (localIncludeHidden) config.includeHidden = true;
+    return config;
+  };
 
   const buildS3Config = (): S3Config => {
     const config: S3Config = {
@@ -924,46 +944,94 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
       {/* Local config                                                         */}
       {/* ------------------------------------------------------------------ */}
       {type === 'local' && (
-        <div>
-          <FieldLabel htmlFor="rag-source-rootpath" required>
-            Chemin absolu du dossier
-          </FieldLabel>
-          <div className="flex items-center gap-2 mt-1">
-            <input
-              id="rag-source-rootpath"
-              type="text"
-              value={rootPath}
-              onChange={(e) => setRootPath(e.target.value)}
-              placeholder="/data/kb/produit"
-              className="input-editorial flex-1 text-sm"
-            />
-            <button
-              type="button"
-              onClick={() => void handleBrowseFolder()}
-              disabled={browsingFolder || saving}
-              title="Ouvrir le sélecteur de dossier natif sur la machine du serveur"
-              className="px-3 py-2 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-300 text-sm font-medium transition-all duration-200 disabled:opacity-50"
-            >
-              {browsingFolder ? 'Ouverture…' : 'Parcourir…'}
-            </button>
-            <button
-              type="button"
-              onClick={() => void handleTest()}
-              disabled={testing || saving}
-              className="px-3 py-2 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-300 text-sm font-medium transition-all duration-200 disabled:opacity-50"
-            >
-              {testing ? 'Test…' : 'Tester'}
-            </button>
+        <div className="space-y-4">
+          <div>
+            <FieldLabel htmlFor="rag-source-rootpath" required>
+              Chemin absolu du dossier
+            </FieldLabel>
+            <div className="flex items-center gap-2 mt-1">
+              <input
+                id="rag-source-rootpath"
+                type="text"
+                value={rootPath}
+                onChange={(e) => setRootPath(e.target.value)}
+                placeholder="/data/kb/produit"
+                className="input-editorial flex-1 text-sm"
+              />
+              <button
+                type="button"
+                onClick={() => void handleBrowseFolder()}
+                disabled={browsingFolder || saving}
+                title="Ouvrir le sélecteur de dossier natif sur la machine du serveur"
+                className="px-3 py-2 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-300 text-sm font-medium transition-all duration-200 disabled:opacity-50"
+              >
+                {browsingFolder ? 'Ouverture…' : 'Parcourir…'}
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleTest()}
+                disabled={testing || saving}
+                className="px-3 py-2 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-300 text-sm font-medium transition-all duration-200 disabled:opacity-50"
+              >
+                {testing ? 'Test…' : 'Tester'}
+              </button>
+            </div>
+            <HelperText>
+              Le serveur doit pouvoir lire ce chemin. Les fichiers ajoutés ultérieurement sont
+              indexés à la prochaine synchronisation.
+            </HelperText>
+            {browseError && (
+              <p className="text-xs text-amber-400 mt-1">
+                {browseError} Vous pouvez toujours saisir le chemin manuellement.
+              </p>
+            )}
           </div>
-          <HelperText>
-            Le serveur doit pouvoir lire ce chemin. Les fichiers ajoutés ultérieurement sont indexés
-            à la prochaine synchronisation.
-          </HelperText>
-          {browseError && (
-            <p className="text-xs text-amber-400 mt-1">
-              {browseError} Vous pouvez toujours saisir le chemin manuellement.
-            </p>
-          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <FieldLabel htmlFor="local-include-globs">Include globs</FieldLabel>
+              <textarea
+                id="local-include-globs"
+                value={localIncludeGlobs}
+                onChange={(e) => setLocalIncludeGlobs(e.target.value)}
+                placeholder={'**/*.md\n**/*.pdf'}
+                rows={3}
+                className="input-editorial w-full text-sm mt-1 font-mono-plex resize-y"
+              />
+              <HelperText>Une glob par ligne. Vide = tout inclure.</HelperText>
+            </div>
+            <div>
+              <FieldLabel htmlFor="local-exclude-globs">Exclude globs</FieldLabel>
+              <textarea
+                id="local-exclude-globs"
+                value={localExcludeGlobs}
+                onChange={(e) => setLocalExcludeGlobs(e.target.value)}
+                placeholder={'**/build/**\n**/*.log'}
+                rows={3}
+                className="input-editorial w-full text-sm mt-1 font-mono-plex resize-y"
+              />
+              <HelperText>
+                Une glob par ligne, ajoutée aux exclusions par défaut (node_modules, .git).
+              </HelperText>
+            </div>
+          </div>
+
+          <div className="flex items-start gap-2">
+            <input
+              id="local-include-hidden"
+              type="checkbox"
+              checked={localIncludeHidden}
+              onChange={(e) => setLocalIncludeHidden(e.target.checked)}
+              className="mt-0.5 accent-os-500 focus:ring-2 focus:ring-os-500"
+            />
+            <label htmlFor="local-include-hidden" className="text-sm text-gray-400 select-none">
+              Inclure les fichiers cachés
+              <HelperText>
+                Fichiers et dossiers commençant par un point (.env, .cache…), exclus par défaut. Les
+                fichiers de plus de 50 Mo sont toujours ignorés.
+              </HelperText>
+            </label>
+          </div>
         </div>
       )}
 

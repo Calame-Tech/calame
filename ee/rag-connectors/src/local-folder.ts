@@ -22,7 +22,33 @@ import {
   DocumentNotFoundError as ConnectorDocumentNotFoundError,
   ConnectorConfigError,
 } from './errors.js';
-import { deterministicId, matchGlobs, safeResolveUnderRoot, streamSha256 } from './utils.js';
+import { deterministicId, isDirExcluded, matchGlobs, safeResolveUnderRoot } from './utils.js';
+
+/**
+ * Directories that are practically never worth indexing and can explode a
+ * walk by several orders of magnitude (a single `node_modules` tree easily
+ * holds 100k+ files). Always applied unless `disableDefaultExcludes` is set;
+ * user-provided `excludeGlobs` are ADDED to (not substituted for) this list.
+ */
+export const DEFAULT_EXCLUDE_GLOBS = ['**/node_modules/**', '**/.git/**'] as const;
+
+/**
+ * Default per-file size cap, matching the browser upload cap (50 MB). Files
+ * larger than this are skipped at DISCOVERY time — no read, no hash — and
+ * flagged for the host via `ingestError` so the sync summary stays honest.
+ */
+export const DEFAULT_MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;
+
+/**
+ * MUST stay identical to `RAG_LISTING_SKIP_TOO_LARGE_PREFIX` exported by
+ * `@calame-ee/rag-core` (src/types.ts). Kept as a literal here because every
+ * rag-core import in this package is type-only — a runtime value import would
+ * load the whole rag-core module graph (parsers, sqlite glue, …) just for one
+ * string. Drift is caught by local-folder.test.ts, which value-imports the
+ * rag-core constant (tests may do that) and asserts the emitted marker
+ * starts with it.
+ */
+const SKIP_TOO_LARGE_PREFIX = 'skipped-too-large:';
 
 /**
  * Configuration for `LocalFolderConnector`. Stored encrypted by the host.
@@ -32,8 +58,36 @@ export interface LocalFolderConfig {
   rootPath: string;
   /** Optional include allowlist. Defaults to "include everything". */
   includeGlobs?: string[];
-  /** Optional exclude denylist (e.g. `['**\/node_modules\/**', '**\/.git\/**']`). */
+  /**
+   * Optional exclude denylist. ADDED to {@link DEFAULT_EXCLUDE_GLOBS} unless
+   * `disableDefaultExcludes` is set.
+   *
+   * NOTE: a `!`-prefixed pattern is minimatch's single-pattern negation
+   * ("everything EXCEPT this glob"), NOT gitignore-style re-inclusion — one
+   * `!foo` entry in an exclude list effectively excludes everything but
+   * `foo`, which is almost never what you want. To carve entries back out
+   * of the defaults, use `disableDefaultExcludes` and list your own
+   * excludes instead.
+   */
   excludeGlobs?: string[];
+  /**
+   * Include hidden entries (files / folders whose name starts with `.`).
+   * Default `false`: dotfiles are noise for a knowledge base (`.env`,
+   * `.DS_Store`, editor state, …) and occasionally secrets.
+   */
+  includeHidden?: boolean;
+  /**
+   * Power-user escape hatch: drop {@link DEFAULT_EXCLUDE_GLOBS} entirely and
+   * apply ONLY the user-provided `excludeGlobs`. Default `false`.
+   */
+  disableDefaultExcludes?: boolean;
+  /**
+   * Per-file size cap in bytes. Files larger than this are skipped at
+   * discovery (no read) and reported to the host as skipped-too-large.
+   * Default {@link DEFAULT_MAX_FILE_SIZE_BYTES} (50 MB). `0` or negative
+   * disables the cap.
+   */
+  maxFileSizeBytes?: number;
   /** Whether to follow symbolic links during traversal. Default `false`. */
   followSymlinks?: boolean;
 }
@@ -66,11 +120,79 @@ function narrowConfig(config: DocumentSourceConfig): LocalFolderConfig {
       'LocalFolderConnector: `excludeGlobs` must be an array of strings',
     );
   }
+  const maxFileSizeBytes = config.maxFileSizeBytes;
+  if (maxFileSizeBytes !== undefined && typeof maxFileSizeBytes !== 'number') {
+    throw new ConnectorConfigError(
+      'local',
+      'LocalFolderConnector: `maxFileSizeBytes` must be a number',
+    );
+  }
   return {
     rootPath,
     includeGlobs: includeGlobs as string[] | undefined,
     excludeGlobs: excludeGlobs as string[] | undefined,
+    includeHidden: config.includeHidden === true,
+    disableDefaultExcludes: config.disableDefaultExcludes === true,
+    maxFileSizeBytes: maxFileSizeBytes as number | undefined,
     followSymlinks: config.followSymlinks === true,
+  };
+}
+
+/**
+ * Effective exclude list: defaults + user-provided, unless the escape hatch
+ * `disableDefaultExcludes` is set (then user globs only).
+ */
+function effectiveExcludeGlobs(config: LocalFolderConfig): string[] {
+  const user = config.excludeGlobs ?? [];
+  if (config.disableDefaultExcludes) return user;
+  return [...DEFAULT_EXCLUDE_GLOBS, ...user];
+}
+
+/**
+ * True when any path segment of `relPath` (forward-slash separated) starts
+ * with a dot — i.e. the entry is hidden or lives under a hidden directory.
+ */
+function isHiddenRelPath(relPath: string): boolean {
+  return relPath.split('/').some((segment) => segment.startsWith('.'));
+}
+
+/** Resolved per-file size cap: default 50 MB; <= 0 disables the cap. */
+function effectiveMaxFileSize(config: LocalFolderConfig): number {
+  const cap = config.maxFileSizeBytes ?? DEFAULT_MAX_FILE_SIZE_BYTES;
+  return cap <= 0 ? Number.POSITIVE_INFINITY : cap;
+}
+
+/**
+ * Build the chokidar `ignored` filter for a watch rooted at `root`, so the
+ * watcher PRUNES excluded trees instead of recursing into them and dropping
+ * their events afterwards. Without this, chokidar registers native watches
+ * on every directory under node_modules/.git — inotify-handle exhaustion on
+ * Linux and a slow initial scan, exactly the explosion the default excludes
+ * exist to prevent.
+ *
+ * Reuses the SAME semantics as the listing side (hidden-entry check +
+ * `isDirExcluded` over `effectiveExcludeGlobs`) via a `(path) => boolean`
+ * callback, rather than re-expressing the globs in chokidar's own matcher
+ * dialect. `includeGlobs` are deliberately NOT applied here: they describe
+ * FILES, so pruning directories on them would drop everything; the
+ * post-event `map()` filter handles them (and stays as a second line of
+ * defense for excludes too).
+ *
+ * Exported for direct unit-testing (driving chokidar's native watcher in a
+ * test is slow and platform-dependent).
+ */
+export function buildWatchIgnored(
+  root: string,
+  config: LocalFolderConfig,
+): (absPath: string) => boolean {
+  const excludes = effectiveExcludeGlobs(config);
+  return (absPath: string): boolean => {
+    const relPath = relative(root, absPath).split(sep).join('/');
+    // Never ignore the root itself, and leave out-of-root paths (symlink
+    // targets) to the map() filter, which already drops them.
+    if (relPath === '' || relPath.startsWith('..')) return false;
+    if (!config.includeHidden && isHiddenRelPath(relPath)) return true;
+    return isDirExcluded(relPath, excludes);
   };
 }
 
@@ -118,10 +240,14 @@ function decodeDocId(docId: string): string {
  *    requested folder; recursion is the caller's job (via repeated calls).
  *  - `fetchDocument` opens a `fs.createReadStream` on the resolved path with
  *    a strict guard against `..` escapes (`safeResolveUnderRoot`).
- *  - Document hashes are computed by streaming the file through SHA-256 — no
- *    full-file buffering. For multi-GB files this is still I/O bound; we
- *    accept this cost in Phase 1 because the host caches `RagDocument.hash`
- *    and only re-hashes when stat-based heuristics indicate a change.
+ *  - Change detection is stat-based: listings report a cheap
+ *    `local-v1:<size>:<mtimeMs>` etag (one stat, zero content reads) that the
+ *    host's etag fast-path compares against the indexed copy. Content SHA-256
+ *    is computed by the ingest pipeline only for files whose etag changed.
+ *  - Hidden entries and `DEFAULT_EXCLUDE_GLOBS` (node_modules, .git) are
+ *    excluded by default; `includeHidden` / `disableDefaultExcludes` opt out.
+ *  - Files over `maxFileSizeBytes` (default 50 MB) are skipped at discovery
+ *    and flagged via `ingestError` so the host can report them.
  *
  * Phase 4 additions:
  *  - `watch()` (chokidar-based incremental sync). Emits `created` / `updated`
@@ -189,6 +315,9 @@ export class LocalFolderConnector implements DocumentSourceConnector {
     const targetAbs = parent ? safeResolveUnderRoot(root, parent.path) : root;
     const entries = await readdir(targetAbs, { withFileTypes: true });
 
+    // Hoisted out of the loop — effectiveExcludeGlobs allocates a new array.
+    const excludes = effectiveExcludeGlobs(config);
+
     const folders: RagFolder[] = [];
     for (const entry of entries) {
       if (!this.#isDirectoryEntry(entry, config)) continue;
@@ -198,7 +327,15 @@ export class LocalFolderConnector implements DocumentSourceConnector {
       // Normalize to forward slashes for storage / glob matching.
       const normalizedRel = relPath.split(sep).join('/');
 
-      if (!matchGlobs(normalizedRel, undefined, config.excludeGlobs)) {
+      // Hidden folders (`.git`, `.cache`, …) are excluded by default; the
+      // `includeHidden` flag re-enables them.
+      if (!config.includeHidden && isHiddenRelPath(normalizedRel)) {
+        continue;
+      }
+      // Directory-aware exclusion so `**/node_modules/**` prunes the WHOLE
+      // subtree here (plain matchGlobs would only filter its files one by
+      // one while still walking the tree).
+      if (isDirExcluded(normalizedRel, excludes)) {
         continue;
       }
 
@@ -233,6 +370,10 @@ export class LocalFolderConnector implements DocumentSourceConnector {
     const targetAbs = folder ? safeResolveUnderRoot(root, folder.path) : root;
     const entries = await readdir(targetAbs, { withFileTypes: true });
 
+    // Hoisted out of the loop — both helpers allocate/derive per call.
+    const excludes = effectiveExcludeGlobs(config);
+    const maxSize = effectiveMaxFileSize(config);
+
     const documents: RagDocument[] = [];
     for (const entry of entries) {
       if (!this.#isFileEntry(entry, config)) continue;
@@ -241,21 +382,47 @@ export class LocalFolderConnector implements DocumentSourceConnector {
       const relPath = relative(root, fileAbs);
       const normalizedRel = relPath.split(sep).join('/');
 
-      if (!matchGlobs(normalizedRel, config.includeGlobs, config.excludeGlobs)) {
+      // Hidden files are excluded by default (see `includeHidden`).
+      if (!config.includeHidden && isHiddenRelPath(normalizedRel)) {
+        continue;
+      }
+      if (!matchGlobs(normalizedRel, config.includeGlobs, excludes)) {
         continue;
       }
 
       let size = 0;
+      let mtimeMs = 0;
       try {
         const fileStats = await stat(fileAbs);
         size = fileStats.size;
+        mtimeMs = fileStats.mtimeMs;
       } catch {
         continue;
       }
 
-      const hash = await streamSha256(fileAbs);
       const lookup = mime.lookup(entry.name);
       const mimeType = typeof lookup === 'string' ? lookup : 'application/octet-stream';
+
+      // Size cap enforced at DISCOVERY — before any content read. The file is
+      // still reported (with an `ingestError` marker) so the host can count it
+      // as skipped-too-large in the sync summary and so its path stays in the
+      // listing (a previously indexed copy is not GC'd behind the admin's
+      // back — it simply stops being refreshed).
+      const tooLarge = size > maxSize;
+
+      // Change-detection fingerprint. `local-v1:<size>:<mtimeMs>` is cheap
+      // (one stat, zero reads) and deterministic, so the host's etag fast-path
+      // can skip unchanged files WITHOUT fetching them. The content sha256 is
+      // computed by the ingest pipeline as a second-line check for the case
+      // where mtime changed but the content didn't.
+      //
+      // Known tradeoff: a write that preserves BOTH size and mtime (e.g.
+      // deliberate `touch -r`/utimes back-dating, or a restore tool that
+      // replays timestamps) produces the same fingerprint and is not
+      // re-indexed. This is rare and intentional — the recovery path is to
+      // delete and recreate the source (DELETE /api/rag/sources/:id/permanent
+      // then POST /api/rag/sources), which re-reads everything.
+      const etag = `local-v1:${size}:${mtimeMs}`;
 
       documents.push({
         id: encodeDocId(normalizedRel),
@@ -265,12 +432,17 @@ export class LocalFolderConnector implements DocumentSourceConnector {
         name: entry.name,
         mimeType,
         size,
-        hash,
-        etag: null,
+        // The host never trusts a connector-listing hash (it recomputes the
+        // content sha256 at ingest time from the fetched bytes), so we no
+        // longer pay a full read + SHA-256 per file per listing here.
+        hash: '',
+        etag,
         // Caller (host pipeline) overwrites this when the document is indexed.
         lastIndexedAt: '',
         deletedAt: null,
-        ingestError: null,
+        ingestError: tooLarge
+          ? `${SKIP_TOO_LARGE_PREFIX} file is ${size} bytes, max is ${maxSize} bytes`
+          : null,
       });
     }
     return documents;
@@ -348,7 +520,13 @@ export class LocalFolderConnector implements DocumentSourceConnector {
       ignoreInitial: true,
       followSymlinks: config.followSymlinks ?? false,
       awaitWriteFinish: { stabilityThreshold: 500, pollInterval: 100 },
+      // Prune excluded trees at the WATCHER level (no native watches inside
+      // node_modules/.git, no slow initial scan) — see buildWatchIgnored.
+      ignored: buildWatchIgnored(root, config),
     });
+
+    // Hoisted out of the per-event path — effectiveExcludeGlobs allocates.
+    const excludes = effectiveExcludeGlobs(config);
 
     const map = (kind: 'add' | 'change' | 'unlink', absPath: string): WatchEvent | null => {
       const relPath = relative(root, absPath).split(sep).join('/');
@@ -356,7 +534,12 @@ export class LocalFolderConnector implements DocumentSourceConnector {
       // following symlinks; matchGlobs would still test, but a parent-escape
       // means the host has no doc for this path. Skip those cleanly.
       if (relPath === '' || relPath.startsWith('..')) return null;
-      if (!matchGlobs(relPath, config.includeGlobs, config.excludeGlobs)) {
+      // Mirror listDocuments' filtering so the host only receives events for
+      // paths it would actually index: hidden entries (unless includeHidden)
+      // and the default excludes are dropped here too. Second line of
+      // defense behind the `ignored` pruning above.
+      if (!config.includeHidden && isHiddenRelPath(relPath)) return null;
+      if (!matchGlobs(relPath, config.includeGlobs, excludes)) {
         return null;
       }
       const type = kind === 'add' ? 'created' : kind === 'change' ? 'updated' : 'deleted';

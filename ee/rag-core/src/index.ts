@@ -16,7 +16,7 @@ export type {
   RagSourceType,
   VectorStore,
 } from './types.js';
-export { embedQueryWith } from './types.js';
+export { embedQueryWith, RAG_LISTING_SKIP_TOO_LARGE_PREFIX } from './types.js';
 
 // ---------- Storage ----------
 export { runRagMigrations } from './storage/schema.js';

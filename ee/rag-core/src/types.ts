@@ -126,6 +126,16 @@ export interface RagDocument {
 }
 
 /**
+ * Marker prefix a connector can put in `RagDocument.ingestError` at LISTING
+ * time to tell the sync host "this file was deliberately skipped at discovery
+ * because it exceeds the source's max file size — do not fetch it". The host
+ * counts these as `skippedTooLarge` on the job summary instead of fetching /
+ * ingesting them. Defined here (not in @calame-ee/rag-connectors) so the
+ * dependency direction stays one-way (rag-connectors → rag-core, never back).
+ */
+export const RAG_LISTING_SKIP_TOO_LARGE_PREFIX = 'skipped-too-large:';
+
+/**
  * A chunk of a document used for retrieval. The embedding vector itself is
  * stored separately in a sqlite-vec virtual table and looked up by `id`.
  */

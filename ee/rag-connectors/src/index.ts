@@ -29,7 +29,12 @@ export type { DocIdCodec } from './doc-id.js';
 export { collectAllPages } from './pagination.js';
 export type { Page } from './pagination.js';
 
-export { LocalFolderConnector, DocumentNotFoundError } from './local-folder.js';
+export {
+  LocalFolderConnector,
+  DocumentNotFoundError,
+  DEFAULT_EXCLUDE_GLOBS,
+  DEFAULT_MAX_FILE_SIZE_BYTES,
+} from './local-folder.js';
 export type { LocalFolderConfig } from './local-folder.js';
 
 export { S3Connector, S3DocumentNotFoundError } from './s3.js';
@@ -46,6 +51,7 @@ export type { HttpConfig } from './http.js';
 export {
   PathEscapeError,
   deterministicId,
+  isDirExcluded,
   matchGlobs,
   safeResolveUnderRoot,
   streamSha256,

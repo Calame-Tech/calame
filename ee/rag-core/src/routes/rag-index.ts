@@ -6,6 +6,7 @@ import type { Express, Request, Response } from 'express';
 import type { Database as BetterSqlite3Database } from 'better-sqlite3';
 import { nanoid } from 'nanoid';
 import type { RagFolder, RagJob, RagJobStatus, RagSource, RagSourceType } from '../types.js';
+import { RAG_LISTING_SKIP_TOO_LARGE_PREFIX } from '../types.js';
 import type { ConnectorLike, RagRouteDeps } from './types.js';
 import { EmbeddingCapExceededError } from '../jobs/embedding-cap.js';
 import { UnsupportedMimeTypeError } from '../parsers/index.js';
@@ -183,6 +184,21 @@ async function walkConnector(
 
   await visit(undefined);
   return out;
+}
+
+/**
+ * True when a stored `ingest_error` is the deterministic "unsupported format"
+ * kind (thrown as {@link UnsupportedMimeTypeError} and persisted verbatim by
+ * `markDocumentUnsupported`). These docs are content-stable failures: as long
+ * as the file's etag hasn't changed, re-fetching and re-diagnosing them every
+ * sync is pure waste — the etag fast-path may skip them. Every OTHER error
+ * kind (parser crash, embedding outage, timeout, …) is treated as transient
+ * and stays retryable on every sync, exactly as before. Matching on the
+ * message prefix is deliberate: the error class isn't persisted, only its
+ * message is, and the prefix is owned by UnsupportedMimeTypeError's ctor.
+ */
+function isUnsupportedFormatIngestError(message: string): boolean {
+  return message.startsWith('No RAG parser is registered');
 }
 
 /**
@@ -381,6 +397,7 @@ export async function runSyncJob(
     let failures = 0;
     let skippedByEtag = 0;
     let skippedUnsupported = 0;
+    let skippedTooLarge = 0;
     let gcDeleted = 0;
     // Accumulated sum of chunk.tokenCount across every document that was
     // actually embedded by this job. Fast-path (hash-match) docs do not
@@ -409,6 +426,32 @@ export async function runSyncJob(
         { component: `rag-sync/${source.id}` },
       );
       try {
+        // Listing-time skip: the connector flagged this file at DISCOVERY
+        // (today: over the size cap) — never fetch it. Counted separately so
+        // the sync summary stays honest. The path stays in `entries`, so a
+        // previously indexed copy is not GC'd — it just stops refreshing.
+        const listingError = doc.ingestError ?? null;
+        if (listingError !== null && listingError.startsWith(RAG_LISTING_SKIP_TOO_LARGE_PREFIX)) {
+          skippedTooLarge++;
+          processed++;
+          consecutiveFailures = 0; // a deliberate skip is not a failure
+          deps.logger?.info(`[rag-sync] SKIPPED (too large) ${doc.path}: ${listingError}`, {
+            component: `rag-sync/${source.id}`,
+          });
+          deps.db
+            .prepare(
+              `UPDATE rag_jobs SET processed_documents = ?, progress = ?, skipped_by_etag = ? WHERE id = ?`,
+            )
+            .run(
+              processed,
+              entries.length === 0 ? 1 : processed / entries.length,
+              skippedByEtag,
+              jobId,
+            );
+          entryIndex++;
+          continue;
+        }
+
         // Etag pre-fetch fast-path: if the connector reports a non-empty
         // etag and our indexed copy has the same etag (and is not
         // soft-deleted), skip both the network fetch and the ingest.
@@ -421,12 +464,21 @@ export async function runSyncJob(
             existing !== null &&
             existing.deletedAt === null &&
             existing.etag === docEtag &&
-            // Don't skip docs that previously failed to ingest — we want to
-            // retry them every sync in case a parser was added for the
-            // format. On success the pipeline clears `ingest_error`; on
-            // repeated failure the markDocumentUnsupported path
-            // re-writes the same row, costing only the parser call.
-            existing.ingestError === null
+            // Docs that previously failed with a TRANSIENT error (parser
+            // crash, embedding outage, …) are retried every sync. Docs whose
+            // failure is the deterministic "unsupported format" kind are
+            // skipped like healthy ones while their etag is unchanged: the
+            // outcome cannot change until the file itself does, so they are
+            // fetched/diagnosed once and then ride the fast-path. A changed
+            // file (new etag) retries them — as does deleting and recreating
+            // the source (DELETE /api/rag/sources/:id/permanent), which is
+            // also how a newly added parser eventually picks them up.
+            // (POST /api/rag/reindex is a dimension migration, not a force
+            // re-read — it no-ops at the same dimension.)
+            // TODO(follow-up): a per-source force-resync (one run that
+            // ignores stored etags) would be a cheaper recovery than
+            // delete + recreate.
+            (existing.ingestError === null || isUnsupportedFormatIngestError(existing.ingestError))
           ) {
             skippedByEtag++;
             processed++;
@@ -584,7 +636,9 @@ export async function runSyncJob(
           ? `${failures}/${processed} failed so far; last: ${truncateMessage(lastError, 200)}`
           : skippedUnsupported > 0
             ? `${skippedUnsupported} doc(s) skipped (unsupported format)`
-            : null;
+            : skippedTooLarge > 0
+              ? `${skippedTooLarge} doc(s) skipped (too large)`
+              : null;
       deps.db
         .prepare(
           `UPDATE rag_jobs SET processed_documents = ?, progress = ?, skipped_by_etag = ?, error = ? WHERE id = ?`,
@@ -654,7 +708,9 @@ export async function runSyncJob(
           ? `${failures}/${entries.length} failed; last: ${lastError}`
           : skippedUnsupported > 0
             ? `${skippedUnsupported} doc(s) skipped — unsupported format. Convert to PDF/DOCX/MD/TXT or wait for native support.`
-            : null,
+            : skippedTooLarge > 0
+              ? `${skippedTooLarge} doc(s) skipped — larger than the source's max file size. Raise the limit or split the file.`
+              : null,
         skippedByEtag,
         gcDeleted,
         tokensEmbeddedThisJob,
@@ -681,6 +737,7 @@ export async function runSyncJob(
       processed,
       skippedByEtag,
       skippedUnsupported,
+      skippedTooLarge,
       gcDeleted,
       failures,
       tokensEmbedded: tokensEmbeddedThisJob,

@@ -200,8 +200,22 @@ export class IngestionPipeline {
       >(`SELECT * FROM rag_documents WHERE source_id = ? AND path = ?`)
       .get(sourceId, input.path);
 
-    // Fast path — same content.
+    // Fast path — same content. Still refresh the stored etag when the
+    // caller supplied a different one: for stat-based etags (local connector,
+    // `local-v1:<size>:<mtimeMs>`) the mtime can change while the content
+    // doesn't — without this write the row would keep the stale etag and the
+    // sync host's etag fast-path would refetch the file on EVERY sync. This
+    // is also the convergence path for rows indexed before the connector
+    // reported etags (stored etag NULL): one hash-matched sync stamps the
+    // fingerprint and subsequent syncs skip without fetching.
     if (existing && existing.hash === hash && existing.deleted_at === null) {
+      const nextEtag = input.etag ?? null;
+      if (existing.etag !== nextEtag) {
+        this.db
+          .prepare(`UPDATE rag_documents SET etag = ? WHERE id = ?`)
+          .run(nextEtag, existing.id);
+        existing.etag = nextEtag;
+      }
       return rowToDocument(existing);
     }
 
@@ -377,9 +391,14 @@ export class IngestionPipeline {
    * Persist a document the sync worker could not ingest (today: only
    * unsupported MIME type) so the tree view can still surface it with a
    * "Format non supporté" badge. The row carries no chunks / embeddings —
-   * semantic search ignores it. The `etag` is intentionally cleared so the
-   * next sync re-attempts the file (a future parser addition will then
-   * succeed and clear `ingest_error` via the normal update path).
+   * semantic search ignores it. The `etag` is KEPT so the sync host's etag
+   * fast-path can skip the file on subsequent syncs — an unsupported format
+   * is deterministic on content, so re-fetching and re-diagnosing it while
+   * the etag is unchanged is pure waste. A changed file (new etag) retries
+   * it — as does deleting and recreating the source (DELETE
+   * /api/rag/sources/:id/permanent); a future parser addition is picked up
+   * then. (POST /api/rag/reindex is NOT a recovery path here: it is a
+   * dimension migration that no-ops at the same dimension.)
    *
    * Idempotent: if a row already exists for `(source_id, path)`, it's
    * updated in place. If a healthy version of the document existed before
@@ -413,18 +432,28 @@ export class IngestionPipeline {
         this.db
           .prepare(
             `UPDATE rag_documents
-						 SET folder_id = ?, name = ?, mime_type = ?, size = ?, hash = ?, etag = NULL,
+						 SET folder_id = ?, name = ?, mime_type = ?, size = ?, hash = ?, etag = ?,
 						     last_indexed_at = ?, deleted_at = NULL, ingest_error = ?
 						 WHERE id = ?`,
           )
-          .run(folderId, name, input.mimeType, size, hash, now, reason, existing.id);
+          .run(
+            folderId,
+            name,
+            input.mimeType,
+            size,
+            hash,
+            input.etag ?? null,
+            now,
+            reason,
+            existing.id,
+          );
       } else {
         this.db
           .prepare(
             `INSERT INTO rag_documents
 						 (id, source_id, folder_id, path, name, mime_type, size, hash, etag,
 						  tenant_id, last_indexed_at, deleted_at, ingest_error)
-						 VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, NULL, ?)`,
+						 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
           )
           .run(
             nanoid(),
@@ -435,6 +464,7 @@ export class IngestionPipeline {
             input.mimeType,
             size,
             hash,
+            input.etag ?? null,
             tenantId,
             now,
             reason,

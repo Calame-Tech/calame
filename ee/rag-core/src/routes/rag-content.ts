@@ -5,6 +5,7 @@
 import type { Express, Request, Response } from 'express';
 import type { RagDocument, RagFolder } from '../types.js';
 import type { RagRouteDeps } from './types.js';
+import { maskSearchResult, parseRagPiiConfig } from '../pii-masking.js';
 
 /**
  * Resolve the tenant id for a request, falling back to the literal
@@ -113,6 +114,14 @@ function isSourceVisible(deps: RagRouteDeps, sourceId: string, tenantId: string)
 }
 
 export function registerRagContentRoutes(app: Express, deps: RagRouteDeps): void {
+  // Response-time PII masking for GET /api/rag/documents/:id, constructed the
+  // same way as the MCP rag_get_document tool (env CALAME_RAG_PII_MASK,
+  // safe-by-default ON), parsed once at route-registration time. This route
+  // has no per-source scope context (the per-source `piiMaskingMode: 'off'`
+  // opt-out lives in the MCP source adapters), so the global config applies
+  // unconditionally — the safe direction.
+  const piiMasking = parseRagPiiConfig(process.env['CALAME_RAG_PII_MASK']);
+
   app.get('/api/rag/sources/:id/folders', (req: Request, res: Response) => {
     try {
       const tenantId = resolveTenantId(deps, req);
@@ -227,9 +236,31 @@ export function registerRagContentRoutes(app: Express, deps: RagRouteDeps): void
         )
         .all(id, tenantId);
       const text = chunks.map((c) => c.text).join('\n');
+      // Synthetic single-chunk wrap: reuse maskSearchResult's masking logic
+      // on the whole reconstructed document (same trick as the MCP
+      // rag_get_document tool). No-op when masking is disabled.
+      const masked = maskSearchResult(
+        {
+          chunks: [
+            {
+              text,
+              score: 0,
+              // Not a real search hit — no vector distance to derive a
+              // similarity from.
+              similarity: null,
+              sourceId: row.source_id,
+              folder: '',
+              fileName: row.name,
+              position: 0,
+              documentId: row.id,
+            },
+          ],
+        },
+        piiMasking,
+      );
       res.json({
         document: rowToDocument(row),
-        text,
+        text: masked.result.chunks[0]?.text ?? text,
         chunkCount: chunks.length,
       });
     } catch (error: unknown) {

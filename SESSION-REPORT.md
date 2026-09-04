@@ -5,6 +5,21 @@ every commit. Newest first.
 
 ---
 
+## 2026-09-04 — RAG : perf de sync des sources locales + masquage PII des endpoints HTTP (branche `fix/rag-sync-perf-and-masking`, uncommitted)
+
+Quatre correctifs issus d'un audit de code avec vérification bout-en-bout, implémentés ensemble :
+
+1. **Exclusions par défaut + filtres UI (connecteur local)** : `node_modules`, `.git` et les entrées cachées (dotfiles) sont désormais exclus par défaut au listing ET à la traversée (`isDirExcluded` dans `utils.ts` gère le cas où `**/node_modules/**` ne matche pas le chemin nu du dossier — sinon on récursait quand même dans tout l'arbre). Overridable : `includeHidden`, `disableDefaultExcludes` (escape hatch config-only), `excludeGlobs` utilisateur AJOUTÉS aux défauts. Cap de taille `maxFileSizeBytes` (défaut 50 Mo, aligné sur l'upload navigateur) appliqué à la découverte — zéro lecture — et remonté honnêtement : le connecteur pose un marqueur `skipped-too-large:` dans `ingestError` (littéral miroir de `RAG_LISTING_SKIP_TOO_LARGE_PREFIX` de rag-core, épinglé des deux côtés par test — un import runtime aurait chargé tout le graphe rag-core), l'hôte compte `skippedTooLarge` dans le résumé de job et l'audit. `SourceForm.tsx` : globs include/exclude (mêmes champs que S3) + case « Inclure les fichiers cachés », défauts documentés dans les helper texts.
+2. **Vraie détection de changement (fichiers locaux)** : `listDocuments` ne calcule plus un SHA-256 en streaming par fichier par listing (c'était une lecture intégrale de CHAQUE fichier à CHAQUE sync). L'etag devient l'empreinte stat `local-v1:<taille>:<mtimeMs>` — un fichier inchangé coûte un `stat()`, zéro lecture, via le fast-path etag existant de `rag-index.ts`. Le hash de contenu reste la seconde ligne dans `ingestDocument` (mtime bougé mais contenu identique), et ce fast-path hash **retamponne l'etag** — sans ça les lignes existantes (etag NULL d'avant, ou mtime bougé) refetchaient à chaque sync sans jamais converger. Compromis documenté : une écriture qui préserve taille+mtime n'est pas détectée (rare ; récupération = supprimer/recréer la source — `POST /api/rag/reindex` est une migration de dimension qui no-op à dimension égale, PAS un force re-read ; un force-resync par source est noté en TODO de suivi).
+3. **Parité de masquage PII sur les endpoints HTTP** : `POST /api/rag/search` et `GET /api/rag/documents/:id` renvoyaient les textes en clair (vérifié en live par l'audit) alors que les tools MCP masquaient. Les deux routes réutilisent `parseRagPiiConfig(CALAME_RAG_PII_MASK)` (safe-by-default ON, parsé à l'enregistrement des routes) + `maskSearchResult` — wrap synthétique mono-chunk pour l'endpoint document, comme `merged-rag-tools`. Pas de contexte de scope par source côté routes → config globale appliquée inconditionnellement (direction sûre, commenté). Noms de fichiers/chemins non masqués (hors périmètre).
+4. **Fichiers non supportés traités UNE fois** : `markDocumentUnsupported` garde désormais l'etag (il le vidait), et le garde-fou du fast-path etag laisse passer les docs dont l'`ingest_error` est du genre déterministe « No RAG parser is registered » (matché par préfixe de message — la classe d'erreur n'est pas persistée). Résultat : diagnostiqué une fois, puis skippé à chaque sync tant que l'etag ne change pas ; un fichier modifié (ou une ré-indexation) est retenté ; les erreurs transitoires (crash parser, provider down) restent retentées à chaque sync comme avant.
+
+Passe de revue (PASS WITH WARNINGS) appliquée dans la foulée : le test d'épinglage du marqueur importe désormais la vraie constante rag-core (import runtime autorisé dans les TESTS ; CI builde avant de tester, dist rebuildé localement) au lieu d'un littéral auto-référentiel ; `watch()` chokidar reçoit un filtre `ignored` (`buildWatchIgnored`, exporté et testé unitairement) qui élague node_modules/.git/cachés au niveau du watcher (risque d'épuisement inotify sous Linux sinon), le filtre post-événement restant en seconde ligne ; les trois mentions d'un « bouton de ré-indexation complète » comme voie de récupération corrigées (ça n'existe pas — `/api/rag/reindex` est une migration de dimension) vers supprimer/recréer la source ; allocation `[...defaults, ...user]` hissée hors des boucles ; test de non-faux-positif (`node_modules_backup`, `.git-hooks-style`) ; JSDoc sur le piège de négation `!` de minimatch dans `excludeGlobs`.
+
+Tests ajoutés : 13 sur le connecteur (défauts d'exclusion, hidden, cap de taille, empreinte etag, faux positifs, filtre `ignored` du watcher), 5 sur `runSyncJob` (fast-path des non-supportés, retry des transitoires, skip too-large + audit), 4 sur le pipeline (refresh d'etag sans ré-embed, etag conservé par `markDocumentUnsupported`), 3+3 sur les deux endpoints HTTP (masqué par défaut, `off` honoré, lignes SQL verbatim). **Vert** : 2363 tests passés / 1 skippé (166 fichiers), typecheck, lint (budget 800 lignes ok), prettier, détecteur design `[]` sur `SourceForm.tsx`. CHANGELOG mis à jour. **Pas committé** — consigne explicite de laisser le working tree en l'état pour revue.
+
+---
+
 ## 2026-08-28 — i18n FR/EN : revue de code finale avant envoi (app + `Calame-website`, uncommitted)
 
 Avant envoi, `/code-review high` sur les deux dépôts (agents dédiés, diff complet). App : 8 signalements, 4 vrais bugs de traduction corrigés (texte resté en anglais dans une phrase française — `UserAccessMatrix.tsx` mode d'accès, `ConfigGraphView.tsx` mode d'auth, `PiiBadge.tsx` fallback de catégorie perdu à la migration, `AuditLogViewer.tsx` badge Résultat non traduit) + 2 correctifs rapides (options de langue non dérivées du tableau `LOCALES`, `Intl.RelativeTimeFormat` reconstruit à chaque rendu). 2 pistes d'optimisation notées mais non traitées (formats de date dupliqués dans 5 fichiers, chargement anticipé des deux bundles de locale) — améliorations réelles mais pas des bugs, remises à plus tard.
@@ -45,7 +60,7 @@ Objectif : servir l'app et le site en français en plus de l'anglais. Aucune bri
 
 ## 2026-08-19 — RAG : modèle d'embedding local embarqué, activé par défaut (9 phases, uncommitted)
 
-Point de départ : activer le RAG exigeait de configurer à la main un provider d'embeddings distant — les users non-dev ne savaient pas ce que c'était, et le texte brut partait chez un tiers à chaque ingestion *et* chaque recherche, contredisant la promesse « vos données restent sur votre PC ». Décision utilisateur explicite : lancer maintenant (« la promesse du produit n'est pas tenue »), local par défaut mais providers distants conservés comme choix.
+Point de départ : activer le RAG exigeait de configurer à la main un provider d'embeddings distant — les users non-dev ne savaient pas ce que c'était, et le texte brut partait chez un tiers à chaque ingestion _et_ chaque recherche, contredisant la promesse « vos données restent sur votre PC ». Décision utilisateur explicite : lancer maintenant (« la promesse du produit n'est pas tenue »), local par défaut mais providers distants conservés comme choix.
 
 - **Modèle** : EmbeddingGemma-300M (Google), q4 ONNX, via `@huggingface/transformers`. Choisi après audit perf/poids/qualité (#1 MTEB multilingue < 500M params).
 - **Phase 0 (dérisquage)** : validé cosine=1.00000 vs référence croisée Python/Node (poids originaux gated sur HF, contournés via l'artefact ONNX communautaire non gated) ; `onnxruntime-web`+DirectML élagables sans casser l'inférence → fermeture finale ~275 Mo (65 Mo JS + 210 Mo poids), pas besoin du plan B.
@@ -62,7 +77,7 @@ Point de départ : activer le RAG exigeait de configurer à la main un provider 
 
 ## 2026-08-18 — Site: pivot « Logogramme » (Arrival ink) VALIDÉ et porté (repo `Calame-website`, uncommitted)
 
-L'utilisateur a rejeté la V1 dark-IBM-Plex ("trop IA"), puis co-construit la direction finale via l'artifact « Encres de Calame » (comps itérées en live) : logogrammes d'encre circulaires façon *Premier Contact*, typo d'origine restaurée (Fraunces + accents italiques JAMAIS colorés, Inter, JetBrains Mono), indigo réservé à l'interactif, boutons cartouches nets (radius 2px), canvas #05070d.
+L'utilisateur a rejeté la V1 dark-IBM-Plex ("trop IA"), puis co-construit la direction finale via l'artifact « Encres de Calame » (comps itérées en live) : logogrammes d'encre circulaires façon _Premier Contact_, typo d'origine restaurée (Fraunces + accents italiques JAMAIS colorés, Inter, JetBrains Mono), indigo réservé à l'interactif, boutons cartouches nets (radius 2px), canvas #05070d.
 
 - **Encres réelles** : l'utilisateur a généré 17 JPG via Gemini (dossier `logo/`, prompts fournis en session) ; pipeline Python (recadrage auto, teinte ivoire, alpha par densité) → `public/ink/*.png` (108 KB). Hero+filigrane CTA = anneau « 6brsem », sections = n11/n2/n12, diagramme = n8, logo nav = n12.
 - **Hero** : texte à gauche, logogramme géant à droite qui respire (filtre turbulence global `#ink-wobble` dans layout.tsx, animé SMIL) et se diffuse à l'arrivée (`.ink-load`, flou→net). Plus de scène pipeline (déplacée).
@@ -93,12 +108,15 @@ Full redesign of calame.dev driven with the impeccable skill, on user request: a
 Design-tooling session driven from Claude Code with the newly installed skills (impeccable, design-taste-frontend, dataviz — audited before install, see memory notes).
 
 ### Release 0.4.1 (published as part of 0.5.0 notes)
+
 - **UI craft pass, identity unchanged**: 4 sub-AA contrasts raised (schema badge, "+ PII", user delete, OFF pill); chat typing dots `animate-bounce` → soft staggered pulse honoring `prefers-reduced-motion`; Metrics bars `width` → `transform: scaleX` (GPU); `::selection`/caret themed to the workspace accent; placeholder contrast lifted.
 - `docs/RELEASE.md` added: step-by-step desktop release guide (bump 4 files, tag `vX.Y.Z`, CI drafts, human publishes). CHANGELOG backfilled: the old "Unreleased" block actually shipped in 0.2.0–0.4.0 (now labeled as consolidated).
 - Gotchas hit: Prettier CI failure was one over-long inline style (plus local CRLF noise — local `format:check` unreliable on Windows); npm/Docker publish workflows fail **since v0.2.0** (missing secrets — still open).
 
 ### Redesign shipped in 0.5.0 (branch `feat/dashboard-dataconfig-redesign`)
+
 Mockups iterated as Claude artifacts (galaxy concept rejected → lineage access-map rejected → final direction validated), then implemented + code-reviewed:
+
 - **Dashboard rewrite**: Sources → Data Configurations → MCP Servers pipeline strip with per-item drill-down (KPI-card footers preserved); activity chart aggregated client-side from the audit log (`components/dashboard/activity-stats.ts` — **calendar-day bucketing, DST-safe, unit-tested**); needs-attention column (pending writes first); real masked-columns PII card (no invented %); servers table with sparklines; orchestrated construction animation (transform/opacity/dashoffset only). Dropped deliberately: bg blur-blobs, status ribbon (data lives in the pipeline), 24h/7d/30d toggle (no backing data).
 - **ConfigurationsPage**: List | Graph toggle. `ConfigGraphView` (SVG): three aligned layers, barycenter-ordered slots, curved links, directional lineage highlight, click-to-pin chip, **drag-to-reorder persisted** in localStorage (`lib/graph-order.ts`, reconciled against live model) + Reset layout.
 - **Access visibility**: pinned server chip lists granted users; Users page gains an **Access matrix** tab (`UserAccessMatrix`: R / R+W badges, `*` = table-restricted, sticky first column).
@@ -107,9 +125,11 @@ Mockups iterated as Claude artifacts (galaxy concept rejected → lineage access
 - **207 web tests** (was 182), typecheck/prettier/impeccable-detector green.
 
 ### Releases
+
 - **v0.5.0 published** (installers + latest.json → auto-update live). v0.4.1 draft left unpublished (superseded; its notes are inside 0.5.0's).
 
 ### State / next
+
 - Impeccable design hook now scans UI edits automatically (`packages/web/.impeccable/config.json` committed, ignores empty).
 - Open: npm/Docker publish secrets; ADR 0003 step 1 (UI label sweep "Data Configurations" → "Data Profiles"); follow-ups R-6/R-7/R-8 (shared source-color constant, shared RAG fetch, graph chip aria-live); coverage climb to 70%.
 
@@ -185,11 +205,12 @@ Design-partner-driven: a prospect runs Graphiti's MCP server (temporal knowledge
 
 - **`d9ef669` spec v2** — slicing aligned to the prospect's actual ask (performance/unification); queue rows store a `sourceId` reference resolved at execution (v15 lesson), additive `action_json` migration decided, upstream client lifecycle (on-demand + 10s timeout), placement core-vs-ee deferred (§12).
 - **`7d1a4bc` slice 0 — read-only proxy**: new `'mcp'` SourceAdapter (`packages/connectors/src/mcp-proxy-adapter.ts`), `{kind:'mcp'}` arms on SourceSchema/ScopeSelection, serve-registration branch (follows the document-branch precedent: `rag_sources` + EE decrypt — same pre-existing gap as the never-wired `api` adapter, flagged for hardening). Only allowlisted non-write tools register (fail-closed); every call audited; 100KB response cap; injectable transport factory → 41 tests against an in-memory fake upstream.
-- **`a9b8782` slice 1 — approval gate**: `PendingWriteQuery.action` discriminated union (flat SQL fields untouched, sql rows synthesize at read), migration v16 (`action_json`, additive), write tools register iff `onWriteRequest` wired and queue WITHOUT contacting upstream (proven by throwing-transport test), approval resolves source by `sourceId` at execution (vanished source → entry stays pending, nothing executes), PendingQueries renders Tool+Args with MCP badge. Review fix on top of the agent's work: `operationForWriteTool` maps tool verbs (delete_/remove_→delete, update_/set_/put_→update) so destructive upstream tools inherit the two-step approve confirm.
+- **`a9b8782` slice 1 — approval gate**: `PendingWriteQuery.action` discriminated union (flat SQL fields untouched, sql rows synthesize at read), migration v16 (`action_json`, additive), write tools register iff `onWriteRequest` wired and queue WITHOUT contacting upstream (proven by throwing-transport test), approval resolves source by `sourceId` at execution (vanished source → entry stays pending, nothing executes), PendingQueries renders Tool+Args with MCP badge. Review fix on top of the agent's work: `operationForWriteTool` maps tool verbs (delete*/remove*→delete, update*/set*/put_→update) so destructive upstream tools inherit the two-step approve confirm.
 
 Suite: **2006 tests** (1941 baseline → +65). Both slices written by Sonnet agents against the spec, reviewed/amended/committed by the orchestrator. Next: seed script + local Graphiti for the prospect demo; hardening list in spec §7/§8b (persistence off `rag_sources`, SSRF, persisted schema snapshot, admin UI for source creation + tool allowlist).
 
 ---
+
 ## 2026-07-07/08 — Full UX overhaul (branch `feat/ux-overhaul`, 6 lots)
 
 Triggered by a UX audit (3 parallel agents + architecture pass, ~50 code-verified findings, 6 root causes) after three real frictions in user testing: approval queue unfindable, write tool inconfigurable, AI provider opaque. Six lots, each verified (build/typecheck/lint/tests) and committed:
@@ -228,16 +249,18 @@ Behavior-preserving refactor factoring the machinery duplicated across the 7 RAG
 
 - **`errors.ts`** — `ConnectorError` (carries `connectorType`) + `DocumentNotFoundError` / `ConnectorAuthError` / `ConnectorPermissionError` / `ConnectorRateLimitError`. Every per-connector error class (`GDriveDocumentNotFoundError`, `NotionAuthError`, `NotionRateLimitError`, `SharePointAuthError`, `SharePointPermissionError`, …) now subclasses the matching shared flavor, keeping its exact name / message / `name` field. Name collision resolved via alias: the shared base is exported from the package as `ConnectorDocumentNotFoundError` because local-folder's legacy `DocumentNotFoundError` export keeps its name. `HttpFetchError`/`HttpStatusError` (transport) and `PathEscapeError` (path guard) intentionally left out of the hierarchy.
 - **`doc-id.ts`** — `makeDocIdCodec(prefix, makeError, { encoding: 'raw' | 'base64url' })` + `stripDocIdPrefix()`. All 6 simple-pattern connectors migrated (`raw` for gdrive/notion/sharepoint with non-empty check; `base64url` for local/s3/http, exact legacy semantics). gsheets keeps its composite `gsheets:tab:<ssId>:<sheetId>` parse but reuses `stripDocIdPrefix` for the prefix check.
-- **`pagination.ts`** — `collectAllPages<T, C>(fetchPage)`. Replaced all 8 do/while drain loops across 4 cursor styles (Drive/Sheets `nextPageToken`, Notion `start_cursor`/`has_more` ×4, Graph `@odata.nextLink`, S3 `ContinuationToken`). Notion's `#fetchBlockTree` keeps child recursion *inside* the page closure so API call order is unchanged (tests use order-sensitive `mockResolvedValueOnce` chains).
+- **`pagination.ts`** — `collectAllPages<T, C>(fetchPage)`. Replaced all 8 do/while drain loops across 4 cursor styles (Drive/Sheets `nextPageToken`, Notion `start_cursor`/`has_more` ×4, Graph `@odata.nextLink`, S3 `ContinuationToken`). Notion's `#fetchBlockTree` keeps child recursion _inside_ the page closure so API call order is unchanged (tests use order-sensitive `mockResolvedValueOnce` chains).
 
 Not factored: **folder-tree traversal** — connectors only ever list direct children; recursion is driven by the host (`rag-core/src/routes/rag-index.ts`), so there is no duplication to lift. Bonus: `s3.ts` contained a literal NUL byte inside `clientCacheKey`'s `.join()` separator (made grep/file treat it as binary) — normalized to the `'\0'` escape (identical runtime value); file is now clean UTF-8.
 
 Verified: `pnpm format` / `build` / `typecheck` / `lint` / `pnpm test` all green — **115 files / 1805 tests, zero test modifications**.
 
 ### #19 completed (`8464d37`) — typed config errors
+
 - Every connector already had a `narrowConfig()` validator; they now throw the new `ConnectorConfigError` (59 sites, messages byte-identical) instead of bare `Error`, so hosts can map malformed config to a 400 by type. New `errors.test.ts` (5 tests, suite → **1810**). **Zod deliberately skipped**: validators already cover the shapes; a zod swap would churn messages for no safety gain and add the dep to 5 EE packages.
 
 ### #17 completed (branch `refactor/schema-provider`, `478c847`)
+
 - The plan's `SchemaProvider` already exists as `DatabaseConnector.introspect()` in `@calame/connectors` (pg/mysql/sqlite, shared `DatabaseSchema` types from core, SQLite introspection covered by tests). Removed the remaining debt: `core/introspect/postgres.ts#introspectDatabase`, a dead 114-line pg-only duplicate (core is private, nothing imported it) + its 3 tests. The types stay in core (connectors depends on core — no cycle).
 
 **Phase 4 (#17–#20): COMPLETE** across two branches/PRs: `refactor/rag-connector-base` (#18+#19+#20) and `refactor/schema-provider` (#17). Remaining plan: Phase 5 #22 changesets + #23 incremental CI build; coverage track.
@@ -260,20 +283,25 @@ Verified: `pnpm format` / `build` / `typecheck` / `lint` / `pnpm test` all green
 Manual smoke test of the refactored UI (`pnpm dev`, full click-through). The Phase 3 refactor itself surfaced no regressions; the session caught two **pre-existing** bugs and cleared the last pre-merge blocker.
 
 ### Bug 1 — onboarding wizard created invalid profile names (`9dadc08`)
-- The wizard saved the raw typed text as the profile *name* (its placeholder literally is "My first profile"), while the chat/auth routes only accept `[a-zA-Z0-9_-]+` → any onboarding-created profile with a space had a broken public chat ("Invalid profile name").
+
+- The wizard saved the raw typed text as the profile _name_ (its placeholder literally is "My first profile"), while the chat/auth routes only accept `[a-zA-Z0-9_-]+` → any onboarding-created profile with a space had a broken public chat ("Invalid profile name").
 - Fix: shared `slugifyProfileName()` in `lib/profiles.ts` — typed text becomes the display label, the slug becomes the name (slug preview under the input, same UX as ServePanel, which now reuses the helper). 8 unit tests incl. the invariant that every non-empty slug passes the backend validation.
 
 ### Bug 2 — fan-out tenant filter queried a table that never existed (`1bc2c74`)
+
 - The relational fan-out security filter (from `1038c91`, came in via `fix/security-pr8`) read `SELECT tenant_id FROM rag_connections` — **no commit in repo history ever created that table**. On any live server the first profile hitting the fan-out path crashed its MCP registration in a loop; tests never caught it because their `state.db` is undefined, which short-circuits the query.
-- Fix: `lookupSourceTenant()` queries `rag_sources` (where tenant ownership actually lives) and falls back to the default tenant when the row or the whole rag_* schema is missing — matching the documented intent. Cross-tenant rows still blocked. 5 regression tests with a real in-memory SQLite DB.
+- Fix: `lookupSourceTenant()` queries `rag_sources` (where tenant ownership actually lives) and falls back to the default tenant when the row or the whole rag\_\* schema is missing — matching the documented intent. Cross-tenant rows still blocked. 5 regression tests with a real in-memory SQLite DB.
 
 ### Pre-merge blocker cleared (`56a38c7`)
+
 - Dropped `.github/workflows/release.yml` — duplicate of main's `publish-docker.yml` (both fired on `v*` tags and pushed the same GHCR image → two racing builds per release).
 
 ### Branding feature: NOT lost, parked
+
 - The per-tenant logo/favicon settings (`019ba0a`, `BrandingSettings.tsx` + `lib/branding.tsx` + `routes/branding.ts` + migration) were merged via PR #11 **into `fix/security-pr8` only — never into `main`**. Decision: dedicated PR after #17 merges (cherry-pick `019ba0a` onto fresh `main`, renumber the DB migration to v13, mount the provider in `main.tsx`, expose as a Settings tab). **Do not delete `feature/branding` until then.**
 
 ### Release path (agreed order)
+
 1. Merge PR #17 (branch already contains all of `main` and all unique `fix/security-pr8` commits except branding).
 2. Dedicated branding PR (see above).
 3. Branch cleanup: `fix/security-pr8` (nothing unique left), `feature/branding` (after branding PR), `feature/rag` (audit first).
@@ -289,13 +317,16 @@ Suite at end of session: **115 files / 1805 tests green**, CI green on every pus
 **Commits `b153b1c` (#13), `c07c92f` (#15 part 1), `ff179d1` (#14), `02fb4b5` (#16).** All pushed, CI green (last one queued at time of writing). Behavior-preserving, code moved verbatim.
 
 ### #13 — router module (`b153b1c`)
+
 - `packages/web/src/router/`: `View` union (`view.ts`), `resolveLocationRoutes()` (pure URL-path detection for /welcome, /chat, /login, /account), `Redirect.tsx`, `useNavigation` hook, barrel.
 
 ### #15 — contexts (`c07c92f` + decision)
+
 - `context/SessionContext.tsx`: admin+user auth state, RAG availability, onboarding flag, `dataVersion` counter, the mount-time auth/health probe and logout. `main.tsx` wraps `<App/>` in `<SessionProvider>`.
 - **TenantContext: deliberately NOT built.** Workspace switching is `setCurrentTenant()` (localStorage) + `window.location.reload()` — the tenant is immutable for the life of a React session, and `X-Tenant-Id` injection is already centralised in `lib/api.ts#apiFetch`. A reactive context would add nothing. #15 closed with SessionContext + the existing BrandingProvider.
 
 ### #14 — per-domain pages (`ff179d1`)
+
 - **`App.tsx`: 3551 → 317 lines** (target <400). App keeps auth gates, layout, and a view dispatch rendering one page component per `view.page` branch.
 - New `packages/web/src/pages/`: Dashboard, Sources, Connections, Knowledge (three thin wrappers of `components/SourcesPage`), Configurations (+`ConfigurationListView`), ConfigurationDetail (+`ConfigurationDetailView`), McpList, McpDetail (+`McpDetailView`, the largest moved block, and the TokenManager/McpUsers/AuditLogViewer lazy wrappers), Settings (+`SettingsTab`/`SETTINGS_TABS`), Users, Metrics, Tenants + `lazy.tsx` (shared KnowledgeBaseManager lazy) + barrel.
 - New `hooks/useAppData.ts`: shared admin data state (connections, configurations, profiles, serve status, audit activity, PII/masking), the three loading effects (auth/dataVersion loader, 5s serve-status poller, 15s audit poller), derived values and CRUD handlers; reads session state from `useSession()`.
@@ -303,10 +334,12 @@ Suite at end of session: **115 files / 1805 tests green**, CI green on every pus
 - EE components stay behind dynamic `lazy()` imports (license boundary intact).
 
 ### #16 — component tests (`02fb4b5`)
+
 - `pages/__tests__/`: 10 test files, **32 new tests** — ≥1 render + ≥1 interaction test per page (setView payload assertions, tab switches, the full configuration-create flow, unknown-profile branch). `testUtils.tsx` provides a SessionContext mock, a URL-aware fetch stub and an act-flush helper. EE lazy modules are `vi.mock`ed (BUSL boundary never crossed).
 - Suite: **113 files / 1792 tests** (was 103/1760); coverage lines 38.84% (threshold 30).
 
 ### State / next
+
 - **Phase 3 (#13–#16): COMPLETE.** Verified at each step: typecheck, build, lint, format:check, full suite green.
 - Next: manual smoke test of the refactored UI, then Phase 4 (abstractions: `SchemaProvider` multi-DBMS introspection, `BaseDocumentSourceConnector`, `narrowConfig` + error hierarchy, encrypted-config ADR) and Phase 5 (changesets, incremental CI build, file-size budget; #21 Docker-EE already on `main`).
 
@@ -317,6 +350,7 @@ Suite at end of session: **115 files / 1805 tests green**, CI green on every pus
 **Commit `d0e5f0a`.** Last remaining god-file of Phase 2 backend track.
 
 ### #12 — `rag-runtime.ts` decomposition (behavior-preserving, code moved verbatim)
+
 - Split the 1277-line `packages/cli/src/rag-runtime.ts` into cohesive modules under `packages/cli/src/rag/`; `rag-runtime.ts` kept as a thin **orchestrator (1277 → 419 lines)** + re-exports so the public import path is unchanged.
 - New modules:
   - `rag/types.ts` — `RagRuntime` interface + shared `RagLogger`.
@@ -329,6 +363,7 @@ Suite at end of session: **115 files / 1805 tests green**, CI green on every pus
 - **Public surface preserved via re-exports** (`initRagRuntime`, `RagRuntime`, `normaliseFolderArg`, `resolveFolderId`, `FolderResolverDb`) — consumers (`index.ts`, `state.ts`) and the `rag-storage-helpers` test untouched.
 
 ### State / next
+
 - Verified: **typecheck, build, lint, full test suite (1760 tests) all green**; prettier-conformant. Not yet pushed.
 - **Phase 2 backend god-file track (#6–#12): COMPLETE.**
 - Next: Phase 3 (split `App.tsx` ~3392 lines → router + per-domain pages), Phase 4 (DB/connector abstractions), Phase 5 (build/release — #21 Docker-EE already on `main`). Coverage climb to 70% remains its own track.
@@ -340,6 +375,7 @@ Suite at end of session: **115 files / 1805 tests green**, CI green on every pus
 **Context:** project migrated from the old `forge-mcp` repo to **Calame**; work continues on `refacto/tooling-qualite`.
 
 ### Phase 2 — god-file decomposition (behavior-preserving, tests green at every step)
+
 - **#6** `packages/core/src/serve/filter-builder.ts` — extracted filter primitives (types, `buildWhereConditions`/`buildPlainConditions`, `FILTER_OPS_DESC`, `makeFilterMapSchema`); removed a `FilterOperator`/`FilterValue` duplication.
 - **#7** `serve/schema-builder.ts` — extracted the five MCP tools' Zod argument schemas (`build*ArgsShape`) + `zodEnum` + operator constants.
 - **#8** `serve/middleware/{audit,masking}.ts` — extracted `executeWithAudit` and PII masking, **with unit tests**.
@@ -349,6 +385,7 @@ Suite at end of session: **115 files / 1805 tests green**, CI green on every pus
 - Merged `origin/main` into the branch (resolved `.env.example`; noted `CALAME_ADMIN_PASSWORD` is deprecated).
 
 ### CI made fully green (failures were pre-existing on the branch, not from the refactor)
+
 - **Coverage env:** added `vitest.workspace.ts` so the root coverage run uses each package's environment (web → jsdom). Side effect: run tests from the repo root — root `test` script is now `vitest run` (don't use `pnpm --filter X test`).
 - **Coverage threshold:** the 70% line threshold was never met (real ≈ 33%). Set a **30% ratchet floor** in `vitest.config.ts` — raise it as tests are added. **70% remains the standing target (a dedicated test work-stream).**
 - **Formatting:** the code had never been prettier-formatted → ran `pnpm format` (274 files). `format:check` green.
@@ -356,6 +393,7 @@ Suite at end of session: **115 files / 1805 tests green**, CI green on every pus
 - **Node 18:** `ee/sso/src/provider.ts` used the global `crypto` (only global on Node 19+) → now imports `webcrypto` from `node:crypto`.
 
 ### State / next
+
 - PR #17: **all CI checks green**, branch up to date with `main`, mergeable.
 - **Phase 2 remaining: #12** — split `packages/cli/src/rag-runtime.ts` (→ `rag/bootstrap.ts` lazy-EE + 501 degradation, `rag/connector-dispatch.ts`, `rag/store-init.ts`).
 - Then Phases 3 (split `App.tsx` ~3392 lines), 4 (DB/connector abstractions), 5 (build/release — note #21 Docker-EE is already done on `main`).

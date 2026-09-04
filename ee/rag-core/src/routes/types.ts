@@ -57,6 +57,12 @@ export interface ConnectorLike {
       etag: string | null;
       lastIndexedAt: string;
       deletedAt: string | null;
+      /**
+       * Optional listing-time skip marker. When it starts with
+       * `RAG_LISTING_SKIP_TOO_LARGE_PREFIX` (see ../types.ts) the sync host
+       * counts the doc as skipped-too-large instead of fetching it.
+       */
+      ingestError?: string | null;
     }>
   >;
   fetchDocument(

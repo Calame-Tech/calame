@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Calame Tech inc. Licensed under the Business Source License 1.1.
 // See ee/LICENSE.BUSL at the root of the ee/ directory for terms.
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import Database from 'better-sqlite3';
 import type { Database as BetterSqlite3Database } from 'better-sqlite3';
 import type { Express, Request, Response } from 'express';
@@ -283,5 +283,85 @@ describe('GET /api/rag/sources/:id/documents — root-only filter (bug fix)', ()
       res.res,
     );
     expect(res.statusCode).toBe(404);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/rag/documents/:id — response-time PII masking parity with the MCP
+// rag_get_document tool (env CALAME_RAG_PII_MASK, safe-by-default ON).
+// ---------------------------------------------------------------------------
+
+function seedChunk(
+  db: BetterSqlite3Database,
+  documentId: string,
+  position: number,
+  text: string,
+  tenantId = 'default',
+): void {
+  db.prepare(
+    `INSERT INTO rag_chunks
+       (id, document_id, position, text, token_count, embedding_dimensions, tenant_id, created_at)
+     VALUES (?, ?, ?, ?, 8, 16, ?, '2026-01-01T00:00:00.000Z')`,
+  ).run(`chk-${Math.random().toString(36).slice(2)}`, documentId, position, text, tenantId);
+}
+
+describe('GET /api/rag/documents/:id — PII masking', () => {
+  const ENV = 'CALAME_RAG_PII_MASK';
+  let db: BetterSqlite3Database;
+  let sourceId: string;
+  let docId: string;
+
+  const RAW_1 = 'Reach ops@example.net for access.';
+  const RAW_2 = 'Or call 555.123.4567 after hours.';
+
+  beforeEach(() => {
+    delete process.env[ENV];
+    db = makeDb();
+    sourceId = seedSource(db);
+    docId = seedDocument(db, sourceId, null, 'contacts.txt');
+    seedChunk(db, docId, 0, RAW_1);
+    seedChunk(db, docId, 1, RAW_2);
+  });
+
+  afterEach(() => {
+    delete process.env[ENV];
+  });
+
+  async function getDocument(): Promise<{ statusCode: number; body: unknown }> {
+    // Register per call: the route parses CALAME_RAG_PII_MASK at
+    // registration time (matching how the host wires it at startup).
+    const captured = makeCapturedApp();
+    registerRagContentRoutes(captured.app, makeDeps(db));
+    const res = makeRes();
+    await captured.get('/api/rag/documents/:id')(makeReq({ params: { id: docId } }), res.res);
+    return res;
+  }
+
+  it('masks the reconstructed text by default (env unset → ON)', async () => {
+    const res = await getDocument();
+    expect(res.statusCode).toBe(200);
+    const body = res.body as { text: string; chunkCount: number; document: { name: string } };
+    expect(body.chunkCount).toBe(2);
+    expect(body.text).not.toContain('ops@example.net');
+    expect(body.text).not.toContain('555.123.4567');
+    expect(body.text).toContain('[EMAIL]');
+    // Filenames / paths stay untouched (out of masking scope).
+    expect(body.document.name).toBe('contacts.txt');
+  });
+
+  it('honors CALAME_RAG_PII_MASK=off (returns raw text)', async () => {
+    process.env[ENV] = 'off';
+    const res = await getDocument();
+    expect(res.statusCode).toBe(200);
+    const body = res.body as { text: string };
+    expect(body.text).toBe(`${RAW_1}\n${RAW_2}`);
+  });
+
+  it('leaves the stored chunk rows verbatim (masking is response-time only)', async () => {
+    await getDocument();
+    const rows = db
+      .prepare(`SELECT text FROM rag_chunks WHERE document_id = ? ORDER BY position ASC`)
+      .all(docId) as Array<{ text: string }>;
+    expect(rows.map((r) => r.text)).toEqual([RAW_1, RAW_2]);
   });
 });

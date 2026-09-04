@@ -70,6 +70,30 @@ export function matchGlobs(relPath: string, includes?: string[], excludes?: stri
 }
 
 /**
+ * Directory-aware exclusion test for tree walks. A bare directory path does
+ * NOT match a tree-exclusion pattern like `**\/node_modules\/**` under plain
+ * minimatch (`node_modules` ≠ `**\/node_modules\/**` — only its CHILDREN
+ * match), so a walker testing directories with {@link matchGlobs} would still
+ * recurse into the excluded tree and filter files one by one — an
+ * order-of-magnitude waste on trees like node_modules. This helper also
+ * treats a trailing `\/**` as "this directory and everything below": the
+ * pattern with the suffix stripped is tested against the directory itself,
+ * letting the walker prune the whole subtree.
+ */
+export function isDirExcluded(relPath: string, excludes?: string[]): boolean {
+  if (!excludes || excludes.length === 0) return false;
+  const normalized = relPath.split(sep).join('/');
+  const opts = { dot: true } as const;
+  for (const pattern of excludes) {
+    if (minimatch(normalized, pattern, opts)) return true;
+    if (pattern.endsWith('/**') && minimatch(normalized, pattern.slice(0, -3), opts)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Resolve `relPath` underneath `rootPath` and verify the resulting absolute
  * path is still inside `rootPath`. Guards against `..` traversal and absolute
  * paths sneaking in through `relPath`.

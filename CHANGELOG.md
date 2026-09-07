@@ -5,7 +5,7 @@ All notable changes to Calame are documented here. The format follows
 single-version product (see `docs/adr/0002-single-version-releases.md` — the
 root `package.json` version flows to the Docker image and `create-calame`).
 
-## [Unreleased]
+## [0.8.0] - 2026-09-07
 
 ### Added
 

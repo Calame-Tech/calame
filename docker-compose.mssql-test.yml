@@ -1,0 +1,45 @@
+# docker-compose.mssql-test.yml
+#
+# TEST-ONLY infrastructure for developing and validating the MSSQL connector
+# (packages/connectors/src/mssql.ts). This is NOT the production Calame stack
+# (see docker-compose.yml / docker-compose.prod.yml) and must never be used
+# to serve real data — the SA password below is intentionally checked into
+# source control and is only valid for this throwaway local container.
+#
+# Usage: scripts/mssql-test-up.sh / scripts/mssql-test-down.sh
+# Docs:  docs/mssql-testing.md
+
+services:
+  mssql-test:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: calame-mssql-test
+    environment:
+      - ACCEPT_EULA=Y
+      - MSSQL_SA_PASSWORD=CalameTest!2026x
+      # Keep the container small — this is a throwaway schema, not a data warehouse.
+      - MSSQL_PID=Developer
+    ports:
+      # Non-default host port (14330) so this never collides with a locally
+      # installed SQL Server instance or another container using 1433.
+      - '14330:1433'
+    healthcheck:
+      # The 2022 image ships mssql-tools18, which defaults to encrypted
+      # connections — pass -C to trust the (self-signed) server certificate.
+      test:
+        [
+          'CMD-SHELL',
+          '/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$$MSSQL_SA_PASSWORD" -C -Q "SELECT 1" || exit 1',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    volumes:
+      - calame-mssql-test-data:/var/opt/mssql
+    # Test-only: never set restart: always here — we want the container to
+    # stay stopped after `docker compose down` / a host reboot until a
+    # developer explicitly brings it back up.
+    restart: 'no'
+
+volumes:
+  calame-mssql-test-data:

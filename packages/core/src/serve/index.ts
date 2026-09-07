@@ -16,6 +16,11 @@ export { resolveUserScope, getTableScopeStatus } from './scope-resolver.js';
 export type { TableScopeStatus } from './scope-resolver.js';
 export { createScopeGuard, ScopeBlockedError } from './scoped-executor.js';
 export type { ScopeGuard } from './scoped-executor.js';
+// Exported so hosts that build their own SQL (the CLI's table browser and
+// profile preview) share one dialect implementation instead of re-deriving
+// quoting / placeholders / pagination per call site.
+export { makeDialect } from './tool-context.js';
+export type { Dialect } from './filter-builder.js';
 export {
   snakeCaseToLabel,
   friendlyType,

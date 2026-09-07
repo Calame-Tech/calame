@@ -595,6 +595,11 @@
         "label": "SQLite",
         "placeholder": "sqlite:///path/to/database.db",
         "helpText": "Format : sqlite:///path/to/database.db"
+      },
+      "mssql": {
+        "label": "SQL Server",
+        "placeholder": "Server=localhost,1433;Database=mydb;User Id=sa;Password=…;Encrypt=true",
+        "helpText": "Format : Server=hôte,port;Database=base;User Id=utilisateur;Password=motdepasse — ou mssql://utilisateur:motdepasse@hôte:port/base. Authentification SQL Server uniquement (l'authentification Windows/AD n'est pas prise en charge)."
       }
     }
   },
@@ -988,7 +993,8 @@
           "dbTypeOptions": {
             "postgresql": "PostgreSQL",
             "mysql": "MySQL",
-            "sqlite": "SQLite"
+            "sqlite": "SQLite",
+            "mssql": "SQL Server"
           },
           "connectionStringLabel": "Chaîne de connexion",
           "submitButton": "Connecter"
@@ -1170,7 +1176,7 @@
       "closeAriaLabel": "Fermer la fenêtre",
       "description": "Choisissez le type de source de données à connecter.",
       "databaseLabel": "Base de données",
-      "databaseHint": "PostgreSQL, MySQL, SQLite",
+      "databaseHint": "PostgreSQL, MySQL, SQLite, SQL Server",
       "knowledgeBaseLabel": "Base de connaissances",
       "knowledgeBaseHint": "Documents & RAG",
       "notAvailable": "Non disponible"
@@ -1339,7 +1345,7 @@
       "viewAll": "Tout voir →",
       "sources": {
         "eyebrow": "SOURCES",
-        "help": "Gérer les sources connectées aux bases PostgreSQL, MySQL ou SQLite et aux bases de connaissances",
+        "help": "Gérer les sources connectées aux bases PostgreSQL, MySQL, SQLite ou SQL Server et aux bases de connaissances",
         "connected": "{count} connectée(s)",
         "knowledgeBaseCount": "{count, plural, one {# base de connaissances} other {# bases de connaissances}}",
         "connectedTooltip": "Connectée, schéma chargé",
@@ -1382,13 +1388,7 @@
       "emptyTitle": "Aucun serveur MCP",
       "emptyDescription": "Créez un serveur pour exposer vos configurations de données aux clients IA.",
       "table": {
-        "headers": [
-          "Serveur",
-          "Statut",
-          "Auth",
-          "Activité 24h",
-          "Tendance"
-        ]
+        "headers": ["Serveur", "Statut", "Auth", "Activité 24h", "Tendance"]
       },
       "statusActive": "ACTIF",
       "statusStopped": "ARRÊTÉ",

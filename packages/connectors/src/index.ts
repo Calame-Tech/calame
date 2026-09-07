@@ -2,6 +2,10 @@ export type { DatabaseConnector, DatabaseType, SslConfig, ConnectionOptions } fr
 export { PostgreSQLConnector } from './postgresql.js';
 export { MySQLConnector } from './mysql.js';
 export { SQLiteConnector } from './sqlite.js';
+export { MSSQLConnector } from './mssql.js';
+// Exported so the CLI's approved-write executor parses SQL Server DSNs
+// (both the ADO and URL forms) exactly as the connector does.
+export { parseDsn as parseMssqlDsn } from './mssql.js';
 export { buildDatabaseSourceAdapter } from './db-adapter.js';
 export type { DatabaseAdapterConfig } from './db-adapter.js';
 export { buildHttpApiSourceAdapter } from './api-adapter.js';
@@ -17,12 +21,14 @@ import type { DatabaseConnector, DatabaseType } from './types.js';
 import { PostgreSQLConnector } from './postgresql.js';
 import { MySQLConnector } from './mysql.js';
 import { SQLiteConnector } from './sqlite.js';
+import { MSSQLConnector } from './mssql.js';
 
 // Singleton instances — one per connector type
 const registry: Record<DatabaseType, DatabaseConnector> = {
   postgresql: new PostgreSQLConnector(),
   mysql: new MySQLConnector(),
   sqlite: new SQLiteConnector(),
+  mssql: new MSSQLConnector(),
 };
 
 /**
@@ -55,5 +61,6 @@ import { buildMcpProxySourceAdapter } from './mcp-proxy-adapter.js';
 sourceAdapterRegistry.register(buildDatabaseSourceAdapter('postgresql', 'PostgreSQL'));
 sourceAdapterRegistry.register(buildDatabaseSourceAdapter('mysql', 'MySQL'));
 sourceAdapterRegistry.register(buildDatabaseSourceAdapter('sqlite', 'SQLite'));
+sourceAdapterRegistry.register(buildDatabaseSourceAdapter('mssql', 'SQL Server'));
 sourceAdapterRegistry.register(buildHttpApiSourceAdapter());
 sourceAdapterRegistry.register(buildMcpProxySourceAdapter());

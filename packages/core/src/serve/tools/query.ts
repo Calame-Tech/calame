@@ -4,7 +4,13 @@ import { executeWithAudit } from '../middleware/audit.js';
 import { applyMasking, type MaskingRule } from '../middleware/masking.js';
 import { formatResponseRows } from '../response-formatter.js';
 import type { ToolContext, AccessibleTable } from '../tool-context.js';
-import { resolveTable, structuredError, didYouMean, isTextType } from '../tool-context.js';
+import {
+  resolveTable,
+  structuredError,
+  didYouMean,
+  isTextType,
+  rejectUnfilterableColumns,
+} from '../tool-context.js';
 
 // We use `as any` in server.tool() calls because the dynamic Zod schemas
 // (Record<string, z.ZodTypeAny>) cause TS2589 "excessively deep" errors with
@@ -55,7 +61,7 @@ export function registerQueryGeneric(
       const at = resolved.at;
 
       const tableName = at.table.name;
-      const schemaName = at.table.schema || 'public';
+      const schemaName = at.table.schema || dialect.defaultSchema;
       const qualifiedTable = dialect.quoteTable(schemaName, tableName);
       const maxLimit = at.opts?.maxLimit ?? 1000;
 
@@ -102,6 +108,11 @@ export function registerQueryGeneric(
           const cappedLimit = Math.min(limit ?? 20, maxLimit);
           const cappedOffset = Math.min(offset ?? 0, maxOffset);
 
+          // Reject filters on non-filterable columns instead of letting the
+          // WHERE builder drop them, which would return unfiltered rows.
+          const badFilter = rejectUnfilterableColumns(filters, allowedFilterColumns, tableName);
+          if (badFilter) return structuredError(badFilter);
+
           const {
             clause: whereClause,
             values,
@@ -144,7 +155,11 @@ export function registerQueryGeneric(
           const limitParam = dialect.param(paramIdx++);
           values.push(cappedOffset);
           const offsetParam = dialect.param(paramIdx);
-          const sql = `SELECT ${selectExpr} FROM ${qualifiedTable} ${whereClause} ${orderByClause} LIMIT ${limitParam} OFFSET ${offsetParam}`;
+          // Parameterized pagination: LIMIT/OFFSET on PG/MySQL/SQLite,
+          // OFFSET…FETCH on SQL Server (which injects a no-op ORDER BY when
+          // `orderByClause` is empty, since OFFSET requires one).
+          const pagination = dialect.paginate(orderByClause, limitParam, offsetParam);
+          const sql = `SELECT ${selectExpr} FROM ${qualifiedTable} ${whereClause} ${pagination}`;
           const result = await exec(sql, values);
 
           const maskedRows = needsMasking
@@ -171,7 +186,11 @@ export function registerQueryGeneric(
                 const qi = dialect.quoteIdent(col);
                 const notNull = `${qi} IS NOT NULL`;
                 const where = hintScope ? `${hintScope} AND ${notNull}` : `WHERE ${notNull}`;
-                const hintSql = `SELECT DISTINCT ${qi} AS val FROM ${qualifiedTable} ${where} ORDER BY val LIMIT 30`;
+                // Capped read with no offset — TOP (n) on SQL Server, LIMIT n
+                // elsewhere. Only one of the two fragments is ever non-empty.
+                const hintSql =
+                  `SELECT DISTINCT ${dialect.topPrefix(30)}${qi} AS val FROM ${qualifiedTable} ` +
+                  `${where} ORDER BY val ${dialect.limitSuffix(30)}`.trimEnd();
                 const r = await exec(hintSql, [...hintVals]);
                 const vals = r.rows.map((row) => String((row as Record<string, unknown>).val));
                 if (vals.length > 0) hints.push(`Possible values for '${col}': ${vals.join(', ')}`);

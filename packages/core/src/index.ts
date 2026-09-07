@@ -38,6 +38,8 @@ export { resolveUserScope, getTableScopeStatus } from './serve/scope-resolver.js
 export type { TableScopeStatus } from './serve/scope-resolver.js';
 export { createScopeGuard, ScopeBlockedError } from './serve/scoped-executor.js';
 export type { ScopeGuard } from './serve/scoped-executor.js';
+export { makeDialect } from './serve/tool-context.js';
+export type { Dialect } from './serve/filter-builder.js';
 
 // PII detection & masking
 export type {

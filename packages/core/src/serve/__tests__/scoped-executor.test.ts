@@ -1,37 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { createScopeGuard, ScopeBlockedError } from '../scoped-executor.js';
-import type { Dialect } from '../scoped-executor.js';
 import type { ResolvedScopeFilter } from '../types.js';
+import { makeDialect } from '../tool-context.js';
 
-// PostgreSQL dialect for testing
-const pgDialect: Dialect = {
-  databaseType: 'postgresql',
-  isPostgres: true,
-  quoteIdent: (n) => `"${n}"`,
-  quoteTable: (s, t) => `"${s}"."${t}"`,
-  param: (i) => `$${i}`,
-  random: 'RANDOM()',
-  supportsPercentile: true,
-  medianExpr: (col) => `PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ${col})`,
-  percentileExpr: (col, p) => `PERCENTILE_CONT(${p}) WITHIN GROUP (ORDER BY ${col})`,
-  stddevExpr: (col) => `STDDEV_SAMP(${col})`,
-  varianceExpr: (col) => `VAR_SAMP(${col})`,
-};
-
-// SQLite dialect for testing
-const sqliteDialect: Dialect = {
-  databaseType: 'sqlite',
-  isPostgres: false,
-  quoteIdent: (n) => `"${n}"`,
-  quoteTable: (_s, t) => `"${t}"`,
-  param: () => '?',
-  random: 'RANDOM()',
-  supportsPercentile: false,
-  medianExpr: () => null,
-  percentileExpr: () => null,
-  stddevExpr: () => null,
-  varianceExpr: () => null,
-};
+// Use the real dialect factory rather than hand-copied literals, so these
+// fixtures cannot drift from production behaviour as the Dialect grows.
+const pgDialect = makeDialect('postgresql');
+const sqliteDialect = makeDialect('sqlite');
 
 const scopeFilters: ResolvedScopeFilter[] = [
   { tableName: 'colis', column: 'client_email', value: 'dupont@gmail.com' },

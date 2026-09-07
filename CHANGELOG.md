@@ -7,6 +7,39 @@ root `package.json` version flows to the Docker image and `create-calame`).
 
 ## [Unreleased]
 
+### Added
+
+- Microsoft SQL Server (MSSQL) support: SQL Server now sits alongside
+  PostgreSQL, MySQL and SQLite as a source you can connect, explore and
+  serve over MCP. Connection strings are accepted in both the ADO style you
+  copy out of SSMS (`Server=localhost,1433;Database=mydb;User Id=sa;…`) and
+  the URL style used by the other connectors
+  (`mssql://user:password@host:1433/mydb`). Tables outside the default `dbo`
+  schema are picked up and stay schema-qualified, and all six tools
+  (`query`, `aggregate`, `join_aggregate`, `describe`, `list_tables`,
+  distinct-value discovery) generate proper T-SQL — bracket-quoted
+  identifiers, `OFFSET … FETCH NEXT` paging and `TOP (n)` capped reads.
+  **SQL authentication only in this first version**: Windows / Active
+  Directory integrated authentication is not supported and is reported as a
+  clear error rather than silently failing. Statistical aggregations
+  (`median`, `percentile`) remain PostgreSQL-only; `stddev` and `variance`
+  work on SQL Server.
+
+### Fixed
+
+- A filter on a column that cannot be filtered — one hidden by masking,
+  excluded from the profile, of an unsupported type, or simply misspelled —
+  is now rejected with a clear error listing the columns you can filter on.
+  Previously `query` and `aggregate` dropped such filters silently and
+  returned the _unfiltered_ rows as if the filter had applied, which could
+  quietly overstate a result; `join_aggregate` already reported the error, so
+  all four tools (including `write`) now behave the same way. Filtering on a
+  masked column remains blocked exactly as before.
+- Column types that MySQL, SQLite and SQL Server report but PostgreSQL does
+  not — notably `datetime`, `float`, `double` and `tinyint` — are now
+  recognised, so filters, groupings and date buckets work on those columns
+  instead of the column being treated as unfilterable.
+
 ## [0.7.3] - 2026-09-04
 
 ### Fixed

@@ -7,12 +7,14 @@ import type {
   ColumnMasking,
   ScopeSelection,
   ServeConfiguration,
+  Dialect,
 } from '@calame/core';
 import {
   getProfileSelectedTables,
   getProfileTableOptions,
   getProfileColumnMasking,
   getProfileRelationalSources,
+  makeDialect,
 } from '@calame/core';
 import { mergeConfigurations } from './serve.js';
 import { readConfigurationsFile } from './configurations.js';
@@ -73,16 +75,20 @@ function applyPreviewMasking(
   return masked;
 }
 
-/** Quote a table name for the given database type. */
-function quoteTableName(tableName: string, databaseType: string): string {
-  if (databaseType === 'mysql') return `\`${tableName}\``;
-  return `"${tableName}"`;
-}
-
-/** Quote a column name for the given database type. */
-function quoteColumnName(colName: string, databaseType: string): string {
-  if (databaseType === 'mysql') return `\`${colName}\``;
-  return `"${colName}"`;
+/**
+ * Resolve the SQL dialect for a preview query. Falls back to PostgreSQL when
+ * the cached connection predates the databaseType field, matching the previous
+ * behaviour of the hand-rolled quoting helpers this replaced.
+ */
+function dialectFor(databaseType: string | undefined): Dialect {
+  return makeDialect(
+    databaseType === 'mysql' ||
+      databaseType === 'sqlite' ||
+      databaseType === 'mssql' ||
+      databaseType === 'postgresql'
+      ? databaseType
+      : 'postgresql',
+  );
 }
 
 export function registerProfilePreviewRoute(app: Express, state: AppState): void {
@@ -224,7 +230,10 @@ export function registerProfilePreviewRoute(app: Express, state: AppState): void
 
         if (connectionString && databaseType) {
           const connector = getConnector(databaseType as Parameters<typeof getConnector>[0]);
-          const quotedTable = quoteTableName(tableName, databaseType);
+          const dialect = dialectFor(databaseType);
+          // Unqualified on purpose: the preview resolves the table against the
+          // connection's default schema, as it always has for PostgreSQL.
+          const quotedTable = dialect.quoteIdent(tableName);
 
           try {
             const countResult = await connector.query(
@@ -243,13 +252,15 @@ export function registerProfilePreviewRoute(app: Express, state: AppState): void
           // Fetch sample row using only visible columns
           const visibleCols = columns.filter((c) => c.visible).map((c) => c.name);
           if (visibleCols.length > 0) {
-            const quotedCols = visibleCols.map((c) => quoteColumnName(c, databaseType!)).join(', ');
+            const quotedCols = visibleCols.map((c) => dialect.quoteIdent(c)).join(', ');
             try {
-              const sampleResult = await connector.query(
-                connectionString,
-                `SELECT ${quotedCols} FROM ${quotedTable} LIMIT 1`,
-                { timeoutMs: 10000 },
-              );
+              // Single-row capped read — TOP (1) on SQL Server, LIMIT 1 elsewhere.
+              const sampleSql =
+                `SELECT ${dialect.topPrefix(1)}${quotedCols} ` +
+                `FROM ${quotedTable} ${dialect.limitSuffix(1)}`.trimEnd();
+              const sampleResult = await connector.query(connectionString, sampleSql, {
+                timeoutMs: 10000,
+              });
               if (sampleResult.rows.length > 0) {
                 sampleRow = applyPreviewMasking(
                   sampleResult.rows[0],

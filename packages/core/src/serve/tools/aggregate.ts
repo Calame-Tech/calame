@@ -4,7 +4,13 @@ import { zodEnum, buildAggregateArgsShape } from '../schema-builder.js';
 import { executeWithAudit } from '../middleware/audit.js';
 import { formatResponseRows } from '../response-formatter.js';
 import type { ToolContext, AccessibleTable, DateBucket } from '../tool-context.js';
-import { resolveTable, structuredError, didYouMean, dateBucketExpr } from '../tool-context.js';
+import {
+  resolveTable,
+  structuredError,
+  didYouMean,
+  dateBucketExpr,
+  rejectUnfilterableColumns,
+} from '../tool-context.js';
 
 // We use `as any` in server.tool() calls because the dynamic Zod schemas
 // (Record<string, z.ZodTypeAny>) cause TS2589 "excessively deep" errors with
@@ -67,7 +73,7 @@ export function registerAggregateGeneric(
       }
 
       const tableName = at.table.name;
-      const schemaName = at.table.schema || 'public';
+      const schemaName = at.table.schema || dialect.defaultSchema;
       const qualifiedTable = dialect.quoteTable(schemaName, tableName);
       const maxLimit = at.opts?.maxLimit ?? 1000;
       const allowedFilterColumns = at.filterableCols.map((c) => c.name);
@@ -138,6 +144,13 @@ export function registerAggregateGeneric(
               error:
                 'offset is not compatible with compare_to — pagination of period comparisons is ambiguous',
             });
+          }
+
+          // Reject filters on non-filterable columns instead of letting the
+          // WHERE builder drop them, which would aggregate over every row.
+          for (const candidate of [filters, ratio_filter]) {
+            const badFilter = rejectUnfilterableColumns(candidate, allowedFilterColumns, tableName);
+            if (badFilter) return structuredError(badFilter);
           }
 
           const {
@@ -443,13 +456,13 @@ export function registerAggregateGeneric(
             const limitParam = dialect.param(paramCursor++);
             values.push(cappedOffset);
             const offsetParam = dialect.param(paramCursor);
-            sql = `SELECT * FROM (${middleSql}) AS sub WHERE rn <= ${rnParam} ${orderByClause} LIMIT ${limitParam} OFFSET ${offsetParam}`;
+            sql = `SELECT * FROM (${middleSql}) AS sub WHERE rn <= ${rnParam} ${dialect.paginate(orderByClause, limitParam, offsetParam)}`;
           } else {
             values.push(cappedLimit);
             const limitParam = dialect.param(paramCursor++);
             values.push(cappedOffset);
             const offsetParam = dialect.param(paramCursor);
-            sql = `SELECT ${selectPrefix}${selectExpr} FROM ${qualifiedTable} ${whereClause} ${groupByClause} ${havingClause} ${orderByClause} LIMIT ${limitParam} OFFSET ${offsetParam}`;
+            sql = `SELECT ${selectPrefix}${selectExpr} FROM ${qualifiedTable} ${whereClause} ${groupByClause} ${havingClause} ${dialect.paginate(orderByClause, limitParam, offsetParam)}`;
           }
           // Period-over-period: validate, run current + previous in parallel,
           // then merge per group key and compute server-side deltas. Validated

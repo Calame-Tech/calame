@@ -13,6 +13,7 @@ import type { DatabaseConnector, DatabaseType, SslConfig, ConnectionOptions } fr
 import { PostgreSQLConnector } from './postgresql.js';
 import { MySQLConnector } from './mysql.js';
 import { SQLiteConnector } from './sqlite.js';
+import { MSSQLConnector } from './mssql.js';
 
 // Local connector map — mirrors index.ts registry but kept separate to avoid
 // a circular import (index.ts imports db-adapter.ts, so db-adapter.ts cannot
@@ -21,6 +22,7 @@ const connectors: Record<DatabaseType, DatabaseConnector> = {
   postgresql: new PostgreSQLConnector(),
   mysql: new MySQLConnector(),
   sqlite: new SQLiteConnector(),
+  mssql: new MSSQLConnector(),
 };
 
 // ---------------------------------------------------------------------------

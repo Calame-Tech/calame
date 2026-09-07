@@ -32,17 +32,52 @@ export interface FilterValue {
 export interface Dialect {
   /** Backend type. Lets call sites pick exact syntax (e.g. SQLite strftime
    *  vs MySQL DATE_FORMAT) when a uniform SQL function is missing. */
-  databaseType: 'postgresql' | 'mysql' | 'sqlite';
+  databaseType: 'postgresql' | 'mysql' | 'sqlite' | 'mssql';
   /** True for PostgreSQL (affects IN clause: uses ANY($n) vs IN (?, ?...)) */
   isPostgres: boolean;
   /** Quote an identifier (table or column name) */
   quoteIdent: (name: string) => string;
   /** Quote a schema-qualified table name */
   quoteTable: (schema: string, table: string) => string;
+  /** Schema assumed when a table carries none ('public' on PG, 'dbo' on SQL Server). */
+  defaultSchema: string;
   /** Return the next parameter placeholder and advance the counter */
   param: (index: number) => string;
   /** RANDOM() function name */
   random: string;
+  /**
+   * Concatenate SQL string expressions. SQL Server has no `||` operator and
+   * spells concatenation `+`; every other supported backend uses `||`.
+   */
+  concat: (...parts: string[]) => string;
+  /**
+   * Escape characters that carry a special meaning inside a LIKE pattern,
+   * applied to the *bound value* of contains/starts_with/ends_with.
+   *
+   * Only SQL Server needs this: T-SQL reads `[...]` in a LIKE pattern as a
+   * character class, so searching for "Acme [Retired]" would otherwise match
+   * different rows there than on PostgreSQL / MySQL / SQLite.
+   *
+   * `%` and `_` are deliberately NOT escaped on any backend — they have always
+   * acted as wildcards inside a filter value, and that behaviour is identical
+   * across all four dialects, so it is left as-is rather than changed here.
+   */
+  escapeLikeValue: (value: string) => string;
+  /**
+   * Render the tail of a paginated SELECT: the ORDER BY clause followed by the
+   * row-limiting syntax. `orderByClause` may be empty ('') — SQL Server's
+   * OFFSET/FETCH requires an ORDER BY, so the mssql implementation substitutes
+   * the standard `ORDER BY (SELECT NULL)` no-op in that case.
+   */
+  paginate: (orderByClause: string, limitParam: string, offsetParam: string) => string;
+  /**
+   * Prefix inserted directly after `SELECT [DISTINCT]` for a capped read that
+   * needs no offset — `TOP (n) ` on SQL Server, empty elsewhere. Pair with
+   * `limitSuffix`, which is the inverse.
+   */
+  topPrefix: (n: number) => string;
+  /** Trailing `LIMIT n` for a capped read; empty on SQL Server (see `topPrefix`). */
+  limitSuffix: (n: number) => string;
   /**
    * Statistical aggregation support. True for PostgreSQL (ordered-set
    * aggregate functions), false for MySQL and SQLite.
@@ -215,39 +250,45 @@ export function buildWhereConditions(
         conditions.push(`${qi} IS NOT NULL`);
         break;
       // String-pattern matching. We render case-insensitive `ILIKE` on
-      // Postgres and `LIKE LOWER(...)` on MySQL / SQLite. The user value is
-      // bound parameterized — the wildcards (`%`) are added in SQL, never in
-      // the bound value, so this stays free of injection risk.
+      // Postgres and `LIKE LOWER(...)` elsewhere. The user value is bound
+      // parameterized — the wildcards (`%`) are added in SQL, never in the
+      // bound value, so this stays free of injection risk. Concatenation goes
+      // through `dialect.concat` because SQL Server spells it `+`, not `||`.
       case 'contains': {
         const v = String(filter.value ?? '');
         if (dialect.isPostgres) {
-          conditions.push(`${qi} ILIKE '%' || ${dialect.param(paramIndex++)} || '%'`);
-          values.push(v);
+          conditions.push(
+            `${qi} ILIKE ${dialect.concat("'%'", dialect.param(paramIndex++), "'%'")}`,
+          );
+          values.push(dialect.escapeLikeValue(v));
         } else {
-          conditions.push(`LOWER(${qi}) LIKE '%' || LOWER(${dialect.param(paramIndex++)}) || '%'`);
-          values.push(v);
+          const p = `LOWER(${dialect.param(paramIndex++)})`;
+          conditions.push(`LOWER(${qi}) LIKE ${dialect.concat("'%'", p, "'%'")}`);
+          values.push(dialect.escapeLikeValue(v));
         }
         break;
       }
       case 'starts_with': {
         const v = String(filter.value ?? '');
         if (dialect.isPostgres) {
-          conditions.push(`${qi} ILIKE ${dialect.param(paramIndex++)} || '%'`);
-          values.push(v);
+          conditions.push(`${qi} ILIKE ${dialect.concat(dialect.param(paramIndex++), "'%'")}`);
+          values.push(dialect.escapeLikeValue(v));
         } else {
-          conditions.push(`LOWER(${qi}) LIKE LOWER(${dialect.param(paramIndex++)}) || '%'`);
-          values.push(v);
+          const p = `LOWER(${dialect.param(paramIndex++)})`;
+          conditions.push(`LOWER(${qi}) LIKE ${dialect.concat(p, "'%'")}`);
+          values.push(dialect.escapeLikeValue(v));
         }
         break;
       }
       case 'ends_with': {
         const v = String(filter.value ?? '');
         if (dialect.isPostgres) {
-          conditions.push(`${qi} ILIKE '%' || ${dialect.param(paramIndex++)}`);
-          values.push(v);
+          conditions.push(`${qi} ILIKE ${dialect.concat("'%'", dialect.param(paramIndex++))}`);
+          values.push(dialect.escapeLikeValue(v));
         } else {
-          conditions.push(`LOWER(${qi}) LIKE '%' || LOWER(${dialect.param(paramIndex++)})`);
-          values.push(v);
+          const p = `LOWER(${dialect.param(paramIndex++)})`;
+          conditions.push(`LOWER(${qi}) LIKE ${dialect.concat("'%'", p)}`);
+          values.push(dialect.escapeLikeValue(v));
         }
         break;
       }

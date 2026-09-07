@@ -270,20 +270,22 @@ describe('registerDynamicTools', () => {
 
     const tools = server.getRegisteredTools();
     const queryHandler = tools.get('query')!.handler;
-    await queryHandler({
+    const result = await queryHandler({
       table: 'users',
       filters: { email: { op: 'eq', value: 'secret@example.com' } },
     });
 
-    const [sql, values] = mockExecuteQuery.mock.calls[0];
-    // email should NOT appear in the WHERE clause (no filter applied)
-    // and the value should NOT be in bound parameters
-    expect(values).not.toContain('secret@example.com');
-    // the WHERE clause should not reference email for filtering
-    const whereIdx = sql.indexOf('WHERE');
-    if (whereIdx !== -1) {
-      expect(sql.substring(whereIdx)).not.toContain('"email"');
-    }
+    // The filter is REJECTED, not silently skipped. This is the stronger
+    // guarantee: the secret never reaches a bound parameter because no query
+    // runs at all, so there is no oracle for probing the masked plaintext —
+    // and no unfiltered result set is handed back as if the filter applied.
+    expect(result.isError).toBe(true);
+    expect(mockExecuteQuery).not.toHaveBeenCalled();
+    const payload = JSON.parse(result.content[0].text);
+    expect(payload.error).toMatch(/Column 'email' is not filterable/);
+    expect(payload.valid_columns).not.toContain('email');
+    // The rejection must not echo the probed value back.
+    expect(result.content[0].text).not.toContain('secret@example.com');
   });
 
   it('should not allow filtering on truncate-masked columns', async () => {
@@ -306,18 +308,18 @@ describe('registerDynamicTools', () => {
 
     const tools = server.getRegisteredTools();
     const queryHandler = tools.get('query')!.handler;
-    await queryHandler({
+    const result = await queryHandler({
       table: 'users',
       filters: { email: { op: 'starts_with', value: 'se' } },
     });
 
-    const [sql, values] = mockExecuteQuery.mock.calls[0];
-    // email filter should NOT appear in WHERE clause
-    expect(values).not.toContain('se');
-    const whereIdx = sql.indexOf('WHERE');
-    if (whereIdx !== -1) {
-      expect(sql.substring(whereIdx)).not.toContain('"email"');
-    }
+    // Rejected outright — a prefix probe is the most direct de-anonymisation
+    // oracle, so refusing before any SQL runs is the guarantee that matters.
+    expect(result.isError).toBe(true);
+    expect(mockExecuteQuery).not.toHaveBeenCalled();
+    const payload = JSON.parse(result.content[0].text);
+    expect(payload.error).toMatch(/Column 'email' is not filterable/);
+    expect(payload.valid_columns).not.toContain('email');
   });
 
   it('should not allow filtering on replace-masked columns', async () => {
@@ -340,18 +342,17 @@ describe('registerDynamicTools', () => {
 
     const tools = server.getRegisteredTools();
     const queryHandler = tools.get('query')!.handler;
-    await queryHandler({
+    const result = await queryHandler({
       table: 'users',
       filters: { email: { op: 'eq', value: 'secret@example.com' } },
     });
 
-    const [sql, values] = mockExecuteQuery.mock.calls[0];
-    // email filter should NOT appear in WHERE clause
-    expect(values).not.toContain('secret@example.com');
-    const whereIdx = sql.indexOf('WHERE');
-    if (whereIdx !== -1) {
-      expect(sql.substring(whereIdx)).not.toContain('"email"');
-    }
+    expect(result.isError).toBe(true);
+    expect(mockExecuteQuery).not.toHaveBeenCalled();
+    const payload = JSON.parse(result.content[0].text);
+    expect(payload.error).toMatch(/Column 'email' is not filterable/);
+    expect(payload.valid_columns).not.toContain('email');
+    expect(result.content[0].text).not.toContain('secret@example.com');
   });
 
   it('onAuditLog callback is called for each tool execution', async () => {

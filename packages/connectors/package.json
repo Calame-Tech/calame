@@ -2,7 +2,7 @@
   "name": "@calame/connectors",
   "version": "0.1.0",
   "private": true,
-  "description": "Database connector plugins for Calame — PostgreSQL, MySQL, SQLite",
+  "description": "Database connector plugins for Calame — PostgreSQL, MySQL, SQLite, SQL Server",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -24,12 +24,14 @@
     "@calame/core": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "better-sqlite3": "^12.8.0",
+    "mssql": "^11.0.1",
     "mysql2": "^3.11.0",
     "pg": "^8.13.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",
+    "@types/mssql": "^9.1.7",
     "@types/pg": "^8.11.0",
     "typescript": "~5.7.0",
     "vitest": "^2.1.0"

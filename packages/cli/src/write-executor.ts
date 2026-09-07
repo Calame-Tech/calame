@@ -154,6 +154,32 @@ export async function executeApprovedWrite(
         db.close();
       }
     }
+    case 'mssql': {
+      const [{ default: sql_ }, { parseMssqlDsn }] = await Promise.all([
+        import('mssql'),
+        import('@calame/connectors'),
+      ]);
+      // Same named-parameter convention the mssql connector uses for reads:
+      // the dialect emits @p1..@pN, so params[i] binds to @p{i+1}.
+      const pool = new sql_.ConnectionPool(parseMssqlDsn(connectionString));
+      await pool.connect();
+      try {
+        const request = pool.request();
+        params.forEach((value, index) => {
+          request.input(`p${index + 1}`, value ?? null);
+        });
+        // Unlike the read path, an approved write commits: `query` runs
+        // outside an explicit transaction so the statement auto-commits.
+        const result = await request.query(sql);
+        return {
+          rows: result.recordset
+            ? Array.from(result.recordset)
+            : [{ changes: result.rowsAffected?.[0] ?? 0 }],
+        };
+      } finally {
+        await pool.close().catch(() => {});
+      }
+    }
     default:
       throw new Error(`Unsupported database type for write execution: "${databaseType}"`);
   }

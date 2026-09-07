@@ -22,6 +22,15 @@ describe('getConnector', () => {
     expect(connector.placeholderDsn).toContain('sqlite://');
   });
 
+  it('returns the mssql connector', () => {
+    const connector = getConnector('mssql');
+    expect(connector.name).toBe('mssql');
+    expect(connector.displayName).toBe('SQL Server');
+    // The placeholder documents both accepted DSN forms.
+    expect(connector.placeholderDsn).toContain('Server=');
+    expect(connector.placeholderDsn).toContain('mssql://');
+  });
+
   it('returns a stable singleton — same reference on repeated calls', () => {
     const a = getConnector('postgresql');
     const b = getConnector('postgresql');
@@ -37,13 +46,14 @@ describe('getConnector', () => {
 });
 
 describe('getAvailableConnectors', () => {
-  it('returns all three connectors', () => {
+  it('returns every registered connector', () => {
     const connectors = getAvailableConnectors();
-    expect(connectors).toHaveLength(3);
+    expect(connectors).toHaveLength(4);
     const names = connectors.map((c) => c.name);
     expect(names).toContain('postgresql');
     expect(names).toContain('mysql');
     expect(names).toContain('sqlite');
+    expect(names).toContain('mssql');
   });
 
   it('every connector implements the DatabaseConnector interface shape', () => {

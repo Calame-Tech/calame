@@ -5,6 +5,25 @@ every commit. Newest first.
 
 ---
 
+## 2026-09-07 — Support Microsoft SQL Server + correctif filtres silencieusement ignorés (release 0.8.0)
+
+Support MSSQL de bout en bout (demande client), implémenté par agents parallèles à périmètres disjoints puis revue + E2E live avant merge. Branche `feat/mssql-connector` mergée dans `main` (commit `c284b71`, +4122/-352 sur 51 fichiers), release **0.8.0** taguée dans la foulée.
+
+**Connecteur** (`packages/connectors/src/mssql.ts`, driver `mssql@11`) : DSN au format ADO (`Server=...;Database=...`) ET URL (`mssql://...`), **auth SQL uniquement en v1** (Windows/AD → erreur claire, pas d'échec silencieux) ; introspection INFORMATION_SCHEMA avec schémas non-dbo qualifiés partout ; lecture seule au niveau driver — chaque requête dans une transaction TOUJOURS rollbackée, avec éviction du slot de pool si le BEGIN échoue (sinon fuite de connexion) ; dialecte T-SQL : quoting `[...]` échappé `]]`, `OFFSET…FETCH` (ORDER BY no-op injecté si absent), `TOP (n)`, params nommés `@p1..@pN`, `[` échappé `[[]` dans LIKE. `median`/`percentile` restent PG-only ; `stddev`/`variance` fonctionnent.
+
+**Bug critique trouvé UNIQUEMENT par le test E2E live** (les suites unitaires + intégration connecteur passaient toutes) : les types T-SQL (`nvarchar`, `datetime2`, `money`…) étaient inconnus de `pgTypeToZod` → toutes les colonnes non-filtrables → `filter-builder.ts` droppait les filtres en silence → **le tool `query` renvoyait les lignes NON filtrées comme si le filtre avait été appliqué**. Correctif en deux volets, qui bénéficie aussi à MySQL/SQLite (`datetime`, `float`, `double`, `tinyint` désormais reconnus) :
+1. `serve/sql-types.ts` : familles de types centralisées, source unique pour `pgTypeToZod`, `isNumericType`, labels, catégoriels.
+2. **Changement de comportement (breaking, documenté au CHANGELOG)** : un filtre sur une colonne non filtrable (masquée, exclue, type non supporté, faute de frappe) est désormais **rejeté** avec erreur structurée (`valid_columns` + `did_you_mean`) au lieu d'être ignoré — appliqué uniformément à `query`, `aggregate`, `join_aggregate` et `write` (avant tout SQL et avant toute mise en file d'approbation d'écriture). Le skip du filter-builder reste en défense en profondeur.
+Piège documenté par test : SQL Server rapporte les colonnes ROWVERSION avec `DATA_TYPE='timestamp'` → classées date filtrable (un filtre dessus donne une erreur de conversion SQL, pas de données fausses).
+
+**Infra de test** : SQL Server 2022 dockerisé (`docker-compose.mssql-test.yml`, port hôte 14330, scripts up/down + seed dbo/ventes/rh, `docs/mssql-testing.md` avec checklist de validation client) ; 12 tests d'intégration gatés sur `CALAME_TEST_MSSQL_DSN` (dont preuve du rollback lecture seule et du smuggling multi-statements), 29 tests DSN/quoting, 11 tests de cycle de vie du pool (mocks), 98 tests de génération SQL par dialecte, 46 tests de la classe de régression « jonction types » (`tsql-type-junction.test.ts`). E2E live final sur build corrigé : 6/6 verts (rejet structuré, filtres appliqués, group_by nvarchar, pagination non-dbo, hints de valeurs). **2548 tests passés / 0 échec**, typecheck/lint/prettier/audit OK.
+
+**Release 0.8.0** : bump des 4 fichiers de version + Cargo.lock, tag `v0.8.0`, build GitHub Actions, publication, site `calame.dev` bumpé. UI : option SQL Server dans ConnectionManager/OnboardingWizard + i18n FR/EN.
+
+Suivis notés (non bloquants) : R-10 `ratio_filter` de join_aggregate à brancher sur `rejectUnfilterableColumns` partagé ; R-11 route admin `packages/cli/src/routes/query.ts` skippe encore en silence ; upgrade driver mssql 11→12 ; wording des descriptions de tools (« Statistical aggregations require PostgreSQL »).
+
+---
+
 ## 2026-09-04 — RAG : perf de sync des sources locales + masquage PII des endpoints HTTP (branche `fix/rag-sync-perf-and-masking`, uncommitted)
 
 Quatre correctifs issus d'un audit de code avec vérification bout-en-bout, implémentés ensemble :

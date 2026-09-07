@@ -46,7 +46,7 @@ interface DynamicToolsOptions {
   onAuditLog?: (entry: Omit<AuditLogEntry, 'id' | 'timestamp'>) => void;
   onWriteRequest?: (query: Omit<PendingWriteQuery, 'id' | 'timestamp' | 'status'>) => string;
   profileName: string;
-  databaseType: 'postgresql' | 'mysql' | 'sqlite';
+  databaseType: 'postgresql' | 'mysql' | 'sqlite' | 'mssql';
   /** Response mode: 'friendly' hides technical names, 'raw' shows them. Default 'raw'. */
   responseMode?: 'friendly' | 'raw';
   /** Wrap JSON output with LLM presentation instructions (used in friendly mode). */

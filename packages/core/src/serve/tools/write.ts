@@ -2,7 +2,12 @@ import type { PendingWriteQuery } from '../types.js';
 import type { FilterValue } from '../filter-builder.js';
 import { zodEnum, buildWriteArgsShape } from '../schema-builder.js';
 import type { ToolContext, AccessibleTable } from '../tool-context.js';
-import { resolveTable, structuredError, didYouMean } from '../tool-context.js';
+import {
+  resolveTable,
+  structuredError,
+  didYouMean,
+  rejectUnfilterableColumns,
+} from '../tool-context.js';
 
 // We use `as any` in server.tool() calls because the dynamic Zod schemas
 // (Record<string, z.ZodTypeAny>) cause TS2589 "excessively deep" errors with
@@ -42,7 +47,7 @@ export function registerWriteGeneric(
       const at = resolved.at;
 
       const tableName = at.table.name;
-      const schemaName = at.table.schema || 'public';
+      const schemaName = at.table.schema || dialect.defaultSchema;
       const qualifiedTable = dialect.quoteTable(schemaName, tableName);
       const validColumnNames = new Set(at.visibleColumns.map((c) => c.name));
       const allowedFilterColumns = at.filterableCols.map((c) => c.name);
@@ -72,6 +77,10 @@ export function registerWriteGeneric(
             error: `'${operation}' requires 'filters' to identify target rows`,
           });
         }
+        // A silently dropped filter here would widen an UPDATE/DELETE beyond
+        // the rows the caller meant to touch, so reject rather than skip.
+        const badFilter = rejectUnfilterableColumns(filters, allowedFilterColumns, tableName);
+        if (badFilter) return structuredError(badFilter);
         if (values) {
           for (const colName of Object.keys(values)) {
             if (!validColumnNames.has(colName)) {

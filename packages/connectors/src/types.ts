@@ -67,4 +67,4 @@ export interface DatabaseConnector {
   getPoolStats?(): { active: number; idle: number; waiting: number; total: number };
 }
 
-export type DatabaseType = 'postgresql' | 'mysql' | 'sqlite';
+export type DatabaseType = 'postgresql' | 'mysql' | 'sqlite' | 'mssql';

@@ -27,7 +27,7 @@ interface ConnectionStatus {
   sshConfig?: SshTunnelConfig;
 }
 
-const DB_TYPES: DatabaseType[] = ['postgresql', 'mysql', 'sqlite'];
+const DB_TYPES: DatabaseType[] = ['postgresql', 'mysql', 'sqlite', 'mssql'];
 
 /** Generate a slug from a label: lowercase, spaces to hyphens, strip special chars */
 function slugify(label: string): string {
@@ -44,6 +44,8 @@ const DB_TYPE_COLORS: Record<DatabaseType, string> = {
   postgresql: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
   mysql: 'bg-orange-500/20 text-orange-300 border-orange-500/30',
   sqlite: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
+  // Cyan reads as its own engine next to PostgreSQL's blue at badge size.
+  mssql: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30',
 };
 
 export default function ConnectionManager({

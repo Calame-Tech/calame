@@ -7,6 +7,8 @@
  * passes through untouched.
  */
 
+import { isNumericSqlType, isBooleanType, isDateType } from './sql-types.js';
+
 // ---------------------------------------------------------------------------
 // snakeCaseToLabel
 // ---------------------------------------------------------------------------
@@ -65,45 +67,18 @@ export function snakeCaseToLabel(name: string): string {
 export function friendlyType(sqlType: string): string {
   const t = sqlType.toLowerCase().trim();
 
-  if (
-    t === 'integer' ||
-    t === 'int' ||
-    t === 'int2' ||
-    t === 'int4' ||
-    t === 'int8' ||
-    t === 'smallint' ||
-    t === 'bigint' ||
-    t === 'serial' ||
-    t === 'smallserial' ||
-    t === 'bigserial' ||
-    t === 'numeric' ||
-    t === 'decimal' ||
-    t === 'real' ||
-    t === 'float4' ||
-    t === 'float8' ||
-    t === 'double precision' ||
-    t === 'money' ||
-    t === 'oid'
-  ) {
+  // Families come from ./sql-types.ts so every backend's type names are
+  // recognised here too — a SQL Server `datetime2` must read as "Date", not
+  // fall through to the "Texte" default.
+  if (isNumericSqlType(t)) {
     return 'Nombre';
   }
 
-  if (t === 'boolean' || t === 'bool') {
+  if (isBooleanType(t)) {
     return 'Oui/Non';
   }
 
-  if (
-    t === 'timestamp' ||
-    t === 'timestamp with time zone' ||
-    t === 'timestamp without time zone' ||
-    t === 'timestamptz' ||
-    t === 'date' ||
-    t === 'time' ||
-    t === 'time with time zone' ||
-    t === 'time without time zone' ||
-    t === 'timetz' ||
-    t === 'interval'
-  ) {
+  if (isDateType(t)) {
     return 'Date';
   }
 

@@ -32,6 +32,7 @@ const VALID_DB_TYPES: ReadonlySet<string> = new Set<DatabaseType>([
   'postgresql',
   'mysql',
   'sqlite',
+  'mssql',
 ]);
 
 function isDatabaseType(value: unknown): value is DatabaseType {

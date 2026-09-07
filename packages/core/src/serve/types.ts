@@ -1,7 +1,7 @@
 export interface NamedConnection {
   name: string;
   label: string;
-  databaseType: 'postgresql' | 'mysql' | 'sqlite';
+  databaseType: 'postgresql' | 'mysql' | 'sqlite' | 'mssql';
   connectionString: string;
   sslConfig?: {
     enabled: boolean;
@@ -207,7 +207,7 @@ export interface ServeConfig {
   port: number;
   connections: Record<string, NamedConnection>;
   // Keep old fields for backward compat:
-  databaseType: 'postgresql' | 'mysql' | 'sqlite';
+  databaseType: 'postgresql' | 'mysql' | 'sqlite' | 'mssql';
   connectionString: string;
   profiles: Record<string, ServeProfile>;
   enableAuditLog?: boolean;

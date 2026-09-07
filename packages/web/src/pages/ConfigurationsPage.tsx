@@ -33,6 +33,7 @@ const SOURCE_DOT_COLORS: Record<string, string> = {
   postgresql: '#748FFC',
   mysql: '#FDBA74',
   sqlite: '#6EE7B7',
+  mssql: '#67E8F9',
   document: '#E5E7EB',
   api: '#C084FC',
   mcp: '#E0A45E',

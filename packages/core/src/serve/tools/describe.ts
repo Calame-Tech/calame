@@ -55,7 +55,7 @@ export function registerDescribeGeneric(
       const at = resolved.at;
 
       const tableName = at.table.name;
-      const schemaName = at.table.schema || 'public';
+      const schemaName = at.table.schema || dialect.defaultSchema;
       const qualifiedTable = dialect.quoteTable(schemaName, tableName);
       const includeStats =
         at.enabledTools.includes('aggregate') || at.enabledTools.includes('query');
@@ -155,7 +155,11 @@ export function registerDescribeGeneric(
                 ? `${scopeWhere} AND ${notNullCondition}`
                 : `WHERE ${notNullCondition}`;
               const cap = isLowCardinality ? MAX_ENUM : MAX_SAMPLE;
-              const valSql = `SELECT DISTINCT ${qi} AS val FROM ${qualifiedTable} ${valWhere} ORDER BY val LIMIT ${cap + 1}`;
+              // Capped read with no offset — TOP (n) on SQL Server, LIMIT n
+              // elsewhere. Only one of the two fragments is ever non-empty.
+              const valSql =
+                `SELECT DISTINCT ${dialect.topPrefix(cap + 1)}${qi} AS val ` +
+                `FROM ${qualifiedTable} ${valWhere} ORDER BY val ${dialect.limitSuffix(cap + 1)}`.trimEnd();
               const valResult = await exec(valSql, [...scopeValues]);
               const rawVals = valResult.rows.map((r) => (r as Record<string, unknown>).val);
               if (isLowCardinality) {

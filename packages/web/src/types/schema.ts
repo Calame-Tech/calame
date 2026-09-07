@@ -1,4 +1,4 @@
-export type DatabaseType = 'postgresql' | 'mysql' | 'sqlite';
+export type DatabaseType = 'postgresql' | 'mysql' | 'sqlite' | 'mssql';
 
 // SSL Config
 export interface SslConfig {

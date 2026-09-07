@@ -595,6 +595,11 @@
         "label": "SQLite",
         "placeholder": "sqlite:///path/to/database.db",
         "helpText": "Format: sqlite:///path/to/database.db"
+      },
+      "mssql": {
+        "label": "SQL Server",
+        "placeholder": "Server=localhost,1433;Database=mydb;User Id=sa;Password=…;Encrypt=true",
+        "helpText": "Format: Server=host,port;Database=db;User Id=user;Password=pass — or mssql://user:password@host:port/database. SQL Server authentication only (Windows/AD authentication is not supported)."
       }
     }
   },
@@ -988,7 +993,8 @@
           "dbTypeOptions": {
             "postgresql": "PostgreSQL",
             "mysql": "MySQL",
-            "sqlite": "SQLite"
+            "sqlite": "SQLite",
+            "mssql": "SQL Server"
           },
           "connectionStringLabel": "Connection string",
           "submitButton": "Connect"
@@ -1170,7 +1176,7 @@
       "closeAriaLabel": "Close modal",
       "description": "Choose the type of data source you want to connect.",
       "databaseLabel": "Database",
-      "databaseHint": "PostgreSQL, MySQL, SQLite",
+      "databaseHint": "PostgreSQL, MySQL, SQLite, SQL Server",
       "knowledgeBaseLabel": "Knowledge base",
       "knowledgeBaseHint": "Documents & RAG",
       "notAvailable": "Not available"
@@ -1339,7 +1345,7 @@
       "viewAll": "View all →",
       "sources": {
         "eyebrow": "SOURCES",
-        "help": "Manage sources connecting to PostgreSQL, MySQL or SQLite databases and knowledge bases",
+        "help": "Manage sources connecting to PostgreSQL, MySQL, SQLite or SQL Server databases and knowledge bases",
         "connected": "{count} connected",
         "knowledgeBaseCount": "{count, plural, one {# knowledge base} other {# knowledge bases}}",
         "connectedTooltip": "Connected and schema loaded",
@@ -1382,13 +1388,7 @@
       "emptyTitle": "No MCP servers",
       "emptyDescription": "Create a server to expose your data configurations to AI clients.",
       "table": {
-        "headers": [
-          "Server",
-          "Status",
-          "Auth",
-          "Activity 24h",
-          "Trend"
-        ]
+        "headers": ["Server", "Status", "Auth", "Activity 24h", "Trend"]
       },
       "statusActive": "ACTIVE",
       "statusStopped": "STOPPED",

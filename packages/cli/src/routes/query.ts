@@ -1,6 +1,7 @@
 import type { Express } from 'express';
 import { z } from 'zod';
 import { getConnector } from '@calame/connectors';
+import { makeDialect } from '@calame/core';
 import type { AppState } from '../state.js';
 import { redactSecrets } from '../sanitize.js';
 
@@ -51,22 +52,13 @@ export function registerQueryRoute(app: Express, state: AppState): void {
         ? { ssl: connState.connection.sslConfig }
         : undefined;
 
-      const dbType = state.cachedDatabaseType;
-      const usePositionalParams = dbType === 'postgresql';
+      // Reuse the serve layer's dialect so quoting, placeholders and
+      // pagination match what the MCP tools emit for the same backend.
+      const dialect = makeDialect(state.cachedDatabaseType ?? 'postgresql');
 
-      // Quote a column name according to the database dialect
-      const quoteCol = (col: string): string => (dbType === 'mysql' ? `\`${col}\`` : `"${col}"`);
-
-      // Build the FROM target according to the database dialect
-      const fromTarget =
-        dbType === 'postgresql'
-          ? `"${table.schema}"."${table.name}"`
-          : dbType === 'mysql'
-            ? `\`${table.name}\``
-            : `"${table.name}"`;
-
-      // Return the next placeholder: $N for PostgreSQL, ? for MySQL/SQLite
-      const placeholder = (index: number): string => (usePositionalParams ? `$${index}` : '?');
+      const quoteCol = (col: string): string => dialect.quoteIdent(col);
+      const fromTarget = dialect.quoteTable(table.schema || dialect.defaultSchema, table.name);
+      const placeholder = (index: number): string => dialect.param(index);
 
       const conditions: string[] = [];
       const values: unknown[] = [];
@@ -97,7 +89,9 @@ export function registerQueryRoute(app: Express, state: AppState): void {
       values.push(queryOffset);
       const offsetParam = placeholder(paramIndex);
 
-      const sql = `SELECT * FROM ${fromTarget} ${whereClause} LIMIT ${limitParam} OFFSET ${offsetParam}`;
+      // No ORDER BY here — the dialect injects a no-op one on SQL Server,
+      // whose OFFSET/FETCH pagination requires it.
+      const sql = `SELECT * FROM ${fromTarget} ${whereClause} ${dialect.paginate('', limitParam, offsetParam)}`;
       const result = await connector.query(connectionString, sql, {
         timeoutMs: getQueryTimeoutMs(),
         ...connOptions,

@@ -16,7 +16,18 @@ interface OnboardingWizardProps {
   onNavigateToConfig?: (configName: string) => void;
 }
 
-type DbType = 'postgresql' | 'mysql' | 'sqlite';
+type DbType = 'postgresql' | 'mysql' | 'sqlite' | 'mssql';
+
+/**
+ * Example connection string per engine. Exhaustive over DbType so adding an
+ * engine fails the build here rather than silently falling back.
+ */
+const CONNECTION_STRING_PLACEHOLDERS: Record<DbType, string> = {
+  postgresql: 'postgresql://user:pass@host:5432/db',
+  mysql: 'mysql://user:pass@host:3306/db',
+  sqlite: '/path/to/database.db',
+  mssql: 'Server=host,1433;Database=db;User Id=user;Password=pass',
+};
 
 interface Step1State {
   connectionName: string;
@@ -515,6 +526,7 @@ function StepConnect({ state, setState, onDemo, onCustom }: StepConnectProps) {
             <option value="postgresql">{t('step1.form.dbTypeOptions.postgresql')}</option>
             <option value="mysql">{t('step1.form.dbTypeOptions.mysql')}</option>
             <option value="sqlite">{t('step1.form.dbTypeOptions.sqlite')}</option>
+            <option value="mssql">{t('step1.form.dbTypeOptions.mssql')}</option>
           </select>
         </div>
 
@@ -531,13 +543,7 @@ function StepConnect({ state, setState, onDemo, onCustom }: StepConnectProps) {
             value={state.connectionString}
             onChange={(e) => setState((s) => ({ ...s, connectionString: e.target.value }))}
             className="input-editorial w-full font-mono text-sm"
-            placeholder={
-              state.dbType === 'sqlite'
-                ? '/path/to/database.db'
-                : state.dbType === 'mysql'
-                  ? 'mysql://user:pass@host:3306/db'
-                  : 'postgresql://user:pass@host:5432/db'
-            }
+            placeholder={CONNECTION_STRING_PLACEHOLDERS[state.dbType]}
             autoComplete="off"
           />
         </div>

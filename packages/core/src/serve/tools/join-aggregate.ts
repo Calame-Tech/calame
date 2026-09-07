@@ -6,7 +6,12 @@ import { applyMasking } from '../middleware/masking.js';
 import { formatResponseRows } from '../response-formatter.js';
 import { findJoinPath, computeTransitiveClosure } from '../join-path.js';
 import type { ToolContext, AccessibleTable, DateBucket } from '../tool-context.js';
-import { structuredError, didYouMean, dateBucketExpr } from '../tool-context.js';
+import {
+  structuredError,
+  didYouMean,
+  dateBucketExpr,
+  rejectUnfilterableColumns,
+} from '../tool-context.js';
 
 // We use `as any` in server.tool() calls because the dynamic Zod schemas
 // (Record<string, z.ZodTypeAny>) cause TS2589 "excessively deep" errors with
@@ -504,19 +509,12 @@ export function registerJoinAggregateGeneric(
               values.push(sf.value);
             }
             if (!userFilters) return { ok: true };
-            const allowedSet = new Set(allowed);
+            // Shared with query/aggregate/write so all four tools reject an
+            // unfilterable column identically.
+            const badFilter = rejectUnfilterableColumns(userFilters, allowed, tableName);
+            if (badFilter) return { ok: false, payload: badFilter };
             for (const [col, filter] of Object.entries(userFilters)) {
               if (!filter) continue;
-              if (!allowedSet.has(col)) {
-                return {
-                  ok: false,
-                  payload: {
-                    error: `Column '${col}' is not filterable for table '${tableName}'`,
-                    valid_columns: allowed,
-                    did_you_mean: didYouMean(col, allowed),
-                  },
-                };
-              }
               const qi = `${alias}.${dialect.quoteIdent(col)}`;
               switch (filter.op) {
                 case 'eq':
@@ -642,20 +640,20 @@ export function registerJoinAggregateGeneric(
           values.push(cappedOffset);
           const offsetParam = dialect.param(paramIndex);
 
-          const pSchema = pAt.table.schema || 'public';
+          const pSchema = pAt.table.schema || dialect.defaultSchema;
           // Build FROM + all INNER JOINs for the multi-hop path
           let fromClause = `FROM ${dialect.quoteTable(pSchema, primary_table)} ${pAlias}`;
           for (const hop of joinPath) {
             const hopFromAlias = aliasOf.get(hop.fromTable)!;
             const hopToAlias = aliasOf.get(hop.toTable)!;
             const hopAt = byName.get(hop.toTable);
-            const hopSchema = hopAt?.table.schema || 'public';
+            const hopSchema = hopAt?.table.schema || dialect.defaultSchema;
             fromClause +=
               ` INNER JOIN ${dialect.quoteTable(hopSchema, hop.toTable)} ${hopToAlias}` +
               ` ON ${hopFromAlias}.${dialect.quoteIdent(hop.fromColumn)} = ${hopToAlias}.${dialect.quoteIdent(hop.toColumn)}`;
           }
 
-          const sql = `SELECT ${selectPrefix}${selectExpr} ${fromClause} ${whereClause} ${groupByClause} ${orderByClause} LIMIT ${limitParam} OFFSET ${offsetParam}`;
+          const sql = `SELECT ${selectPrefix}${selectExpr} ${fromClause} ${whereClause} ${groupByClause} ${dialect.paginate(orderByClause, limitParam, offsetParam)}`;
 
           // Prepend ratio pre-values so positional parameters align correctly:
           // ratio CASE WHEN params ($1..$K) must appear before WHERE params.

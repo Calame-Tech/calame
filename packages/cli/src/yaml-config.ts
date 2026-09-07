@@ -7,7 +7,7 @@ import { upgradeProfileShape } from '@calame/core';
 
 interface YamlDatabase {
   name: string;
-  type: 'postgresql' | 'mysql' | 'sqlite';
+  type: 'postgresql' | 'mysql' | 'sqlite' | 'mssql';
   connectionString: string;
   ssl?: { ca?: string; cert?: string; key?: string; rejectUnauthorized?: boolean };
 }

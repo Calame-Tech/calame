@@ -2,9 +2,16 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { TableInfo, Relation, TableToolOptions } from '../introspect/types.js';
 import { ColumnMasking } from '../pii/types.js';
 import type { AuditLogEntry } from './types.js';
-import type { Dialect } from './filter-builder.js';
+import type { Dialect, FilterValue } from './filter-builder.js';
 import type { ExecuteQuery, ScopeGuard } from './scoped-executor.js';
 import type { MaskingRule } from './middleware/masking.js';
+import {
+  isStringType,
+  isDateType,
+  isBigIntType,
+  isBooleanType,
+  isNumericSqlType,
+} from './sql-types.js';
 
 // We use `as any` in server.tool() calls because the dynamic Zod schemas
 // (Record<string, z.ZodTypeAny>) cause TS2589 "excessively deep" errors with
@@ -32,10 +39,49 @@ export interface ToolContext {
 // ---------------------------------------------------------------------------
 
 // NOTE: Read-only enforcement lives at the connector layer
-// (see packages/connectors/src/{postgresql,mysql,sqlite}.ts query() methods).
-// Each connector wraps queries in BEGIN/SET TRANSACTION READ ONLY/COMMIT or
-// opens SQLite databases with { readonly: true }.
-export function makeDialect(dbType: 'postgresql' | 'mysql' | 'sqlite'): Dialect {
+// (see packages/connectors/src/{postgresql,mysql,sqlite,mssql}.ts query()
+// methods). Each connector wraps queries in BEGIN/SET TRANSACTION READ ONLY/
+// COMMIT, opens SQLite databases with { readonly: true }, or — on SQL Server,
+// which has no read-only transaction mode — always rolls the transaction back.
+
+/** `LIMIT x OFFSET y` pagination, shared by PostgreSQL / MySQL / SQLite. */
+function limitOffsetPagination(
+  orderByClause: string,
+  limitParam: string,
+  offsetParam: string,
+): string {
+  return `${orderByClause} LIMIT ${limitParam} OFFSET ${offsetParam}`.trim();
+}
+
+/** `||` string concatenation, shared by PostgreSQL / MySQL / SQLite. */
+function pipeConcat(...parts: string[]): string {
+  return parts.join(' || ');
+}
+
+/**
+ * PostgreSQL / MySQL / SQLite treat every character of a LIKE value literally
+ * apart from `%` and `_`, which are intentionally left as wildcards.
+ */
+function noLikeEscape(value: string): string {
+  return value;
+}
+
+/**
+ * SQL Server is the one backend where `[` opens a character class inside a
+ * LIKE pattern, so a filter value like "Acme [Retired]" would match different
+ * rows there than everywhere else. `[[]` is T-SQL's own idiom for a literal
+ * `[` and needs no ESCAPE clause.
+ *
+ * Escaping `[` alone is sufficient: with no unescaped `[` left in the pattern,
+ * a class can never be opened, which in turn makes `]` and `^` unambiguously
+ * literal (they are only special inside a class). `%` and `_` keep their
+ * existing wildcard behaviour, matching the other three dialects.
+ */
+function mssqlLikeEscape(value: string): string {
+  return value.replace(/\[/g, '[[]');
+}
+
+export function makeDialect(dbType: 'postgresql' | 'mysql' | 'sqlite' | 'mssql'): Dialect {
   switch (dbType) {
     case 'postgresql':
       return {
@@ -43,8 +89,14 @@ export function makeDialect(dbType: 'postgresql' | 'mysql' | 'sqlite'): Dialect 
         isPostgres: true,
         quoteIdent: (n) => `"${n}"`,
         quoteTable: (s, t) => `"${s}"."${t}"`,
+        defaultSchema: 'public',
         param: (i) => `$${i}`,
         random: 'RANDOM()',
+        concat: pipeConcat,
+        escapeLikeValue: noLikeEscape,
+        paginate: limitOffsetPagination,
+        topPrefix: () => '',
+        limitSuffix: (n) => `LIMIT ${n}`,
         supportsPercentile: true,
         medianExpr: (col) => `PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ${col})`,
         percentileExpr: (col, p) => `PERCENTILE_CONT(${p}) WITHIN GROUP (ORDER BY ${col})`,
@@ -57,8 +109,14 @@ export function makeDialect(dbType: 'postgresql' | 'mysql' | 'sqlite'): Dialect 
         isPostgres: false,
         quoteIdent: (n) => `\`${n}\``,
         quoteTable: (_s, t) => `\`${t}\``,
+        defaultSchema: 'public',
         param: () => '?',
         random: 'RAND()',
+        concat: pipeConcat,
+        escapeLikeValue: noLikeEscape,
+        paginate: limitOffsetPagination,
+        topPrefix: () => '',
+        limitSuffix: (n) => `LIMIT ${n}`,
         supportsPercentile: false,
         medianExpr: () => null,
         percentileExpr: () => null,
@@ -71,107 +129,87 @@ export function makeDialect(dbType: 'postgresql' | 'mysql' | 'sqlite'): Dialect 
         isPostgres: false,
         quoteIdent: (n) => `"${n}"`,
         quoteTable: (_s, t) => `"${t}"`,
+        defaultSchema: 'public',
         param: () => '?',
         random: 'RANDOM()',
+        concat: pipeConcat,
+        escapeLikeValue: noLikeEscape,
+        paginate: limitOffsetPagination,
+        topPrefix: () => '',
+        limitSuffix: (n) => `LIMIT ${n}`,
         supportsPercentile: false,
         medianExpr: () => null,
         percentileExpr: () => null,
         stddevExpr: () => null,
         varianceExpr: () => null,
       };
+    case 'mssql':
+      return {
+        databaseType: 'mssql',
+        isPostgres: false,
+        // T-SQL bracket quoting; a literal `]` inside a name is doubled.
+        quoteIdent: (n) => `[${n.replace(/]/g, ']]')}]`,
+        quoteTable: (s, t) => `[${s.replace(/]/g, ']]')}].[${t.replace(/]/g, ']]')}]`,
+        defaultSchema: 'dbo',
+        // The `mssql` driver binds named parameters; the connector registers
+        // them as p1..pN in positional order (see mssql.ts query()).
+        param: (i) => `@p${i}`,
+        // RAND() is evaluated once per statement in T-SQL, so it cannot shuffle
+        // rows. NEWID() is the standard random-ordering idiom.
+        random: 'NEWID()',
+        concat: (...parts) => parts.join(' + '),
+        escapeLikeValue: mssqlLikeEscape,
+        // OFFSET/FETCH is the only parameterizable pagination in T-SQL and it
+        // is only legal after an ORDER BY, so synthesize a no-op ordering when
+        // the caller has none.
+        paginate: (orderByClause, limitParam, offsetParam) => {
+          const orderBy = orderByClause.trim() || 'ORDER BY (SELECT NULL)';
+          return `${orderBy} OFFSET ${offsetParam} ROWS FETCH NEXT ${limitParam} ROWS ONLY`;
+        },
+        // TOP needs no ORDER BY, so capped reads without an offset stay simple.
+        topPrefix: (n) => `TOP (${n}) `,
+        limitSuffix: () => '',
+        // PERCENTILE_CONT exists but only as a window function
+        // (`WITHIN GROUP (...) OVER (PARTITION BY ...)`), which does not
+        // compose with the GROUP BY shape the aggregate tool emits.
+        supportsPercentile: false,
+        medianExpr: () => null,
+        percentileExpr: () => null,
+        // T-SQL spells the sample statistics STDEV / VAR.
+        stddevExpr: (col) => `STDEV(${col})`,
+        varianceExpr: (col) => `VAR(${col})`,
+      };
   }
 }
 
 // ---------------------------------------------------------------------------
-// pgTypeToZod — same mapping as packages/core/src/generate/tools.ts
+// Column type classification. The type-name families live in ./sql-types.ts —
+// see the note there on why they are centralised rather than inlined here.
 // ---------------------------------------------------------------------------
 
+/**
+ * Map a declared SQL type to the JSON type exposed in MCP tool schemas, or
+ * null when the type cannot be filtered on (binary, JSON, spatial, …).
+ *
+ * A null here removes the column from `filterableCols`, so a type name missing
+ * from ./sql-types.ts makes filters on that column unusable — which is exactly
+ * how SQL Server shipped broken before those names were added.
+ *
+ * Named `pgTypeToZod` for history; it covers every supported backend.
+ */
 export function pgTypeToZod(pgType: string): string | null {
-  const t = pgType.toLowerCase();
-
-  // String types
-  if (
-    t === 'text' ||
-    t === 'varchar' ||
-    t === 'character varying' ||
-    t === 'char' ||
-    t === 'character' ||
-    t === 'name' ||
-    t === 'citext' ||
-    t === 'uuid' ||
-    t === 'xml' ||
-    t === 'inet' ||
-    t === 'cidr' ||
-    t === 'macaddr'
-  )
-    return 'string';
-
-  // Date/time types — exposed as ISO 8601 strings
-  if (
-    t === 'timestamp' ||
-    t === 'timestamp with time zone' ||
-    t === 'timestamp without time zone' ||
-    t === 'timestamptz' ||
-    t === 'date' ||
-    t === 'time' ||
-    t === 'time with time zone' ||
-    t === 'time without time zone' ||
-    t === 'timetz' ||
-    t === 'interval'
-  )
-    return 'string';
-
-  // Big integer types — exposed as string to preserve precision
-  if (t === 'bigint' || t === 'int8' || t === 'bigserial') return 'string';
-
-  // Numeric types
-  if (
-    t === 'integer' ||
-    t === 'int' ||
-    t === 'int4' ||
-    t === 'smallint' ||
-    t === 'int2' ||
-    t === 'serial' ||
-    t === 'smallserial' ||
-    t === 'real' ||
-    t === 'float4' ||
-    t === 'double precision' ||
-    t === 'float8' ||
-    t === 'numeric' ||
-    t === 'decimal' ||
-    t === 'money' ||
-    t === 'oid'
-  )
-    return 'number';
-
-  // Boolean
-  if (t === 'boolean' || t === 'bool') return 'boolean';
-
+  // Strings and date/times are both surfaced as `string`; dates as ISO 8601.
+  if (isStringType(pgType) || isDateType(pgType)) return 'string';
+  // Big integers stay strings so precision beyond 2^53 survives the round trip.
+  if (isBigIntType(pgType)) return 'string';
+  if (isNumericSqlType(pgType)) return 'number';
+  if (isBooleanType(pgType)) return 'boolean';
   // Complex types not supported for filters
   return null;
 }
 
 export function isNumericType(pgType: string): boolean {
-  const t = pgType.toLowerCase();
-  return (
-    t === 'integer' ||
-    t === 'int' ||
-    t === 'int4' ||
-    t === 'smallint' ||
-    t === 'int2' ||
-    t === 'serial' ||
-    t === 'smallserial' ||
-    t === 'bigint' ||
-    t === 'int8' ||
-    t === 'bigserial' ||
-    t === 'real' ||
-    t === 'float4' ||
-    t === 'double precision' ||
-    t === 'float8' ||
-    t === 'numeric' ||
-    t === 'decimal' ||
-    t === 'money'
-  );
+  return isNumericSqlType(pgType);
 }
 
 export function isTextType(pgType: string): boolean {
@@ -184,6 +222,29 @@ export function isTextType(pgType: string): boolean {
 // trendlines without inventing dialect-specific SQL.
 export type DateBucket = 'day' | 'week' | 'month' | 'quarter' | 'year';
 
+/**
+ * SQL Server date bucketing. Produces the same canonical period strings as the
+ * MySQL / SQLite branches ('2026-03-14', '2026-W11', '2026-03-01', '2026-Q1',
+ * '2026-01-01') so GROUP BY collapses identically and ORDER BY sorts
+ * chronologically. Style 23 is ISO `yyyy-mm-dd`.
+ */
+function mssqlDateBucketExpr(granularity: DateBucket, columnExpr: string): string {
+  const year = `CONVERT(varchar(4), YEAR(${columnExpr}))`;
+  switch (granularity) {
+    case 'day':
+      return `CONVERT(varchar(10), ${columnExpr}, 23)`;
+    case 'week':
+      // Zero-pad the ISO week so '2026-W09' sorts before '2026-W10'.
+      return `(${year} + '-W' + RIGHT('0' + CONVERT(varchar(2), DATEPART(ISO_WEEK, ${columnExpr})), 2))`;
+    case 'month':
+      return `(CONVERT(varchar(7), ${columnExpr}, 23) + '-01')`;
+    case 'quarter':
+      return `(${year} + '-Q' + CONVERT(varchar(1), DATEPART(QUARTER, ${columnExpr})))`;
+    case 'year':
+      return `(${year} + '-01-01')`;
+  }
+}
+
 export function dateBucketExpr(
   dialect: Dialect,
   granularity: DateBucket,
@@ -192,6 +253,13 @@ export function dateBucketExpr(
   // Postgres has a native DATE_TRUNC for every granularity we expose.
   if (dialect.databaseType === 'postgresql') {
     return `DATE_TRUNC('${granularity}', ${columnExpr})`;
+  }
+
+  // SQL Server: DATETRUNC() is 2022+ only, so render the same canonical
+  // strings the MySQL / SQLite branches produce using CONVERT + DATEPART,
+  // which work on every supported SQL Server version.
+  if (dialect.databaseType === 'mssql') {
+    return mssqlDateBucketExpr(granularity, columnExpr);
   }
 
   // MySQL and SQLite don't have DATE_TRUNC. We render a canonical formatted
@@ -264,21 +332,9 @@ export function detectDateFormat(sqlType: string, sampleValues: unknown[]): stri
 // description). Distinguishes 'date' from generic 'string' so the LLM doesn't
 // pass `[min,max]` between filters as numbers on date columns.
 export function friendlyTypeLabel(sqlType: string): string {
-  const t = sqlType.toLowerCase();
   if (isNumericType(sqlType)) return 'number';
-  if (t === 'boolean' || t === 'bool') return 'bool';
-  if (
-    t === 'timestamp' ||
-    t === 'timestamp with time zone' ||
-    t === 'timestamp without time zone' ||
-    t === 'timestamptz' ||
-    t === 'date' ||
-    t === 'time' ||
-    t === 'time with time zone' ||
-    t === 'time without time zone' ||
-    t === 'timetz'
-  )
-    return 'date';
+  if (isBooleanType(sqlType)) return 'bool';
+  if (isDateType(sqlType)) return 'date';
   return 'string';
 }
 
@@ -319,6 +375,48 @@ export function didYouMean(input: string, valid: string[]): string | undefined {
 
 // Returns a tool result that is structured-error-shaped (single text content,
 // JSON body, isError=true). Designed to be parsed by an LLM follow-up turn.
+/**
+ * Reject a filter that targets a column this profile cannot filter on.
+ *
+ * Returns the structured-error payload for the first offending column, or null
+ * when every filter is usable.
+ *
+ * WHY THIS IS AN ERROR AND NOT A SKIP: `buildWhereConditions` drops
+ * non-allowlisted columns from the WHERE clause as a security backstop. When
+ * the tools relied on that silently, a filtered query returned UNFILTERED
+ * rows while reporting success — the worst kind of wrong answer, and how SQL
+ * Server support shipped returning every row for any `contains` filter. On an
+ * UPDATE/DELETE a partially dropped filter would widen the row set instead.
+ *
+ * `join_aggregate` already rejected such filters; this shares that contract
+ * (and its wording) with `query`, `aggregate` and `write`.
+ *
+ * DISCLOSURE: a column is "not filterable" whether it is masked, excluded
+ * from the profile, of an unsupported type, or absent from the table entirely.
+ * The response is byte-identical in all four cases and lists only columns the
+ * caller may already see, so this never reveals that a hidden column exists —
+ * the same stance the `columns` argument validation already takes.
+ */
+export function rejectUnfilterableColumns(
+  userFilters: Record<string, FilterValue | undefined> | undefined,
+  allowed: string[],
+  tableName: string,
+): Record<string, unknown> | null {
+  if (!userFilters) return null;
+  const allowedSet = new Set(allowed);
+  for (const [col, filter] of Object.entries(userFilters)) {
+    if (!filter) continue;
+    if (!allowedSet.has(col)) {
+      return {
+        error: `Column '${col}' is not filterable for table '${tableName}'`,
+        valid_columns: allowed,
+        did_you_mean: didYouMean(col, allowed),
+      };
+    }
+  }
+  return null;
+}
+
 export function structuredError(payload: Record<string, unknown>): {
   content: { type: 'text'; text: string }[];
   isError: true;

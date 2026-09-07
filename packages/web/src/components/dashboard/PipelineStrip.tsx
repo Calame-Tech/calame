@@ -38,6 +38,7 @@ const ENGINE_BADGE: Record<NamedConnection['databaseType'], { label: string; cla
   postgresql: { label: 'PG', classes: 'text-blue-300 bg-blue-500/10' },
   mysql: { label: 'MySQL', classes: 'text-orange-300 bg-orange-500/10' },
   sqlite: { label: 'SQLite', classes: 'text-emerald-300 bg-emerald-500/10' },
+  mssql: { label: 'MSSQL', classes: 'text-cyan-300 bg-cyan-500/10' },
 };
 
 function FlowArrow() {

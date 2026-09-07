@@ -1,5 +1,8 @@
 import type { TableInfo } from '../introspect/types.js';
 import type { ColumnMasking } from '../pii/types.js';
+import type { Dialect } from './filter-builder.js';
+import { makeDialect } from './tool-context.js';
+import { isCategoricalStringType, isSmallIntType, isBooleanType } from './sql-types.js';
 
 export interface ComputeDistinctValuesOptions {
   /** Tables visible to the profile (already filtered by `selectedTables`). */
@@ -16,7 +19,7 @@ export interface ComputeDistinctValuesOptions {
     sql: string,
     params: unknown[],
   ) => Promise<{ rows: Record<string, unknown>[]; fields: { name: string }[] }>;
-  databaseType: 'postgresql' | 'mysql' | 'sqlite';
+  databaseType: 'postgresql' | 'mysql' | 'sqlite' | 'mssql';
   /** Cap on per-column distinct values kept; columns above are skipped. */
   maxValues?: number;
   /** Per-column timeout (ms). Skipped silently on overrun. */
@@ -54,6 +57,7 @@ export async function computeDistinctValues(
 ): Promise<Record<string, Record<string, unknown[]>>> {
   const maxValues = opts.maxValues ?? 20;
   const concurrency = Math.max(1, opts.concurrency ?? 10);
+  const dialect = makeDialect(opts.databaseType);
   const result: Record<string, Record<string, unknown[]>> = {};
 
   // 1) Flatten the work into a single job list so a slow column on table A
@@ -78,12 +82,15 @@ export async function computeDistinctValues(
     );
     if (visibleColumns.length === 0) continue;
 
-    const qualifiedTable = quoteTable(table.schema, table.name, opts.databaseType);
+    const qualifiedTable = quoteTable(table.schema, table.name, dialect);
     for (const col of visibleColumns) {
-      const qi = quoteIdent(col.name, opts.databaseType);
-      const sql =
-        `SELECT DISTINCT ${qi} AS val FROM ${qualifiedTable} ` +
-        `WHERE ${qi} IS NOT NULL ORDER BY val LIMIT ${maxValues + 1}`;
+      const qi = dialect.quoteIdent(col.name);
+      // Capped read with no offset — TOP (n) on SQL Server, LIMIT n elsewhere.
+      // Only one of the two fragments is ever non-empty.
+      const sql = (
+        `SELECT DISTINCT ${dialect.topPrefix(maxValues + 1)}${qi} AS val FROM ${qualifiedTable} ` +
+        `WHERE ${qi} IS NOT NULL ORDER BY val ${dialect.limitSuffix(maxValues + 1)}`
+      ).trimEnd();
       jobs.push({ table: table.name, column: col.name, sql });
     }
   }
@@ -133,44 +140,21 @@ export async function computeDistinctValues(
  * etc. are skipped to keep the boot pass fast on large schemas.
  */
 function looksLikeCategorical(sqlType: string): boolean {
-  const t = sqlType.toLowerCase();
-  // String-like
-  if (
-    t === 'text' ||
-    t === 'varchar' ||
-    t === 'character varying' ||
-    t === 'char' ||
-    t === 'character' ||
-    t === 'name' ||
-    t === 'citext' ||
-    t === 'uuid'
-  )
-    return true;
-  // Integer types — covers bool-as-int (0/1), status codes, small enums.
-  if (
-    t === 'integer' ||
-    t === 'int' ||
-    t === 'int4' ||
-    t === 'smallint' ||
-    t === 'int2' ||
-    t === 'tinyint' ||
-    t === 'serial' ||
-    t === 'smallserial'
-  )
-    return true;
-  // Boolean
-  if (t === 'boolean' || t === 'bool') return true;
-  return false;
+  return (
+    // String-like, minus the large-text / structured ones.
+    isCategoricalStringType(sqlType) ||
+    // Narrow integers — covers bool-as-int (0/1), status codes, small enums.
+    isSmallIntType(sqlType) ||
+    // Booleans, including SQL Server's `bit`.
+    isBooleanType(sqlType)
+  );
 }
 
-function quoteIdent(name: string, dbType: string): string {
-  return dbType === 'mysql' ? '`' + name + '`' : '"' + name + '"';
-}
-
-function quoteTable(schema: string | undefined, table: string, dbType: string): string {
-  const t = quoteIdent(table, dbType);
-  if (dbType === 'postgresql' && schema) {
-    return quoteIdent(schema, dbType) + '.' + t;
-  }
-  return t;
+/**
+ * Schema-qualify a table for the boot-time catalogue query. PostgreSQL and
+ * SQL Server namespace tables under a schema; MySQL and SQLite connect to a
+ * single database, so their `quoteTable` drops the schema on its own.
+ */
+function quoteTable(schema: string | undefined, table: string, dialect: Dialect): string {
+  return dialect.quoteTable(schema || dialect.defaultSchema, table);
 }

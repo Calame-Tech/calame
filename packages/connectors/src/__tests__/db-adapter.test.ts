@@ -48,6 +48,14 @@ vi.mock('../sqlite.js', () => ({
   })),
 }));
 
+vi.mock('../mssql.js', () => ({
+  MSSQLConnector: vi.fn().mockImplementation(() => ({
+    testConnection: vi.fn(),
+    introspect: vi.fn(),
+    sampleColumnValues: vi.fn(),
+  })),
+}));
+
 // ---------------------------------------------------------------------------
 // Import subjects after mocks.
 // ---------------------------------------------------------------------------
@@ -104,6 +112,12 @@ describe('buildDatabaseSourceAdapter', () => {
       const adapter = buildDatabaseSourceAdapter('sqlite', 'SQLite');
       expect(adapter.type).toBe('sqlite');
       expect(adapter.displayName).toBe('SQLite');
+    });
+
+    it('sets type and displayName for mssql', () => {
+      const adapter = buildDatabaseSourceAdapter('mssql', 'SQL Server');
+      expect(adapter.type).toBe('mssql');
+      expect(adapter.displayName).toBe('SQL Server');
     });
 
     it('declares the four required capabilities', () => {
@@ -381,17 +395,19 @@ describe('buildDatabaseSourceAdapter', () => {
 
 describe('sourceAdapterRegistry auto-registration', () => {
   // We use a fresh registry to avoid polluting the singleton used by other tests.
-  it('all three DB adapters register without error in a fresh registry', () => {
+  it('every DB adapter registers without error in a fresh registry', () => {
     const fresh = new SourceAdapterRegistry();
     fresh.register(buildDatabaseSourceAdapter('postgresql', 'PostgreSQL'));
     fresh.register(buildDatabaseSourceAdapter('mysql', 'MySQL'));
     fresh.register(buildDatabaseSourceAdapter('sqlite', 'SQLite'));
+    fresh.register(buildDatabaseSourceAdapter('mssql', 'SQL Server'));
     expect(fresh.has('postgresql')).toBe(true);
     expect(fresh.has('mysql')).toBe(true);
     expect(fresh.has('sqlite')).toBe(true);
+    expect(fresh.has('mssql')).toBe(true);
   });
 
-  it('sourceAdapterRegistry gets the three DB adapters after index.ts is loaded', () => {
+  it('sourceAdapterRegistry gets every DB adapter after index.ts is loaded', () => {
     // The module-level registration happens in index.ts when it is imported.
     // This test verifies that registering the adapters into the registry succeeds
     // (no duplicate-registration errors) — index.ts itself is not imported here
@@ -401,7 +417,8 @@ describe('sourceAdapterRegistry auto-registration', () => {
       fresh.register(buildDatabaseSourceAdapter('postgresql', 'PostgreSQL'));
       fresh.register(buildDatabaseSourceAdapter('mysql', 'MySQL'));
       fresh.register(buildDatabaseSourceAdapter('sqlite', 'SQLite'));
+      fresh.register(buildDatabaseSourceAdapter('mssql', 'SQL Server'));
     }).not.toThrow();
-    expect(fresh.list()).toHaveLength(3);
+    expect(fresh.list()).toHaveLength(4);
   });
 });

@@ -15,7 +15,7 @@ const sslConfigSchema: z.ZodType<SslConfig> = z.object({
 
 const connectBodySchema = z.object({
   connectionString: z.string().min(1, 'connectionString is required'),
-  databaseType: z.enum(['postgresql', 'mysql', 'sqlite']).default('postgresql'),
+  databaseType: z.enum(['postgresql', 'mysql', 'sqlite', 'mssql']).default('postgresql'),
   name: z.string().optional(),
   sslConfig: sslConfigSchema.optional(),
 });

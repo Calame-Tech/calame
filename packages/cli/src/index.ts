@@ -188,11 +188,14 @@ const shutdown = () => gracefulShutdown(server, logger, appState);
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
 
-server.listen(config.port, () => {
+server.listen(config.port, config.host, () => {
   const protocol = config.tlsCert ? 'https' : 'http';
-  logger.info(`Calame is running on ${protocol}://localhost:${config.port}${config.basePath}`, {
-    component: 'server',
-  });
+  logger.info(
+    `Calame is running on ${protocol}://localhost:${config.port}${config.basePath} (bound to ${config.host})`,
+    {
+      component: 'server',
+    },
+  );
 
   // Only open a browser in standalone development. Never in packaged desktop
   // mode: the Tauri window already displays the UI, so auto-opening the

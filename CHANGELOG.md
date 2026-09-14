@@ -17,6 +17,13 @@ root `package.json` version flows to the Docker image and `create-calame`).
   sets `CALAME_HOST=0.0.0.0` automatically, so containerized deployments are
   unaffected. The startup log now reports the bound host.
 
+### Security
+
+- Raised transitive dependencies above newly published high-severity advisories
+  via `pnpm.overrides`: `@xmldom/xmldom` (>=0.8.15), `nodemailer` (>=9.1.0),
+  `sharp` (>=0.35.4) and `js-yaml` (>=4.3.2). The nodemailer bump required a
+  small type-only adjustment in the email service.
+
 ## [0.8.0] - 2026-09-07
 
 ### Added

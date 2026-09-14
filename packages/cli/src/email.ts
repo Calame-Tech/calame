@@ -3,7 +3,7 @@ import type { AppConfig } from './config.js';
 import type { SmtpConfig } from './smtp-config.js';
 
 export class EmailService {
-  private transporter: nodemailer.Transporter;
+  private transporter: ReturnType<typeof nodemailer.createTransport>;
   private from: string;
 
   constructor(config: AppConfig) {

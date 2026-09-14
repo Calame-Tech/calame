@@ -6,6 +6,15 @@ export type LogFormat = 'text' | 'json';
 
 export interface AppConfig {
   port: number;
+  /**
+   * Network interface to bind. Defaults to `127.0.0.1` (loopback only) so a
+   * fresh install is not exposed on the LAN — Calame can index local folders,
+   * so an all-interfaces default would publish their contents to the network.
+   * Set `CALAME_HOST=0.0.0.0` to listen on all interfaces (the Docker image
+   * does this so the published port is reachable). Put a reverse proxy /
+   * firewall in front when binding publicly.
+   */
+  host: string;
   basePath: string;
   adminPassword: string | null;
   secretKey: string | null;
@@ -191,6 +200,10 @@ export function loadConfig(overrides?: Partial<AppConfig>): AppConfig {
 
   const config: AppConfig = {
     port: overrides?.port ?? envInt('CALAME_PORT', 4567),
+    // Empty / whitespace-only CALAME_HOST is treated as unset: otherwise ''
+    // would reach server.listen() and Node would bind ALL interfaces, silently
+    // undoing the loopback default.
+    host: overrides?.host ?? ((process.env.CALAME_HOST ?? '').trim() || '127.0.0.1'),
     basePath: envString('CALAME_BASE_PATH', '/') ?? '/',
     adminPassword: envString('CALAME_ADMIN_PASSWORD'),
     secretKey: envString('CALAME_SECRET_KEY'),

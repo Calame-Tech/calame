@@ -5,6 +5,18 @@ All notable changes to Calame are documented here. The format follows
 single-version product (see `docs/adr/0002-single-version-releases.md` — the
 root `package.json` version flows to the Docker image and `create-calame`).
 
+## [Unreleased]
+
+### Changed
+
+- The HTTP server now binds to `127.0.0.1` (loopback) by default instead of all
+  network interfaces. Because Calame can index local folders and serve database
+  profiles over MCP, an all-interfaces default silently exposed that content to
+  the local network on a fresh install. Set `CALAME_HOST=0.0.0.0` to listen on
+  all interfaces (front it with a reverse proxy / firewall). The Docker image
+  sets `CALAME_HOST=0.0.0.0` automatically, so containerized deployments are
+  unaffected. The startup log now reports the bound host.
+
 ## [0.8.0] - 2026-09-07
 
 ### Added

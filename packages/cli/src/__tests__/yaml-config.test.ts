@@ -21,6 +21,7 @@ vi.mock('@calame/connectors', () => ({
 function makeConfig(): AppConfig {
   return {
     port: 4567,
+    host: '127.0.0.1',
     basePath: '/',
     adminPassword: null,
     secretKey: null,

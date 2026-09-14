@@ -91,6 +91,10 @@ RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
 
 ENV NODE_ENV=production
 ENV CALAME_DATA_DIR=/data
+# App defaults to 127.0.0.1 (loopback). In a container that would make the
+# published port unreachable, so bind all interfaces here — the container
+# boundary + the compose port mapping are the exposure control.
+ENV CALAME_HOST=0.0.0.0
 
 EXPOSE 4567
 

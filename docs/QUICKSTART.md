@@ -47,6 +47,7 @@ A persistent volume `calame-data` is created — your admin account, profiles, t
 git clone https://github.com/Calame-Tech/calame.git
 cd calame
 pnpm install
+pnpm build
 pnpm dev
 ```
 
@@ -57,12 +58,30 @@ Same target: http://localhost:4567.
 | Variable | Default | Purpose |
 |---|---|---|
 | `CALAME_PORT` | `4567` | Port to bind |
+| `CALAME_BIND_ADDRESS` | `127.0.0.1` (Compose) | Host address used by Docker Compose port publishing |
 | `CALAME_DATA_DIR` | `/data` (Docker) / cwd (dev) | Where SQLite state + secret live |
 | `CALAME_LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` |
 | `CALAME_LOG_FORMAT` | `text` | `text` / `json` |
 | `CALAME_CORS_ORIGINS` | `*` | Comma-separated origins for the API |
 
 Full list: see `packages/cli/src/config.ts`.
+
+### Local embeddings with Docker
+
+The RAG runtime can start without an embedding provider, but document ingestion
+cannot. For a local, offline-at-runtime setup, stage the pinned model once and
+then start Compose:
+
+```bash
+pnpm install
+pnpm model:fetch -- --output-dir .calame-models
+docker compose up
+```
+
+Compose mounts `.calame-models` read-only at `/models`. You can instead
+configure an embedding-capable AI setting in the UI. To publish Calame beyond
+the local machine, explicitly set `CALAME_BIND_ADDRESS=0.0.0.0` and put it
+behind a firewall or reverse proxy.
 
 ---
 

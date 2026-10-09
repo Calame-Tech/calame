@@ -7,6 +7,30 @@ root `package.json` version flows to the Docker image and `create-calame`).
 
 ## [Unreleased]
 
+## [0.8.3] - 2026-10-09
+
+### Added
+
+- Opt-in note creation and editing over MCP for local folder sources
+  (`rag_write_document`, `rag_read_note`). Off by default; enabled per MCP
+  profile ("Allow file creation and editing") and per ticked local source.
+  Creates `.md`/`.txt` notes without ever overwriting, replaces them only with
+  the `expectedVersion` (SHA-256) last read, and reports "saved" separately from
+  "indexed". Authorization, scopes and folder grants are re-checked on every
+  call, so revoking takes effect immediately. See `docs/rag-write-tool.md`.
+
+### Security
+
+- Note writes refuse Windows path aliases that could bypass the name checks:
+  8.3 short names (`CREDEN~1.TXT`), DOS device names (`CON`, `NUL`, `COM1`…),
+  `<>:"|?*` (NTFS streams) and names ending with a dot or a space. On Windows,
+  where `O_NOFOLLOW` does not exist, the opened file is checked to be the one
+  inspected.
+- Raised dependencies above newly published high/critical advisories via
+  `pnpm.overrides`: `handlebars` (>=4.7.10), `proxy-addr` (>=2.0.8),
+  `@modelcontextprotocol/sdk` (^1.31.0), `undici` (>=7.29.1), `sharp`
+  (>=0.35.5) and `brace-expansion` (>=5.0.11).
+
 ## [0.8.1] - 2026-09-14
 
 ### Changed

@@ -73,6 +73,7 @@ export function buildProfilesData(profiles: Profile[]): Record<string, Record<st
       oauthConfig: p.oauthConfig,
       externalAuthConfig: p.externalAuthConfig,
       responseMode: p.responseMode,
+      documentWrite: p.documentWrite,
       dataScopeRules: p.dataScopeRules,
       sharedTables: p.sharedTables,
       aiSettingNames: p.aiSettingNames,

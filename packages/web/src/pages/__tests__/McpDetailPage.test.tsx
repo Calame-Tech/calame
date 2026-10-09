@@ -90,4 +90,63 @@ describe('McpDetailPage', () => {
     expect(setView).toHaveBeenCalledWith({ page: 'mcp-list' });
     await flushEffects();
   });
+
+  it('file-write capability: off by default, opt-in PATCH, per-source checkbox', async () => {
+    installFetchMock();
+    const fallback = globalThis.fetch;
+    const mock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes('/api/rag/sources')) {
+        return new Response(
+          JSON.stringify({
+            sources: [
+              { id: 'src-local', name: 'Nationex', type: 'local' },
+              { id: 'src-s3', name: 'Bucket', type: 's3' },
+            ],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+      return fallback(input, init);
+    });
+    vi.stubGlobal('fetch', mock);
+    const setProfiles = vi.fn();
+    render(
+      <McpDetailPage
+        view={{ page: 'mcp-detail', profileName: 'default' }}
+        setView={vi.fn()}
+        profiles={[makeProfile()]}
+        setProfiles={setProfiles}
+        serveStatus={makeServeStatus()}
+        configWithProfileOptions={makeConfig()}
+        configurations={[]}
+        setConfigurations={vi.fn()}
+        activeProfileIndex={0}
+        setActiveProfileIndex={vi.fn()}
+        handleProfileDelete={vi.fn(async () => {})}
+        handleConfigurationSave={vi.fn(async () => true)}
+      />,
+    );
+    await flushEffects();
+    fireEvent.click(screen.getByText('Connect'));
+    await flushEffects();
+
+    const toggle = screen.getByRole('switch', { name: 'Toggle file creation and editing' });
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    // Source checkboxes are hidden while the capability is off.
+    expect(screen.queryByRole('checkbox', { name: 'Allow writing in Nationex' })).toBeNull();
+
+    fireEvent.click(toggle);
+    await flushEffects();
+    const patch = mock.mock.calls.find(
+      ([u, init]) =>
+        String(u).includes('/api/profiles/default/document-write') &&
+        (init as RequestInit | undefined)?.method === 'PATCH',
+    );
+    expect(patch).toBeTruthy();
+    expect(JSON.parse((patch![1] as RequestInit).body as string)).toEqual({
+      enabled: true,
+      sources: {},
+    });
+  });
 });

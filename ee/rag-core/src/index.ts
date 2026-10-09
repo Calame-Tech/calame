@@ -134,6 +134,16 @@ export type {
   DocumentStorage,
 } from './source-adapter.js';
 
+// ---------- Opt-in document write tools ----------
+export { registerDocumentWriteTools } from './write-tools.js';
+export type {
+  RegisterDocumentWriteToolsOpts,
+  ResolvedWriteTarget,
+  ResolveWriteTarget,
+  IndexTriggerResult,
+} from './write-tools.js';
+export { writeTextFile, readTextFile, FsWriteError, sha256Hex } from './fs-write.js';
+
 // ---------- Merged RAG tools (Phase 4+) ----------
 export { registerMergedDocumentRagTools } from './merged-rag-tools.js';
 export type { MergedSourceEntry, RegisterMergedDocumentRagToolsOpts } from './merged-rag-tools.js';

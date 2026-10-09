@@ -220,6 +220,34 @@ function McpDetailView({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [togglingResponseMode, setTogglingResponseMode] = useState(false);
   const [responseModeError, setResponseModeError] = useState<string | null>(null);
+  const [savingDocumentWrite, setSavingDocumentWrite] = useState(false);
+  const [documentWriteError, setDocumentWriteError] = useState<string | null>(null);
+  const [localSources, setLocalSources] = useState<Array<{ id: string; name: string }>>([]);
+
+  // Local-folder sources eligible for the opt-in file-write capability.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiFetch('/api/rag/sources', { credentials: 'include' });
+        if (!res.ok) return;
+        const data = (await res.json()) as {
+          sources?: Array<{ id: string; name: string; type: string }>;
+        };
+        if (cancelled) return;
+        setLocalSources(
+          (data.sources ?? [])
+            .filter((s) => s.type === 'local')
+            .map((s) => ({ id: s.id, name: s.name })),
+        );
+      } catch {
+        // EE RAG not available — the section simply lists nothing.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Find the profile by name
   const profileIndex = profiles.findIndex((p) => p.name === profileName);
@@ -463,6 +491,49 @@ function McpDetailView({
     } finally {
       setTogglingResponseMode(false);
     }
+  };
+
+  // Opt-in file creation / editing (off by default)
+  const documentWrite = profile?.documentWrite ?? { enabled: false, sources: {} };
+
+  const saveDocumentWrite = async (next: {
+    enabled: boolean;
+    sources: Record<string, { folder?: string }>;
+  }) => {
+    if (profileIndex < 0) return;
+    setSavingDocumentWrite(true);
+    setDocumentWriteError(null);
+    try {
+      const res = await apiFetch(
+        `/api/profiles/${encodeURIComponent(profileName)}/document-write`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify(next),
+        },
+      );
+      if (!res.ok) throw new Error('Failed to update file-write settings');
+      onProfilesChange((prev) => {
+        const updated = [...prev];
+        updated[profileIndex] = { ...updated[profileIndex], documentWrite: next };
+        return updated;
+      });
+    } catch {
+      setDocumentWriteError(t('documentWrite.error'));
+    } finally {
+      setSavingDocumentWrite(false);
+    }
+  };
+
+  const handleToggleDocumentWrite = () =>
+    saveDocumentWrite({ enabled: !documentWrite.enabled, sources: documentWrite.sources });
+
+  const handleToggleDocumentWriteSource = (sourceId: string) => {
+    const sources = { ...documentWrite.sources };
+    if (sources[sourceId]) delete sources[sourceId];
+    else sources[sourceId] = {};
+    return saveDocumentWrite({ enabled: documentWrite.enabled, sources });
   };
 
   // Lazy-import detail sub-components
@@ -800,6 +871,59 @@ function McpDetailView({
             </button>
             <HelpTip content={t('responseMode.tooltip')} position="left" size="xs" />
           </div>
+        </div>
+
+        {/* File creation / editing (opt-in, off by default) */}
+        <div className="mt-4 pt-3 border-t border-gray-700/50" data-testid="document-write-section">
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="text-xs text-gray-400">{t('documentWrite.label')}</span>
+              {documentWriteError && (
+                <p className="text-xs text-red-400 mt-0.5">{documentWriteError}</p>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                role="switch"
+                aria-checked={documentWrite.enabled}
+                aria-label={t('documentWrite.toggleAriaLabel')}
+                onClick={handleToggleDocumentWrite}
+                disabled={savingDocumentWrite}
+                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-os-500 focus:ring-offset-2 focus:ring-offset-gray-900 disabled:opacity-50 ${
+                  documentWrite.enabled ? 'bg-orange-500' : 'bg-gray-600'
+                }`}
+              >
+                <span
+                  className={`inline-block h-3 w-3 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${
+                    documentWrite.enabled ? 'translate-x-5' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+              <HelpTip content={t('documentWrite.tooltip')} position="left" size="xs" />
+            </div>
+          </div>
+          {documentWrite.enabled && (
+            <div className="mt-2 space-y-1">
+              <p className="text-xs text-gray-500">{t('documentWrite.enabledHint')}</p>
+              {localSources.length === 0 ? (
+                <p className="text-xs text-gray-500">{t('documentWrite.noLocalSources')}</p>
+              ) : (
+                localSources.map((s) => (
+                  <label key={s.id} className="flex items-center gap-2 text-xs text-gray-300">
+                    <input
+                      type="checkbox"
+                      checked={!!documentWrite.sources[s.id]}
+                      disabled={savingDocumentWrite}
+                      aria-label={t('documentWrite.sourceAriaLabel', { name: s.name })}
+                      onChange={() => handleToggleDocumentWriteSource(s.id)}
+                    />
+                    {s.name}
+                  </label>
+                ))
+              )}
+              <p className="text-xs text-gray-500">{t('documentWrite.scopeNote')}</p>
+            </div>
+          )}
         </div>
 
         {/* Chat authentication mode selector */}

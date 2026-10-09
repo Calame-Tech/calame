@@ -97,6 +97,16 @@
       "copied": "Copié !",
       "copy": "Copier"
     },
+    "documentWrite": {
+      "label": "Autoriser la création et la modification de fichiers",
+      "tooltip": "Permet aux clients MCP de créer et de remplacer entièrement des notes .md/.txt dans les dossiers locaux cochés ci-dessous. Désactivé par défaut. L'accès en lecture à un dossier n'implique jamais l'écriture. Les écritures sont limitées en taille, journalisées, et ne suppriment, ne renomment ni ne créent jamais de dossiers.",
+      "enabledHint": "Les clients de ce MCP peuvent créer et remplacer des notes texte dans les dossiers cochés.",
+      "noLocalSources": "Aucune source de dossier local disponible.",
+      "scopeNote": "Un dossier doit aussi faire partie du périmètre de connaissances de ce MCP pour être modifiable.",
+      "sourceAriaLabel": "Autoriser l'écriture dans {name}",
+      "toggleAriaLabel": "Activer la création et la modification de fichiers",
+      "error": "Erreur lors de la mise à jour des paramètres d'écriture de fichiers"
+    },
     "responseMode": {
       "label": "Mode de réponse",
       "error": "Erreur lors du changement de mode de réponse",

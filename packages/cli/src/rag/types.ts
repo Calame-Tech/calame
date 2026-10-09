@@ -57,6 +57,12 @@ export interface RagRuntime {
    */
   syncQueue: SyncQueue;
   /**
+   * Queue-backed sync trigger shared with the poll scheduler / watch manager.
+   * Returns the new job id, or `null` when the source is gone or a sync is
+   * already queued/running for it.
+   */
+  triggerSync: (sourceId: string) => string | null;
+  /**
    * In-process timer registry for sources with `pollingIntervalSeconds` set.
    * Built and started at boot; the sources route updates it on POST/PATCH
    * and DELETE so the scheduler stays consistent with the persisted source

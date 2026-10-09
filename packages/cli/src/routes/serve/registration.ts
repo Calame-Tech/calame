@@ -15,9 +15,17 @@ import {
   registerCalcTool,
   computeDistinctValues,
   sourceAdapterRegistry,
+  applyPiiMasking,
 } from '@calame/core';
 import { DEFAULT_TENANT_ID } from '../../tenancy.js';
-import { distinctValuesCache, distinctValuesCacheKey, getQueryTimeoutMs } from './routing.js';
+import {
+  distinctValuesCache,
+  distinctValuesCacheKey,
+  getQueryTimeoutMs,
+  loadServeProfileForTenant,
+} from './routing.js';
+import { readConfigurationsFile } from '../configurations.js';
+import { mergeConfigurations } from './tool-merger.js';
 import { createOnWriteRequest } from './write-wiring.js';
 import { lookupLiveRagSource } from '../../rag-source-lookup.js';
 
@@ -530,6 +538,147 @@ export async function registerToolsViaAdapters(opts: RegisterAdaptersOptions): P
           state.logger?.warn(`registerMergedDocumentRagTools failed: ${msg}`, {
             component: `mcp/${profileName}`,
           });
+        }
+
+        // Opt-in file write tools. Registered ONLY when the profile explicitly
+        // enabled `documentWrite` AND at least one listed source is a live
+        // local source already inside this profile's document scope.
+        // Authorization is re-evaluated on every call (see resolveTarget).
+        if (profile.documentWrite?.enabled === true) {
+          const inScope = new Map(mergedSources.map((m) => [m.source.id, m.source]));
+          const writableNames = Object.keys(profile.documentWrite.sources ?? {})
+            .map((id) => inScope.get(id))
+            .filter((s): s is Source => !!s && s.type === 'local')
+            .map((s) => s.name);
+          if (writableNames.length > 0) {
+            try {
+              const currentProfile = () => loadServeProfileForTenant(state, tenantId, profileName);
+              type DocumentScope = Extract<ScopeSelection, { kind: 'document' }>;
+              const currentScopes = (liveProfile: import('@calame/core').ServeProfile) => {
+                const scopes: Record<string, ScopeSelection> = { ...(liveProfile.scopes ?? {}) };
+                let configScopes: Record<string, DocumentScope> = {};
+                if (liveProfile.configurations?.length) {
+                  if (!state.db) return {};
+                  const file = readConfigurationsFile(state.db, tenantId);
+                  const configs = liveProfile.configurations.map(
+                    (name) => file.configurations[name],
+                  );
+                  if (configs.some((config) => !config)) return {};
+                  configScopes = mergeConfigurations(configs).documentScopes;
+                  Object.assign(scopes, configScopes);
+                }
+                const ids = liveProfile.sources
+                  ? new Set([...liveProfile.sources, ...Object.keys(configScopes)])
+                  : new Set(Object.keys(scopes));
+                return Object.fromEntries(Object.entries(scopes).filter(([id]) => ids.has(id)));
+              };
+              const noteIdentity = (sourceId: string, relPath: string) => {
+                let documentId: string | undefined;
+                let folderChain: Array<{ id: string; path: string }> = [];
+                try {
+                  const doc = state.db?.raw
+                    .prepare(
+                      'SELECT id FROM rag_documents WHERE source_id = ? AND path = ? AND deleted_at IS NULL',
+                    )
+                    .get(sourceId, relPath) as { id: string } | undefined;
+                  documentId = doc?.id;
+                } catch {
+                  /* No indexed identity yet; path-based grants still apply. */
+                }
+                try {
+                  const rows = state.db?.raw
+                    .prepare('SELECT id, path FROM rag_folders WHERE source_id = ?')
+                    .all(sourceId) as Array<{ id: string; path: string }> | undefined;
+                  const parent = relPath.split('/').slice(0, -1).join('/');
+                  folderChain = (rows ?? []).filter(
+                    (row) =>
+                      row.path === '' || parent === row.path || parent.startsWith(row.path + '/'),
+                  );
+                } catch {
+                  /* Missing index cannot grant access by an unknown folder ID. */
+                }
+                return { documentId, folderChain };
+              };
+              ragRuntime.ragCore.registerDocumentWriteTools({
+                server: mcpServer,
+                profileName,
+                sourceNames: writableNames,
+                resolveTarget: async (sourceName, relPath) => {
+                  const liveProfile = currentProfile();
+                  const dw = liveProfile?.documentWrite;
+                  if (!liveProfile || !dw || dw.enabled !== true)
+                    return { ok: false, reason: 'capability disabled' };
+                  const entry = mergedSources.find((m) => m.source.name === sourceName);
+                  if (!entry) return { ok: false, reason: 'source not in profile scope' };
+                  const liveScope = currentScopes(liveProfile)[entry.source.id];
+                  if (!liveScope || liveScope.kind !== 'document')
+                    return { ok: false, reason: 'source scope revoked' };
+                  const grant = dw.sources?.[entry.source.id];
+                  if (!grant) return { ok: false, reason: 'source not write-enabled' };
+                  const rt = state.ragRuntime;
+                  if (!rt || !state.db) return { ok: false, reason: 'runtime unavailable' };
+                  const live = lookupLiveRagSource(state.db, entry.source.id, tenantId);
+                  if (live.status !== 'ok' || live.source.type !== 'local') {
+                    return { ok: false, reason: 'source unavailable' };
+                  }
+                  let root: unknown;
+                  try {
+                    root = (
+                      JSON.parse(rt.decryptConfig(live.source.configEncrypted)) as {
+                        rootPath?: unknown;
+                      }
+                    ).rootPath;
+                  } catch {
+                    return { ok: false, reason: 'unreadable configuration' };
+                  }
+                  if (typeof root !== 'string' || root.length === 0) {
+                    return { ok: false, reason: 'no root configured' };
+                  }
+                  return {
+                    ok: true,
+                    sourceId: entry.source.id,
+                    sourceName: live.source.name,
+                    rootPath: root,
+                    folder: grant.folder,
+                    readScopes: [entry.selection, liveScope],
+                    ...noteIdentity(entry.source.id, relPath),
+                    piiMaskingOff:
+                      entry.selection.piiMaskingMode === 'off' &&
+                      liveScope.piiMaskingMode === 'off',
+                  };
+                },
+                triggerIndex: (sourceId) => {
+                  const rt = state.ragRuntime;
+                  if (!rt) return { status: 'unavailable' };
+                  const jobId = rt.triggerSync(sourceId);
+                  return jobId ? { status: 'queued', jobId } : { status: 'already_running' };
+                },
+                isIndexed: async (sourceId, relPath, version) => {
+                  const row = state.db?.raw
+                    .prepare(
+                      'SELECT hash FROM rag_documents WHERE source_id = ? AND path = ? AND deleted_at IS NULL',
+                    )
+                    .get(sourceId, relPath) as { hash: string } | undefined;
+                  return !!row && row.hash === version;
+                },
+                maskText: (text, _sourceId, target) => {
+                  const pii = state.ragRuntime?.documentAdapterDeps.piiMasking;
+                  if (!pii?.enabled || target?.piiMaskingOff === true) {
+                    return { text, redacted: false };
+                  }
+                  const r = applyPiiMasking(text, pii.mode, pii.categories);
+                  return { text: r.text, redacted: Object.keys(r.redactionCounts).length > 0 };
+                },
+                onAuditLog,
+              });
+              anyRegistered = true;
+            } catch (err: unknown) {
+              const msg = err instanceof Error ? err.message : String(err);
+              state.logger?.warn(`registerDocumentWriteTools failed: ${msg}`, {
+                component: `mcp/${profileName}`,
+              });
+            }
+          }
         }
       }
     }

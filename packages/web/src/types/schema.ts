@@ -156,6 +156,8 @@ export interface Profile {
   oauthConfig?: OAuthConfig;
   externalAuthConfig?: ExternalAuthConfig;
   responseMode?: 'friendly' | 'raw';
+  /** Opt-in "create and edit files" capability (off by default). */
+  documentWrite?: { enabled: boolean; sources: Record<string, { folder?: string }> };
   /** Row-level data scoping rules. */
   dataScopeRules?: DataScopeRule[];
   /** Tables explicitly shared (no scoping) when dataScopeRules is non-empty. */

@@ -6,6 +6,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, mkdir, writeFile, readFile, symlink, rm, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { FsWriteError, readTextFile, sha256Hex, writeTextFile } from '../fs-write.js';
 
 let root: string;
@@ -121,6 +122,20 @@ describe('writeTextFile', () => {
     ['a.exe', 'extension_not_allowed'],
     ['noext', 'extension_not_allowed'],
     ['a.md.sh', 'extension_not_allowed'],
+    // Windows-hostile names (rejected on every platform; `:` = NTFS stream).
+    ['notes:ads.md', 'invalid_path'],
+    ['notes/a.md:x.md', 'invalid_path'],
+    ['a<b.md', 'invalid_path'],
+    ['a?.md', 'invalid_path'],
+    ['notes./a.md', 'invalid_path'],
+    ['notes /a.md', 'invalid_path'],
+    ['CON.md', 'forbidden_path'],
+    ['nul.txt', 'forbidden_path'],
+    ['notes/COM1.md', 'forbidden_path'],
+    ['COM¹.md', 'forbidden_path'],
+    ['lpt9.txt', 'forbidden_path'],
+    ['CONIN$.md', 'forbidden_path'],
+    ['con .md', 'forbidden_path'],
   ])('rejects path %j → %s', async (relPath, expected) => {
     expect(await code(writeTextFile({ rootPath: root, relPath, content: 'x' }))).toBe(expected);
     expect(await readdir(outside)).toEqual([]);
@@ -190,7 +205,7 @@ describe('writeTextFile', () => {
     expect(
       await code(writeTextFile({ rootPath: root, relPath: 'big.md', content: 'x'.repeat(101), maxBytes: 100 })),
     ).toBe('too_large');
-    expect(await code(writeTextFile({ rootPath: root, relPath: 'nul.md', content: 'a\u0000b' }))).toBe(
+    expect(await code(writeTextFile({ rootPath: root, relPath: 'nul-byte.md', content: 'a\u0000b' }))).toBe(
       'invalid_content',
     );
     // multi-byte: 60 × 2 bytes = 120 > 100
@@ -219,6 +234,49 @@ describe('writeTextFile', () => {
     const r = await readTextFile({ rootPath: root, relPath: 'fm.md' });
     expect(r.content).toBe(md);
     expect(r.version).toBe(sha256Hex(md));
+  });
+});
+
+// Windows 8.3 short names are real on-disk aliases: they must not slip past the
+// hidden / sensitive / node_modules name checks, for read, replace or create.
+describe.runIf(process.platform === 'win32')('Windows short-name aliases', () => {
+  it('refuses 8.3 aliases of sensitive, hidden and node_modules entries', async (ctx) => {
+    await writeFile(join(root, 'credentials.txt'), 'SECRET');
+    await mkdir(join(root, '.obsidian'));
+    await mkdir(join(root, 'node_modules'));
+    const listing = execFileSync('cmd', ['/c', 'dir', '/x', '/a', root], { encoding: 'utf8' });
+    const shortOf = (name: string) =>
+      listing
+        .split(/\r?\n/)
+        .find((line) => line.trimEnd().endsWith(` ${name}`))
+        ?.match(/\s(\S+~\d\S*)\s+\S+$/)?.[1];
+    const creds = shortOf('credentials.txt');
+    const hidden = shortOf('.obsidian');
+    const modules = shortOf('node_modules');
+    // 8.3 generation can be disabled per volume: then there is nothing to alias.
+    if (!creds || !hidden || !modules) ctx.skip();
+
+    expect(await code(readTextFile({ rootPath: root, relPath: creds! }))).toBe('forbidden_path');
+    expect(
+      await code(
+        writeTextFile({ rootPath: root, relPath: creds!, content: 'PWNED', expectedVersion: sha256Hex('SECRET') }),
+      ),
+    ).toBe('forbidden_path');
+    expect(await readFile(join(root, 'credentials.txt'), 'utf8')).toBe('SECRET');
+    expect(await code(writeTextFile({ rootPath: root, relPath: `${hidden}/new.md`, content: 'x' }))).toBe(
+      'forbidden_path',
+    );
+    expect(await code(writeTextFile({ rootPath: root, relPath: `${modules}/new.md`, content: 'x' }))).toBe(
+      'forbidden_path',
+    );
+    expect(await readdir(join(root, '.obsidian'))).toEqual([]);
+    expect(await readdir(join(root, 'node_modules'))).toEqual([]);
+  });
+
+  it('still accepts a case-only alias of an existing folder', async () => {
+    const r = await writeTextFile({ rootPath: root, relPath: 'NOTES/b.md', content: 'x' });
+    expect(r.created).toBe(true);
+    expect(await readFile(join(root, 'notes', 'b.md'), 'utf8')).toBe('x');
   });
 });
 

@@ -32,7 +32,7 @@ import { constants as fsc } from 'node:fs';
 import { link, lstat, open, realpath, rename, unlink } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 import { createHash, randomBytes } from 'node:crypto';
-import { posix } from 'node:path';
+import { posix, relative } from 'node:path';
 
 export const DEFAULT_WRITE_ALLOWED_EXTENSIONS: ReadonlyArray<string> = ['.md', '.txt'];
 export const DEFAULT_WRITE_MAX_BYTES = 256 * 1024;
@@ -115,6 +115,11 @@ const WINDOWS_DRIVE = /^[a-zA-Z]:/;
 const PERCENT_ENCODED_SPECIAL = /%(2e|2f|5c|00)/i;
 const SENSITIVE_NAME =
   /^(\.env.*|.*credentials?.*|.*secrets?.*|.*\.(pem|key|p12|pfx|keystore)|id_(rsa|dsa|ecdsa|ed25519).*|\.npmrc|\.netrc|authorized_keys|passwd|shadow)$/i;
+// Characters Windows refuses in names. `:` would otherwise address an NTFS
+// alternate data stream. Rejected on every platform so vaults stay portable.
+const WINDOWS_INVALID_CHARS = /[<>:"|?*]/;
+// DOS device names, reserved whatever the extension ("CON.md", "COM¹.txt").
+const WINDOWS_RESERVED_STEM = /^(con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³]|conin\$|conout\$)$/i;
 
 export function sha256Hex(data: Buffer | string): string {
   return createHash('sha256').update(data).digest('hex');
@@ -148,6 +153,16 @@ export function validateRelPath(relPath: unknown, limits: FsWriteLimits = {}): s
     }
     if (seg.length > MAX_SEGMENT_LENGTH) {
       throw new FsWriteError('invalid_path', 'Path segment is too long.');
+    }
+    if (WINDOWS_INVALID_CHARS.test(seg)) {
+      throw new FsWriteError('invalid_path', 'Path contains a character that is not allowed in file names.');
+    }
+    // Windows silently strips trailing dots/spaces, which makes the name alias another one.
+    if (/[. ]$/.test(seg)) {
+      throw new FsWriteError('invalid_path', 'Names must not end with a dot or a space.');
+    }
+    if (WINDOWS_RESERVED_STEM.test((seg.split('.')[0] as string).trimEnd())) {
+      throw new FsWriteError('forbidden_path', 'This file or folder name is reserved by Windows.');
     }
     if (seg.startsWith('.')) {
       throw new FsWriteError('forbidden_path', 'Hidden files and folders are not allowed.');
@@ -218,7 +233,40 @@ async function resolveParents(rootPath: string, segments: string[]): Promise<Res
     dir = next;
   }
   const name = segments[segments.length - 1] as string;
-  return { rootReal, dir, target: posix.join(dir, name), name };
+  const target = posix.join(dir, name);
+  if (segments.length > 1) await assertCanonical(rootReal, dir, segments.slice(0, -1));
+  let targetStat;
+  try {
+    targetStat = await lstat(target);
+  } catch {
+    targetStat = undefined; // Missing target: nothing to alias yet.
+  }
+  // Symlinked targets are refused later by readRegular.
+  if (targetStat && !targetStat.isSymbolicLink()) await assertCanonical(rootReal, target, segments);
+  return { rootReal, dir, target, name };
+}
+
+/**
+ * Refuses a path that only reaches an existing entry through an on-disk alias,
+ * e.g. a Windows 8.3 short name (`CREDEN~1.TXT` → `credentials.txt`), which
+ * would slip past the name checks of validateRelPath. The real names must
+ * match the requested ones; only case may differ (case-insensitive volumes,
+ * serialized by the module-wide mutex).
+ */
+async function assertCanonical(rootReal: string, absPath: string, requested: string[]): Promise<void> {
+  let real: string;
+  try {
+    real = await realpath(absPath);
+  } catch {
+    throw new FsWriteError('io_error', 'Cannot resolve path.');
+  }
+  const actual = relative(rootReal, real).split(/[\\/]/).filter(Boolean);
+  const fold = (s: string) => s.normalize('NFC').toLowerCase();
+  const same =
+    actual.length === requested.length && actual.every((seg, i) => fold(seg) === fold(requested[i] as string));
+  if (!same) {
+    throw new FsWriteError('forbidden_path', 'Use the real file or folder name (short or aliased names are not allowed).');
+  }
 }
 
 async function readRegular(
@@ -233,6 +281,11 @@ async function readRegular(
     fh = await open(target, fsc.O_RDONLY | fsc.O_NOFOLLOW);
     const fst = await fh.stat();
     if (!fst.isFile()) throw new FsWriteError('not_a_regular_file', 'Target is not a regular file.');
+    // O_NOFOLLOW does not exist on Windows (constant undefined → no-op): make
+    // sure the opened file is still the one lstat inspected.
+    if (fst.ino !== st.ino || fst.dev !== st.dev) {
+      throw new FsWriteError('symlink_refused', 'Target changed while it was being opened.');
+    }
     if (fst.size > maxBytes) throw new FsWriteError('too_large', 'Existing file exceeds the size limit.');
     const buf = await fh.readFile();
     return { buf, ino: fst.ino, mtimeMs: fst.mtimeMs, size: fst.size, mode: fst.mode & 0o777 };

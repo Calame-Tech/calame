@@ -57,9 +57,17 @@ Error codes: `not_permitted`, `outside_authorized_folder`, `invalid_path`,
 - Paths: relative only; `..`, empty/`.` segments, backslashes, control characters,
   encoded separators/dots rejected; hidden files/folders, `node_modules` and
   sensitive names (credentials, keys…) refused.
+- Windows-hostile names are rejected on every platform: `<>:"|?*` (`:` would
+  address an NTFS alternate data stream), names ending with a dot or a space,
+  and DOS device names (`CON`, `NUL`, `COM1`, `LPT1`… whatever the extension).
+- Existing folders and files must be reached by their real on-disk name (case
+  aside): aliases such as Windows 8.3 short names (`CREDEN~1.TXT`) are refused,
+  so they cannot bypass the name checks above.
 - Symlinks are refused (root, parents, target). Parent folders are **never created**.
+  On Windows `O_NOFOLLOW` does not exist: the protection relies on the `lstat`
+  walk plus a check that the opened file is the one inspected (same inode/device).
 - Only `.md` / `.txt`, UTF-8, default max 256 KiB (hard cap 2 MiB).
-- Writes are atomic: temp file (`O_EXCL|O_NOFOLLOW`) + fsync, then rename (replace)
+- Writes are atomic: temp file (`O_EXCL`, plus `O_NOFOLLOW` where available) + fsync, then rename (replace)
   or `link()` (create-only, race-safe).
 - No delete, rename, append, patch or binary files.
 - Each attempt (success or refusal) goes through the profile audit log.

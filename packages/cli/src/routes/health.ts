@@ -9,19 +9,43 @@ const __dirname = path.dirname(__filename);
 
 let cachedVersion: string | null = null;
 
-function getVersion(): string {
+/**
+ * Resolve the single Calame product version for /health.
+ *
+ * Packaged builds inject CALAME_VERSION from the root package.json. Source and
+ * Docker workspace layouts can read that same root file directly. The CLI
+ * package version is only a compatibility fallback for standalone installs.
+ */
+export function getVersion(): string {
   if (cachedVersion) return cachedVersion;
-  // In a packaged/bundled server, `__dirname` points at the bundle location, so the relative
-  // path to package.json no longer resolves — fall back to CALAME_VERSION (baked in by the
-  // packaging step), then to 'unknown'. Never throw: /health must always respond.
-  try {
-    const pkgPath = path.resolve(__dirname, '../../package.json');
-    const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
-    cachedVersion = pkg.version ?? process.env.CALAME_VERSION ?? 'unknown';
-  } catch {
-    cachedVersion = process.env.CALAME_VERSION ?? 'unknown';
+
+  if (process.env.CALAME_VERSION) {
+    cachedVersion = process.env.CALAME_VERSION;
+    return process.env.CALAME_VERSION;
   }
-  return cachedVersion!;
+
+  const packageCandidates = [
+    // packages/cli/{src,dist}/routes -> repository or /app root
+    path.resolve(__dirname, '../../../../package.json'),
+    // Standalone CLI package fallback
+    path.resolve(__dirname, '../../package.json'),
+  ];
+
+  for (const pkgPath of packageCandidates) {
+    try {
+      const pkg: { version?: unknown } = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+      const version = pkg.version;
+      if (typeof version === 'string' && version.length > 0) {
+        cachedVersion = version;
+        return version;
+      }
+    } catch {
+      // Try the next layout. /health must never fail because metadata is absent.
+    }
+  }
+
+  cachedVersion = 'unknown';
+  return cachedVersion;
 }
 
 export function registerHealthRoute(app: Express, state: AppState): void {

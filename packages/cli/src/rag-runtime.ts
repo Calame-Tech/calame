@@ -416,6 +416,7 @@ export async function initRagRuntime(
     decryptConfig,
     resolveConnector,
     syncQueue,
+    triggerSync,
     pollScheduler,
     watchManager,
     rateLimiter,

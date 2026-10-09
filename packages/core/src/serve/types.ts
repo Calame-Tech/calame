@@ -136,6 +136,18 @@ export interface ServeProfile {
    * - 'raw': original technical names and types are exposed as-is.
    */
   responseMode?: 'friendly' | 'raw';
+  /**
+   * Opt-in "create and edit files" capability (MCP tool `rag_write_document`).
+   * Absent / `enabled !== true` → the profile is read-only (default; legacy
+   * profiles are never migrated to enabled). Even when enabled, only the
+   * listed LOCAL document sources are writable — read access to a source
+   * never implies write access. `folder` optionally restricts writes to a
+   * sub-folder (relative, forward slashes) of the source root.
+   */
+  documentWrite?: {
+    enabled: boolean;
+    sources: Record<string, { folder?: string }>;
+  };
   configurations?: string[]; // References to ServeConfiguration names
   /** Names of AI settings (from ai_settings table) usable by clients of this MCP. First = default. */
   aiSettingNames?: string[];

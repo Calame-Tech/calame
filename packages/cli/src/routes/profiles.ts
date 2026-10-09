@@ -4,7 +4,8 @@ import type { CalameDatabase } from '../database.js';
 import { z } from 'zod';
 import { upgradeProfileShape } from '@calame/core';
 import type { ServeProfile } from '@calame/core';
-import { getTenantId } from '../tenancy.js';
+import { getTenantId, DEFAULT_TENANT_ID } from '../tenancy.js';
+import { lookupLiveRagSource } from '../rag-source-lookup.js';
 
 export interface ProfileWarning {
   profile: string;
@@ -386,6 +387,98 @@ export function registerProfilesRoute(app: Express, state: AppState): void {
       const message = error instanceof Error ? error.message : 'Unknown error';
       state.logger?.error('Response mode update error', { component: 'profiles', error: message });
       res.status(500).json({ success: false, message: 'Failed to update response mode' });
+    }
+  });
+
+  // Opt-in "create and edit files" capability. Disabled by default; only
+  // LOCAL document sources of the caller's tenant can be listed as writable.
+  const documentWriteSchema = z.object({
+    enabled: z.boolean(),
+    sources: z
+      .record(
+        z.string().min(1).max(200),
+        z.object({
+          folder: z
+            .string()
+            .max(512)
+            .refine(
+              (f) =>
+                !f.startsWith('/') &&
+                !f.includes('\\') &&
+                !f.includes('//') &&
+                !f.split('').some((c) => c.charCodeAt(0) < 0x20) &&
+                !f.split('/').some((seg) => seg === '.' || seg === '..'),
+              'Invalid folder',
+            )
+            .optional(),
+        }),
+      )
+      .default({}),
+  });
+
+  app.patch('/api/profiles/:name/document-write', async (req, res) => {
+    const profileName = req.params.name as string;
+
+    const parsed = documentWriteSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        success: false,
+        message: 'Invalid request body',
+        errors: parsed.error.issues,
+      });
+      return;
+    }
+    const { enabled, sources } = parsed.data;
+
+    try {
+      const db = await getDb();
+      const tenantId = getTenantId(req);
+
+      // Every writable source must be a live LOCAL source of this tenant.
+      for (const sourceId of Object.keys(sources)) {
+        const lookup = lookupLiveRagSource(db, sourceId, tenantId);
+        if (lookup.status !== 'ok' || lookup.source.type !== 'local') {
+          res.status(400).json({
+            success: false,
+            message: 'Only local folder sources of this workspace can be made writable.',
+          });
+          return;
+        }
+      }
+
+      const row = db.raw
+        .prepare("SELECT data FROM profiles WHERE key = 'main' AND tenant_id = ?")
+        .get(tenantId) as { data: string } | undefined;
+      const data = row
+        ? (JSON.parse(row.data) as { profiles?: Record<string, Record<string, unknown>> })
+        : undefined;
+      if (!data?.profiles?.[profileName]) {
+        res.status(404).json({ success: false, message: `Profile "${profileName}" not found.` });
+        return;
+      }
+
+      try {
+        data.profiles[profileName] = upgradeProfileShape(
+          data.profiles[profileName],
+        ) as unknown as Record<string, unknown>;
+      } catch {
+        /* keep as-is */
+      }
+      data.profiles[profileName].documentWrite = { enabled, sources };
+
+      db.raw
+        .prepare("INSERT OR REPLACE INTO profiles (key, data, tenant_id) VALUES ('main', ?, ?)")
+        .run(JSON.stringify(data), tenantId);
+
+      if (state.serveProfiles[profileName] && tenantId === DEFAULT_TENANT_ID) {
+        state.serveProfiles[profileName].documentWrite = { enabled, sources };
+      }
+
+      res.json({ success: true, profile: data.profiles[profileName] });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      state.logger?.error('Document write update error', { component: 'profiles', error: message });
+      res.status(500).json({ success: false, message: 'Failed to update file-write settings' });
     }
   });
 }

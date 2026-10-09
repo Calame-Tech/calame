@@ -67,7 +67,7 @@ export interface RegisterMergedDocumentRagToolsOpts {
 // Allowlist helpers (mirrors source-adapter.ts)
 // ---------------------------------------------------------------------------
 
-function isDocumentAllowedByChain(
+export function isDocumentAllowedByChain(
   documentId: string,
   documentPath: string,
   folderChain: ReadonlyArray<{ id: string; path: string }>,

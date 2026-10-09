@@ -97,6 +97,16 @@
       "copied": "Copied!",
       "copy": "Copy"
     },
+    "documentWrite": {
+      "label": "Allow file creation and editing",
+      "tooltip": "Lets MCP clients create and fully replace .md/.txt notes in the local folders ticked below. Off by default. Read access to a folder never implies write access. Writes are size-limited, audited, and never delete, rename or create folders.",
+      "enabledHint": "Clients of this MCP can create and replace text notes in the ticked folders.",
+      "noLocalSources": "No local folder source available.",
+      "scopeNote": "A folder must also be part of this MCP's knowledge scope to be writable.",
+      "sourceAriaLabel": "Allow writing in {name}",
+      "toggleAriaLabel": "Toggle file creation and editing",
+      "error": "Error updating file-write settings"
+    },
     "responseMode": {
       "label": "Response Mode",
       "error": "Error changing response mode",

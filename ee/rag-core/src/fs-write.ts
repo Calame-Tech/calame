@@ -155,7 +155,10 @@ export function validateRelPath(relPath: unknown, limits: FsWriteLimits = {}): s
       throw new FsWriteError('invalid_path', 'Path segment is too long.');
     }
     if (WINDOWS_INVALID_CHARS.test(seg)) {
-      throw new FsWriteError('invalid_path', 'Path contains a character that is not allowed in file names.');
+      throw new FsWriteError(
+        'invalid_path',
+        'Path contains a character that is not allowed in file names.',
+      );
     }
     // Windows silently strips trailing dots/spaces, which makes the name alias another one.
     if (/[. ]$/.test(seg)) {
@@ -206,7 +209,8 @@ async function resolveParents(rootPath: string, segments: string[]): Promise<Res
     if (rootStat.isSymbolicLink()) {
       throw new FsWriteError('symlink_refused', 'The source root must not be a symbolic link.');
     }
-    if (!rootStat.isDirectory()) throw new FsWriteError('root_unavailable', 'Source root unavailable.');
+    if (!rootStat.isDirectory())
+      throw new FsWriteError('root_unavailable', 'Source root unavailable.');
     rootReal = await realpath(rootPath);
   } catch (err) {
     if (err instanceof FsWriteError) throw err;
@@ -220,7 +224,10 @@ async function resolveParents(rootPath: string, segments: string[]): Promise<Res
       st = await lstat(next);
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-        throw new FsWriteError('parent_missing', 'A parent folder does not exist (it is never created).');
+        throw new FsWriteError(
+          'parent_missing',
+          'A parent folder does not exist (it is never created).',
+        );
       }
       throw new FsWriteError('io_error', 'Cannot inspect parent folder.');
     }
@@ -253,7 +260,11 @@ async function resolveParents(rootPath: string, segments: string[]): Promise<Res
  * match the requested ones; only case may differ (case-insensitive volumes,
  * serialized by the module-wide mutex).
  */
-async function assertCanonical(rootReal: string, absPath: string, requested: string[]): Promise<void> {
+async function assertCanonical(
+  rootReal: string,
+  absPath: string,
+  requested: string[],
+): Promise<void> {
   let real: string;
   try {
     real = await realpath(absPath);
@@ -263,9 +274,13 @@ async function assertCanonical(rootReal: string, absPath: string, requested: str
   const actual = relative(rootReal, real).split(/[\\/]/).filter(Boolean);
   const fold = (s: string) => s.normalize('NFC').toLowerCase();
   const same =
-    actual.length === requested.length && actual.every((seg, i) => fold(seg) === fold(requested[i] as string));
+    actual.length === requested.length &&
+    actual.every((seg, i) => fold(seg) === fold(requested[i] as string));
   if (!same) {
-    throw new FsWriteError('forbidden_path', 'Use the real file or folder name (short or aliased names are not allowed).');
+    throw new FsWriteError(
+      'forbidden_path',
+      'Use the real file or folder name (short or aliased names are not allowed).',
+    );
   }
 }
 
@@ -276,17 +291,20 @@ async function readRegular(
   let fh: FileHandle | undefined;
   try {
     const st = await lstat(target);
-    if (st.isSymbolicLink()) throw new FsWriteError('symlink_refused', 'Target is a symbolic link.');
+    if (st.isSymbolicLink())
+      throw new FsWriteError('symlink_refused', 'Target is a symbolic link.');
     if (!st.isFile()) throw new FsWriteError('not_a_regular_file', 'Target is not a regular file.');
     fh = await open(target, fsc.O_RDONLY | fsc.O_NOFOLLOW);
     const fst = await fh.stat();
-    if (!fst.isFile()) throw new FsWriteError('not_a_regular_file', 'Target is not a regular file.');
+    if (!fst.isFile())
+      throw new FsWriteError('not_a_regular_file', 'Target is not a regular file.');
     // O_NOFOLLOW does not exist on Windows (constant undefined → no-op): make
     // sure the opened file is still the one lstat inspected.
     if (fst.ino !== st.ino || fst.dev !== st.dev) {
       throw new FsWriteError('symlink_refused', 'Target changed while it was being opened.');
     }
-    if (fst.size > maxBytes) throw new FsWriteError('too_large', 'Existing file exceeds the size limit.');
+    if (fst.size > maxBytes)
+      throw new FsWriteError('too_large', 'Existing file exceeds the size limit.');
     const buf = await fh.readFile();
     return { buf, ino: fst.ino, mtimeMs: fst.mtimeMs, size: fst.size, mode: fst.mode & 0o777 };
   } catch (err) {
@@ -356,7 +374,10 @@ export async function writeTextFile(input: WriteTextFileInput): Promise<WriteTex
     throw new FsWriteError('too_large', `Content exceeds the ${maxBytes}-byte limit.`);
   }
   if (input.expectedVersion !== undefined && !/^[0-9a-f]{64}$/.test(input.expectedVersion)) {
-    throw new FsWriteError('version_required', 'expectedVersion must be a 64-char sha256 hex string.');
+    throw new FsWriteError(
+      'version_required',
+      'expectedVersion must be a 64-char sha256 hex string.',
+    );
   }
 
   await resolveParents(input.rootPath, segments);
@@ -366,17 +387,31 @@ export async function writeTextFile(input: WriteTextFileInput): Promise<WriteTex
   return withLock('document-write', async () => {
     // Re-resolve inside the lock: shrinks the window for parent swaps.
     const { dir, target, name } = await resolveParents(input.rootPath, segments);
-    const tmp = posix.join(dir, `.calame-tmp-${randomBytes(8).toString('hex')}-${name}`.slice(0, 200));
+    const tmp = posix.join(
+      dir,
+      `.calame-tmp-${randomBytes(8).toString('hex')}-${name}`.slice(0, 200),
+    );
     let tmpCreated = false;
     try {
       const existing = await readRegular(target, ABSOLUTE_WRITE_MAX_BYTES);
 
       if (input.expectedVersion === undefined) {
-        if (existing) throw new FsWriteError('already_exists', 'File already exists; pass expectedVersion to replace it.');
+        if (existing)
+          throw new FsWriteError(
+            'already_exists',
+            'File already exists; pass expectedVersion to replace it.',
+          );
       } else {
-        if (!existing) throw new FsWriteError('not_found', 'File does not exist; omit expectedVersion to create it.');
+        if (!existing)
+          throw new FsWriteError(
+            'not_found',
+            'File does not exist; omit expectedVersion to create it.',
+          );
         if (sha256Hex(existing.buf) !== input.expectedVersion) {
-          throw new FsWriteError('version_conflict', 'The file changed since you read it. Re-read it and retry.');
+          throw new FsWriteError(
+            'version_conflict',
+            'The file changed since you read it. Re-read it and retry.',
+          );
         }
       }
 
@@ -401,7 +436,10 @@ export async function writeTextFile(input: WriteTextFileInput): Promise<WriteTex
           const code = (err as NodeJS.ErrnoException).code;
           if (code === 'EEXIST') throw new FsWriteError('already_exists', 'File already exists.');
           if (code === 'EPERM' || code === 'ENOTSUP' || code === 'EXDEV' || code === 'ENOSYS') {
-            throw new FsWriteError('unsupported_filesystem', 'Filesystem does not support atomic create.');
+            throw new FsWriteError(
+              'unsupported_filesystem',
+              'Filesystem does not support atomic create.',
+            );
           }
           throw new FsWriteError('io_error', 'Cannot create file.');
         }
@@ -416,7 +454,10 @@ export async function writeTextFile(input: WriteTextFileInput): Promise<WriteTex
           again.size !== existing!.size ||
           sha256Hex(again.buf) !== input.expectedVersion
         ) {
-          throw new FsWriteError('version_conflict', 'The file changed during the write. Re-read it and retry.');
+          throw new FsWriteError(
+            'version_conflict',
+            'The file changed during the write. Re-read it and retry.',
+          );
         }
         try {
           await rename(tmp, target);

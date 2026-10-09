@@ -17,7 +17,10 @@ vi.mock('@calame/core', async (original) => {
   return {
     ...actual,
     registerCalcTool: vi.fn(),
-    sourceAdapterRegistry: { get: () => ({ type: 'local', capabilities: ['read'] }), register: vi.fn() },
+    sourceAdapterRegistry: {
+      get: () => ({ type: 'local', capabilities: ['read'] }),
+      register: vi.fn(),
+    },
   };
 });
 
@@ -52,7 +55,8 @@ describe('document writes through the real host registration', () => {
       source_id TEXT, path TEXT, hash TEXT, deleted_at TEXT
     );`);
     for (const id of ['local', 'other']) {
-      db.raw.prepare('INSERT INTO rag_sources (id,type,name,config_encrypted) VALUES (?,?,?,?)')
+      db.raw
+        .prepare('INSERT INTO rag_sources (id,type,name,config_encrypted) VALUES (?,?,?,?)')
         .run(id, 'local', id, JSON.stringify({ rootPath: dir }));
     }
     handlers = new Map();
@@ -66,7 +70,8 @@ describe('document writes through the real host registration', () => {
       ragCore: { registerDocumentWriteTools, registerMergedDocumentRagTools: vi.fn() },
     } as unknown as NonNullable<AppState['ragRuntime']>;
     profile = {
-      label: 'Host test', sources: ['local', 'other'],
+      label: 'Host test',
+      sources: ['local', 'other'],
       scopes: {
         local: { kind: 'document', mode: 'allowAll' },
         other: { kind: 'document', mode: 'allowAll' },
@@ -85,19 +90,31 @@ describe('document writes through the real host registration', () => {
     const liveProfile = loadServeProfileForTenant(state, tenantId, 'notes');
     if (!liveProfile) throw new Error('Missing profile fixture');
     const file = readConfigurationsFile(db, tenantId);
-    const configs = (liveProfile.configurations ?? []).map((name) => file.configurations[name]).filter(Boolean);
+    const configs = (liveProfile.configurations ?? [])
+      .map((name) => file.configurations[name])
+      .filter(Boolean);
     const merged = mergeConfigurations(configs);
-    const server = actualServer ?? {
-      tool: (name: string, ...args: unknown[]) => {
-        handlers.set(name, args[args.length - 1] as Handler);
-      },
-    } as unknown as McpServer;
+    const server =
+      actualServer ??
+      ({
+        tool: (name: string, ...args: unknown[]) => {
+          handlers.set(name, args[args.length - 1] as Handler);
+        },
+      } as unknown as McpServer);
     await registerToolsViaAdapters({
-      mcpServer: server, profile: liveProfile, state, profileName: 'notes', tenantId,
-      profileConnections: [], effectiveSelectedTables: {},
-      effectiveTableOptions: undefined, effectiveColumnMasking: undefined,
-      effectiveDocumentScopes: merged.documentScopes, scopeGuard: {} as never,
-      responseMode: 'raw', wrapResponse: (value) => value,
+      mcpServer: server,
+      profile: liveProfile,
+      state,
+      profileName: 'notes',
+      tenantId,
+      profileConnections: [],
+      effectiveSelectedTables: {},
+      effectiveTableOptions: undefined,
+      effectiveColumnMasking: undefined,
+      effectiveDocumentScopes: merged.documentScopes,
+      scopeGuard: {} as never,
+      responseMode: 'raw',
+      wrapResponse: (value) => value,
       resolvedTokenLabel: 'host-regression',
     });
   }
@@ -114,52 +131,92 @@ describe('document writes through the real host registration', () => {
   }
 
   const write = (source = 'local', filename = 'nationex.md') =>
-    call('rag_write_document', { source, path: filename, content: '---\nstatus: open\n---\nResume' });
-
-  it.skipIf(!process.env.CALAME_TEST_MCP_PORT)('smokes actual MCP HTTP tools/list and tools/call with live revocation', async () => {
-    const port = Number(process.env.CALAME_TEST_MCP_PORT);
-    if (!Number.isInteger(port) || port < 8100 || port > 8199) throw new Error('Smoke port must be prechecked in 8100-8199');
-    const mcp = new McpServer({ name: 'calame-document-write-smoke', version: '1' });
-    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: randomUUID });
-    const client = new Client({ name: 'write-smoke-client', version: '1' });
-    await register('default', mcp);
-    await mcp.connect(transport);
-    const app = express();
-    app.use(express.json());
-    app.all('/mcp', (req, res) => {
-      void transport.handleRequest(req, res, req.body).catch(() => { if (!res.headersSent) res.sendStatus(500); });
+    call('rag_write_document', {
+      source,
+      path: filename,
+      content: '---\nstatus: open\n---\nResume',
     });
-    const listener = app.listen(port, '127.0.0.1');
-    await new Promise<void>((resolve, reject) => { listener.once('listening', resolve); listener.once('error', reject); });
-    try {
-      await client.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`)));
-      const tools = await client.listTools();
-      expect(tools.tools.map((tool) => tool.name)).toEqual(['rag_write_document', 'rag_read_note']);
-      const savedReply = await client.callTool({ name: 'rag_write_document', arguments: {
-        source: 'local', path: 'protocol.md', content: 'Actual MCP round-trip',
-      } });
-      const saved = JSON.parse((savedReply.content as Array<{ text: string }>)[0]!.text);
-      expect(saved).toMatchObject({ saved: true, operation: 'created' });
-      const readReply = await client.callTool({ name: 'rag_read_note', arguments: { source: 'local', path: 'protocol.md' } });
-      expect(JSON.parse((readReply.content as Array<{ text: string }>)[0]!.text))
-        .toMatchObject({ content: 'Actual MCP round-trip', version: saved.version });
-      state.serveProfiles.notes = { ...profile, documentWrite: { enabled: false, sources: {} } };
-      const refused = await client.callTool({ name: 'rag_write_document', arguments: {
-        source: 'local', path: 'protocol.md', content: 'denied', expectedVersion: saved.version,
-      } });
-      expect(refused.isError).toBe(true);
-      expect(JSON.parse((refused.content as Array<{ text: string }>)[0]!.text).code).toBe('not_permitted');
-      expect(await readFile(path.join(dir, 'protocol.md'), 'utf8')).toBe('Actual MCP round-trip');
-    } finally {
-      await client.close();
-      await mcp.close();
-      listener.closeAllConnections();
-      await new Promise<void>((resolve, reject) => listener.close((error) => error ? reject(error) : resolve()));
-    }
-  }, 15_000);
+
+  it.skipIf(!process.env.CALAME_TEST_MCP_PORT)(
+    'smokes actual MCP HTTP tools/list and tools/call with live revocation',
+    async () => {
+      const port = Number(process.env.CALAME_TEST_MCP_PORT);
+      if (!Number.isInteger(port) || port < 8100 || port > 8199)
+        throw new Error('Smoke port must be prechecked in 8100-8199');
+      const mcp = new McpServer({ name: 'calame-document-write-smoke', version: '1' });
+      const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: randomUUID });
+      const client = new Client({ name: 'write-smoke-client', version: '1' });
+      await register('default', mcp);
+      await mcp.connect(transport);
+      const app = express();
+      app.use(express.json());
+      app.all('/mcp', (req, res) => {
+        void transport.handleRequest(req, res, req.body).catch(() => {
+          if (!res.headersSent) res.sendStatus(500);
+        });
+      });
+      const listener = app.listen(port, '127.0.0.1');
+      await new Promise<void>((resolve, reject) => {
+        listener.once('listening', resolve);
+        listener.once('error', reject);
+      });
+      try {
+        await client.connect(
+          new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`)),
+        );
+        const tools = await client.listTools();
+        expect(tools.tools.map((tool) => tool.name)).toEqual([
+          'rag_write_document',
+          'rag_read_note',
+        ]);
+        const savedReply = await client.callTool({
+          name: 'rag_write_document',
+          arguments: {
+            source: 'local',
+            path: 'protocol.md',
+            content: 'Actual MCP round-trip',
+          },
+        });
+        const saved = JSON.parse((savedReply.content as Array<{ text: string }>)[0]!.text);
+        expect(saved).toMatchObject({ saved: true, operation: 'created' });
+        const readReply = await client.callTool({
+          name: 'rag_read_note',
+          arguments: { source: 'local', path: 'protocol.md' },
+        });
+        expect(JSON.parse((readReply.content as Array<{ text: string }>)[0]!.text)).toMatchObject({
+          content: 'Actual MCP round-trip',
+          version: saved.version,
+        });
+        state.serveProfiles.notes = { ...profile, documentWrite: { enabled: false, sources: {} } };
+        const refused = await client.callTool({
+          name: 'rag_write_document',
+          arguments: {
+            source: 'local',
+            path: 'protocol.md',
+            content: 'denied',
+            expectedVersion: saved.version,
+          },
+        });
+        expect(refused.isError).toBe(true);
+        expect(JSON.parse((refused.content as Array<{ text: string }>)[0]!.text).code).toBe(
+          'not_permitted',
+        );
+        expect(await readFile(path.join(dir, 'protocol.md'), 'utf8')).toBe('Actual MCP round-trip');
+      } finally {
+        await client.close();
+        await mcp.close();
+        listener.closeAllConnections();
+        await new Promise<void>((resolve, reject) =>
+          listener.close((error) => (error ? reject(error) : resolve())),
+        );
+      }
+    },
+    15_000,
+  );
 
   it.each([undefined, { enabled: false, sources: { local: {} } }])(
-    'does not register callable document tools when disabled or absent: %j', async (setting) => {
+    'does not register callable document tools when disabled or absent: %j',
+    async (setting) => {
       profile.documentWrite = setting;
       await register();
       expect([...handlers.keys()]).not.toContain('rag_write_document');
@@ -212,12 +269,20 @@ describe('document writes through the real host registration', () => {
     expect(read.version).toBe(saved.version);
     expect(read.indexed).toBe(false);
     const updated = await call('rag_write_document', {
-      source: 'local', path: 'nationex.md', content: 'Updated', expectedVersion: read.version,
+      source: 'local',
+      path: 'nationex.md',
+      content: 'Updated',
+      expectedVersion: read.version,
     });
     expect(updated).toMatchObject({ saved: true, operation: 'replaced' });
-    expect(await call('rag_write_document', {
-      source: 'local', path: 'nationex.md', content: 'Lost update', expectedVersion: read.version,
-    })).toMatchObject({ code: 'version_conflict', isError: true });
+    expect(
+      await call('rag_write_document', {
+        source: 'local',
+        path: 'nationex.md',
+        content: 'Lost update',
+        expectedVersion: read.version,
+      }),
+    ).toMatchObject({ code: 'version_conflict', isError: true });
     expect(await readFile(path.join(dir, 'nationex.md'), 'utf8')).toBe('Updated');
     // This harness deliberately does not fabricate an indexed row. A real
     // pipeline integration test is still required to prove indexed=true.
@@ -242,11 +307,15 @@ describe('document writes through the real host registration', () => {
     await write();
     handlers.clear();
     profile.scopes!.local = {
-      kind: 'document', mode: 'allowList', allowedFolders: ['restricted'], allowedDocuments: [],
+      kind: 'document',
+      mode: 'allowList',
+      allowedFolders: ['restricted'],
+      allowedDocuments: [],
     } as never;
     await register();
-    expect(await call('rag_read_note', { source: 'local', path: 'nationex.md' }))
-      .toMatchObject({ isError: true });
+    expect(await call('rag_read_note', { source: 'local', path: 'nationex.md' })).toMatchObject({
+      isError: true,
+    });
   });
 
   // =======================================================================
@@ -283,14 +352,22 @@ describe('document writes through the real host registration', () => {
     expect(read.version).toBe(saved.version);
 
     // DB updates must revoke both operations in this already-open session.
-    db.raw.prepare("UPDATE profiles SET data = ? WHERE key = 'main' AND tenant_id = ?")
-      .run(JSON.stringify({ profiles: { notes: { ...tenantProfile, documentWrite: { enabled: false, sources: {} } } } }), tenantId);
-    expect(await call('rag_read_note', { source: 'local', path: 'nationex.md' }))
-      .toMatchObject({ isError: true, code: 'not_permitted' });
+    db.raw.prepare("UPDATE profiles SET data = ? WHERE key = 'main' AND tenant_id = ?").run(
+      JSON.stringify({
+        profiles: { notes: { ...tenantProfile, documentWrite: { enabled: false, sources: {} } } },
+      }),
+      tenantId,
+    );
+    expect(await call('rag_read_note', { source: 'local', path: 'nationex.md' })).toMatchObject({
+      isError: true,
+      code: 'not_permitted',
+    });
     expect(await write()).toMatchObject({ isError: true, code: 'not_permitted' });
     db.raw.prepare("DELETE FROM profiles WHERE key = 'main' AND tenant_id = ?").run(tenantId);
-    expect(await call('rag_read_note', { source: 'local', path: 'nationex.md' }))
-      .toMatchObject({ isError: true, code: 'not_permitted' });
+    expect(await call('rag_read_note', { source: 'local', path: 'nationex.md' })).toMatchObject({
+      isError: true,
+      code: 'not_permitted',
+    });
     expect(await write()).toMatchObject({ isError: true, code: 'not_permitted' });
   });
 
@@ -326,12 +403,16 @@ describe('document writes through the real host registration', () => {
     expect(saved.saved).toBe(true);
 
     // Now delete the configuration row.
-    db.raw.prepare('DELETE FROM configurations WHERE name = ? AND tenant_id = ?').run('tenant-cfg', tenantId);
+    db.raw
+      .prepare('DELETE FROM configurations WHERE name = ? AND tenant_id = ?')
+      .run('tenant-cfg', tenantId);
 
     // Both read and write must now fail because the config path returns empty scopes.
     expect(await write()).toMatchObject({ isError: true, code: 'not_permitted' });
-    expect(await call('rag_read_note', { source: 'local', path: 'nationex.md' }))
-      .toMatchObject({ isError: true, code: 'not_permitted' });
+    expect(await call('rag_read_note', { source: 'local', path: 'nationex.md' })).toMatchObject({
+      isError: true,
+      code: 'not_permitted',
+    });
   });
 
   // =======================================================================
@@ -370,7 +451,14 @@ describe('document writes through the real host registration', () => {
           name: 'cfg-narrow',
           label: 'Narrow Config',
           sources: ['local'],
-          scopes: { local: { kind: 'document', mode: 'allowList', allowedFolders: ['notes'], allowedDocuments: [] } },
+          scopes: {
+            local: {
+              kind: 'document',
+              mode: 'allowList',
+              allowedFolders: ['notes'],
+              allowedDocuments: [],
+            },
+          },
         }),
       );
 
@@ -380,7 +468,11 @@ describe('document writes through the real host registration', () => {
     expect([...handlers.keys()]).toEqual(['rag_write_document', 'rag_read_note']);
 
     // Write a file inside the allowed folder.
-    const saved = await call('rag_write_document', { source: 'local', path: 'notes/example.md', content: 'hello' });
+    const saved = await call('rag_write_document', {
+      source: 'local',
+      path: 'notes/example.md',
+      content: 'hello',
+    });
     expect(saved).toMatchObject({ saved: true });
 
     // Read it back.
@@ -388,23 +480,47 @@ describe('document writes through the real host registration', () => {
     expect(read.content).toBe('hello');
 
     // Write outside the allowed folder must be denied.
-    expect(await call('rag_write_document', { source: 'local', path: 'other.md', content: 'nope' }))
-      .toMatchObject({ isError: true, code: 'outside_authorized_folder' });
+    expect(
+      await call('rag_write_document', { source: 'local', path: 'other.md', content: 'nope' }),
+    ).toMatchObject({ isError: true, code: 'outside_authorized_folder' });
 
     // Read outside the allowed folder must be denied.
-    expect(await call('rag_read_note', { source: 'local', path: 'other.md' }))
-      .toMatchObject({ isError: true, code: 'outside_authorized_folder' });
+    expect(await call('rag_read_note', { source: 'local', path: 'other.md' })).toMatchObject({
+      isError: true,
+      code: 'outside_authorized_folder',
+    });
 
     // Tighten the persisted configuration without reconnecting the MCP session.
-    db.raw.prepare('UPDATE configurations SET sources_scopes = ? WHERE name = ? AND tenant_id = ?')
-      .run(JSON.stringify({ name: 'cfg-narrow', label: 'Narrow Config', sources: ['local'], scopes: {
-        local: { kind: 'document', mode: 'allowList', allowedFolders: ['temp'], allowedDocuments: [] },
-      } }), 'cfg-narrow', tenantId);
-    expect(await call('rag_read_note', { source: 'local', path: 'notes/example.md' }))
-      .toMatchObject({ isError: true, code: 'outside_authorized_folder' });
-    expect(await call('rag_write_document', {
-      source: 'local', path: 'notes/example.md', content: 'denied', expectedVersion: saved.version,
-    })).toMatchObject({ isError: true, code: 'outside_authorized_folder' });
+    db.raw
+      .prepare('UPDATE configurations SET sources_scopes = ? WHERE name = ? AND tenant_id = ?')
+      .run(
+        JSON.stringify({
+          name: 'cfg-narrow',
+          label: 'Narrow Config',
+          sources: ['local'],
+          scopes: {
+            local: {
+              kind: 'document',
+              mode: 'allowList',
+              allowedFolders: ['temp'],
+              allowedDocuments: [],
+            },
+          },
+        }),
+        'cfg-narrow',
+        tenantId,
+      );
+    expect(
+      await call('rag_read_note', { source: 'local', path: 'notes/example.md' }),
+    ).toMatchObject({ isError: true, code: 'outside_authorized_folder' });
+    expect(
+      await call('rag_write_document', {
+        source: 'local',
+        path: 'notes/example.md',
+        content: 'denied',
+        expectedVersion: saved.version,
+      }),
+    ).toMatchObject({ isError: true, code: 'outside_authorized_folder' });
     expect(await readFile(path.join(dir, 'notes/example.md'), 'utf8')).toBe('hello');
   });
 
@@ -439,7 +555,14 @@ describe('document writes through the real host registration', () => {
           name: 'cfg-to-delete',
           label: 'Delete Me',
           sources: ['local'],
-          scopes: { local: { kind: 'document', mode: 'allowList', allowedFolders: ['temp'], allowedDocuments: [] } },
+          scopes: {
+            local: {
+              kind: 'document',
+              mode: 'allowList',
+              allowedFolders: ['temp'],
+              allowedDocuments: [],
+            },
+          },
         }),
       );
 
@@ -448,12 +571,16 @@ describe('document writes through the real host registration', () => {
     expect([...handlers.keys()]).toEqual(['rag_write_document', 'rag_read_note']);
 
     // Delete the configuration row.
-    db.raw.prepare('DELETE FROM configurations WHERE name = ? AND tenant_id = ?').run('cfg-to-delete', tenantId);
+    db.raw
+      .prepare('DELETE FROM configurations WHERE name = ? AND tenant_id = ?')
+      .run('cfg-to-delete', tenantId);
 
     // Both read and write must fail.
     expect(await write()).toMatchObject({ isError: true, code: 'not_permitted' });
-    expect(await call('rag_read_note', { source: 'local', path: 'nationex.md' }))
-      .toMatchObject({ isError: true, code: 'not_permitted' });
+    expect(await call('rag_read_note', { source: 'local', path: 'nationex.md' })).toMatchObject({
+      isError: true,
+      code: 'not_permitted',
+    });
   });
 
   // =======================================================================
@@ -464,7 +591,10 @@ describe('document writes through the real host registration', () => {
     // Reuse the default tenant with a profile that has allowedFolders: ['notes'].
     handlers.clear();
     profile.scopes!.local = {
-      kind: 'document', mode: 'allowList', allowedFolders: ['notes'], allowedDocuments: [],
+      kind: 'document',
+      mode: 'allowList',
+      allowedFolders: ['notes'],
+      allowedDocuments: [],
     } as never;
     await register();
     expect([...handlers.keys()]).toEqual(['rag_write_document', 'rag_read_note']);
@@ -473,7 +603,11 @@ describe('document writes through the real host registration', () => {
     await mkdirp(path.join(dir, 'notes'));
 
     // Create inside allowed folder.
-    const saved = await call('rag_write_document', { source: 'local', path: 'notes/example.md', content: 'inside' });
+    const saved = await call('rag_write_document', {
+      source: 'local',
+      path: 'notes/example.md',
+      content: 'inside',
+    });
     expect(saved).toMatchObject({ saved: true });
 
     // Read it back.
@@ -481,8 +615,9 @@ describe('document writes through the real host registration', () => {
     expect(read.content).toBe('inside');
 
     // Create at root should be denied.
-    expect(await call('rag_write_document', { source: 'local', path: 'example.md', content: 'root' }))
-      .toMatchObject({ isError: true, code: 'outside_authorized_folder' });
+    expect(
+      await call('rag_write_document', { source: 'local', path: 'example.md', content: 'root' }),
+    ).toMatchObject({ isError: true, code: 'outside_authorized_folder' });
   });
 
   it('reducing live allowedFolders rejects previously allowed file read+replace', async () => {
@@ -493,37 +628,55 @@ describe('document writes through the real host registration', () => {
 
     // Now narrow allowedFolders to a folder that does not contain nationex.md.
     state.serveProfiles.notes = {
-      ...profile, scopes: {
+      ...profile,
+      scopes: {
         ...profile.scopes,
-        local: { kind: 'document', mode: 'allowList', allowedFolders: ['forbidden'], allowedDocuments: [] },
+        local: {
+          kind: 'document',
+          mode: 'allowList',
+          allowedFolders: ['forbidden'],
+          allowedDocuments: [],
+        },
       },
     };
 
     // Read must fail.
-    expect(await call('rag_read_note', { source: 'local', path: 'nationex.md' }))
-      .toMatchObject({ isError: true, code: 'outside_authorized_folder' });
+    expect(await call('rag_read_note', { source: 'local', path: 'nationex.md' })).toMatchObject({
+      isError: true,
+      code: 'outside_authorized_folder',
+    });
 
     // Replace must fail.
-    expect(await call('rag_write_document', {
-      source: 'local', path: 'nationex.md', content: 'updated', expectedVersion: saved.version,
-    })).toMatchObject({ isError: true, code: 'outside_authorized_folder' });
+    expect(
+      await call('rag_write_document', {
+        source: 'local',
+        path: 'nationex.md',
+        content: 'updated',
+        expectedVersion: saved.version,
+      }),
+    ).toMatchObject({ isError: true, code: 'outside_authorized_folder' });
   });
 
   it('directFetchDisabled on a scope denies rag_read_note for that source', async () => {
     handlers.clear();
     profile.scopes!.local = {
-      kind: 'document', mode: 'allowAll', directFetchDisabled: true,
+      kind: 'document',
+      mode: 'allowAll',
+      directFetchDisabled: true,
     } as never;
     await register();
     expect([...handlers.keys()]).toEqual(['rag_write_document', 'rag_read_note']);
 
     // Read must be denied because directFetchDisabled blocks the note tool.
-    expect(await call('rag_read_note', { source: 'local', path: 'nationex.md' }))
-      .toMatchObject({ isError: true, code: 'outside_authorized_folder' });
+    expect(await call('rag_read_note', { source: 'local', path: 'nationex.md' })).toMatchObject({
+      isError: true,
+      code: 'outside_authorized_folder',
+    });
 
     // Write should also fail because insideReadScope checks directFetchDisabled.
-    expect(await call('rag_write_document', { source: 'local', path: 'notes/test.md', content: 'x' }))
-      .toMatchObject({ isError: true, code: 'outside_authorized_folder' });
+    expect(
+      await call('rag_write_document', { source: 'local', path: 'notes/test.md', content: 'x' }),
+    ).toMatchObject({ isError: true, code: 'outside_authorized_folder' });
   });
 
   // =======================================================================

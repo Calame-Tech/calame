@@ -135,7 +135,10 @@ export function registerDocumentWriteTools(opts: RegisterDocumentWriteToolsOpts)
     });
   };
 
-  const hint = opts.sourceNames.length > 0 ? ` Writable sources: ${opts.sourceNames.map((n) => `"${n}"`).join(', ')}.` : '';
+  const hint =
+    opts.sourceNames.length > 0
+      ? ` Writable sources: ${opts.sourceNames.map((n) => `"${n}"`).join(', ')}.`
+      : '';
 
   // -------------------------------------------------------------------------
   // rag_write_document
@@ -150,13 +153,20 @@ export function registerDocumentWriteTools(opts: RegisterDocumentWriteToolsOpts)
       `The result separates "saved" (on disk, immediate) from "indexing" (search index updated asynchronously: queued / already_running / unavailable); search results may lag by a few seconds.` +
       hint,
     {
-      source: z.string().min(1).describe('Name of an authorized local source (see rag_list_sources).'),
+      source: z
+        .string()
+        .min(1)
+        .describe('Name of an authorized local source (see rag_list_sources).'),
       path: z
         .string()
         .min(1)
         .max(512)
-        .describe('Relative path inside the source, forward slashes, e.g. "notes/nationex.md". Parent folders must already exist.'),
-      content: z.string().describe('Complete new file content (UTF-8 text, front-matter included if wanted).'),
+        .describe(
+          'Relative path inside the source, forward slashes, e.g. "notes/nationex.md". Parent folders must already exist.',
+        ),
+      content: z
+        .string()
+        .describe('Complete new file content (UTF-8 text, front-matter included if wanted).'),
       expectedVersion: z
         .string()
         .optional()
@@ -171,12 +181,24 @@ export function registerDocumentWriteTools(opts: RegisterDocumentWriteToolsOpts)
         const target = await resolveTarget(args.source, normalizedPath);
         if (!target.ok) {
           audit(WRITE_TOOL_NAME, baseArgs, 'denied: ' + target.reason, 'error', t0);
-          return json({ error: `Writing is not permitted for source "${args.source}".${hint}`, code: 'not_permitted' }, true);
+          return json(
+            {
+              error: `Writing is not permitted for source "${args.source}".${hint}`,
+              code: 'not_permitted',
+            },
+            true,
+          );
         }
-        if (!insideFolder(normalizedPath, target.folder) || !insideReadScope(normalizedPath, target)) {
+        if (
+          !insideFolder(normalizedPath, target.folder) ||
+          !insideReadScope(normalizedPath, target)
+        ) {
           audit(WRITE_TOOL_NAME, baseArgs, 'denied: outside authorized folder', 'error', t0);
           return json(
-            { error: `Writes to this source are limited to the folder "${target.folder}".`, code: 'outside_authorized_folder' },
+            {
+              error: `Writes to this source are limited to the folder "${target.folder}".`,
+              code: 'outside_authorized_folder',
+            },
             true,
           );
         }
@@ -251,11 +273,26 @@ export function registerDocumentWriteTools(opts: RegisterDocumentWriteToolsOpts)
         const target = await resolveTarget(args.source, normalizedPath);
         if (!target.ok) {
           audit(READ_NOTE_TOOL_NAME, baseArgs, 'denied: ' + target.reason, 'error', t0);
-          return json({ error: `Source "${args.source}" is not available for note access.${hint}`, code: 'not_permitted' }, true);
+          return json(
+            {
+              error: `Source "${args.source}" is not available for note access.${hint}`,
+              code: 'not_permitted',
+            },
+            true,
+          );
         }
-        if (!insideFolder(normalizedPath, target.folder) || !insideReadScope(normalizedPath, target)) {
+        if (
+          !insideFolder(normalizedPath, target.folder) ||
+          !insideReadScope(normalizedPath, target)
+        ) {
           audit(READ_NOTE_TOOL_NAME, baseArgs, 'denied: outside authorized folder', 'error', t0);
-          return json({ error: `Access is limited to the folder "${target.folder}".`, code: 'outside_authorized_folder' }, true);
+          return json(
+            {
+              error: `Access is limited to the folder "${target.folder}".`,
+              code: 'outside_authorized_folder',
+            },
+            true,
+          );
         }
         const file = await readTextFile({
           rootPath: target.rootPath,
@@ -263,7 +300,10 @@ export function registerDocumentWriteTools(opts: RegisterDocumentWriteToolsOpts)
           maxBytes: target.maxBytes,
           allowedExtensions: target.allowedExtensions,
         });
-        const masked = opts.maskText?.(file.content, target.sourceId, target) ?? { text: file.content, redacted: false };
+        const masked = opts.maskText?.(file.content, target.sourceId, target) ?? {
+          text: file.content,
+          redacted: false,
+        };
         let indexed: boolean | undefined;
         try {
           indexed = await opts.isIndexed?.(target.sourceId, file.relPath, file.version);

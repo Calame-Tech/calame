@@ -45,12 +45,26 @@ it('serializes case aliases through final rename on a case-insensitive volume', 
   }
   expect(alias.ino).toBe(original.ino);
   let release!: () => void;
-  barrier.wait = new Promise<void>((resolve) => { release = resolve; });
-  const firstEntered = new Promise<void>((resolve) => { barrier.firstEntered = resolve; });
+  barrier.wait = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const firstEntered = new Promise<void>((resolve) => {
+    barrier.firstEntered = resolve;
+  });
   const expectedVersion = sha256Hex('original');
-  const first = writeTextFile({ rootPath: dir, relPath: 'Note.md', content: 'first', expectedVersion });
+  const first = writeTextFile({
+    rootPath: dir,
+    relPath: 'Note.md',
+    content: 'first',
+    expectedVersion,
+  });
   await firstEntered;
-  const second = writeTextFile({ rootPath: dir, relPath: 'note.md', content: 'second', expectedVersion });
+  const second = writeTextFile({
+    rootPath: dir,
+    relPath: 'note.md',
+    content: 'second',
+    expectedVersion,
+  });
   // A second final rename while the first is paused proves both final CAS
   // checks accepted the same old bytes, independently of rename scheduling.
   await new Promise((resolve) => setTimeout(resolve, 100));

@@ -32,7 +32,11 @@ import { nanoid } from 'nanoid';
 import { runRagMigrations } from '../storage/schema.js';
 import { IngestionPipeline } from '../pipeline/ingest.js';
 import { writeTextFile, sha256Hex } from '../fs-write.js';
-import { registerDocumentWriteTools, WRITE_TOOL_NAME, READ_NOTE_TOOL_NAME } from '../write-tools.js';
+import {
+  registerDocumentWriteTools,
+  WRITE_TOOL_NAME,
+  READ_NOTE_TOOL_NAME,
+} from '../write-tools.js';
 import type { ResolveWriteTarget, IndexTriggerResult } from '../write-tools.js';
 import type { RagSource, VectorStore, EmbeddingClient } from '../types.js';
 
@@ -140,7 +144,9 @@ function insertSource(db: BetterSqlite3Database, overrides?: Partial<RagSource>)
 // MCP server capture
 // ---------------------------------------------------------------------------
 
-type Handler = (args: Record<string, unknown>) => Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }>;
+type Handler = (
+  args: Record<string, unknown>,
+) => Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }>;
 
 function makeMcpServer(): { server: McpServer; handlers: Record<string, Handler> } {
   const handlers: Record<string, Handler> = {};
@@ -214,11 +220,16 @@ describe('write tool → real indexing pipeline → rag_read_note indexed', () =
 
     // isIndexed: checks whether rag_documents has a row for this path
     // whose hash matches the provided version.
-    const isIndexed = async (sourceId: string, relPath: string, version: string): Promise<boolean> => {
+    const isIndexed = async (
+      sourceId: string,
+      relPath: string,
+      version: string,
+    ): Promise<boolean> => {
       const row = db
-        .prepare<[string, string], { hash: string } | undefined>(
-          `SELECT hash FROM rag_documents WHERE source_id = ? AND path = ? AND deleted_at IS NULL`,
-        )
+        .prepare<
+          [string, string],
+          { hash: string } | undefined
+        >(`SELECT hash FROM rag_documents WHERE source_id = ? AND path = ? AND deleted_at IS NULL`)
         .get(sourceId, relPath);
       if (!row) return false;
       return row.hash === version;
@@ -235,7 +246,8 @@ describe('write tool → real indexing pipeline → rag_read_note indexed', () =
     });
 
     // 2. Write a note via the MCP tool.
-    const noteContent = '# Integration Test Note\n\nThis file exercises the real indexing pipeline.\n';
+    const noteContent =
+      '# Integration Test Note\n\nThis file exercises the real indexing pipeline.\n';
     const writeResult = await handlers[WRITE_TOOL_NAME]!({
       source: source.name,
       path: 'test.md',
@@ -271,16 +283,20 @@ describe('write tool → real indexing pipeline → rag_read_note indexed', () =
 
     // 6. Verify the pipeline created a real rag_documents row.
     const docRow = db
-      .prepare<[string], { id: string; hash: string; source_id: string } | undefined>(
-        `SELECT id, hash, source_id FROM rag_documents WHERE id = ?`,
-      )
+      .prepare<
+        [string],
+        { id: string; hash: string; source_id: string } | undefined
+      >(`SELECT id, hash, source_id FROM rag_documents WHERE id = ?`)
       .get(ingestResult.id);
     expect(docRow).toBeDefined();
     expect(docRow!.source_id).toBe(source.id);
 
     // 7. Verify chunks were persisted.
     const chunkCount = db
-      .prepare<[string], { c: number }>(`SELECT COUNT(*) AS c FROM rag_chunks WHERE document_id = ?`)
+      .prepare<
+        [string],
+        { c: number }
+      >(`SELECT COUNT(*) AS c FROM rag_chunks WHERE document_id = ?`)
       .get(ingestResult.id);
     expect(chunkCount?.c).toBeGreaterThan(0);
 
@@ -320,7 +336,11 @@ describe('write tool → real indexing pipeline → rag_read_note indexed', () =
       };
     };
 
-    const isIndexed = async (_sourceId: string, _relPath: string, _version: string): Promise<boolean> => {
+    const isIndexed = async (
+      _sourceId: string,
+      _relPath: string,
+      _version: string,
+    ): Promise<boolean> => {
       return false; // pre-index: nothing indexed yet
     };
 
@@ -374,11 +394,16 @@ describe('write tool → real indexing pipeline → rag_read_note indexed', () =
       };
     };
 
-    const isIndexed = async (sourceId: string, relPath: string, version: string): Promise<boolean> => {
+    const isIndexed = async (
+      sourceId: string,
+      relPath: string,
+      version: string,
+    ): Promise<boolean> => {
       const row = db
-        .prepare<[string, string], { hash: string } | undefined>(
-          `SELECT hash FROM rag_documents WHERE source_id = ? AND path = ? AND deleted_at IS NULL`,
-        )
+        .prepare<
+          [string, string],
+          { hash: string } | undefined
+        >(`SELECT hash FROM rag_documents WHERE source_id = ? AND path = ? AND deleted_at IS NULL`)
         .get(sourceId, relPath);
       if (!row) return false;
       return row.hash === version;
@@ -424,7 +449,10 @@ describe('write tool → real indexing pipeline → rag_read_note indexed', () =
 
     // Verify the document was indexed with the correct hash.
     const docRow = db
-      .prepare<[string], { hash: string } | undefined>(`SELECT hash FROM rag_documents WHERE id = ?`)
+      .prepare<
+        [string],
+        { hash: string } | undefined
+      >(`SELECT hash FROM rag_documents WHERE id = ?`)
       .get(ingestResult.id);
     expect(docRow?.hash).toBe(sha256Hex(Buffer.from(noteContent, 'utf8')));
 

@@ -15,7 +15,12 @@ describe('PATCH /api/profiles/:name/document-write', () => {
   let db: CalameDatabase;
   let cookie: string;
 
-  const insertSource = (id: string, type: string, tenant = 'default', deletedAt: string | null = null) =>
+  const insertSource = (
+    id: string,
+    type: string,
+    tenant = 'default',
+    deletedAt: string | null = null,
+  ) =>
     db.raw
       .prepare(
         `INSERT INTO rag_sources (id, type, name, config_encrypted, tenant_id, deleted_at) VALUES (?, ?, ?, 'x', ?, ?)`,
@@ -26,8 +31,9 @@ describe('PATCH /api/profiles/:name/document-write', () => {
     const row = db.raw.prepare("SELECT data FROM profiles WHERE key = 'main'").get() as {
       data: string;
     };
-    return (JSON.parse(row.data) as { profiles: Record<string, Record<string, unknown>> })
-      .profiles[name];
+    return (JSON.parse(row.data) as { profiles: Record<string, Record<string, unknown>> }).profiles[
+      name
+    ];
   };
 
   beforeEach(async () => {

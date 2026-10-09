@@ -122,7 +122,11 @@ describe('rag_write_document', () => {
 
   it('create over existing file is refused', async () => {
     await writeFile(join(root, 'x.md'), 'old');
-    const r = await call('rag_write_document', { source: 'Nationex', path: 'x.md', content: 'new' });
+    const r = await call('rag_write_document', {
+      source: 'Nationex',
+      path: 'x.md',
+      content: 'new',
+    });
     expect(r.body.code).toBe('already_exists');
     expect(await readFile(join(root, 'x.md'), 'utf8')).toBe('old');
   });
@@ -158,11 +162,23 @@ describe('rag_write_document', () => {
 
   it('enforces the authorized sub-folder', async () => {
     folder = 'notes';
-    const ok = await call('rag_write_document', { source: 'Nationex', path: 'notes/ok.md', content: 'a' });
+    const ok = await call('rag_write_document', {
+      source: 'Nationex',
+      path: 'notes/ok.md',
+      content: 'a',
+    });
     expect(ok.body.saved).toBe(true);
-    const bad = await call('rag_write_document', { source: 'Nationex', path: 'other.md', content: 'a' });
+    const bad = await call('rag_write_document', {
+      source: 'Nationex',
+      path: 'other.md',
+      content: 'a',
+    });
     expect(bad.body.code).toBe('outside_authorized_folder');
-    const sibling = await call('rag_write_document', { source: 'Nationex', path: 'notes2/x.md', content: 'a' });
+    const sibling = await call('rag_write_document', {
+      source: 'Nationex',
+      path: 'notes2/x.md',
+      content: 'a',
+    });
     expect(sibling.isError).toBe(true);
     expect((await readdir(root)).sort()).toEqual(['notes']);
   });
@@ -177,7 +193,11 @@ describe('rag_write_document', () => {
 
   it('audits every call without content or absolute paths', async () => {
     await call('rag_write_document', { source: 'Nationex', path: 'a.md', content: 'SECRET-BODY' });
-    await call('rag_write_document', { source: 'Nationex', path: '../b.md', content: 'SECRET-BODY' });
+    await call('rag_write_document', {
+      source: 'Nationex',
+      path: '../b.md',
+      content: 'SECRET-BODY',
+    });
     allowed = false;
     await call('rag_write_document', { source: 'Nationex', path: 'c.md', content: 'SECRET-BODY' });
     expect(audits).toHaveLength(3);
@@ -185,7 +205,9 @@ describe('rag_write_document', () => {
     const dump = JSON.stringify(audits);
     expect(dump).not.toContain('SECRET-BODY');
     expect(dump).not.toContain(root);
-    expect(audits.every((a) => a.profileName === 'p' && a.toolName === 'rag_write_document')).toBe(true);
+    expect(audits.every((a) => a.profileName === 'p' && a.toolName === 'rag_write_document')).toBe(
+      true,
+    );
   });
 });
 
@@ -201,7 +223,12 @@ describe('rag_read_note masking', () => {
       } as unknown as McpServer,
       profileName: 'p',
       sourceNames: ['Nationex'],
-      resolveTarget: async () => ({ ok: true, sourceId: 's', sourceName: 'Nationex', rootPath: root }),
+      resolveTarget: async () => ({
+        ok: true,
+        sourceId: 's',
+        sourceName: 'Nationex',
+        rootPath: root,
+      }),
       triggerIndex: () => ({ status: 'unavailable' }),
       maskText: (t) => ({ text: t.replace('a@b.com', '[EMAIL]'), redacted: true }),
       onAuditLog: () => {},

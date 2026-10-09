@@ -143,9 +143,9 @@ describe('writeTextFile', () => {
   });
 
   it('does not create missing parents', async () => {
-    expect(await code(writeTextFile({ rootPath: root, relPath: 'new/dir/a.md', content: 'x' }))).toBe(
-      'parent_missing',
-    );
+    expect(
+      await code(writeTextFile({ rootPath: root, relPath: 'new/dir/a.md', content: 'x' })),
+    ).toBe('parent_missing');
     expect(await readdir(root)).toEqual(['notes']);
   });
 
@@ -203,14 +203,23 @@ describe('writeTextFile', () => {
 
   it('enforces size and content rules', async () => {
     expect(
-      await code(writeTextFile({ rootPath: root, relPath: 'big.md', content: 'x'.repeat(101), maxBytes: 100 })),
+      await code(
+        writeTextFile({
+          rootPath: root,
+          relPath: 'big.md',
+          content: 'x'.repeat(101),
+          maxBytes: 100,
+        }),
+      ),
     ).toBe('too_large');
-    expect(await code(writeTextFile({ rootPath: root, relPath: 'nul-byte.md', content: 'a\u0000b' }))).toBe(
-      'invalid_content',
-    );
+    expect(
+      await code(writeTextFile({ rootPath: root, relPath: 'nul-byte.md', content: 'a\u0000b' })),
+    ).toBe('invalid_content');
     // multi-byte: 60 × 2 bytes = 120 > 100
     expect(
-      await code(writeTextFile({ rootPath: root, relPath: 'mb.md', content: 'é'.repeat(60), maxBytes: 100 })),
+      await code(
+        writeTextFile({ rootPath: root, relPath: 'mb.md', content: 'é'.repeat(60), maxBytes: 100 }),
+      ),
     ).toBe('too_large');
     expect(await readdir(root)).toEqual(['notes']);
   });
@@ -259,16 +268,21 @@ describe.runIf(process.platform === 'win32')('Windows short-name aliases', () =>
     expect(await code(readTextFile({ rootPath: root, relPath: creds! }))).toBe('forbidden_path');
     expect(
       await code(
-        writeTextFile({ rootPath: root, relPath: creds!, content: 'PWNED', expectedVersion: sha256Hex('SECRET') }),
+        writeTextFile({
+          rootPath: root,
+          relPath: creds!,
+          content: 'PWNED',
+          expectedVersion: sha256Hex('SECRET'),
+        }),
       ),
     ).toBe('forbidden_path');
     expect(await readFile(join(root, 'credentials.txt'), 'utf8')).toBe('SECRET');
-    expect(await code(writeTextFile({ rootPath: root, relPath: `${hidden}/new.md`, content: 'x' }))).toBe(
-      'forbidden_path',
-    );
-    expect(await code(writeTextFile({ rootPath: root, relPath: `${modules}/new.md`, content: 'x' }))).toBe(
-      'forbidden_path',
-    );
+    expect(
+      await code(writeTextFile({ rootPath: root, relPath: `${hidden}/new.md`, content: 'x' })),
+    ).toBe('forbidden_path');
+    expect(
+      await code(writeTextFile({ rootPath: root, relPath: `${modules}/new.md`, content: 'x' })),
+    ).toBe('forbidden_path');
     expect(await readdir(join(root, '.obsidian'))).toEqual([]);
     expect(await readdir(join(root, 'node_modules'))).toEqual([]);
   });
@@ -283,7 +297,9 @@ describe.runIf(process.platform === 'win32')('Windows short-name aliases', () =>
 describe('readTextFile', () => {
   it('returns raw content + version; rejects missing, symlink, invalid utf8', async () => {
     await writeFile(join(root, 'a.md'), 'abc');
-    expect((await readTextFile({ rootPath: root, relPath: 'a.md' })).version).toBe(sha256Hex('abc'));
+    expect((await readTextFile({ rootPath: root, relPath: 'a.md' })).version).toBe(
+      sha256Hex('abc'),
+    );
     expect(await code(readTextFile({ rootPath: root, relPath: 'zz.md' }))).toBe('not_found');
     await writeFile(join(outside, 'o.md'), 'o');
     await symlink(join(outside, 'o.md'), join(root, 'l.md'));

@@ -1,4 +1,5 @@
 node_modules
+.calame-models/
 dist
 dist-bundle
 .env

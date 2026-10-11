@@ -7,6 +7,8 @@ root `package.json` version flows to the Docker image and `create-calame`).
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-09-14
+
 ### Changed
 
 - The HTTP server now binds to `127.0.0.1` (loopback) by default instead of all

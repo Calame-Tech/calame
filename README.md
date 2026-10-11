@@ -32,6 +32,7 @@ language. No code generation, no lock-in — Calame is the control plane.
 git clone https://github.com/Calame-Tech/calame.git
 cd calame
 pnpm install
+pnpm build
 pnpm dev
 ```
 
@@ -44,6 +45,21 @@ Or with Docker:
 docker compose up
 ```
 
+Compose binds to `127.0.0.1` by default. Set `CALAME_BIND_ADDRESS=0.0.0.0`
+only when you intentionally expose Calame behind a firewall or reverse proxy.
+
+Document RAG needs an embedding provider. To use the bundled local model with
+Docker, stage it once before starting Compose:
+
+```bash
+pnpm install
+pnpm model:fetch -- --output-dir .calame-models
+docker compose up
+```
+
+The model is downloaded from a pinned revision and verified by size and SHA-256.
+Alternatively, configure a remote embedding-capable AI setting in the UI.
+
 On the first run Calame auto-generates a `CALAME_SECRET_KEY` used to encrypt
 tokens and connection strings, and persists it next to your database
 (`.calame-secret`). If you deploy with Docker, mount a persistent volume on
@@ -51,14 +67,14 @@ tokens and connection strings, and persists it next to your database
 your saved tokens. You can also set `CALAME_SECRET_KEY` yourself via the
 environment to reuse an existing secret.
 
-→ **[Detailed Quick Start](./docs/QUICKSTART.md)** — full walkthrough from install to your first MCP client query (~15 min).
+→ **[Detailed Quick Start](./docs/QUICKSTART.md)** — full walkthrough from install to your first MCP client query.
 
 ## Features
 
 ### Database connectors
-- **PostgreSQL** · **MySQL** · **SQLite** — schema introspection, relations,
+- **PostgreSQL** · **MySQL** · **SQLite** · **Microsoft SQL Server** — schema introspection, relations,
   sample data
-- Read-only by design (`SET TRANSACTION READ ONLY`), parameterized queries only
+- Read-only by default, with optional writes behind policy and approval; parameterized queries only
 - Optional SSH tunneling for remote databases
 
 ### Access profiles
@@ -85,10 +101,9 @@ environment to reuse an existing secret.
 ### Knowledge base (RAG)
 - Connect document sources (local folders, S3, Google Drive/Sheets, Notion,
   SharePoint, Git) and search over them from chat
-- **Local embeddings by default** — documents and search queries are embedded
-  on-device (EmbeddingGemma-300M, bundled) with zero configuration; nothing
-  leaves the machine. Remote embedding providers remain available as an
-  explicit choice.
+- **Local or remote embeddings** — stage the pinned EmbeddingGemma-300M model
+  explicitly for on-device processing, or configure an embedding-capable AI
+  provider. The Docker image does not download the model silently.
 - PII masking, hybrid (vector + keyword) search, per-profile scoping
 
 ### Operations

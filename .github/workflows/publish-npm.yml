@@ -9,6 +9,8 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    env:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
     permissions:
       contents: read
       id-token: write
@@ -37,6 +39,11 @@ jobs:
           "
 
       - name: Publish create-calame to npm
-        run: npm publish packages/create --access public
+        if: env.NPM_TOKEN != ''
+        run: npm publish ./packages/create --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Report skipped npm publish
+        if: env.NPM_TOKEN == ''
+        run: echo "::warning::NPM_TOKEN is not configured; skipping create-calame publication."

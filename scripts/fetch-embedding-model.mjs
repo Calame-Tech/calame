@@ -172,6 +172,18 @@ async function main() {
   log('== Calame embedding model fetch ==\n');
   log(`Repo: ${HF_REPO}@${HF_REVISION}\n`);
   const modelDir = await ensureEmbeddingModel();
+  const outputFlagIndex = process.argv.indexOf('--output-dir');
+  if (outputFlagIndex !== -1) {
+    const outputArg = process.argv[outputFlagIndex + 1];
+    if (!outputArg) {
+      throw new Error('--output-dir requires a directory path');
+    }
+    const outputRoot = path.resolve(REPO_ROOT, outputArg);
+    const outputModelDir = path.join(outputRoot, EMBEDDING_MODEL_FOLDER);
+    fs.mkdirSync(outputRoot, { recursive: true });
+    fs.cpSync(modelDir, outputModelDir, { recursive: true, force: true });
+    log(`\nCopied Docker-ready model to:\n  ${outputModelDir}`);
+  }
   const totalBytes = FILES.reduce((sum, f) => sum + f.size, 0);
   log(`\nDone. ${formatBytes(totalBytes)} staged at:\n  ${modelDir}`);
 }

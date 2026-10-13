@@ -353,6 +353,27 @@ async function main() {
     );
   }
 
+  // 4b. Stage the calame-fsat helper (directory-fd anchored file writes, see
+  // ee/rag-core/native/fsat.c). fs-write.ts resolves it next to server.mjs
+  // (dist-bundle/native/calame-fsat). On macOS/Linux, without it note writes
+  // fail closed with `unsupported_platform`, so a POSIX build without it is an
+  // error. Windows uses the path-based mode and ships no helper.
+  if (process.platform !== 'win32') {
+    const fsatSrc = path.join(RAG_CORE_DIR, 'dist/native/calame-fsat');
+    if (!fs.existsSync(fsatSrc)) {
+      throw new Error(
+        `calame-fsat helper not found at ${fsatSrc}. Run \`pnpm --filter @calame-ee/rag-core build\` first.`,
+      );
+    }
+    const fsatOutDir = path.join(OUT_DIR, 'native');
+    fs.mkdirSync(fsatOutDir, { recursive: true });
+    fs.copyFileSync(fsatSrc, path.join(fsatOutDir, 'calame-fsat'));
+    fs.chmodSync(path.join(fsatOutDir, 'calame-fsat'), 0o755);
+    log('\nStaged calame-fsat helper -> dist-bundle/native/');
+  } else {
+    log('\nWindows: calame-fsat helper not staged (note writes use the path-based mode).');
+  }
+
   // 5. Copy the built frontend.
   log('\nCopying packages/web/dist -> dist-bundle/web...');
   fs.cpSync(WEB_DIST, path.join(OUT_DIR, 'web'), { recursive: true, dereference: true });

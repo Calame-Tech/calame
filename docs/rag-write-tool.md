@@ -7,10 +7,10 @@ for existing profiles.
 
 Two tools are registered, only when the capability is enabled on the MCP profile:
 
-| Tool | Purpose |
-| --- | --- |
-| `rag_read_note` | Returns the exact text of a `.md`/`.txt` note (front-matter included, which `rag_get_document` strips) and its `version` (sha256 of the raw file). PII masking of the profile is applied. |
-| `rag_write_document` | Creates a note (omit `expectedVersion`) or replaces it (pass the `version` last read). |
+| Tool                 | Purpose                                                                                                                                                                                   |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `rag_read_note`      | Returns the exact text of a `.md`/`.txt` note (front-matter included, which `rag_get_document` strips) and its `version` (sha256 of the raw file). PII masking of the profile is applied. |
+| `rag_write_document` | Creates a note (omit `expectedVersion`) or replaces it (pass the `version` last read).                                                                                                    |
 
 ## Enabling it
 
@@ -43,7 +43,12 @@ Error codes: `not_permitted`, `outside_authorized_folder`, `invalid_path`,
 `forbidden_path`, `extension_not_allowed`, `too_large`, `invalid_content`,
 `root_unavailable`, `parent_missing`, `symlink_refused`, `not_a_regular_file`,
 `not_found`, `already_exists`, `version_required`, `version_conflict`,
-`unsupported_filesystem`, `io_error`.
+`unsupported_filesystem`, `unsupported_platform`, `published_unverified`, `io_error`.
+
+`published_unverified` means the publish step ran but the helper could not
+confirm its result (the folder was modified concurrently): the target may now
+hold something other than what was sent. Nothing is rolled back; re-read the
+file before retrying. All other errors mean nothing was published.
 
 ## Safety guarantees
 
@@ -64,11 +69,15 @@ Error codes: `not_permitted`, `outside_authorized_folder`, `invalid_path`,
   aside): aliases such as Windows 8.3 short names (`CREDEN~1.TXT`) are refused,
   so they cannot bypass the name checks above.
 - Symlinks are refused (root, parents, target). Parent folders are **never created**.
-  On Windows `O_NOFOLLOW` does not exist: the protection relies on the `lstat`
-  walk plus a check that the opened file is the one inspected (same inode/device).
+  On macOS and Linux the check is done with `openat(O_NOFOLLOW)` along the path;
+  on Windows with an `lstat` walk plus a canonical-name check (see "Honest limits").
 - Only `.md` / `.txt`, UTF-8, default max 256 KiB (hard cap 2 MiB).
-- Writes are atomic: temp file (`O_EXCL`, plus `O_NOFOLLOW` where available) + fsync, then rename (replace)
-  or `link()` (create-only, race-safe).
+- Writes are atomic: temp file (`O_EXCL | O_NOFOLLOW`) + fsync, then a kernel
+  create-only publish or an atomic replace:
+  - macOS: `renameatx_np` with `RENAME_EXCL` / `RENAME_SWAP`, relative to the
+    validated directory fd (temp file in a staging folder held by fd);
+  - Linux: `renameat2` with `RENAME_NOREPLACE` / `RENAME_EXCHANGE`, same scheme;
+  - Windows: sibling temp file, `link()` (create-only) or `rename()` (replace).
 - No delete, rename, append, patch or binary files.
 - Each attempt (success or refusal) goes through the profile audit log.
 - Re-indexing uses the real sync queue (same path as a manual sync).
@@ -86,14 +95,17 @@ Error codes: `not_permitted`, `outside_authorized_folder`, `invalid_path`,
 - **Replace-whole-file only**: the client sends the full content. Concurrent edits
   made by another tool between read and write are detected (`version_conflict`),
   but there is no merge.
-- The conflict check and the final rename are not a single atomic filesystem
-  operation: an external editor writing in the microseconds between the final check
-  and the rename can still be overwritten. Create-only is race-safe.
+- The conflict check and the final swap are not a single atomic filesystem
+  operation and this is not a multi-process compare-and-swap: an external editor
+  writing between the final check and the swap can still be overwritten (if it
+  replaced the file, the swap reports `published_unverified`; an in-place edit is
+  not detected). Create-only is enforced by the kernel (`RENAME_EXCL` /
+  `RENAME_NOREPLACE` / `link()`).
 - Calls through this writer module share a single in-process mutex, including
   case aliases and overlapping source roots. This intentionally trades parallel
   write throughput for safety on case-insensitive filesystems. It does not lock
   external editors or other server processes.
-- Requires a filesystem supporting hard links for create-only
+- Requires a filesystem supporting atomic exclusive/swap renames
   (`unsupported_filesystem` otherwise, e.g. some network shares).
 - Indexing is asynchronous and can be `unavailable`/`already_running`; the file is
   still saved and picked up by the next sync.
@@ -101,6 +113,41 @@ Error codes: `not_permitted`, `outside_authorized_folder`, `invalid_path`,
   and search), not to what the client chooses to write.
 - A local source's root is trusted; if it is itself a symlink, writes are refused.
 - The audit log records tool, source, path, size and outcome — not the content.
+- **Concurrent local processes (parent/ancestor swap), macOS and Linux**: every
+  access goes through the bundled `calame-fsat` helper (`ee/rag-core/native/fsat.c`),
+  which opens the root once and walks each folder with
+  `openat(O_DIRECTORY | O_NOFOLLOW)`, then creates the temp file in a staging
+  folder it holds by fd, publishes it and cleans up. Every syscall takes a
+  single name relative to a held directory fd; no path containing `/` is ever
+  resolved, so a parent, ancestor or staging folder swapped for a symlink (or
+  renamed away) while a write is in flight cannot redirect any step — including
+  cleanup — outside the folders reached from the root. Cleanup only removes
+  entries it can still identify as its own (device/inode); it never deletes
+  foreign entries. An open directory fd does **not** lock the folder: the write
+  may land in the folder that was validated even though its name now points
+  elsewhere, or be refused. The in-process mutex only orders callers; it is not
+  what confines paths.
+- **Same-user processes are out of scope for integrity.** The staging folder is
+  created with mode `0700`, which only keeps _other_ users out: any process
+  running as the same user can rename, replace or delete its entries and the
+  target. The helper checks device/inode before publishing (refusing with
+  `io_error`, nothing published) and after publishing; a mismatch detected after
+  the publish step is reported as `published_unverified`, never as a plain
+  refusal, because something was published. What this design achieves is
+  directory-fd confinement, not protection against a hostile same-user process.
+- **Concurrent local processes, Windows (weaker)**: Node offers no
+  directory-handle-relative file API on Windows, so the helper is not used there.
+  Paths are checked by an `lstat` walk and a `realpath` canonical check, re-done
+  inside the lock and right before publishing; replace also re-checks
+  inode/size/mtime/content. This shrinks, but does **not** close, the window in
+  which a concurrent local process swaps a parent folder for a link or junction
+  between the check and the publish. Same behaviour as 0.8.3.
+- **Platforms**: the helper is compiled from C at build time on macOS and Linux
+  (`pnpm build` in `ee/rag-core` needs `cc`; a missing compiler fails the build;
+  the Docker builder image has one). If it is missing at runtime on macOS/Linux,
+  writes fail closed with `unsupported_platform` before touching the disk; there
+  is no silent path-based fallback there. Windows ships no helper and uses the
+  path-based mode above.
 
 ## Verification
 

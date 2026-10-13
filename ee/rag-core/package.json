@@ -17,7 +17,8 @@
     }
   },
   "scripts": {
-    "build": "node ../../node_modules/typescript/bin/tsc",
+    "build": "node ../../node_modules/typescript/bin/tsc && node native/build.mjs",
+    "build:test-helper": "node native/build.mjs --hooks",
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {

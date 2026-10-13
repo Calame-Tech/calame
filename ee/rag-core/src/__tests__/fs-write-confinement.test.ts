@@ -5,14 +5,14 @@
 /**
  * Real-filesystem regressions for the parent/ancestor-swap race.
  *
- * The test build of the helper (dist/native/calame-fsat-hooks, built by
- * `pnpm --filter @calame-ee/rag-core build:test-helper`) pauses at named points
+ * The test build of the helper (dist/native/calame-fsat-hooks, built in
+ * beforeAll, or by `pnpm --filter @calame-ee/rag-core build:test-helper`) pauses at named points
  * inside the operation. While it is paused the test performs a REAL rename +
  * symlink of the directory the writer is working in, then releases it. No fs
  * function is mocked in the hook tests.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   access,
   appendFile,
@@ -27,8 +27,7 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import {
   FsWriteError,
   __setFsatHelperPathForTests,
@@ -36,12 +35,11 @@ import {
   sha256Hex,
   writeTextFile,
 } from '../fs-write.js';
+import { HOOKS_BIN, buildHooksHelper } from './fsat-hooks.js';
 
-const HOOKS_BIN = resolve(
-  fileURLToPath(new URL('.', import.meta.url)),
-  '../../dist/native/calame-fsat-hooks',
-);
 const isPosix = process.platform !== 'win32';
+
+beforeAll(buildHooksHelper, 60_000);
 
 let base: string;
 let root: string; // base/allowed

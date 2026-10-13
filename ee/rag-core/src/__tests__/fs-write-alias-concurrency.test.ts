@@ -1,17 +1,14 @@
-import { afterEach, beforeEach, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, expect, it } from 'vitest';
 import { access, lstat, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
-import { fileURLToPath } from 'node:url';
 import { __setFsatHelperPathForTests, sha256Hex, writeTextFile } from '../fs-write.js';
+import { HOOKS_BIN, buildHooksHelper } from './fsat-hooks.js';
 
 // The final publication (renameat) now happens inside the calame-fsat helper,
 // so the pause point is the helper's test-only `before_publish` hook (built by
 // `build:test-helper`), not a mock of node:fs/promises.rename.
-const HOOKS_BIN = path.resolve(
-  fileURLToPath(new URL('.', import.meta.url)),
-  '../../dist/native/calame-fsat-hooks',
-);
+beforeAll(buildHooksHelper, 60_000);
 
 let dir: string;
 let hookDir: string;

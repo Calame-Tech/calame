@@ -10,8 +10,8 @@
  *                                     pauses at named points so tests can swap
  *                                     the tree; never shipped)
  *
- * POSIX only. On Windows nothing is built and fs-write fails closed
- * (`unsupported_platform`) before touching the disk. On POSIX a missing or
+ * macOS and Linux only. On Windows nothing is built: fs-write uses its
+ * path-based mode there (see src/fs-write.ts). On POSIX a missing or
  * failing C compiler is a hard build error: silently shipping without the
  * helper would disable writes.
  */
@@ -26,7 +26,7 @@ const outDir = path.resolve(here, '..', 'dist', 'native');
 const hooks = process.argv.includes('--hooks');
 
 if (process.platform === 'win32') {
-  console.log('[calame-fsat] Windows: helper not built (fs-write fails closed).');
+  console.log('[calame-fsat] Windows: helper not built (fs-write uses the path-based mode).');
   process.exit(0);
 }
 

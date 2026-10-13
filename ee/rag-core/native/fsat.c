@@ -18,8 +18,9 @@
  *   - the temp file is created inside a staging directory
  *     (.calame-stage-<pid>-<random>) made with mkdirat(0700) in the target's
  *     parent and held open by fd. The temp fd is kept open and its dev/ino
- *     recorded. It is published with renameatx_np(RENAME_EXCL) for create or
- *     renameatx_np(RENAME_SWAP) for replace;
+ *     recorded. It is published with a kernel create-only rename for create
+ *     and a kernel exchange for replace: renameatx_np(RENAME_EXCL / RENAME_SWAP)
+ *     on macOS, renameat2(RENAME_NOREPLACE / RENAME_EXCHANGE) on Linux;
  *   - every name passed to a syscall is a SINGLE component relative to a held
  *     directory fd. Cleanup unlinks <tmpName> relative to the held staging fd
  *     (before closing it) and only when that entry is still our temp file by
@@ -62,6 +63,15 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+#ifdef __linux__
+#include <sys/syscall.h>
+#ifndef RENAME_NOREPLACE
+#define RENAME_NOREPLACE (1 << 0)
+#endif
+#ifndef RENAME_EXCHANGE
+#define RENAME_EXCHANGE (1 << 1)
+#endif
+#endif
 
 #define ABSOLUTE_MAX (2 * 1024 * 1024)
 
@@ -173,6 +183,54 @@ static int open_child_dir(int parent, const char *name) {
     fail("io_error");
   }
   return fd;
+}
+
+/*
+ * Kernel-enforced publish primitives, both relative to held directory fds.
+ * create-only: fails with EEXIST when anything exists at the new name.
+ * exchange:    atomically swaps the two names (both must exist).
+ * A filesystem without support reports ENOTSUP/ENOSYS (macOS) or EINVAL
+ * (Linux: flag not supported by this filesystem).
+ */
+static int rename_create_only(int olddirfd, const char *oldname, int newdirfd, const char *newname) {
+#if defined(__APPLE__)
+  return renameatx_np(olddirfd, oldname, newdirfd, newname, RENAME_EXCL);
+#elif defined(__linux__) && defined(SYS_renameat2)
+  return (int)syscall(SYS_renameat2, olddirfd, oldname, newdirfd, newname, RENAME_NOREPLACE);
+#else
+  errno = ENOSYS;
+  return -1;
+#endif
+}
+
+static int rename_exchange(int olddirfd, const char *oldname, int newdirfd, const char *newname) {
+#if defined(__APPLE__)
+  return renameatx_np(olddirfd, oldname, newdirfd, newname, RENAME_SWAP);
+#elif defined(__linux__) && defined(SYS_renameat2)
+  return (int)syscall(SYS_renameat2, olddirfd, oldname, newdirfd, newname, RENAME_EXCHANGE);
+#else
+  errno = ENOSYS;
+  return -1;
+#endif
+}
+
+static int unsupported_rename_errno(int e) {
+#if defined(__linux__)
+  return e == EINVAL || e == ENOSYS || e == ENOTSUP || e == EOPNOTSUPP;
+#else
+  return e == ENOTSUP || e == ENOSYS;
+#endif
+}
+
+/* Random suffix for the staging dir name (uniqueness, not secrecy). */
+static unsigned random_u32(void) {
+#if defined(__APPLE__)
+  return (unsigned)arc4random();
+#else
+  unsigned v = 0;
+  if (getentropy(&v, sizeof v) != 0) fail("io_error");
+  return v;
+#endif
 }
 
 static long long mtime_ns(const struct stat *s) {
@@ -299,7 +357,7 @@ static size_t parse_len(const char *s, size_t max) {
  */
 static void open_staging_dir(int dirfd) {
   snprintf(g_stage_name, sizeof g_stage_name, ".calame-stage-%d-%08x", (int)getpid(),
-           (unsigned)arc4random());
+           random_u32());
   if (mkdirat(dirfd, g_stage_name, 0700) != 0) {
     g_stage_name[0] = '\0';
     fail("io_error");
@@ -407,10 +465,10 @@ int main(int argc, char **argv) {
 
     check_tmp_before_publish(tmpName);
     hook("before_rename");
-    /* RENAME_EXCL: kernel-enforced create-only on the target name. */
-    if (renameatx_np(g_stage_fd, tmpName, dirfd, name, RENAME_EXCL) != 0) {
+    /* Kernel-enforced create-only on the target name. */
+    if (rename_create_only(g_stage_fd, tmpName, dirfd, name) != 0) {
       if (errno == EEXIST) fail("already_exists");
-      if (errno == ENOTSUP || errno == ENOSYS) fail("unsupported_filesystem");
+      if (unsupported_rename_errno(errno)) fail("unsupported_filesystem");
       fail("io_error");
     }
 
@@ -457,10 +515,10 @@ int main(int argc, char **argv) {
 
   check_tmp_before_publish(tmpName);
   hook("before_rename");
-  /* RENAME_SWAP: our temp goes to `name`, whatever was at `name` goes to
+  /* Exchange: our temp goes to `name`, whatever was at `name` goes to
      <stage>/<tmpName>. */
-  if (renameatx_np(g_stage_fd, tmpName, dirfd, name, RENAME_SWAP) != 0) {
-    if (errno == ENOTSUP || errno == ENOSYS) fail("unsupported_filesystem");
+  if (rename_exchange(g_stage_fd, tmpName, dirfd, name) != 0) {
+    if (unsupported_rename_errno(errno)) fail("unsupported_filesystem");
     fail("io_error");
   }
 

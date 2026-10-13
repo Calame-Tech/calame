@@ -15,24 +15,32 @@
  * scope; such tampering is detected where possible and, after the publish
  * syscall, reported as `published_unverified` (never rolled back).
  *
- * Confinement (POSIX):
+ * Confinement (macOS, Linux):
  *  - Node's fs API only takes path strings, so a path validated by `lstat`
  *    can resolve differently by the time `open`/`rename` run. Every POSIX
  *    filesystem access therefore goes through the `calame-fsat` helper
  *    (native/fsat.c): it opens the root once, walks each component with
  *    `openat(O_DIRECTORY | O_NOFOLLOW)`, creates the temp file
- *    (`O_EXCL | O_NOFOLLOW`) in a staging dir held by fd, publishes it
- *    (`renameatx_np` RENAME_EXCL create-only / RENAME_SWAP replace) and cleans
- *    up with single-component `unlinkat` relative to held fds. No path string
- *    is re-resolved between steps.
+ *    (`O_EXCL | O_NOFOLLOW`) in a staging dir held by fd, publishes it with a
+ *    kernel create-only rename / exchange (`renameatx_np` RENAME_EXCL /
+ *    RENAME_SWAP on macOS, `renameat2` RENAME_NOREPLACE / RENAME_EXCHANGE on
+ *    Linux) and cleans up with single-component `unlinkat` relative to held
+ *    fds. No path string is re-resolved between steps. A POSIX build without
+ *    the helper fails closed (`unsupported_platform`).
  *  - An open directory fd does NOT lock the directory: it can still be renamed
  *    or have its entries swapped. The guarantee is that operations stay inside
  *    the directory objects reached from the root without following a symlink,
  *    not that the name -> directory mapping is frozen. The root path is
  *    trusted and resolved once; a symlink as its last component is refused.
- *  - Windows has no equivalent primitive reachable from Node: WRITES FAIL
- *    CLOSED (`unsupported_platform`) before touching the disk. Reads keep an
- *    lstat walk (they cannot write outside the root).
+ *
+ * Windows (path-based, weaker): there is no directory-handle-relative API
+ * reachable from Node, so reads and writes use path strings checked by an
+ * `lstat` walk + `realpath` canonical check, re-resolved inside the lock and
+ * right before publishing; the temp file is a sibling (`O_EXCL`), create uses
+ * `link()` (kernel create-only), replace re-checks inode/size/mtime/content
+ * then `rename`s. This shrinks but does NOT close the window in which a
+ * concurrent local process swaps a parent folder for a link (honest limit,
+ * documented in docs/rag-write-tool.md). Same behaviour as 0.8.3.
  *
  * Other guarantees (see docs/rag-write-tool.md):
  *  - `relPath` is a strict, relative, forward-slash path: no absolute / UNC /
@@ -51,7 +59,7 @@
  */
 
 import { constants as fsc, accessSync } from 'node:fs';
-import { lstat, open, realpath } from 'node:fs/promises';
+import { link, lstat, open, realpath, rename, unlink } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
@@ -225,7 +233,7 @@ function effectiveMaxBytes(limits: FsWriteLimits): number {
 }
 
 // ---------------------------------------------------------------------------
-// Windows-only read path (lstat walk). Writes never use this.
+// Path-based mode (Windows): lstat walk + canonical check
 // ---------------------------------------------------------------------------
 
 interface Resolved {
@@ -316,7 +324,16 @@ async function assertCanonical(
   }
 }
 
-async function readRegular(target: string, maxBytes: number): Promise<Buffer | null> {
+interface RegularFile {
+  buf: Buffer;
+  ino: number;
+  dev: number;
+  mtimeMs: number;
+  size: number;
+  mode: number;
+}
+
+async function readRegular(target: string, maxBytes: number): Promise<RegularFile | null> {
   let fh: FileHandle | undefined;
   try {
     const st = await lstat(target);
@@ -334,7 +351,15 @@ async function readRegular(target: string, maxBytes: number): Promise<Buffer | n
     }
     if (fst.size > maxBytes)
       throw new FsWriteError('too_large', 'Existing file exceeds the size limit.');
-    return await fh.readFile();
+    const buf = await fh.readFile();
+    return {
+      buf,
+      ino: fst.ino,
+      dev: fst.dev,
+      mtimeMs: fst.mtimeMs,
+      size: fst.size,
+      mode: fst.mode & 0o777,
+    };
   } catch (err) {
     if (err instanceof FsWriteError) throw err;
     const code = (err as NodeJS.ErrnoException).code;
@@ -382,20 +407,25 @@ const HELPER_MESSAGES: Partial<Record<FsWriteErrorCode, string>> = {
 };
 
 let helperOverride: string | undefined;
+let pathModeOverride = false;
 
 /** Test seam: use the hook-enabled helper build. Pass undefined to reset. */
 export function __setFsatHelperPathForTests(p: string | undefined): void {
   helperOverride = p;
 }
 
-/** Throws `unsupported_platform` (before any disk access) when writes cannot be confined. */
+/** Test seam: run the Windows path-based mode on any platform. */
+export function __setPathModeForTests(on: boolean): void {
+  pathModeOverride = on;
+}
+
+/** Windows (or the test seam): path-based mode instead of the helper. */
+function usePathMode(): boolean {
+  return pathModeOverride || process.platform === 'win32';
+}
+
+/** Throws `unsupported_platform` (before any disk access) when the helper is missing. */
 function helperPath(): string {
-  if (process.platform === 'win32') {
-    throw new FsWriteError(
-      'unsupported_platform',
-      'Writing is not supported on this platform (no directory-anchored file API); nothing was written.',
-    );
-  }
   const here = fileURLToPath(new URL('.', import.meta.url));
   const candidates = helperOverride
     ? [helperOverride]
@@ -511,9 +541,9 @@ export async function readTextFile(input: ReadTextFileInput): Promise<ReadTextFi
   const segments = validateRelPath(input.relPath, input);
   const maxBytes = effectiveMaxBytes(input);
   let buf: Buffer | null;
-  if (process.platform === 'win32') {
+  if (usePathMode()) {
     const { target } = await resolveParents(input.rootPath, segments);
-    buf = await readRegular(target, maxBytes);
+    buf = (await readRegular(target, maxBytes))?.buf ?? null;
   } else {
     buf = await helperRead(input.rootPath, segments, maxBytes);
   }
@@ -551,7 +581,8 @@ export async function writeTextFile(input: WriteTextFileInput): Promise<WriteTex
       'expectedVersion must be a 64-char sha256 hex string.',
     );
   }
-  helperPath(); // fail closed (Windows / helper missing) before anything else
+  if (usePathMode()) return writeTextFilePathMode(input, segments, data);
+  helperPath(); // fail closed (helper missing) before anything else
 
   // The mutex orders in-process callers (case aliases, overlapping roots). It
   // is NOT what confines paths: the helper's fd-relative walk is.
@@ -602,6 +633,117 @@ export async function writeTextFile(input: WriteTextFileInput): Promise<WriteTex
     } catch (err) {
       if (err instanceof FsWriteError) throw err;
       throw new FsWriteError('io_error', 'Write failed.');
+    }
+  });
+}
+
+/**
+ * Windows path-based write (see the header): same checks and atomic publish
+ * as 0.8.3, confinement by lstat walk + canonical check, re-resolved inside
+ * the lock and right before publishing.
+ */
+async function writeTextFilePathMode(
+  input: WriteTextFileInput,
+  segments: string[],
+  data: Buffer,
+): Promise<WriteTextFileResult> {
+  await resolveParents(input.rootPath, segments);
+  return withLock('document-write', async () => {
+    const { dir, target, name } = await resolveParents(input.rootPath, segments);
+    const tmp = posix.join(
+      dir,
+      `.calame-tmp-${randomBytes(8).toString('hex')}-${name}`.slice(0, 200),
+    );
+    let tmpCreated = false;
+    try {
+      const existing = await readRegular(target, ABSOLUTE_WRITE_MAX_BYTES);
+      if (input.expectedVersion === undefined) {
+        if (existing) {
+          throw new FsWriteError(
+            'already_exists',
+            'File already exists; pass expectedVersion to replace it.',
+          );
+        }
+      } else {
+        if (!existing) {
+          throw new FsWriteError(
+            'not_found',
+            'File does not exist; omit expectedVersion to create it.',
+          );
+        }
+        if (sha256Hex(existing.buf) !== input.expectedVersion) {
+          throw new FsWriteError(
+            'version_conflict',
+            'The file changed since you read it. Re-read it and retry.',
+          );
+        }
+      }
+
+      const fh = await open(
+        tmp,
+        fsc.O_WRONLY | fsc.O_CREAT | fsc.O_EXCL | (fsc.O_NOFOLLOW ?? 0),
+        existing ? existing.mode : 0o644,
+      );
+      tmpCreated = true;
+      try {
+        await fh.writeFile(data);
+        await fh.sync();
+      } finally {
+        await fh.close();
+      }
+
+      if (input.expectedVersion === undefined) {
+        // Re-check the parents right before publishing (best effort).
+        await resolveParents(input.rootPath, segments);
+        try {
+          // Kernel-enforced create-only: fails if anything appeared at `target`.
+          await link(tmp, target);
+        } catch (err) {
+          const code = (err as NodeJS.ErrnoException).code;
+          if (code === 'EEXIST') throw new FsWriteError('already_exists', 'File already exists.');
+          if (code === 'EPERM' || code === 'ENOTSUP' || code === 'EXDEV' || code === 'ENOSYS') {
+            throw new FsWriteError(
+              'unsupported_filesystem',
+              'Filesystem does not support atomic create.',
+            );
+          }
+          throw new FsWriteError('io_error', 'Cannot create file.');
+        }
+      } else {
+        // Last re-check right before rename (best effort; see the header).
+        await resolveParents(input.rootPath, segments);
+        const again = await readRegular(target, ABSOLUTE_WRITE_MAX_BYTES);
+        if (
+          !again ||
+          again.ino !== existing!.ino ||
+          again.dev !== existing!.dev ||
+          again.mtimeMs !== existing!.mtimeMs ||
+          again.size !== existing!.size ||
+          sha256Hex(again.buf) !== input.expectedVersion
+        ) {
+          throw new FsWriteError(
+            'version_conflict',
+            'The file changed during the write. Re-read it and retry.',
+          );
+        }
+        try {
+          await rename(tmp, target);
+          tmpCreated = false;
+        } catch {
+          throw new FsWriteError('io_error', 'Cannot replace file.');
+        }
+      }
+      return {
+        relPath: segments.join('/'),
+        version: sha256Hex(data),
+        bytes: data.length,
+        created: input.expectedVersion === undefined,
+      };
+    } catch (err) {
+      if (err instanceof FsWriteError) throw err;
+      throw new FsWriteError('io_error', 'Write failed.');
+    } finally {
+      if (tmpCreated) await unlink(tmp).catch(() => {});
     }
   });
 }

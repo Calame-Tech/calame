@@ -477,20 +477,29 @@ describe.runIf(isPosix)('staging tampering (real filesystem)', () => {
 });
 
 describe('fail-closed and normal paths', () => {
-  it('fails closed on Windows before touching the disk', async () => {
+  it('uses the path-based mode on Windows (no helper needed)', async () => {
     const desc = Object.getOwnPropertyDescriptor(process, 'platform')!;
     Object.defineProperty(process, 'platform', { value: 'win32' });
+    __setFsatHelperPathForTests(join(base, 'does-not-exist'));
     try {
-      await expect(
-        writeTextFile({ rootPath: root, relPath: 'notes/w.md', content: 'x' }),
-      ).rejects.toMatchObject({ code: 'unsupported_platform' });
+      const c = await writeTextFile({ rootPath: root, relPath: 'notes/w.md', content: 'x' });
+      expect(c).toMatchObject({ created: true, bytes: 1 });
+      const rd = await readTextFile({ rootPath: root, relPath: 'notes/w.md' });
+      await writeTextFile({
+        rootPath: root,
+        relPath: 'notes/w.md',
+        content: 'y',
+        expectedVersion: rd.version,
+      });
     } finally {
       Object.defineProperty(process, 'platform', desc);
+      __setFsatHelperPathForTests(undefined);
     }
-    expect(await readdir(join(root, 'notes'))).toEqual([]);
+    expect(await readFile(join(root, 'notes', 'w.md'), 'utf8')).toBe('y');
+    expect(await readdir(join(root, 'notes'))).toEqual(['w.md']);
   });
 
-  it('fails closed (no path-based fallback) when the helper is missing', async () => {
+  it('fails closed on macOS/Linux (no path-based fallback) when the helper is missing', async () => {
     __setFsatHelperPathForTests(join(base, 'does-not-exist'));
     await expect(
       writeTextFile({ rootPath: root, relPath: 'notes/w.md', content: 'x' }),

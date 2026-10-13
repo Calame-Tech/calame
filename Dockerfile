@@ -74,6 +74,10 @@ COPY --from=builder /app/ee/rag-notion/package.json ./ee/rag-notion/
 COPY --from=builder /app/ee/rag-microsoft/dist ./ee/rag-microsoft/dist
 COPY --from=builder /app/ee/rag-microsoft/package.json ./ee/rag-microsoft/
 
+# Skip development-only lifecycle setup (notably Husky) during the production
+# dependency install below. Native production dependency scripts still run.
+ENV NODE_ENV=production
+
 # Install production dependencies only
 RUN pnpm install --frozen-lockfile --prod
 
@@ -89,7 +93,6 @@ COPY entrypoint.sh /entrypoint.sh
 # .gitattributes pins LF for new checkouts; this keeps existing ones building.
 RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
 
-ENV NODE_ENV=production
 ENV CALAME_DATA_DIR=/data
 # App defaults to 127.0.0.1 (loopback). In a container that would make the
 # published port unreachable, so bind all interfaces here — the container

@@ -2,15 +2,19 @@ services:
   calame:
     build: .
     ports:
-      - "${CALAME_PORT:-4567}:4567"
+      - "${CALAME_BIND_ADDRESS:-127.0.0.1}:${CALAME_PORT:-4567}:4567"
     volumes:
       - calame-data:/data
+      # Optional local embeddings. Prepare this directory with:
+      # pnpm model:fetch -- --output-dir .calame-models
+      - "${CALAME_EMBEDDING_MODEL_PATH:-./.calame-models}:/models:ro"
     environment:
       - CALAME_SECRET_KEY
       # Required: the image runs with NODE_ENV=production, where an unset key
       # disables RAG (knowledge bases) at boot. Generate with `openssl rand -hex 32`.
       - CALAME_ENCRYPTION_KEY
       - CALAME_DATA_DIR=/data
+      - CALAME_LOCAL_EMBEDDING_MODEL_DIR=/models
       - CALAME_LOG_LEVEL=${CALAME_LOG_LEVEL:-info}
       - CALAME_LOG_FORMAT=${CALAME_LOG_FORMAT:-text}
       - CALAME_CORS_ORIGINS=${CALAME_CORS_ORIGINS:-*}

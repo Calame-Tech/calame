@@ -68,6 +68,11 @@ jobs:
         run: |
           set -euo pipefail
           PKG_VERSION="$(node -p "require('./package.json').version")"
+          DESKTOP_VERSION="$(node -p "require('./apps/desktop/package.json').version")"
+          if [ "$DESKTOP_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Desktop version '$DESKTOP_VERSION' does not match root version '$PKG_VERSION'."
+            exit 1
+          fi
           if [ "$EVENT_NAME" = "push" ]; then
             TAG="$REF_NAME"
             if [ "$TAG" != "v$PKG_VERSION" ]; then

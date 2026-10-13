@@ -272,6 +272,9 @@ async function main() {
   // 3. Bundle the server entry point with esbuild.
   log('\nBundling packages/cli/src/index.ts with esbuild...');
   const esbuild = await import('esbuild');
+  const productVersion = JSON.parse(
+    fs.readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf-8'),
+  ).version;
   await esbuild.build({
     entryPoints: [path.join(CLI_DIR, 'src/index.ts')],
     outfile: OUT_FILE,
@@ -281,6 +284,9 @@ async function main() {
     target: 'node20',
     sourcemap: false,
     external: ESBUILD_EXTERNAL,
+    define: {
+      'process.env.CALAME_VERSION': JSON.stringify(productVersion),
+    },
     // The ESM output has no global `require`. Bundled CJS dependencies that
     // esbuild couldn't statically resolve into plain imports (or that use
     // require() for dynamic/optional lookups) still call require() at

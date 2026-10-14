@@ -5,7 +5,7 @@
 import { useMemo, useState } from 'react';
 import type { RagSourceType } from '../types.js';
 import type { RagSourcePublic } from '../routes/api-types.js';
-import { apiPost, apiPatch, ApiError } from './api.js';
+import { apiPost, apiPatch, ApiError, type RagSourceResponse } from './api.js';
 import ReindexDialog from './ReindexDialog.js';
 
 /**
@@ -794,14 +794,20 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
     setSaving(true);
     try {
       const payload = buildPayload();
-      const saved =
+      // POST and PATCH both answer `{ source }` (routes/rag-sources.ts) — the
+      // source itself must be unwrapped, otherwise the caller receives an
+      // object without `id` / `name`.
+      const response =
         isEditing && initial?.id
-          ? await apiPatch<RagSourcePublic>(
+          ? await apiPatch<RagSourceResponse>(
               `/api/rag/sources/${encodeURIComponent(initial.id)}`,
               payload,
             )
-          : await apiPost<RagSourcePublic>('/api/rag/sources', payload);
-      onSave(saved);
+          : await apiPost<RagSourceResponse>('/api/rag/sources', payload);
+      if (!response?.source) {
+        throw new Error("Le serveur n'a pas renvoyé la source enregistrée. Rechargez la liste.");
+      }
+      onSave(response.source);
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
         setError(
@@ -980,6 +986,12 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               Le serveur doit pouvoir lire ce chemin. Les fichiers ajoutés ultérieurement sont
               indexés à la prochaine synchronisation.
             </HelperText>
+            {browsingFolder && (
+              <p role="status" className="text-xs text-gray-400 mt-1">
+                En attente du sélecteur de dossier du système — il peut s&apos;ouvrir derrière la
+                fenêtre de Calame. Vous pouvez aussi saisir le chemin manuellement.
+              </p>
+            )}
             {browseError && (
               <p className="text-xs text-amber-400 mt-1">
                 {browseError} Vous pouvez toujours saisir le chemin manuellement.
@@ -2240,7 +2252,10 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
 
       {/* Error / test result banners */}
       {error && (
-        <div className="p-2.5 rounded-lg text-sm bg-red-950/30 border border-red-800/50 text-red-400 space-y-1">
+        <div
+          role="alert"
+          className="p-2.5 rounded-lg text-sm bg-red-950/30 border border-red-800/50 text-red-400 space-y-1"
+        >
           <p>{error}</p>
           {serverError && <p className="text-xs text-red-300 opacity-80">{serverError}</p>}
           {serverError && embeddingSettingName && (
@@ -2271,6 +2286,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
           type="button"
           onClick={() => void handleSave()}
           disabled={saving}
+          aria-busy={saving}
           className="px-4 py-2 rounded-lg bg-os-700 hover:bg-os-600 text-white text-sm font-medium transition-all duration-200 disabled:opacity-50 shadow-md shadow-os-900/20"
         >
           {saving ? 'Enregistrement…' : 'Enregistrer'}

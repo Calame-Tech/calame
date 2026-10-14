@@ -88,6 +88,9 @@ function SyncStatusBadge({ source, jobInfo }: SyncStatusBadgeProps) {
       >
         <span className="inline-block w-2 h-2 rounded-full bg-blue-400 animate-pulse flex-shrink-0" />
         Synchronisation en cours…
+        {/* Real counters from the job row — no estimate when the total is unknown. */}
+        {activeJob.totalDocuments > 0 &&
+          ` (${activeJob.processedDocuments} / ${activeJob.totalDocuments} documents)`}
       </span>
     );
   }
@@ -176,6 +179,13 @@ function RefreshIcon({ spinning }: { spinning: boolean }) {
 const RETENTION_DAYS = 7;
 
 /**
+ * Upper bound for the initial list requests. `fetch` has no timeout of its
+ * own, so a server that never answers would otherwise leave the view on
+ * "Chargement des sources…" forever with no way out.
+ */
+export const LOAD_TIMEOUT_MS = 20_000;
+
+/**
  * Compute how many days remain before the source is hard-deleted by the
  * cleanup cron. Negative values mean the source is past retention and will be
  * collected on the next server boot (or already has been — the UI just hasn't
@@ -208,6 +218,9 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
   const [view, setView] = useState<'sources' | 'deleted'>('sources');
   const [deletedSources, setDeletedSources] = useState<RagSourcePublic[]>([]);
   const [loading, setLoading] = useState(true);
+  // False until the source list has been fetched once — an empty `sources`
+  // array must not be presented as "no source" when the fetch failed.
+  const [sourcesLoaded, setSourcesLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   // Track per-source "requesting sync" state independently from active jobs.
@@ -223,8 +236,11 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
 
   const refreshSources = useCallback(async (): Promise<void> => {
     try {
-      const data = await apiGet<RagSourceListResponse>('/api/rag/sources');
+      const data = await apiGet<RagSourceListResponse>('/api/rag/sources', {
+        timeoutMs: LOAD_TIMEOUT_MS,
+      });
       setSources(data.sources ?? []);
+      setSourcesLoaded(true);
       setError(null);
     } catch (err) {
       const message =
@@ -245,7 +261,9 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
    */
   const refreshDeletedSources = useCallback(async (): Promise<void> => {
     try {
-      const data = await apiGet<{ sources: RagSourcePublic[] }>('/api/rag/sources?filter=deleted');
+      const data = await apiGet<{ sources: RagSourcePublic[] }>('/api/rag/sources?filter=deleted', {
+        timeoutMs: LOAD_TIMEOUT_MS,
+      });
       setDeletedSources(data.sources ?? []);
     } catch (err) {
       // Failure here is not fatal — the count badge just stays at the
@@ -267,6 +285,7 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
     try {
       const data = await apiGet<{ success?: boolean; settings?: AiSettingOption[] }>(
         '/api/ai-settings',
+        { timeoutMs: LOAD_TIMEOUT_MS },
       );
       if (data.success && Array.isArray(data.settings)) {
         setAiSettings(data.settings);
@@ -276,13 +295,15 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
     }
   }, []);
 
-  useEffect(() => {
-    void (async () => {
-      setLoading(true);
-      await Promise.all([refreshSources(), refreshAiSettings(), refreshDeletedSources()]);
-      setLoading(false);
-    })();
+  const loadAll = useCallback(async (): Promise<void> => {
+    setLoading(true);
+    await Promise.all([refreshSources(), refreshAiSettings(), refreshDeletedSources()]);
+    setLoading(false);
   }, [refreshSources, refreshAiSettings, refreshDeletedSources]);
+
+  useEffect(() => {
+    void loadAll();
+  }, [loadAll]);
 
   // Stable list of source IDs passed to the polling hook.
   const sourceIds = useMemo(() => sources.map((s) => s.id), [sources]);
@@ -495,12 +516,18 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
         </div>
 
         {actionMessage && (
-          <div className="p-2.5 rounded-lg text-sm bg-green-950/30 border border-green-800/50 text-green-400">
+          <div
+            role="status"
+            className="p-2.5 rounded-lg text-sm bg-green-950/30 border border-green-800/50 text-green-400"
+          >
             {actionMessage}
           </div>
         )}
         {error && (
-          <div className="p-2.5 rounded-lg text-sm bg-red-950/30 border border-red-800/50 text-red-400">
+          <div
+            role="alert"
+            className="p-2.5 rounded-lg text-sm bg-red-950/30 border border-red-800/50 text-red-400"
+          >
             {error}
           </div>
         )}
@@ -630,12 +657,18 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
       </div>
 
       {actionMessage && (
-        <div className="p-2.5 rounded-lg text-sm bg-green-950/30 border border-green-800/50 text-green-400">
+        <div
+          role="status"
+          className="p-2.5 rounded-lg text-sm bg-green-950/30 border border-green-800/50 text-green-400"
+        >
           {actionMessage}
         </div>
       )}
       {error && (
-        <div className="p-2.5 rounded-lg text-sm bg-red-950/30 border border-red-800/50 text-red-400">
+        <div
+          role="alert"
+          className="p-2.5 rounded-lg text-sm bg-red-950/30 border border-red-800/50 text-red-400"
+        >
           {error}
         </div>
       )}
@@ -671,8 +704,24 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] gap-4 items-start">
         {/* Source list */}
         <div className="space-y-2">
-          {loading && <p className="text-sm text-gray-500 italic">Chargement des sources…</p>}
-          {!loading && sources.length === 0 && !showCreateForm && (
+          {loading && (
+            <p role="status" className="text-sm text-gray-500 italic">
+              Chargement des sources…
+            </p>
+          )}
+          {!loading && !sourcesLoaded && (
+            <div className="px-3 py-6 text-center border border-dashed border-red-800/40 rounded-lg space-y-3">
+              <p className="text-sm text-red-400">Impossible de charger les sources.</p>
+              <button
+                type="button"
+                onClick={() => void loadAll()}
+                className="px-3 py-1.5 rounded-lg text-sm bg-os-700 hover:bg-os-600 text-white"
+              >
+                Réessayer
+              </button>
+            </div>
+          )}
+          {!loading && sourcesLoaded && sources.length === 0 && !showCreateForm && (
             <div className="text-sm text-gray-500 italic px-3 py-6 text-center border border-dashed border-white/5 rounded-lg">
               Aucune source. Cliquez sur <span className="text-os-400">+ Nouvelle source</span> pour
               en créer une.

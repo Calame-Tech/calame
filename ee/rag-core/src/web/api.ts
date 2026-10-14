@@ -91,9 +91,35 @@ async function parseJson<T>(res: Response): Promise<T> {
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' } as const;
 
-export async function apiGet<T>(url: string): Promise<T> {
-  const res = await fetch(url, withTenantHeader({ method: 'GET' }));
-  return parseJson<T>(res);
+/** Thrown by `apiGet` when `timeoutMs` elapses before the server answers. */
+export class ApiTimeoutError extends Error {
+  constructor(timeoutMs: number) {
+    super(`Le serveur n'a pas répondu après ${Math.round(timeoutMs / 1000)} s.`);
+    this.name = 'ApiTimeoutError';
+  }
+}
+
+/**
+ * `timeoutMs` aborts the request so a hung server surfaces as an error
+ * instead of an endless loading state. Omit it to wait indefinitely.
+ */
+export async function apiGet<T>(url: string, options: { timeoutMs?: number } = {}): Promise<T> {
+  const { timeoutMs } = options;
+  if (timeoutMs === undefined) {
+    const res = await fetch(url, withTenantHeader({ method: 'GET' }));
+    return parseJson<T>(res);
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, withTenantHeader({ method: 'GET', signal: controller.signal }));
+    return await parseJson<T>(res);
+  } catch (err) {
+    if (controller.signal.aborted) throw new ApiTimeoutError(timeoutMs);
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export async function apiPost<T>(url: string, body?: unknown): Promise<T> {
@@ -161,6 +187,11 @@ export type { RagSourcePublic };
 
 export interface RagSourceListResponse {
   sources: RagSourceWithCounts[];
+}
+
+/** Body of POST /api/rag/sources and PATCH /api/rag/sources/:id. */
+export interface RagSourceResponse {
+  source: RagSourcePublic | null;
 }
 
 export interface RagFolderListResponse {

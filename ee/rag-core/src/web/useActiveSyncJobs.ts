@@ -70,8 +70,13 @@ export function useActiveSyncJobs(
   // Keep a ref to latest sourceIds so the interval callback stays current
   // without being recreated on every render.
   const sourceIdsRef = useRef<string[]>(sourceIds);
+  // Last jobs payload, so a source list that arrives after the first poll
+  // (the usual order on mount) is mapped right away instead of waiting for
+  // the next tick — or forever, when no job is active and polling stopped.
+  const lastJobsRef = useRef<RagJob[] | null>(null);
   useEffect(() => {
     sourceIdsRef.current = sourceIds;
+    if (lastJobsRef.current) setJobMap(buildJobMap(sourceIds, lastJobsRef.current));
   }, [sourceIds]);
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -99,6 +104,7 @@ export function useActiveSyncJobs(
       if (cancelledRef.current) return;
 
       const jobs = data.jobs ?? [];
+      lastJobsRef.current = jobs;
       const map = buildMap(jobs);
       setJobMap(map);
 

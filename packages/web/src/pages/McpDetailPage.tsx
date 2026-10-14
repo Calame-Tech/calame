@@ -16,7 +16,7 @@ import ExposeTunnel from '../components/ExposeTunnel.js';
 import TokenManager from '../components/TokenManager.js';
 import AuditLogViewer from '../components/AuditLogViewer.js';
 import McpUsers from '../components/McpUsers.js';
-import { persistProfiles, buildProfilesData } from '../lib/profiles.js';
+import { persistProfiles, buildProfilesData, NEW_MCP_DEFAULTS } from '../lib/profiles.js';
 import {
   getConfigurationTableNames,
   getConfigurationSelectedTables,
@@ -103,6 +103,7 @@ export default function McpDetailPage({
         ]}
       />
       <McpDetailView
+        key={view.profileName}
         profileName={view.profileName}
         profiles={profiles}
         serveStatus={serveStatus}
@@ -252,6 +253,18 @@ function McpDetailView({
   // Find the profile by name
   const profileIndex = profiles.findIndex((p) => p.name === profileName);
   const profile = profileIndex >= 0 ? profiles[profileIndex] : null;
+
+  // Advanced options (file writing, sign-in methods) start folded, unless this
+  // MCP already uses a non-default value — never hide an existing setting.
+  // The profile may load after the first render (direct reload on /mcp/<name>),
+  // so re-open the section as soon as a non-default value shows up.
+  const hasNonDefaultAdvanced =
+    (profile?.authMode ?? NEW_MCP_DEFAULTS.authMode) !== NEW_MCP_DEFAULTS.authMode ||
+    profile?.documentWrite?.enabled === true;
+  const [showAdvanced, setShowAdvanced] = useState(hasNonDefaultAdvanced);
+  useEffect(() => {
+    if (hasNonDefaultAdvanced) setShowAdvanced(true);
+  }, [hasNonDefaultAdvanced]);
 
   // Auth mode handlers — persist to backend on each change
   const handleAuthModeChange = (mode: AuthMode) => {
@@ -839,6 +852,7 @@ function McpDetailView({
         <div className="mt-4 flex items-center justify-between pt-3 border-t border-gray-700/50">
           <div>
             <span className="text-xs text-gray-400">{t('responseMode.label')}</span>
+            <p className="text-xs text-gray-500 mt-0.5">{t('responseMode.hint')}</p>
             {responseModeError && (
               <p className="text-xs text-red-400 mt-0.5">{responseModeError}</p>
             )}
@@ -873,372 +887,419 @@ function McpDetailView({
           </div>
         </div>
 
-        {/* File creation / editing (opt-in, off by default) */}
-        <div className="mt-4 pt-3 border-t border-gray-700/50" data-testid="document-write-section">
-          <div className="flex items-center justify-between">
-            <div>
-              <span className="text-xs text-gray-400">{t('documentWrite.label')}</span>
-              {documentWriteError && (
-                <p className="text-xs text-red-400 mt-0.5">{documentWriteError}</p>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                role="switch"
-                aria-checked={documentWrite.enabled}
-                aria-label={t('documentWrite.toggleAriaLabel')}
-                onClick={handleToggleDocumentWrite}
-                disabled={savingDocumentWrite}
-                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-os-500 focus:ring-offset-2 focus:ring-offset-gray-900 disabled:opacity-50 ${
-                  documentWrite.enabled ? 'bg-orange-500' : 'bg-gray-600'
-                }`}
+        {/* Current access mode + fold for the advanced options. The open-access
+            warning stays outside the fold so it is always visible. */}
+        <div className="mt-4 pt-3 border-t border-gray-700/50">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs text-gray-400" data-testid="current-auth-mode">
+              {t('authMode.current', {
+                mode: t(`authMode.options.${profile.authMode ?? NEW_MCP_DEFAULTS.authMode}.label`),
+              })}
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowAdvanced((v) => !v)}
+              aria-expanded={showAdvanced}
+              aria-controls="mcp-advanced-options"
+              className="inline-flex items-center gap-1 text-xs text-os-400 hover:text-os-300 transition-colors focus:outline-none focus:ring-1 focus:ring-os-500 rounded px-1"
+            >
+              {t('advanced.toggle')}
+              <svg
+                className={`w-3 h-3 transition-transform ${showAdvanced ? 'rotate-180' : ''}`}
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+                aria-hidden="true"
               >
-                <span
-                  className={`inline-block h-3 w-3 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${
-                    documentWrite.enabled ? 'translate-x-5' : 'translate-x-1'
-                  }`}
-                />
-              </button>
-              <HelpTip content={t('documentWrite.tooltip')} position="left" size="xs" />
-            </div>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
           </div>
-          {documentWrite.enabled && (
-            <div className="mt-2 space-y-1">
-              <p className="text-xs text-gray-500">{t('documentWrite.enabledHint')}</p>
-              {localSources.length === 0 ? (
-                <p className="text-xs text-gray-500">{t('documentWrite.noLocalSources')}</p>
-              ) : (
-                localSources.map((s) => (
-                  <label key={s.id} className="flex items-center gap-2 text-xs text-gray-300">
-                    <input
-                      type="checkbox"
-                      checked={!!documentWrite.sources[s.id]}
-                      disabled={savingDocumentWrite}
-                      aria-label={t('documentWrite.sourceAriaLabel', { name: s.name })}
-                      onChange={() => handleToggleDocumentWriteSource(s.id)}
-                    />
-                    {s.name}
-                  </label>
-                ))
-              )}
-              <p className="text-xs text-gray-500">{t('documentWrite.scopeNote')}</p>
-            </div>
-          )}
-        </div>
-
-        {/* Chat authentication mode selector */}
-        <div className="mt-4">
-          <label className="block text-xs text-gray-500 mb-2">{t('authMode.label')}</label>
-          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-            {(
-              [
-                {
-                  value: 'token',
-                  label: t('authMode.options.token.label'),
-                  desc: t('authMode.options.token.desc'),
-                  tooltip: t('authMode.options.token.tooltip'),
-                },
-                {
-                  value: 'calame',
-                  label: t('authMode.options.calame.label'),
-                  desc: t('authMode.options.calame.desc'),
-                  tooltip: t('authMode.options.calame.tooltip'),
-                },
-                {
-                  value: 'sso',
-                  label: t('authMode.options.sso.label'),
-                  desc: t('authMode.options.sso.desc'),
-                  tooltip: t('authMode.options.sso.tooltip'),
-                },
-                {
-                  value: 'oauth',
-                  label: t('authMode.options.oauth.label'),
-                  desc: t('authMode.options.oauth.desc'),
-                  tooltip: t('authMode.options.oauth.tooltip'),
-                },
-                {
-                  value: 'external',
-                  label: t('authMode.options.external.label'),
-                  desc: t('authMode.options.external.desc'),
-                  tooltip: t('authMode.options.external.tooltip'),
-                },
-                {
-                  value: 'open',
-                  label: t('authMode.options.open.label'),
-                  desc: t('authMode.options.open.desc'),
-                  tooltip: t('authMode.options.open.tooltip'),
-                },
-              ] as { value: AuthMode; label: string; desc: string; tooltip: string }[]
-            ).map((mode) => {
-              const currentMode = profile.authMode ?? 'token';
-              return (
-                <button
-                  key={mode.value}
-                  type="button"
-                  onClick={() => handleAuthModeChange(mode.value)}
-                  className={`p-3 rounded-lg border text-center transition-all duration-200 ${
-                    currentMode === mode.value
-                      ? 'border-os-600/60 bg-os-700/10 ring-1 ring-os-600/20'
-                      : 'border-gray-700 hover:border-gray-600 bg-gray-800/30'
-                  }`}
-                  aria-pressed={currentMode === mode.value}
-                >
-                  <p className="text-xs font-medium text-gray-200">{mode.label}</p>
-                  <p className="text-[10px] text-gray-500 mt-0.5">{mode.desc}</p>
-                  <HelpTip content={mode.tooltip} position="bottom" maxWidth={300} size="xs" />
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Warning for open mode */}
+          {!showAdvanced && <p className="text-xs text-gray-500 mt-0.5">{t('advanced.hint')}</p>}
           {(profile.authMode ?? 'token') === 'open' && (
             <p className="mt-2 text-xs text-yellow-500/80 bg-yellow-900/10 border border-yellow-700/30 rounded px-2 py-1">
               {t('authMode.openWarning')}
             </p>
           )}
+        </div>
 
-          {/* SSO info — rendered only when authMode is 'sso' */}
-          {(profile.authMode ?? 'token') === 'sso' && (
-            <Suspense fallback={null}>
-              <ProfileSsoNotice />
-            </Suspense>
-          )}
-
-          {/* External auth config */}
-          {(profile.authMode ?? 'token') === 'external' && (
-            <div className="mt-3 space-y-3 pl-2 border-l-2 border-gray-700">
-              <div>
-                <label
-                  className="block text-xs text-gray-400 mb-1"
-                  htmlFor={`external-validation-url-${profile.name}`}
-                >
-                  {t('external.validationUrlLabel')} <span className="text-red-400">*</span>
-                </label>
-                <input
-                  id={`external-validation-url-${profile.name}`}
-                  type="text"
-                  value={profile.externalAuthConfig?.validationUrl ?? ''}
-                  onChange={(e) =>
-                    handleExternalAuthConfigChange({ validationUrl: e.target.value })
-                  }
-                  placeholder={t('external.validationUrlPlaceholder')}
-                  className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
-                />
-                <p className="text-xs text-gray-600 mt-1">{t('external.validationUrlHelp')}</p>
-              </div>
-
-              <div>
-                <label
-                  className="block text-xs text-gray-400 mb-1"
-                  htmlFor={`external-header-name-${profile.name}`}
-                >
-                  {t('external.headerNameLabel')}
-                </label>
-                <input
-                  id={`external-header-name-${profile.name}`}
-                  type="text"
-                  value={profile.externalAuthConfig?.headerName ?? ''}
-                  onChange={(e) => handleExternalAuthConfigChange({ headerName: e.target.value })}
-                  placeholder={t('external.headerNamePlaceholder')}
-                  className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
-                />
-              </div>
-
-              <div>
-                <label
-                  className="block text-xs text-gray-400 mb-1"
-                  htmlFor={`external-header-template-${profile.name}`}
-                >
-                  {t('external.headerTemplateLabel')}
-                </label>
-                <input
-                  id={`external-header-template-${profile.name}`}
-                  type="text"
-                  value={profile.externalAuthConfig?.headerTemplate ?? ''}
-                  onChange={(e) =>
-                    handleExternalAuthConfigChange({ headerTemplate: e.target.value })
-                  }
-                  placeholder={t('external.headerTemplatePlaceholder')}
-                  className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
-                />
-                <p className="text-xs text-gray-600 mt-1">{t('external.headerTemplateHelp')}</p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
+        {showAdvanced && (
+          <div id="mcp-advanced-options">
+            {/* File creation / editing (opt-in, off by default) */}
+            <div
+              className="mt-4 pt-3 border-t border-gray-700/50"
+              data-testid="document-write-section"
+            >
+              <div className="flex items-center justify-between">
                 <div>
-                  <label
-                    className="block text-xs text-gray-400 mb-1"
-                    htmlFor={`external-email-field-${profile.name}`}
-                  >
-                    {t('external.emailFieldLabel')}{' '}
-                    <span className="text-gray-600">{t('external.optionalSuffix')}</span>
-                  </label>
-                  <input
-                    id={`external-email-field-${profile.name}`}
-                    type="text"
-                    value={profile.externalAuthConfig?.emailField ?? ''}
-                    onChange={(e) => handleExternalAuthConfigChange({ emailField: e.target.value })}
-                    placeholder={t('external.emailFieldPlaceholder')}
-                    className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
-                  />
+                  <span className="text-xs text-gray-400">{t('documentWrite.label')}</span>
+                  <p className="text-xs text-gray-500 mt-0.5">{t('documentWrite.hint')}</p>
+                  {documentWriteError && (
+                    <p className="text-xs text-red-400 mt-0.5">{documentWriteError}</p>
+                  )}
                 </div>
-                <div>
-                  <label
-                    className="block text-xs text-gray-400 mb-1"
-                    htmlFor={`external-name-field-${profile.name}`}
+                <div className="flex items-center gap-2">
+                  <button
+                    role="switch"
+                    aria-checked={documentWrite.enabled}
+                    aria-label={t('documentWrite.toggleAriaLabel')}
+                    onClick={handleToggleDocumentWrite}
+                    disabled={savingDocumentWrite}
+                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-os-500 focus:ring-offset-2 focus:ring-offset-gray-900 disabled:opacity-50 ${
+                      documentWrite.enabled ? 'bg-orange-500' : 'bg-gray-600'
+                    }`}
                   >
-                    {t('external.nameFieldLabel')}{' '}
-                    <span className="text-gray-600">{t('external.optionalSuffix')}</span>
-                  </label>
-                  <input
-                    id={`external-name-field-${profile.name}`}
-                    type="text"
-                    value={profile.externalAuthConfig?.nameField ?? ''}
-                    onChange={(e) => handleExternalAuthConfigChange({ nameField: e.target.value })}
-                    placeholder={t('external.nameFieldPlaceholder')}
-                    className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
-                  />
+                    <span
+                      className={`inline-block h-3 w-3 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${
+                        documentWrite.enabled ? 'translate-x-5' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                  <HelpTip content={t('documentWrite.tooltip')} position="left" size="xs" />
                 </div>
               </div>
-              <p className="text-xs text-gray-600">{t('external.dotNotationHelp')}</p>
-
-              {/* Auto-create users toggle */}
-              <label className="flex items-center gap-2 cursor-pointer mt-2">
-                <input
-                  type="checkbox"
-                  checked={profile.externalAuthConfig?.autoCreateUsers ?? true}
-                  onChange={(e) =>
-                    handleExternalAuthConfigChange({ autoCreateUsers: e.target.checked })
-                  }
-                  className="rounded border-gray-600 bg-gray-700 text-os-500 focus:ring-os-500/30 focus:ring-offset-0"
-                />
-                <span className="text-sm text-gray-300">{t('external.autoCreateUsersLabel')}</span>
-              </label>
-              <p className="text-xs text-gray-600">
-                {profile.externalAuthConfig?.autoCreateUsers !== false
-                  ? t('external.autoCreateEnabled')
-                  : t('external.autoCreateDisabled')}
-              </p>
-            </div>
-          )}
-
-          {/* OAuth config */}
-          {(profile.authMode ?? 'token') === 'oauth' && (
-            <div className="mt-3 space-y-3 pl-2 border-l-2 border-gray-700">
-              <div>
-                <label
-                  className="block text-xs text-gray-400 mb-1"
-                  htmlFor={`oauth-provider-${profile.name}`}
-                >
-                  {t('oauth.providerLabel')}
-                </label>
-                <select
-                  id={`oauth-provider-${profile.name}`}
-                  value={profile.oauthConfig?.provider ?? 'github'}
-                  onChange={(e) =>
-                    handleOAuthConfigChange({
-                      provider: e.target.value as OAuthConfig['provider'],
-                    })
-                  }
-                  className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
-                >
-                  <option value="github">{t('oauth.providers.github')}</option>
-                  <option value="google">{t('oauth.providers.google')}</option>
-                  <option value="gitlab">{t('oauth.providers.gitlab')}</option>
-                  <option value="custom">{t('oauth.providers.custom')}</option>
-                </select>
-              </div>
-              <div>
-                <label
-                  className="block text-xs text-gray-400 mb-1"
-                  htmlFor={`oauth-client-id-${profile.name}`}
-                >
-                  {t('oauth.clientIdLabel')} <span className="text-red-400">*</span>
-                </label>
-                <input
-                  id={`oauth-client-id-${profile.name}`}
-                  type="text"
-                  value={profile.oauthConfig?.clientId ?? ''}
-                  onChange={(e) => handleOAuthConfigChange({ clientId: e.target.value })}
-                  placeholder={t('oauth.clientIdPlaceholder')}
-                  className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
-                />
-              </div>
-              <div>
-                <label
-                  className="block text-xs text-gray-400 mb-1"
-                  htmlFor={`oauth-client-secret-${profile.name}`}
-                >
-                  {t('oauth.clientSecretLabel')} <span className="text-red-400">*</span>
-                </label>
-                <input
-                  id={`oauth-client-secret-${profile.name}`}
-                  type="password"
-                  value={profile.oauthConfig?.clientSecret ?? ''}
-                  onChange={(e) => handleOAuthConfigChange({ clientSecret: e.target.value })}
-                  placeholder={t('oauth.clientSecretPlaceholder')}
-                  className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
-                />
-              </div>
-              {((profile.oauthConfig?.provider ?? 'github') === 'custom' ||
-                (profile.oauthConfig?.provider ?? 'github') === 'gitlab') && (
-                <>
-                  <div>
-                    <label
-                      className="block text-xs text-gray-400 mb-1"
-                      htmlFor={`oauth-auth-url-${profile.name}`}
-                    >
-                      {t('oauth.authUrlLabel')} <span className="text-red-400">*</span>
-                    </label>
-                    <input
-                      id={`oauth-auth-url-${profile.name}`}
-                      type="text"
-                      value={profile.oauthConfig?.authorizationUrl ?? ''}
-                      onChange={(e) =>
-                        handleOAuthConfigChange({ authorizationUrl: e.target.value })
-                      }
-                      placeholder={t('oauth.urlPlaceholder')}
-                      className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
-                    />
-                  </div>
-                  <div>
-                    <label
-                      className="block text-xs text-gray-400 mb-1"
-                      htmlFor={`oauth-token-url-${profile.name}`}
-                    >
-                      {t('oauth.tokenUrlLabel')} <span className="text-red-400">*</span>
-                    </label>
-                    <input
-                      id={`oauth-token-url-${profile.name}`}
-                      type="text"
-                      value={profile.oauthConfig?.tokenUrl ?? ''}
-                      onChange={(e) => handleOAuthConfigChange({ tokenUrl: e.target.value })}
-                      placeholder={t('oauth.urlPlaceholder')}
-                      className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
-                    />
-                  </div>
-                  <div>
-                    <label
-                      className="block text-xs text-gray-400 mb-1"
-                      htmlFor={`oauth-userinfo-url-${profile.name}`}
-                    >
-                      {t('oauth.userinfoUrlLabel')} <span className="text-red-400">*</span>
-                    </label>
-                    <input
-                      id={`oauth-userinfo-url-${profile.name}`}
-                      type="text"
-                      value={profile.oauthConfig?.userinfoUrl ?? ''}
-                      onChange={(e) => handleOAuthConfigChange({ userinfoUrl: e.target.value })}
-                      placeholder={t('oauth.urlPlaceholder')}
-                      className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
-                    />
-                  </div>
-                </>
+              {documentWrite.enabled && (
+                <div className="mt-2 space-y-1">
+                  <p className="text-xs text-gray-500">{t('documentWrite.enabledHint')}</p>
+                  {localSources.length === 0 ? (
+                    <p className="text-xs text-gray-500">{t('documentWrite.noLocalSources')}</p>
+                  ) : (
+                    localSources.map((s) => (
+                      <label key={s.id} className="flex items-center gap-2 text-xs text-gray-300">
+                        <input
+                          type="checkbox"
+                          checked={!!documentWrite.sources[s.id]}
+                          disabled={savingDocumentWrite}
+                          aria-label={t('documentWrite.sourceAriaLabel', { name: s.name })}
+                          onChange={() => handleToggleDocumentWriteSource(s.id)}
+                        />
+                        {s.name}
+                      </label>
+                    ))
+                  )}
+                  <p className="text-xs text-gray-500">{t('documentWrite.scopeNote')}</p>
+                </div>
               )}
             </div>
-          )}
-        </div>
+
+            {/* Chat authentication mode selector */}
+            <div className="mt-4">
+              <label className="block text-xs text-gray-500">{t('authMode.label')}</label>
+              <p className="text-xs text-gray-500 mt-0.5 mb-2">{t('authMode.hint')}</p>
+              <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                {(
+                  [
+                    {
+                      value: 'token',
+                      label: t('authMode.options.token.label'),
+                      desc: t('authMode.options.token.desc'),
+                      tooltip: t('authMode.options.token.tooltip'),
+                    },
+                    {
+                      value: 'calame',
+                      label: t('authMode.options.calame.label'),
+                      desc: t('authMode.options.calame.desc'),
+                      tooltip: t('authMode.options.calame.tooltip'),
+                    },
+                    {
+                      value: 'sso',
+                      label: t('authMode.options.sso.label'),
+                      desc: t('authMode.options.sso.desc'),
+                      tooltip: t('authMode.options.sso.tooltip'),
+                    },
+                    {
+                      value: 'oauth',
+                      label: t('authMode.options.oauth.label'),
+                      desc: t('authMode.options.oauth.desc'),
+                      tooltip: t('authMode.options.oauth.tooltip'),
+                    },
+                    {
+                      value: 'external',
+                      label: t('authMode.options.external.label'),
+                      desc: t('authMode.options.external.desc'),
+                      tooltip: t('authMode.options.external.tooltip'),
+                    },
+                    {
+                      value: 'open',
+                      label: t('authMode.options.open.label'),
+                      desc: t('authMode.options.open.desc'),
+                      tooltip: t('authMode.options.open.tooltip'),
+                    },
+                  ] as { value: AuthMode; label: string; desc: string; tooltip: string }[]
+                ).map((mode) => {
+                  const currentMode = profile.authMode ?? 'token';
+                  return (
+                    <button
+                      key={mode.value}
+                      type="button"
+                      onClick={() => handleAuthModeChange(mode.value)}
+                      className={`p-3 rounded-lg border text-center transition-all duration-200 ${
+                        currentMode === mode.value
+                          ? 'border-os-600/60 bg-os-700/10 ring-1 ring-os-600/20'
+                          : 'border-gray-700 hover:border-gray-600 bg-gray-800/30'
+                      }`}
+                      aria-pressed={currentMode === mode.value}
+                    >
+                      <p className="text-xs font-medium text-gray-200">{mode.label}</p>
+                      <p className="text-[10px] text-gray-500 mt-0.5">{mode.desc}</p>
+                      <HelpTip content={mode.tooltip} position="bottom" maxWidth={300} size="xs" />
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* SSO info — rendered only when authMode is 'sso' */}
+              {(profile.authMode ?? 'token') === 'sso' && (
+                <Suspense fallback={null}>
+                  <ProfileSsoNotice />
+                </Suspense>
+              )}
+
+              {/* External auth config */}
+              {(profile.authMode ?? 'token') === 'external' && (
+                <div className="mt-3 space-y-3 pl-2 border-l-2 border-gray-700">
+                  <div>
+                    <label
+                      className="block text-xs text-gray-400 mb-1"
+                      htmlFor={`external-validation-url-${profile.name}`}
+                    >
+                      {t('external.validationUrlLabel')} <span className="text-red-400">*</span>
+                    </label>
+                    <input
+                      id={`external-validation-url-${profile.name}`}
+                      type="text"
+                      value={profile.externalAuthConfig?.validationUrl ?? ''}
+                      onChange={(e) =>
+                        handleExternalAuthConfigChange({ validationUrl: e.target.value })
+                      }
+                      placeholder={t('external.validationUrlPlaceholder')}
+                      className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
+                    />
+                    <p className="text-xs text-gray-600 mt-1">{t('external.validationUrlHelp')}</p>
+                  </div>
+
+                  <div>
+                    <label
+                      className="block text-xs text-gray-400 mb-1"
+                      htmlFor={`external-header-name-${profile.name}`}
+                    >
+                      {t('external.headerNameLabel')}
+                    </label>
+                    <input
+                      id={`external-header-name-${profile.name}`}
+                      type="text"
+                      value={profile.externalAuthConfig?.headerName ?? ''}
+                      onChange={(e) =>
+                        handleExternalAuthConfigChange({ headerName: e.target.value })
+                      }
+                      placeholder={t('external.headerNamePlaceholder')}
+                      className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      className="block text-xs text-gray-400 mb-1"
+                      htmlFor={`external-header-template-${profile.name}`}
+                    >
+                      {t('external.headerTemplateLabel')}
+                    </label>
+                    <input
+                      id={`external-header-template-${profile.name}`}
+                      type="text"
+                      value={profile.externalAuthConfig?.headerTemplate ?? ''}
+                      onChange={(e) =>
+                        handleExternalAuthConfigChange({ headerTemplate: e.target.value })
+                      }
+                      placeholder={t('external.headerTemplatePlaceholder')}
+                      className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
+                    />
+                    <p className="text-xs text-gray-600 mt-1">{t('external.headerTemplateHelp')}</p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label
+                        className="block text-xs text-gray-400 mb-1"
+                        htmlFor={`external-email-field-${profile.name}`}
+                      >
+                        {t('external.emailFieldLabel')}{' '}
+                        <span className="text-gray-600">{t('external.optionalSuffix')}</span>
+                      </label>
+                      <input
+                        id={`external-email-field-${profile.name}`}
+                        type="text"
+                        value={profile.externalAuthConfig?.emailField ?? ''}
+                        onChange={(e) =>
+                          handleExternalAuthConfigChange({ emailField: e.target.value })
+                        }
+                        placeholder={t('external.emailFieldPlaceholder')}
+                        className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
+                      />
+                    </div>
+                    <div>
+                      <label
+                        className="block text-xs text-gray-400 mb-1"
+                        htmlFor={`external-name-field-${profile.name}`}
+                      >
+                        {t('external.nameFieldLabel')}{' '}
+                        <span className="text-gray-600">{t('external.optionalSuffix')}</span>
+                      </label>
+                      <input
+                        id={`external-name-field-${profile.name}`}
+                        type="text"
+                        value={profile.externalAuthConfig?.nameField ?? ''}
+                        onChange={(e) =>
+                          handleExternalAuthConfigChange({ nameField: e.target.value })
+                        }
+                        placeholder={t('external.nameFieldPlaceholder')}
+                        className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-600">{t('external.dotNotationHelp')}</p>
+
+                  {/* Auto-create users toggle */}
+                  <label className="flex items-center gap-2 cursor-pointer mt-2">
+                    <input
+                      type="checkbox"
+                      checked={profile.externalAuthConfig?.autoCreateUsers ?? true}
+                      onChange={(e) =>
+                        handleExternalAuthConfigChange({ autoCreateUsers: e.target.checked })
+                      }
+                      className="rounded border-gray-600 bg-gray-700 text-os-500 focus:ring-os-500/30 focus:ring-offset-0"
+                    />
+                    <span className="text-sm text-gray-300">
+                      {t('external.autoCreateUsersLabel')}
+                    </span>
+                  </label>
+                  <p className="text-xs text-gray-600">
+                    {profile.externalAuthConfig?.autoCreateUsers !== false
+                      ? t('external.autoCreateEnabled')
+                      : t('external.autoCreateDisabled')}
+                  </p>
+                </div>
+              )}
+
+              {/* OAuth config */}
+              {(profile.authMode ?? 'token') === 'oauth' && (
+                <div className="mt-3 space-y-3 pl-2 border-l-2 border-gray-700">
+                  <div>
+                    <label
+                      className="block text-xs text-gray-400 mb-1"
+                      htmlFor={`oauth-provider-${profile.name}`}
+                    >
+                      {t('oauth.providerLabel')}
+                    </label>
+                    <select
+                      id={`oauth-provider-${profile.name}`}
+                      value={profile.oauthConfig?.provider ?? 'github'}
+                      onChange={(e) =>
+                        handleOAuthConfigChange({
+                          provider: e.target.value as OAuthConfig['provider'],
+                        })
+                      }
+                      className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
+                    >
+                      <option value="github">{t('oauth.providers.github')}</option>
+                      <option value="google">{t('oauth.providers.google')}</option>
+                      <option value="gitlab">{t('oauth.providers.gitlab')}</option>
+                      <option value="custom">{t('oauth.providers.custom')}</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label
+                      className="block text-xs text-gray-400 mb-1"
+                      htmlFor={`oauth-client-id-${profile.name}`}
+                    >
+                      {t('oauth.clientIdLabel')} <span className="text-red-400">*</span>
+                    </label>
+                    <input
+                      id={`oauth-client-id-${profile.name}`}
+                      type="text"
+                      value={profile.oauthConfig?.clientId ?? ''}
+                      onChange={(e) => handleOAuthConfigChange({ clientId: e.target.value })}
+                      placeholder={t('oauth.clientIdPlaceholder')}
+                      className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
+                    />
+                  </div>
+                  <div>
+                    <label
+                      className="block text-xs text-gray-400 mb-1"
+                      htmlFor={`oauth-client-secret-${profile.name}`}
+                    >
+                      {t('oauth.clientSecretLabel')} <span className="text-red-400">*</span>
+                    </label>
+                    <input
+                      id={`oauth-client-secret-${profile.name}`}
+                      type="password"
+                      value={profile.oauthConfig?.clientSecret ?? ''}
+                      onChange={(e) => handleOAuthConfigChange({ clientSecret: e.target.value })}
+                      placeholder={t('oauth.clientSecretPlaceholder')}
+                      className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
+                    />
+                  </div>
+                  {((profile.oauthConfig?.provider ?? 'github') === 'custom' ||
+                    (profile.oauthConfig?.provider ?? 'github') === 'gitlab') && (
+                    <>
+                      <div>
+                        <label
+                          className="block text-xs text-gray-400 mb-1"
+                          htmlFor={`oauth-auth-url-${profile.name}`}
+                        >
+                          {t('oauth.authUrlLabel')} <span className="text-red-400">*</span>
+                        </label>
+                        <input
+                          id={`oauth-auth-url-${profile.name}`}
+                          type="text"
+                          value={profile.oauthConfig?.authorizationUrl ?? ''}
+                          onChange={(e) =>
+                            handleOAuthConfigChange({ authorizationUrl: e.target.value })
+                          }
+                          placeholder={t('oauth.urlPlaceholder')}
+                          className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
+                        />
+                      </div>
+                      <div>
+                        <label
+                          className="block text-xs text-gray-400 mb-1"
+                          htmlFor={`oauth-token-url-${profile.name}`}
+                        >
+                          {t('oauth.tokenUrlLabel')} <span className="text-red-400">*</span>
+                        </label>
+                        <input
+                          id={`oauth-token-url-${profile.name}`}
+                          type="text"
+                          value={profile.oauthConfig?.tokenUrl ?? ''}
+                          onChange={(e) => handleOAuthConfigChange({ tokenUrl: e.target.value })}
+                          placeholder={t('oauth.urlPlaceholder')}
+                          className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
+                        />
+                      </div>
+                      <div>
+                        <label
+                          className="block text-xs text-gray-400 mb-1"
+                          htmlFor={`oauth-userinfo-url-${profile.name}`}
+                        >
+                          {t('oauth.userinfoUrlLabel')} <span className="text-red-400">*</span>
+                        </label>
+                        <input
+                          id={`oauth-userinfo-url-${profile.name}`}
+                          type="text"
+                          value={profile.oauthConfig?.userinfoUrl ?? ''}
+                          onChange={(e) => handleOAuthConfigChange({ userinfoUrl: e.target.value })}
+                          placeholder={t('oauth.urlPlaceholder')}
+                          className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
+                        />
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {error && (
           <div className="mt-3 p-3 rounded-lg bg-red-950/30 border border-red-800/50 text-red-400 text-sm">

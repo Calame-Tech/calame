@@ -97,6 +97,10 @@
       "copied": "Copied!",
       "copy": "Copy"
     },
+    "advanced": {
+      "toggle": "Advanced options",
+      "hint": "File writing and other sign-in methods. Not needed to get started: the defaults are safe."
+    },
     "documentWrite": {
       "label": "Allow file creation and editing",
       "tooltip": "Lets MCP clients create and fully replace .md/.txt notes in the local folders ticked below. Off by default. Read access to a folder never implies write access. Writes are size-limited, audited, and never delete, rename or create folders.",
@@ -105,6 +109,7 @@
       "scopeNote": "A folder must also be part of this MCP's knowledge scope to be writable.",
       "sourceAriaLabel": "Allow writing in {name}",
       "toggleAriaLabel": "Toggle file creation and editing",
+      "hint": "Off (recommended): the MCP can only read your data, never change it.",
       "error": "Error updating file-write settings"
     },
     "responseMode": {
@@ -114,10 +119,13 @@
       "technical": "Technical",
       "natural": "Natural",
       "toggleAriaLabel": "Toggle response mode",
+      "hint": "Natural (recommended): plain-language answers without table or column names.",
       "tooltip": "In Natural mode, responses are phrased in plain language without technical terms. In Technical mode, the underlying database table and column names are visible."
     },
     "authMode": {
       "label": "Chat Authentication",
+      "hint": "Who may connect. API key (recommended): only apps holding a key you create in the API Keys tab.",
+      "current": "Access: {mode}",
       "openWarning": "Warning: this MCP server will be accessible without any authentication.",
       "options": {
         "token": {
@@ -2052,7 +2060,14 @@
       "createForm": {
         "namePlaceholder": "MCP name...",
         "create": "Create",
-        "duplicateName": "A profile named \"{name}\" already exists."
+        "duplicateName": "A profile named \"{name}\" already exists.",
+        "defaults": {
+          "title": "This MCP starts with safe settings:",
+          "authMode": "Access by API key: only apps holding a key you create can connect.",
+          "responseMode": "Natural answers: plain language, no table or column names.",
+          "documentWrite": "Read-only: the MCP cannot create or edit files.",
+          "changeLater": "You can change them later under \"Advanced options\" on the MCP page."
+        }
       },
       "newServerCard": "New MCP Server",
       "deleteConfirm": {

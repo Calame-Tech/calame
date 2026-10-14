@@ -10,6 +10,34 @@ export function createDefaultProfile(): Profile {
 }
 
 /**
+ * Options a freshly created MCP starts with. They match the backend fallbacks
+ * (`authMode ?? 'token'` in routes/serve.ts and routes/chat-auth.ts,
+ * `responseMode ?? 'friendly'`, file writes off unless opted in) but are written
+ * explicitly so a new MCP never relies on implicit behaviour:
+ * - authMode 'token': clients need an API key — never open access.
+ * - responseMode 'friendly': plain-language answers, no table/column names.
+ * - documentWrite disabled: read-only, no file creation or editing.
+ * Masking, data scoping and network restrictions are untouched: they live on
+ * the configurations / global settings, not on the new profile.
+ */
+export const NEW_MCP_DEFAULTS = {
+  authMode: 'token',
+  responseMode: 'friendly',
+  documentWrite: { enabled: false, sources: {} },
+} as const satisfies Pick<Profile, 'authMode' | 'responseMode' | 'documentWrite'>;
+
+/** Build a new MCP profile with the safe defaults above. */
+export function createNewProfile(name: string, label: string): Profile {
+  return {
+    name,
+    label,
+    authMode: NEW_MCP_DEFAULTS.authMode,
+    responseMode: NEW_MCP_DEFAULTS.responseMode,
+    documentWrite: { enabled: false, sources: {} },
+  };
+}
+
+/**
  * Derive a URL-safe profile name from a human-readable label. The backend
  * chat/auth routes only accept `[a-zA-Z0-9_-]+` profile names, so every
  * profile-creation UI must go through this (the label keeps the raw text).

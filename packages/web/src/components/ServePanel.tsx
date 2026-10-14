@@ -201,6 +201,15 @@ export default function ServePanel({
               />
               {newName && <p className="text-xs text-gray-500 font-mono">{newName}</p>}
               {createError && <p className="text-xs text-red-400">{createError}</p>}
+              <div data-testid="new-mcp-defaults" className="text-xs text-gray-500 space-y-1">
+                <p className="text-gray-400">{t('createForm.defaults.title')}</p>
+                <ul className="space-y-0.5 list-disc pl-4">
+                  <li>{t('createForm.defaults.authMode')}</li>
+                  <li>{t('createForm.defaults.responseMode')}</li>
+                  <li>{t('createForm.defaults.documentWrite')}</li>
+                </ul>
+                <p>{t('createForm.defaults.changeLater')}</p>
+              </div>
             </div>
             <div className="flex gap-2 mt-3">
               <button

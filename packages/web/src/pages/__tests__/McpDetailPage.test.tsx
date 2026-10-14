@@ -3,6 +3,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { screen, fireEvent } from '@testing-library/react';
 import McpDetailPage from '../McpDetailPage.js';
+import { createNewProfile } from '../../lib/profiles.js';
 import {
   render,
   makeServeStatus,
@@ -131,6 +132,10 @@ describe('McpDetailPage', () => {
     fireEvent.click(screen.getByText('Connect'));
     await flushEffects();
 
+    // File writing is an advanced option, folded by default.
+    expect(screen.queryByRole('switch', { name: 'Toggle file creation and editing' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced options' }));
+
     const toggle = screen.getByRole('switch', { name: 'Toggle file creation and editing' });
     expect(toggle.getAttribute('aria-checked')).toBe('false');
     // Source checkboxes are hidden while the capability is off.
@@ -147,6 +152,94 @@ describe('McpDetailPage', () => {
     expect(JSON.parse((patch![1] as RequestInit).body as string)).toEqual({
       enabled: true,
       sources: {},
+    });
+  });
+
+  describe('first-launch options (safe defaults)', () => {
+    type Profile = ReturnType<typeof makeProfile>;
+    function pageFor(profileName: string, profiles: Profile[]) {
+      return (
+        <McpDetailPage
+          view={{ page: 'mcp-detail', profileName }}
+          setView={vi.fn()}
+          profiles={profiles}
+          setProfiles={vi.fn()}
+          serveStatus={makeServeStatus()}
+          configWithProfileOptions={makeConfig()}
+          configurations={[]}
+          setConfigurations={vi.fn()}
+          activeProfileIndex={0}
+          setActiveProfileIndex={vi.fn()}
+          handleProfileDelete={vi.fn(async () => {})}
+          handleConfigurationSave={vi.fn(async () => true)}
+        />
+      );
+    }
+    function renderWithProfile(profile: Profile) {
+      render(pageFor(profile.name, [profile]));
+    }
+    const advancedExpanded = () =>
+      screen.getByRole('button', { name: 'Advanced options' }).getAttribute('aria-expanded');
+
+    it('a new MCP shows API-key access and a short explanation per option, advanced folded', async () => {
+      renderWithProfile(createNewProfile('first', 'First'));
+      await flushEffects();
+
+      expect(screen.getByTestId('current-auth-mode').textContent).toBe('Access: API Key');
+      expect(screen.getByText(/Natural \(recommended\)/)).toBeTruthy();
+      expect(screen.getByText(/Not needed to get started/)).toBeTruthy();
+
+      const advanced = screen.getByRole('button', { name: 'Advanced options' });
+      expect(advanced.getAttribute('aria-expanded')).toBe('false');
+      expect(screen.queryByText('Chat Authentication')).toBeNull();
+
+      fireEvent.click(advanced);
+      expect(advanced.getAttribute('aria-expanded')).toBe('true');
+      expect(screen.getByText('Chat Authentication')).toBeTruthy();
+      expect(screen.getByText(/API key \(recommended\)/)).toBeTruthy();
+      expect(screen.getByText(/Off \(recommended\)/)).toBeTruthy();
+      expect(screen.getByRole('button', { pressed: true, name: /API Key/ })).toBeTruthy();
+    });
+
+    it('keeps advanced options unfolded when an existing MCP already uses a non-default mode', async () => {
+      renderWithProfile({ ...makeProfile(), authMode: 'calame' });
+      await flushEffects();
+      expect(
+        screen.getByRole('button', { name: 'Advanced options' }).getAttribute('aria-expanded'),
+      ).toBe('true');
+      expect(screen.getByTestId('current-auth-mode').textContent).toBe('Access: Calame');
+    });
+
+    it('unfolds advanced options when a non-default profile loads after the first render', async () => {
+      // Direct reload on /mcp/<name>: profiles are still empty on first render.
+      const sso = { ...makeProfile(), name: 'team', authMode: 'sso' as const };
+      const { rerender } = render(pageFor('team', []));
+      await flushEffects();
+      rerender(pageFor('team', [sso]));
+      await flushEffects();
+      expect(advancedExpanded()).toBe('true');
+    });
+
+    it('does not carry the folded/unfolded state over to another MCP', async () => {
+      const first = createNewProfile('first', 'First');
+      const second = createNewProfile('second', 'Second');
+      const { rerender } = render(pageFor('first', [first, second]));
+      await flushEffects();
+      fireEvent.click(screen.getByRole('button', { name: 'Advanced options' }));
+      expect(advancedExpanded()).toBe('true');
+      rerender(pageFor('second', [first, second]));
+      await flushEffects();
+      expect(advancedExpanded()).toBe('false');
+    });
+
+    it('always shows the open-access warning, even with advanced options folded', async () => {
+      renderWithProfile({ ...makeProfile(), authMode: 'open' });
+      await flushEffects();
+      fireEvent.click(screen.getByRole('button', { name: 'Advanced options' }));
+      expect(
+        screen.getByRole('button', { name: 'Advanced options' }).getAttribute('aria-expanded'),
+      ).toBe('false');
+      expect(screen.getByText(/accessible without any authentication/)).toBeTruthy();
     });
   });
 });

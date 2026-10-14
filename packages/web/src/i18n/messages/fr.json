@@ -97,6 +97,10 @@
       "copied": "Copié !",
       "copy": "Copier"
     },
+    "advanced": {
+      "toggle": "Options avancées",
+      "hint": "Écriture de fichiers et autres modes de connexion. Inutile pour démarrer : les réglages par défaut sont sûrs."
+    },
     "documentWrite": {
       "label": "Autoriser la création et la modification de fichiers",
       "tooltip": "Permet aux clients MCP de créer et de remplacer entièrement des notes .md/.txt dans les dossiers locaux cochés ci-dessous. Désactivé par défaut. L'accès en lecture à un dossier n'implique jamais l'écriture. Les écritures sont limitées en taille, journalisées, et ne suppriment, ne renomment ni ne créent jamais de dossiers.",
@@ -105,6 +109,7 @@
       "scopeNote": "Un dossier doit aussi faire partie du périmètre de connaissances de ce MCP pour être modifiable.",
       "sourceAriaLabel": "Autoriser l'écriture dans {name}",
       "toggleAriaLabel": "Activer la création et la modification de fichiers",
+      "hint": "Désactivé (recommandé) : le MCP peut seulement lire vos données, jamais les modifier.",
       "error": "Erreur lors de la mise à jour des paramètres d'écriture de fichiers"
     },
     "responseMode": {
@@ -114,10 +119,13 @@
       "technical": "Technique",
       "natural": "Naturel",
       "toggleAriaLabel": "Basculer le mode de réponse",
+      "hint": "Naturel (recommandé) : réponses en langage simple, sans noms de tables ni de colonnes.",
       "tooltip": "En mode Naturel, les réponses sont formulées en langage simple, sans termes techniques. En mode Technique, les noms des tables et colonnes de la base de données sous-jacente sont visibles."
     },
     "authMode": {
       "label": "Authentification du chat",
+      "hint": "Qui peut se connecter. Clé API (recommandé) : seules les applications munies d’une clé créée dans l’onglet Clés API.",
+      "current": "Accès : {mode}",
       "openWarning": "Attention : ce serveur MCP sera accessible sans aucune authentification.",
       "options": {
         "token": {
@@ -2052,7 +2060,14 @@
       "createForm": {
         "namePlaceholder": "Nom du MCP...",
         "create": "Créer",
-        "duplicateName": "Un profil nommé « {name} » existe déjà."
+        "duplicateName": "Un profil nommé « {name} » existe déjà.",
+        "defaults": {
+          "title": "Ce MCP démarre avec des réglages sûrs :",
+          "authMode": "Accès par clé API : seules les applications munies d’une clé que vous créez peuvent se connecter.",
+          "responseMode": "Réponses naturelles : langage simple, sans noms de tables ni de colonnes.",
+          "documentWrite": "Lecture seule : le MCP ne peut ni créer ni modifier de fichiers.",
+          "changeLater": "Vous pourrez les modifier plus tard dans « Options avancées » sur la page du MCP."
+        }
       },
       "newServerCard": "Nouveau serveur MCP",
       "deleteConfirm": {

@@ -7,6 +7,7 @@ import type { RagSourceType } from '../types.js';
 import type { RagSourcePublic } from '../routes/api-types.js';
 import { apiPost, apiPatch, ApiError, type RagSourceResponse } from './api.js';
 import ReindexDialog from './ReindexDialog.js';
+import HelpTip from '../../../../packages/web/src/components/HelpTip.js';
 
 /**
  * Minimal projection of `AiSetting` needed by the embeddings dropdown. The
@@ -236,6 +237,11 @@ function isValidHttpUrl(value: string): boolean {
   }
 }
 
+const GLOBS_INCLUDE_HELP = 'Une glob par ligne. Vide = tout inclure.';
+const GLOBS_EXCLUDE_HELP = 'Une glob par ligne.';
+const LOCAL_EMBEDDINGS_HELP =
+  "Traitement 100 % local — vos documents et vos requêtes ne quittent jamais cet ordinateur. Pour un corpus très volumineux ou une qualité maximale, vous pouvez configurer votre propre fournisseur d'embeddings dans « AI Settings ».";
+
 // ---------------------------------------------------------------------------
 // Sub-components (inline — small enough to keep in one file)
 // ---------------------------------------------------------------------------
@@ -243,15 +249,24 @@ function isValidHttpUrl(value: string): boolean {
 interface FieldLabelProps {
   htmlFor: string;
   required?: boolean;
-  children: React.ReactNode;
+  children: string;
+  /** Secondary explanation, folded behind a "?" (same HelpTip as the MCP view). */
+  help?: string;
 }
 
-function FieldLabel({ htmlFor, required, children }: FieldLabelProps) {
-  return (
+function FieldLabel({ htmlFor, required, children, help }: FieldLabelProps) {
+  const label = (
     <label htmlFor={htmlFor} className="text-sm text-gray-400">
       {children}
       {required && <span className="text-red-400 ml-0.5">*</span>}
     </label>
+  );
+  if (!help) return label;
+  return (
+    <div className="flex items-center gap-1.5">
+      {label}
+      <HelpTip content={help} label={children} position="right" maxWidth={320} size="xs" />
+    </div>
   );
 }
 
@@ -952,7 +967,11 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
       {type === 'local' && (
         <div className="space-y-4">
           <div>
-            <FieldLabel htmlFor="rag-source-rootpath" required>
+            <FieldLabel
+              htmlFor="rag-source-rootpath"
+              required
+              help="Le serveur doit pouvoir lire ce chemin. Les fichiers ajoutés ultérieurement sont indexés à la prochaine synchronisation."
+            >
               Chemin absolu du dossier
             </FieldLabel>
             <div className="flex items-center gap-2 mt-1">
@@ -982,10 +1001,6 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                 {testing ? 'Test…' : 'Tester'}
               </button>
             </div>
-            <HelperText>
-              Le serveur doit pouvoir lire ce chemin. Les fichiers ajoutés ultérieurement sont
-              indexés à la prochaine synchronisation.
-            </HelperText>
             {browsingFolder && (
               <p role="status" className="text-xs text-gray-400 mt-1">
                 En attente du sélecteur de dossier du système — il peut s&apos;ouvrir derrière la
@@ -1001,7 +1016,9 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <FieldLabel htmlFor="local-include-globs">Include globs</FieldLabel>
+              <FieldLabel htmlFor="local-include-globs" help={GLOBS_INCLUDE_HELP}>
+                Include globs
+              </FieldLabel>
               <textarea
                 id="local-include-globs"
                 value={localIncludeGlobs}
@@ -1010,10 +1027,14 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                 rows={3}
                 className="input-editorial w-full text-sm mt-1 font-mono-plex resize-y"
               />
-              <HelperText>Une glob par ligne. Vide = tout inclure.</HelperText>
             </div>
             <div>
-              <FieldLabel htmlFor="local-exclude-globs">Exclude globs</FieldLabel>
+              <FieldLabel
+                htmlFor="local-exclude-globs"
+                help="Une glob par ligne, ajoutée aux exclusions par défaut (node_modules, .git)."
+              >
+                Exclude globs
+              </FieldLabel>
               <textarea
                 id="local-exclude-globs"
                 value={localExcludeGlobs}
@@ -1022,13 +1043,10 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                 rows={3}
                 className="input-editorial w-full text-sm mt-1 font-mono-plex resize-y"
               />
-              <HelperText>
-                Une glob par ligne, ajoutée aux exclusions par défaut (node_modules, .git).
-              </HelperText>
             </div>
           </div>
 
-          <div className="flex items-start gap-2">
+          <div className="flex items-center gap-2">
             <input
               id="local-include-hidden"
               type="checkbox"
@@ -1038,11 +1056,14 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
             />
             <label htmlFor="local-include-hidden" className="text-sm text-gray-400 select-none">
               Inclure les fichiers cachés
-              <HelperText>
-                Fichiers et dossiers commençant par un point (.env, .cache…), exclus par défaut. Les
-                fichiers de plus de 50 Mo sont toujours ignorés.
-              </HelperText>
             </label>
+            <HelpTip
+              content="Fichiers et dossiers commençant par un point (.env, .cache…), exclus par défaut. Les fichiers de plus de 50 Mo sont toujours ignorés."
+              label="Inclure les fichiers cachés"
+              position="right"
+              maxWidth={320}
+              size="xs"
+            />
           </div>
         </div>
       )}
@@ -1069,7 +1090,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               />
             </div>
             <div>
-              <FieldLabel htmlFor="s3-region" required>
+              <FieldLabel htmlFor="s3-region" required help="Utilisez 'auto' pour Cloudflare R2.">
                 Région
               </FieldLabel>
               <input
@@ -1081,7 +1102,6 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                 className="input-editorial w-full text-sm mt-1"
                 autoComplete="off"
               />
-              <HelperText>Utilisez 'auto' pour Cloudflare R2.</HelperText>
             </div>
           </div>
 
@@ -1134,7 +1154,12 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
             {s3ShowAdvanced && (
               <div className="px-3 pb-4 pt-1 space-y-3 border-t border-white/5">
                 <div>
-                  <FieldLabel htmlFor="s3-prefix">Préfixe (racine logique)</FieldLabel>
+                  <FieldLabel
+                    htmlFor="s3-prefix"
+                    help="Racine logique dans le bucket. Laisser vide pour tout le bucket."
+                  >
+                    Préfixe (racine logique)
+                  </FieldLabel>
                   <input
                     id="s3-prefix"
                     type="text"
@@ -1143,13 +1168,15 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                     placeholder="docs/"
                     className="input-editorial w-full text-sm mt-1"
                   />
-                  <HelperText>
-                    Racine logique dans le bucket. Laisser vide pour tout le bucket.
-                  </HelperText>
                 </div>
 
                 <div>
-                  <FieldLabel htmlFor="s3-endpoint">Endpoint personnalisé</FieldLabel>
+                  <FieldLabel
+                    htmlFor="s3-endpoint"
+                    help="Pour R2 / MinIO. Laisser vide pour AWS S3 standard."
+                  >
+                    Endpoint personnalisé
+                  </FieldLabel>
                   <input
                     id="s3-endpoint"
                     type="text"
@@ -1158,10 +1185,9 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                     placeholder="https://<account>.r2.cloudflarestorage.com"
                     className="input-editorial w-full text-sm mt-1"
                   />
-                  <HelperText>Pour R2 / MinIO. Laisser vide pour AWS S3 standard.</HelperText>
                 </div>
 
-                <div className="flex items-start gap-2 pt-1">
+                <div className="flex items-center gap-2 pt-1">
                   <input
                     id="s3-force-path-style"
                     type="checkbox"
@@ -1174,15 +1200,21 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                     className="text-sm text-gray-400 select-none"
                   >
                     Force path-style
-                    <HelperText>
-                      Requis pour MinIO. Désactiver pour AWS S3 et Cloudflare R2.
-                    </HelperText>
                   </label>
+                  <HelpTip
+                    content="Requis pour MinIO. Désactiver pour AWS S3 et Cloudflare R2."
+                    label="Force path-style"
+                    position="right"
+                    maxWidth={320}
+                    size="xs"
+                  />
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <FieldLabel htmlFor="s3-include-globs">Include globs</FieldLabel>
+                    <FieldLabel htmlFor="s3-include-globs" help={GLOBS_INCLUDE_HELP}>
+                      Include globs
+                    </FieldLabel>
                     <textarea
                       id="s3-include-globs"
                       value={s3IncludeGlobs}
@@ -1191,10 +1223,11 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                       rows={3}
                       className="input-editorial w-full text-sm mt-1 font-mono-plex resize-y"
                     />
-                    <HelperText>Une glob par ligne. Vide = tout inclure.</HelperText>
                   </div>
                   <div>
-                    <FieldLabel htmlFor="s3-exclude-globs">Exclude globs</FieldLabel>
+                    <FieldLabel htmlFor="s3-exclude-globs" help={GLOBS_EXCLUDE_HELP}>
+                      Exclude globs
+                    </FieldLabel>
                     <textarea
                       id="s3-exclude-globs"
                       value={s3ExcludeGlobs}
@@ -1203,7 +1236,6 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                       rows={3}
                       className="input-editorial w-full text-sm mt-1 font-mono-plex resize-y"
                     />
-                    <HelperText>Une glob par ligne.</HelperText>
                   </div>
                 </div>
               </div>
@@ -1265,7 +1297,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
           {/* URLs textarea */}
           {httpMode === 'urls' && (
             <div>
-              <FieldLabel htmlFor="http-urls" required>
+              <FieldLabel htmlFor="http-urls" required help="Une URL http(s):// par ligne.">
                 URLs à indexer
               </FieldLabel>
               <textarea
@@ -1287,14 +1319,17 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                   ))}
                 </div>
               )}
-              <HelperText>Une URL http(s):// par ligne.</HelperText>
             </div>
           )}
 
           {/* Sitemap URL */}
           {httpMode === 'sitemap' && (
             <div>
-              <FieldLabel htmlFor="http-sitemap-url" required>
+              <FieldLabel
+                htmlFor="http-sitemap-url"
+                required
+                help="Le connecteur télécharge le XML et indexe chaque entrée <loc>."
+              >
                 URL du sitemap
               </FieldLabel>
               <input
@@ -1305,16 +1340,15 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                 placeholder="https://docs.exemple.com/sitemap.xml"
                 className="input-editorial w-full text-sm mt-1"
               />
-              <HelperText>
-                Le connecteur fetche le XML et indexe chaque entrée &lt;loc&gt;.
-              </HelperText>
             </div>
           )}
 
           {/* Common fields (always visible) */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <FieldLabel htmlFor="http-user-agent">User-Agent</FieldLabel>
+              <FieldLabel htmlFor="http-user-agent" help="Envoyé dans chaque requête HTTP.">
+                User-Agent
+              </FieldLabel>
               <input
                 id="http-user-agent"
                 type="text"
@@ -1323,10 +1357,14 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                 placeholder="CalameRAG/1.0"
                 className="input-editorial w-full text-sm mt-1"
               />
-              <HelperText>Envoyé dans chaque requête HTTP.</HelperText>
             </div>
             <div>
-              <FieldLabel htmlFor="http-timeout">Timeout (ms)</FieldLabel>
+              <FieldLabel
+                htmlFor="http-timeout"
+                help="Min 1 000 ms, max 60 000 ms. Défaut : 10 000."
+              >
+                Timeout (ms)
+              </FieldLabel>
               <input
                 id="http-timeout"
                 type="number"
@@ -1337,7 +1375,6 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                 onChange={(e) => setHttpTimeoutMs(Number(e.target.value))}
                 className="input-editorial w-full text-sm mt-1"
               />
-              <HelperText>Min 1 000 ms, max 60 000 ms. Défaut : 10 000.</HelperText>
             </div>
           </div>
 
@@ -1375,7 +1412,12 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <FieldLabel htmlFor="http-include-globs">Include globs (pathname)</FieldLabel>
+                    <FieldLabel
+                      htmlFor="http-include-globs"
+                      help="Appliqués au pathname de l'URL. Vide = tout inclure."
+                    >
+                      Include globs (pathname)
+                    </FieldLabel>
                     <textarea
                       id="http-include-globs"
                       value={httpIncludeGlobs}
@@ -1384,10 +1426,11 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                       rows={3}
                       className="input-editorial w-full text-sm mt-1 font-mono-plex resize-y"
                     />
-                    <HelperText>Appliqués au pathname de l'URL. Vide = tout inclure.</HelperText>
                   </div>
                   <div>
-                    <FieldLabel htmlFor="http-exclude-globs">Exclude globs (pathname)</FieldLabel>
+                    <FieldLabel htmlFor="http-exclude-globs" help={GLOBS_EXCLUDE_HELP}>
+                      Exclude globs (pathname)
+                    </FieldLabel>
                     <textarea
                       id="http-exclude-globs"
                       value={httpExcludeGlobs}
@@ -1396,7 +1439,6 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                       rows={3}
                       className="input-editorial w-full text-sm mt-1 font-mono-plex resize-y"
                     />
-                    <HelperText>Une glob par ligne.</HelperText>
                   </div>
                 </div>
               </div>
@@ -2110,7 +2152,15 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
       {/* Embeddings AI setting                                                */}
       {/* ------------------------------------------------------------------ */}
       <div>
-        <FieldLabel htmlFor="rag-source-embedding" required>
+        <FieldLabel
+          htmlFor="rag-source-embedding"
+          required
+          help={
+            selectedSetting?.provider === 'local' && selectedSettingSupportsEmbeddings
+              ? LOCAL_EMBEDDINGS_HELP
+              : undefined
+          }
+        >
           Configuration d'embeddings
         </FieldLabel>
         {aiSettings.length === 0 ? (
@@ -2189,11 +2239,6 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
             </div>
             {selectedSetting.provider === 'local' ? (
               <>
-                <p className="text-xs text-gray-500 mt-1">
-                  Traitement 100 % local — vos documents et vos requêtes ne quittent jamais cet
-                  ordinateur. Pour un corpus très volumineux ou une qualité maximale, vous pouvez
-                  configurer votre propre fournisseur d'embeddings dans « AI Settings ».
-                </p>
                 {selectedSetting.localModelAvailable === false && (
                   <p className="text-xs text-red-400 mt-1">
                     Modèle local introuvable sur le disque. Réinstallez l'application ou contactez
@@ -2224,7 +2269,12 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
       {/* Polling interval (auto-sync)                                         */}
       {/* ------------------------------------------------------------------ */}
       <div>
-        <FieldLabel htmlFor="rag-source-polling">Intervalle de synchronisation auto</FieldLabel>
+        <FieldLabel
+          htmlFor="rag-source-polling"
+          help="Choisissez la fréquence à laquelle la source est interrogée pour détecter les changements. La synchronisation manuelle reste toujours disponible."
+        >
+          Intervalle de synchronisation auto
+        </FieldLabel>
         <select
           id="rag-source-polling"
           value={pollingIntervalSeconds === null ? '' : String(pollingIntervalSeconds)}
@@ -2244,10 +2294,6 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
             </option>
           ))}
         </select>
-        <HelperText>
-          Choisissez la fréquence à laquelle la source est interrogée pour détecter les changements.
-          La synchronisation manuelle reste toujours disponible.
-        </HelperText>
       </div>
 
       {/* Error / test result banners */}

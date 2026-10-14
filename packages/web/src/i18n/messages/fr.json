@@ -2279,7 +2279,8 @@
       }
     },
     "helpTip": {
-      "ariaLabel": "Aide"
+      "ariaLabel": "Aide",
+      "ariaLabelFor": "Aide : {label}"
     }
   }
 }

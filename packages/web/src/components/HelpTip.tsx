@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, type KeyboardEvent } from 'react';
+import { useState, useRef, useEffect, useId, type KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslations } from 'use-intl/react';
 
@@ -8,10 +8,13 @@ interface HelpTipProps {
   maxWidth?: number;
   /** Size variant: 'sm' (default) or 'xs' for tighter spaces */
   size?: 'sm' | 'xs';
+  /** Name of the field/section explained — makes the accessible name specific ("Help: X"). */
+  label?: string;
 }
 
 /**
- * Small "?" icon that reveals a tooltip on hover.
+ * Small "?" icon that reveals a tooltip on hover or keyboard focus, and can be
+ * pinned open (or folded back) with a click, Enter or Space. Escape closes it.
  * Place next to labels, headers or buttons that need explanation.
  */
 export default function HelpTip({
@@ -19,12 +22,14 @@ export default function HelpTip({
   position = 'top',
   maxWidth = 260,
   size = 'sm',
+  label,
 }: HelpTipProps) {
   const t = useTranslations('setupLogin.helpTip');
   const [visible, setVisible] = useState(false);
   const [coords, setCoords] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
   const ref = useRef<HTMLSpanElement>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const tooltipId = useId();
 
   useEffect(() => {
     return () => {
@@ -32,35 +37,37 @@ export default function HelpTip({
     };
   }, []);
 
+  const open = () => {
+    if (!ref.current) return;
+    const rect = ref.current.getBoundingClientRect();
+    const gap = 6;
+    let top = 0;
+    let left = 0;
+    switch (position) {
+      case 'top':
+        top = rect.top - gap;
+        left = rect.left + rect.width / 2;
+        break;
+      case 'bottom':
+        top = rect.bottom + gap;
+        left = rect.left + rect.width / 2;
+        break;
+      case 'left':
+        top = rect.top + rect.height / 2;
+        left = rect.left - gap;
+        break;
+      case 'right':
+        top = rect.top + rect.height / 2;
+        left = rect.right + gap;
+        break;
+    }
+    setCoords({ top, left });
+    setVisible(true);
+  };
+
   const show = () => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    timeoutRef.current = setTimeout(() => {
-      if (!ref.current) return;
-      const rect = ref.current.getBoundingClientRect();
-      const gap = 6;
-      let top = 0;
-      let left = 0;
-      switch (position) {
-        case 'top':
-          top = rect.top - gap;
-          left = rect.left + rect.width / 2;
-          break;
-        case 'bottom':
-          top = rect.bottom + gap;
-          left = rect.left + rect.width / 2;
-          break;
-        case 'left':
-          top = rect.top + rect.height / 2;
-          left = rect.left - gap;
-          break;
-        case 'right':
-          top = rect.top + rect.height / 2;
-          left = rect.right + gap;
-          break;
-      }
-      setCoords({ top, left });
-      setVisible(true);
-    }, 300);
+    timeoutRef.current = setTimeout(open, 300);
   };
 
   const hide = () => {
@@ -86,8 +93,20 @@ export default function HelpTip({
 
   const sizeClasses = size === 'xs' ? 'w-3 h-3 text-[8px]' : 'w-3.5 h-3.5 text-[9px]';
 
+  const toggle = () => {
+    if (visible) hide();
+    else {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      open();
+    }
+  };
+
   const handleKeyDown = (e: KeyboardEvent<HTMLSpanElement>) => {
     if (e.key === 'Escape') hide();
+    else if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      toggle();
+    }
   };
 
   return (
@@ -99,16 +118,24 @@ export default function HelpTip({
         onFocus={show}
         onBlur={hide}
         onKeyDown={handleKeyDown}
+        onClick={(e) => {
+          // Keeps a surrounding <label> from forwarding the click to its control.
+          e.preventDefault();
+          toggle();
+        }}
         tabIndex={0}
         role="button"
+        aria-expanded={visible}
+        aria-describedby={visible ? tooltipId : undefined}
         className={`inline-flex items-center justify-center ${sizeClasses} rounded-full border border-gray-600 text-gray-500 hover:text-gray-300 hover:border-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-400 cursor-help transition-colors flex-shrink-0 select-none`}
-        aria-label={t('ariaLabel')}
+        aria-label={label ? t('ariaLabelFor', { label }) : t('ariaLabel')}
       >
         ?
       </span>
       {visible &&
         createPortal(
           <div
+            id={tooltipId}
             role="tooltip"
             className={`fixed z-[9999] px-3 py-2 text-xs leading-relaxed text-gray-200 bg-gray-900/95 border border-white/10 rounded-lg shadow-xl ${positionClasses[position]} pointer-events-none`}
             style={{ top: coords.top, left: coords.left, maxWidth }}

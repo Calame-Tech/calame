@@ -4,9 +4,16 @@
  * of the first source creation: initial load (failure + retry), save in
  * progress, success (the `{ source }` response is unwrapped) and failure.
  */
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render as rtlRender, screen, fireEvent } from '@testing-library/react';
+import type { ReactElement } from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { KnowledgeBaseManager } from '@calame-ee/rag-core/web';
+import { I18nProvider } from '../i18n/I18nProvider.js';
+
+/** The source form's "?" help tips need the app's i18n context. */
+function render(ui: ReactElement) {
+  return rtlRender(ui, { wrapper: I18nProvider });
+}
 
 type Handler = (url: string, init?: RequestInit) => Promise<Response> | Response;
 
@@ -76,7 +83,7 @@ afterEach(() => {
 async function openCreateForm() {
   fireEvent.click(await screen.findByRole('button', { name: '+ Nouvelle source' }));
   fireEvent.change(screen.getByLabelText(/Nom/), { target: { value: 'Docs' } });
-  fireEvent.change(screen.getByLabelText(/Chemin absolu du dossier/), {
+  fireEvent.change(screen.getByLabelText(/^Chemin absolu du dossier/), {
     target: { value: '/tmp/docs' },
   });
 }

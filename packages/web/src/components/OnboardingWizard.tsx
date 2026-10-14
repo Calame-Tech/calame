@@ -14,6 +14,11 @@ interface OnboardingWizardProps {
    * still get a fully working wizard.
    */
   onNavigateToConfig?: (configName: string) => void;
+  /**
+   * Optional deep link from the final step to the new MCP's "Connect" tab,
+   * where the client-specific setup instructions live.
+   */
+  onNavigateToConnect?: (profileName: string) => void;
 }
 
 type DbType = 'postgresql' | 'mysql' | 'sqlite' | 'mssql';
@@ -56,6 +61,7 @@ export default function OnboardingWizard({
   onComplete,
   onSkip,
   onNavigateToConfig,
+  onNavigateToConnect,
 }: OnboardingWizardProps) {
   const t = useTranslations('onboarding.wizard');
   const [step, setStep] = useState(1);
@@ -420,6 +426,7 @@ export default function OnboardingWizard({
               onCopy={copyUrl}
               onComplete={onComplete}
               onNavigateToConfig={onNavigateToConfig}
+              onNavigateToConnect={onNavigateToConnect}
             />
           )}
         </div>
@@ -776,6 +783,7 @@ interface StepDoneProps {
   onCopy: () => void;
   onComplete: () => void;
   onNavigateToConfig?: (configName: string) => void;
+  onNavigateToConnect?: (profileName: string) => void;
 }
 
 function StepDone({
@@ -786,6 +794,7 @@ function StepDone({
   onCopy,
   onComplete,
   onNavigateToConfig,
+  onNavigateToConnect,
 }: StepDoneProps) {
   const t = useTranslations('onboarding.wizard');
   return (
@@ -875,6 +884,16 @@ function StepDone({
           </button>
         </div>
       </div>
+
+      {onNavigateToConnect && profileName && (
+        <button
+          type="button"
+          onClick={() => onNavigateToConnect(profileName)}
+          className="w-full py-2.5 px-4 bg-os-700 hover:bg-os-600 text-white text-sm font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-os-500"
+        >
+          {t('step4.connectClientButton')}
+        </button>
+      )}
 
       <button
         type="button"

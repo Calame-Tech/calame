@@ -34,6 +34,7 @@ export default function SourcesPage({
       onConnectionsChange={setConnections}
       onSchemaLoaded={handleSchemaLoaded}
       editConnectionName={view.editConnectionName}
+      onNavigate={setView}
       ragEnabled={ragEnabled}
       ragDisabledReason={ragDisabledReason}
       KnowledgeBaseManagerComponent={KnowledgeBaseManager}

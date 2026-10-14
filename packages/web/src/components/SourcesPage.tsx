@@ -4,6 +4,8 @@ import { apiFetch } from '../lib/api.js';
 import type { NamedConnection, DatabaseSchema } from '../types/schema.js';
 import ConnectionManager from './ConnectionManager.js';
 import AddSourceModal from './AddSourceModal.js';
+import SetupChecklist from './SetupChecklist.js';
+import type { View } from '../router/index.js';
 
 export type SourcesTab = 'databases' | 'knowledge';
 
@@ -21,6 +23,13 @@ export interface SourcesPageProps {
   onSchemaLoaded: (connectionName: string, schema: DatabaseSchema) => void;
   editConnectionName?: string;
 
+  /**
+   * Navigation for the guided setup checklist shown above the tabs, so the
+   * next step (create the MCP) is visible right after a source is created.
+   * The checklist is not rendered when omitted.
+   */
+  onNavigate?: (view: View) => void;
+
   // --- RAG capability ---
   ragEnabled: boolean;
   ragDisabledReason?: string | null;
@@ -29,7 +38,7 @@ export interface SourcesPageProps {
    * Must be passed as a React.ComponentType so that SourcesPage never
    * directly imports @calame-ee/* (BUSL package).
    */
-  KnowledgeBaseManagerComponent: React.ComponentType;
+  KnowledgeBaseManagerComponent: React.ComponentType<{ onSourcesChange?: (count: number) => void }>;
 }
 
 /** Fetch count of RAG sources so the KB tab badge stays accurate */
@@ -52,6 +61,7 @@ export default function SourcesPage({
   onConnectionsChange,
   onSchemaLoaded,
   editConnectionName,
+  onNavigate,
   ragEnabled,
   ragDisabledReason,
   KnowledgeBaseManagerComponent,
@@ -123,6 +133,13 @@ export default function SourcesPage({
           {t('addSource')}
         </button>
       </div>
+
+      {onNavigate && (
+        <SetupChecklist
+          sourceCount={connections.length + (ragEnabled ? ragSourceCount : 0)}
+          onNavigate={onNavigate}
+        />
+      )}
 
       {/* Tab bar — matches the McpDetailView section tabs style */}
       <div className="border-b border-gray-700">
@@ -203,7 +220,7 @@ export default function SourcesPage({
                 </div>
               }
             >
-              <KnowledgeBaseManagerComponent />
+              <KnowledgeBaseManagerComponent onSourcesChange={setRagSourceCount} />
             </Suspense>
           ) : (
             /* Explanatory card when RAG is unavailable */

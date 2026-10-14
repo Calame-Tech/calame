@@ -1069,7 +1069,8 @@
           "copiedAriaLabel": "URL copied"
         },
         "goToDashboardButton": "Go to dashboard",
-        "fineTuneLink": "Fine-tune tables, tools & masking →"
+        "fineTuneLink": "Fine-tune tables, tools & masking →",
+        "connectClientButton": "Connect an AI client →"
       }
     },
     "welcome": {
@@ -1144,6 +1145,38 @@
       "copy": "Copy",
       "copyAll": "Copy all",
       "done": "Done"
+    },
+    "checklist": {
+      "title": "Getting started",
+      "description": "Three steps to a working MCP server. Each step updates from what actually exists on this server.",
+      "loading": "Checking your setup…",
+      "loadError": "Could not check your setup progress.",
+      "retry": "Retry",
+      "status": {
+        "done": "done",
+        "current": "next step",
+        "todo": "not available yet"
+      },
+      "source": {
+        "title": "1. Connect a source",
+        "hint": "Add a database or a knowledge base that the MCP will read from.",
+        "done": "A source is connected.",
+        "action": "Add a source"
+      },
+      "mcp": {
+        "title": "2. Create the MCP server",
+        "hint": "Next: create an MCP server and choose the data it exposes.",
+        "done": "An MCP server with data is saved.",
+        "action": "Create the MCP server",
+        "openAction": "Open"
+      },
+      "client": {
+        "title": "3. Use it from a client",
+        "hint": "Open the “Connect” tab and follow the instructions for your AI client (Claude Desktop, Cursor…), then ask it a question about your data. This step is marked done only once a first successful call appears in the audit log.",
+        "blocked": "Available once an MCP server is created.",
+        "done": "A client has called this MCP server successfully.",
+        "action": "Connect a client"
+      }
     }
   },
   "sources": {
@@ -1406,7 +1439,13 @@
       "emptyTitle": "No MCP servers",
       "emptyDescription": "Create a server to expose your data configurations to AI clients.",
       "table": {
-        "headers": ["Server", "Status", "Auth", "Activity 24h", "Trend"]
+        "headers": [
+          "Server",
+          "Status",
+          "Auth",
+          "Activity 24h",
+          "Trend"
+        ]
       },
       "statusActive": "ACTIVE",
       "statusStopped": "STOPPED",

@@ -1069,7 +1069,8 @@
           "copiedAriaLabel": "URL copiée"
         },
         "goToDashboardButton": "Aller au tableau de bord",
-        "fineTuneLink": "Affiner les tables, outils et masquage →"
+        "fineTuneLink": "Affiner les tables, outils et masquage →",
+        "connectClientButton": "Connecter un client IA →"
       }
     },
     "welcome": {
@@ -1144,6 +1145,38 @@
       "copy": "Copier",
       "copyAll": "Tout copier",
       "done": "Terminé"
+    },
+    "checklist": {
+      "title": "Bien démarrer",
+      "description": "Trois étapes pour obtenir un serveur MCP fonctionnel. Chaque étape se met à jour selon ce qui existe réellement sur ce serveur.",
+      "loading": "Vérification de votre configuration…",
+      "loadError": "Impossible de vérifier l’avancement de la configuration.",
+      "retry": "Réessayer",
+      "status": {
+        "done": "terminée",
+        "current": "prochaine étape",
+        "todo": "pas encore disponible"
+      },
+      "source": {
+        "title": "1. Connecter une source",
+        "hint": "Ajoutez une base de données ou une base de connaissances que le MCP pourra lire.",
+        "done": "Une source est connectée.",
+        "action": "Ajouter une source"
+      },
+      "mcp": {
+        "title": "2. Créer le serveur MCP",
+        "hint": "Prochaine étape : créez un serveur MCP et choisissez les données qu’il expose.",
+        "done": "Un serveur MCP avec des données est enregistré.",
+        "action": "Créer le serveur MCP",
+        "openAction": "Ouvrir"
+      },
+      "client": {
+        "title": "3. L’utiliser depuis un client",
+        "hint": "Ouvrez l’onglet « Connexion » et suivez les instructions pour votre client IA (Claude Desktop, Cursor…), puis posez-lui une question sur vos données. Cette étape n’est validée qu’à l’apparition d’un premier appel réussi dans le journal d’audit.",
+        "blocked": "Disponible une fois un serveur MCP créé.",
+        "done": "Un client a appelé ce serveur MCP avec succès.",
+        "action": "Connecter un client"
+      }
     }
   },
   "sources": {
@@ -1406,7 +1439,13 @@
       "emptyTitle": "Aucun serveur MCP",
       "emptyDescription": "Créez un serveur pour exposer vos configurations de données aux clients IA.",
       "table": {
-        "headers": ["Serveur", "Statut", "Auth", "Activité 24h", "Tendance"]
+        "headers": [
+          "Serveur",
+          "Statut",
+          "Auth",
+          "Activité 24h",
+          "Tendance"
+        ]
       },
       "statusActive": "ACTIF",
       "statusStopped": "ARRÊTÉ",

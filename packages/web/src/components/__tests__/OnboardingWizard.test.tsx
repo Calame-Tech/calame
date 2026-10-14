@@ -177,3 +177,27 @@ describe('OnboardingWizard', () => {
     expect(screen.queryByText(/Fine-tune tables, tools/)).toBeNull();
   });
 });
+
+describe('OnboardingWizard — client step', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('points the final step to the new MCP "Connect" tab', async () => {
+    installFetchMock();
+    const onNavigateToConnect = vi.fn();
+    render(
+      <OnboardingWizard
+        onComplete={vi.fn()}
+        onSkip={vi.fn()}
+        onNavigateToConnect={onNavigateToConnect}
+      />,
+    );
+
+    await runToSubmit();
+    await waitFor(() => expect(screen.getByText("You're all set!")).toBeTruthy());
+
+    fireEvent.click(screen.getByText(/Connect an AI client/));
+    expect(onNavigateToConnect).toHaveBeenCalledWith('my-first-mcp-server');
+  });
+});

@@ -163,6 +163,10 @@ export default function App() {
           dismissOnboarding();
           setView({ page: 'config-detail', configName });
         }}
+        onNavigateToConnect={(profileName) => {
+          dismissOnboarding();
+          setView({ page: 'mcp-detail', profileName, activeSection: 'connect' });
+        }}
       />
     );
   }

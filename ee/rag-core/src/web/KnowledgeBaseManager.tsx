@@ -27,6 +27,12 @@ import {
 
 interface KnowledgeBaseManagerProps {
   onClose?: () => void;
+  /**
+   * Called with the number of sources after every successful list refresh
+   * (initial load, creation, deletion) so the host page can update the
+   * guided-setup checklist and tab badge without re-fetching.
+   */
+  onSourcesChange?: (count: number) => void;
 }
 
 function formatDate(value?: string): string {
@@ -200,7 +206,10 @@ function daysUntilHardDelete(deletedAt: string | null): number | null {
   return Math.max(0, Math.ceil(RETENTION_DAYS - elapsedDays));
 }
 
-export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerProps) {
+export default function KnowledgeBaseManager({
+  onClose,
+  onSourcesChange,
+}: KnowledgeBaseManagerProps) {
   const [sources, setSources] = useState<RagSourceWithCounts[]>([]);
   const [aiSettings, setAiSettings] = useState<AiSettingOption[]>([]);
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
@@ -234,6 +243,11 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
   // counters across.
   const [folderRefreshTicks, setFolderRefreshTicks] = useState<Record<string, number>>({});
 
+  // Ref so a new callback identity does not re-create refreshSources (which
+  // would re-run the initial load effect).
+  const onSourcesChangeRef = useRef(onSourcesChange);
+  onSourcesChangeRef.current = onSourcesChange;
+
   const refreshSources = useCallback(async (): Promise<void> => {
     try {
       const data = await apiGet<RagSourceListResponse>('/api/rag/sources', {
@@ -241,6 +255,7 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
       });
       setSources(data.sources ?? []);
       setSourcesLoaded(true);
+      onSourcesChangeRef.current?.(data.sources?.length ?? 0);
       setError(null);
     } catch (err) {
       const message =

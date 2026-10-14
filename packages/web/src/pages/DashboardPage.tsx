@@ -11,6 +11,7 @@ import { Button, PageHeader } from '../components/ui/index.js';
 import PipelineStrip from '../components/dashboard/PipelineStrip.js';
 import QueriesCard from '../components/dashboard/QueriesCard.js';
 import ServersTable from '../components/dashboard/ServersTable.js';
+import SetupChecklist from '../components/SetupChecklist.js';
 import { timeAgo } from '../components/dashboard/activity-stats.js';
 import { useLocale } from '../i18n/I18nProvider.js';
 import { getConfigurationColumnMasking } from '../lib/configuration-accessors.js';
@@ -74,7 +75,7 @@ export default function DashboardPage({
   const t = useTranslations('dashboard');
   const tCommon = useTranslations('common');
   const { locale } = useLocale();
-  const { setShowOnboarding, ragEnabled } = useSession();
+  const { setShowOnboarding, ragEnabled, dataVersion } = useSession();
 
   // Knowledge-base sources count — SQL connections arrive via props, RAG
   // sources only exist behind /api/rag/sources (EE capability). Fetched here
@@ -127,6 +128,13 @@ export default function DashboardPage({
             </Button>
           </div>
         }
+      />
+
+      {/* Guided first-run path — hides itself once a client has used an MCP */}
+      <SetupChecklist
+        sourceCount={connections.length + ragSourceCount}
+        onNavigate={setView}
+        refreshKey={dataVersion}
       />
 
       {/* The system in one line — the pipeline is the structure of the page */}

@@ -5,6 +5,28 @@ every commit. Newest first.
 
 ---
 
+## 2026-10-14 — CALAME-1 : parcours de première configuration (retour testeur desktop Windows, points 05/07/08/09)
+
+Branche `agent/calame-1-fiabilise-le-parcours-guid-jusquau-premi`, 4 commits d'implémentation + ce compte rendu. **Version testée par le testeur non confirmée** (0.8.3 ou 0.8.4) : `git diff v0.8.3 v0.8.4` ne touche ni `ee/rag-core/src/web`, ni `packages/web/src`, ni les routes `rag-sources`/`serve` — les causes ci-dessous valent pour les deux. **Rien n'a été validé sous Windows** (tout est exécuté sur macOS).
+
+**05 — « + Add source » → « Knowledge base »** : pas de reproduction sur Windows ; causes établies dans le code :
+1. `SourceForm.handleSave` typait la réponse de `POST/PATCH /api/rag/sources` comme `RagSourcePublic` alors que la route renvoie `{ source }` (`ee/rag-core/src/routes/rag-sources.ts`, `res.status(201).json({ source })`) → `handleCreated` recevait un objet sans `id`/`name` (« Source "undefined" enregistrée », sélection perdue). Corrigé : déballage + erreur explicite si `source` absent.
+2. `apiGet` n'avait aucun timeout : un serveur qui ne répond pas laissait « Chargement des sources… » indéfiniment. Ajout de `timeoutMs` (`ApiTimeoutError`, 20 s) et d'un état « Impossible de charger les sources » + « Réessayer » ; une liste vide n'est plus présentée comme « aucune source » si le chargement a échoué.
+3. `useActiveSyncJobs` construisait la carte des jobs avant l'arrivée de la liste des sources et arrêtait de sonder sans job actif → badge de sync figé. Corrigé (dernière réponse mémorisée et réappliquée). La progression affichée vient des compteurs réels du job (`processed / total`), sans pourcentage estimé.
+4. Le sélecteur de dossier natif peut s'ouvrir derrière la fenêtre : message d'attente explicite (hypothèse plausible côté desktop, non vérifiée sous Windows).
+
+**08 — premier MCP** : nouveau profil créé avec `NEW_MCP_DEFAULTS` (`packages/web/src/lib/profiles.ts`) = `authMode: 'token'`, `responseMode: 'friendly'`, écriture de documents désactivée — identiques aux replis backend, écrits explicitement ; masquage, périmètres et restrictions réseau non touchés ; un profil existant n'est jamais écrasé (`useAppData.handleProfileCreate`). Explication courte i18n par option, options avancées repliées (`McpDetailPage`, `ServePanel`).
+
+**07 — parcours guidé** : `SetupChecklist` + `lib/setup-progress.ts`, état dérivé uniquement du serveur (sources, `/api/profiles/load`, `/api/audit`) donc stable au rechargement ; l'étape « client » ne passe à « fait » que sur une entrée d'audit `success` pour le MCP. Prochaine action affichée après création d'une source.
+
+**09 — vue surchargée retenue : le formulaire de source `SourceForm`** (indices : c'est l'écran ouvert par « + Add source » → « Knowledge base » dans le même retour, et c'est la vue de configuration la plus dense en paragraphes d'aide). Explications secondaires déplacées dans `HelpTip` (« ? » de la vue MCP), rendu activable au clavier (Entrée/Espace/Échap, focus), `aria-label` spécifique et `aria-describedby`.
+
+**Vérification bout en bout locale** (macOS, serveur `packages/cli/dist` sur data dir jetable, modèle local `embeddinggemma-300m`) : source `local` (3 fichiers) → `201 { source }` → sync 3/3 documents → profil aux valeurs par défaut + scope sur la source → `serve/start` → token ; `/mcp/<profil>` sans token ou token invalide = **401** ; client `@modelcontextprotocol/sdk` : `initialize`, `tools/list` (`rag_search`, …), `rag_search` renvoie le fait attendu. Audit vide avant l'appel, 1 entrée `success` après ; checklist calculée : source → MCP → client passe à « fait » seulement après l'appel. Profil créé via les mêmes requêtes HTTP que l'UI, pas en cliquant l'UI.
+
+Vérifications : `pnpm format:check`, `pnpm build`, `pnpm lint` (0 erreur, 4 warnings préexistants dans `write-indexing.integration.test.ts`), `pnpm typecheck`, `pnpm test` (2757 passés, 19 ignorés) — tous verts.
+
+---
+
 ## 2026-09-07 — Support Microsoft SQL Server + correctif filtres silencieusement ignorés (release 0.8.0)
 
 Support MSSQL de bout en bout (demande client), implémenté par agents parallèles à périmètres disjoints puis revue + E2E live avant merge. Branche `feat/mssql-connector` mergée dans `main` (commit `c284b71`, +4122/-352 sur 51 fichiers), release **0.8.0** taguée dans la foulée.

@@ -36,6 +36,16 @@ export const SETUP_REFRESH_EVENT = 'calame:setup-refresh';
 /** Upper bound on per-MCP audit lookups — first runs have one or two MCPs. */
 const MAX_PROFILES_CHECKED = 10;
 
+/**
+ * Below this width the expanded card would cover page actions (e.g. "+ New
+ * source" on a ~750 px desktop window): it starts folded as a compact pill.
+ */
+const NARROW_WINDOW_QUERY = '(max-width: 1023px)';
+
+function narrowWindowQuery(): MediaQueryList | null {
+  return typeof window.matchMedia === 'function' ? window.matchMedia(NARROW_WINDOW_QUERY) : null;
+}
+
 function readFlag(key: string): boolean {
   try {
     return localStorage.getItem(key) === '1';
@@ -97,14 +107,17 @@ async function fetchSetupResources(ragEnabled: boolean): Promise<{
 }> {
   const ragSourcesPromise = ragEnabled ? fetchRagReadiness() : Promise.resolve([]);
   const [configurationsData, profilesData] = await Promise.all([
-    fetchJson<{ configurations?: DataProfileSummary[] }>('/api/configurations'),
+    // Indexed by data profile name, like the profiles below (see useAppData).
+    fetchJson<{
+      configurations?: Record<string, Omit<DataProfileSummary, 'name'>>;
+    }>('/api/configurations'),
     fetchJson<{
       found?: boolean;
       profiles?: Record<string, Omit<SavedProfileSummary, 'name'>>;
     }>('/api/profiles/load'),
   ]);
-  const dataProfiles = (configurationsData.configurations ?? []).map((c) => ({
-    name: c.name,
+  const dataProfiles = Object.entries(configurationsData.configurations ?? {}).map(([name, c]) => ({
+    name,
     sources: c.sources,
   }));
   const profiles = Object.entries(profilesData.found ? (profilesData.profiles ?? {}) : {}).map(
@@ -134,7 +147,9 @@ export default function SetupChecklist({
 }: SetupChecklistProps) {
   const t = useTranslations('onboarding.checklist');
   const [hidden, setHidden] = useState(() => readFlag(SETUP_CHECKLIST_HIDDEN_KEY));
-  const [collapsed, setCollapsed] = useState(() => readFlag(SETUP_CHECKLIST_COLLAPSED_KEY));
+  const [collapsed, setCollapsed] = useState(
+    () => readFlag(SETUP_CHECKLIST_COLLAPSED_KEY) || narrowWindowQuery()?.matches === true,
+  );
   const [state, setState] = useState<LoadState>({ status: 'idle' });
   // Only the latest request may update the state: a slow response must not
   // overwrite a newer one (e.g. a refresh triggered by a new source).
@@ -149,6 +164,18 @@ export default function SetupChecklist({
       if (requestId === requestIdRef.current) setState({ status: 'error' });
     }
   }, [ragEnabled]);
+
+  // Fold (without remembering it) when the window becomes narrow, so the card
+  // never ends up over the page's commands; the pill still reopens it.
+  useEffect(() => {
+    const query = narrowWindowQuery();
+    if (!query) return;
+    const onChange = () => {
+      if (query.matches) setCollapsed(true);
+    };
+    query.addEventListener?.('change', onChange);
+    return () => query.removeEventListener?.('change', onChange);
+  }, []);
 
   // Invalidate in-flight requests on unmount.
   useEffect(() => () => void ++requestIdRef.current, []);

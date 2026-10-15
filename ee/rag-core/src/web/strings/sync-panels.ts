@@ -23,9 +23,8 @@ const FR = {
   jobRunning: 'en cours',
   back: '← Retour',
   backAria: 'Retour à la liste des sources',
-  historyTitle: 'Historique de sync',
-  historySubtitle: (n: number) =>
-    `Derniers ${n} jobs de synchronisation, toutes sources confondues.`,
+  historyTitle: 'Historique des synchronisations',
+  historySubtitle: (n: number) => `${n} dernières synchronisations, toutes sources confondues.`,
   refreshing: 'Actualisation…',
   refresh: 'Actualiser',
   colSource: 'Source',
@@ -36,24 +35,24 @@ const FR = {
   filterCompleted: 'Réussi',
   filterFailed: 'Échec',
   jobsShown: (shown: number, total: number) =>
-    `${shown} job${shown > 1 ? 's' : ''} affiché${shown > 1 ? 's' : ''} / ${total}`,
+    `${shown} synchronisation${shown > 1 ? 's' : ''} affichée${shown > 1 ? 's' : ''} / ${total}`,
   historyLoading: "Chargement de l'historique…",
-  noJobs: 'Aucun job de synchronisation enregistré.',
-  noJobsMatch: 'Aucun job ne correspond aux filtres sélectionnés.',
+  noJobs: 'Aucune synchronisation enregistrée.',
+  noJobsMatch: 'Aucune synchronisation ne correspond aux filtres sélectionnés.',
   colStarted: 'Démarré',
   colDuration: 'Durée',
   colProgress: 'Progression',
   colError: 'Erreur',
   finishedAt: (when: string) => `Terminé : ${when}`,
-  jobInProgress: 'Job en cours',
+  jobInProgress: 'Synchronisation en cours',
   documentsCount: (done: number, total: number) => `${done} / ${total} documents`,
   skippedEtag: (n: number) => `${n} skipped (etag)`,
 
   // IngestionStatusCard
-  ingestionLoading: "Chargement des jobs d'indexation…",
-  ingestionNone: "Aucun job d'indexation en cours.",
+  ingestionLoading: 'Chargement des indexations…',
+  ingestionNone: 'Aucune indexation en cours.',
   ingestionTitle: 'Indexation',
-  jobsCount: (n: number) => `${n} job${n > 1 ? 's' : ''}`,
+  jobsCount: (n: number) => `${n} indexation${n > 1 ? 's' : ''}`,
 
   // EmbeddingUsageCard
   period30: '30 derniers jours',
@@ -77,7 +76,7 @@ const FR = {
   unknownPrice: 'Tarif inconnu — coût non estimé',
   localTitle: "Traité sur cette machine — aucun coût d'API",
   localFree: 'local · gratuit',
-  topSources: 'Top sources',
+  topSources: 'Sources qui consomment le plus',
   dailyActivity: 'Activité quotidienne',
   noBilledEmbeddings:
     'Aucun embedding facturé sur la période. Les chiffres apparaîtront après la première synchronisation.',

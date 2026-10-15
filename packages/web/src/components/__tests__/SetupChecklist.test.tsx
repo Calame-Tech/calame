@@ -29,6 +29,9 @@ interface ServerState {
   configurations?: Array<{ name: string; sources?: string[] }>;
   profiles?: Record<string, { configurations?: string[]; sources?: unknown[] }>;
   entries?: Array<{ profileName: string; result: 'success' | 'error' }>;
+  ragSources?: Array<{ id: string; name: string }>;
+  /** Newest first, like GET /api/rag/jobs. */
+  ragJobs?: Array<{ sourceId: string; status: string; error: string | null }>;
   fail?: boolean;
 }
 
@@ -37,7 +40,17 @@ function installServer(server: ServerState) {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     if (server.fail) return jsonResponse({ success: false }, false);
     if (url.includes('/api/configurations')) {
-      return jsonResponse({ success: true, configurations: server.configurations ?? [] });
+      // Same shape as the real route: an object indexed by data profile name.
+      const configurations = Object.fromEntries(
+        (server.configurations ?? []).map(({ name, ...c }) => [name, c]),
+      );
+      return jsonResponse({ success: true, configurations });
+    }
+    if (url.includes('/api/rag/sources')) {
+      return jsonResponse({ sources: server.ragSources ?? [] });
+    }
+    if (url.includes('/api/rag/jobs')) {
+      return jsonResponse({ jobs: server.ragJobs ?? [] });
     }
     if (url.includes('/api/profiles/load')) {
       const profiles = server.profiles ?? {};
@@ -61,6 +74,7 @@ function installServer(server: ServerState) {
           durationMs: 1,
           ...e,
         })),
+        total: matching.length,
       });
     }
     return jsonResponse({});
@@ -204,5 +218,58 @@ describe('SetupChecklist', () => {
     server.fail = false;
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     await screen.findAllByText('1. Connect data');
+  });
+
+  it('reads the real first-run payload (empty configurations object) without erroring', async () => {
+    // Exact body returned by GET /api/configurations on a fresh install.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request) => {
+        const url = String(input);
+        if (url.includes('/api/configurations')) {
+          return jsonResponse({ success: true, configurations: {} });
+        }
+        if (url.includes('/api/profiles/load')) return jsonResponse({ found: false });
+        return jsonResponse({});
+      }),
+    );
+    render(<SetupChecklist sourceCount={0} onNavigate={vi.fn()} />);
+    await screen.findAllByText('1. Connect data');
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(stepStatus(/1\. Connect data/)).toBe('current');
+  });
+
+  it('completes the data and data profile steps from an indexed knowledge-base source', async () => {
+    installServer({
+      configurations: [{ name: 'docs-config', sources: ['rag:src-1'] }],
+      ragSources: [{ id: 'src-1', name: 'Docs' }],
+      ragJobs: [{ sourceId: 'src-1', status: 'completed', error: null }],
+    });
+    render(<SetupChecklist sourceCount={0} ragEnabled onNavigate={vi.fn()} />);
+    await screen.findAllByText('1. Connect data');
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(stepStatus(/1\. Connect data/)).toBe('done');
+    expect(stepStatus(/2\. Create a data profile/)).toBe('done');
+    expect(stepStatus(/3\. Create the MCP server/)).toBe('current');
+  });
+
+  it('starts as a compact pill on a narrow window so it never covers page actions', async () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn((query: string) => ({
+        matches: query === '(max-width: 1023px)',
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    );
+    installServer({});
+    render(<SetupChecklist sourceCount={0} onNavigate={vi.fn()} />);
+    const reopen = await screen.findByRole('button', { name: 'Reopen the getting-started guide' });
+    expect(screen.queryByText('1. Connect data')).toBeNull();
+    // Folding by width is not a user choice: nothing is persisted.
+    expect(localStorage.getItem(SETUP_CHECKLIST_COLLAPSED_KEY)).toBeNull();
+    fireEvent.click(reopen);
+    expect(screen.getAllByText('1. Connect data').length).toBeGreaterThan(0);
   });
 });

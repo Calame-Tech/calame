@@ -57,7 +57,7 @@ const FR = {
   // Header
   trashButtonTitle: (count: number, days: number) =>
     `${count} source(s) dans la corbeille — restaurables pendant ${days} jours`,
-  syncHistory: 'Historique de sync',
+  syncHistory: 'Historique des synchronisations',
   syncHistoryTitle: "Voir l'historique complet des synchronisations",
   newSourceButton: '+ Nouvelle source',
 
@@ -72,8 +72,8 @@ const FR = {
   open: 'Ouvrir',
   edit: 'Modifier',
   editSourceTitle: 'Modifier la configuration de cette source',
-  resyncAria: (name: string) => `Re-synchroniser la source ${name}`,
-  resync: 'Re-sync',
+  resyncAria: (name: string) => `Synchroniser à nouveau la source ${name}`,
+  resync: 'Synchroniser à nouveau',
   delete: 'Supprimer',
 
   // Detail panel

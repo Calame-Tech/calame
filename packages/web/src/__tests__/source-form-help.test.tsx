@@ -3,7 +3,7 @@
  * secondary explanations are folded behind "?" help tips (same HelpTip as the
  * MCP view) while labels, actions and warnings stay visible.
  */
-import { render as rtlRender, screen, fireEvent, within } from '@testing-library/react';
+import { render as rtlRender, screen, fireEvent, within, act } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { SourceForm } from '@calame-ee/rag-core/web';
@@ -71,6 +71,25 @@ describe('SourceForm — collapsible "?" help', () => {
       expect(tip).toHaveAttribute('aria-expanded', 'true');
       fireEvent.keyDown(tip, { key: 'Escape' });
       expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+    }
+  });
+
+  it('reveals the folder path explanation on mouse hover too', () => {
+    vi.useFakeTimers();
+    try {
+      renderForm();
+      const tip = screen.getByRole('button', { name: 'Aide : Chemin absolu du dossier' });
+      fireEvent.mouseEnter(tip);
+      act(() => {
+        vi.advanceTimersByTime(400);
+      });
+      expect(screen.getByRole('tooltip')).toHaveTextContent(
+        /Le serveur doit pouvoir lire ce chemin/,
+      );
+      fireEvent.mouseLeave(tip);
+      expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
     }
   });
 

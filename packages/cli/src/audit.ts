@@ -147,7 +147,13 @@ export class AuditLog {
     return full;
   }
 
-  getEntries(options?: { profileName?: string; limit?: number; offset?: number; since?: string }): {
+  getEntries(options?: {
+    profileName?: string;
+    limit?: number;
+    offset?: number;
+    since?: string;
+    result?: AuditLogEntry['result'];
+  }): {
     entries: AuditLogEntry[];
     total: number;
   } {
@@ -162,6 +168,10 @@ export class AuditLog {
     if (options?.since) {
       conditions.push('timestamp >= ?');
       params.push(options.since);
+    }
+    if (options?.result) {
+      conditions.push('result = ?');
+      params.push(options.result);
     }
 
     const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';

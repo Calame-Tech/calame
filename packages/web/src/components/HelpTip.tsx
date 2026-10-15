@@ -13,8 +13,9 @@ interface HelpTipProps {
 }
 
 /**
- * Small "?" icon that reveals a tooltip on hover or keyboard focus, and can be
- * pinned open (or folded back) with a click, Enter or Space. Escape closes it.
+ * Small "?" icon that reveals a tooltip on hover or keyboard focus. A click,
+ * Enter or Space pins it open — even when hovering already showed it — and a
+ * second one folds it back. Escape or moving focus away closes it.
  * Place next to labels, headers or buttons that need explanation.
  */
 export default function HelpTip({
@@ -26,6 +27,8 @@ export default function HelpTip({
 }: HelpTipProps) {
   const t = useTranslations('setupLogin.helpTip');
   const [visible, setVisible] = useState(false);
+  // Pinned by click / Enter / Space: survives mouse leave until toggled again.
+  const [pinned, setPinned] = useState(false);
   const [coords, setCoords] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
   const ref = useRef<HTMLSpanElement>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout>>();
@@ -72,7 +75,13 @@ export default function HelpTip({
 
   const hide = () => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    setPinned(false);
     setVisible(false);
+  };
+
+  const hideUnlessPinned = () => {
+    if (pinned) return;
+    hide();
   };
 
   const positionClasses: Record<string, string> = {
@@ -94,11 +103,13 @@ export default function HelpTip({
   const sizeClasses = size === 'xs' ? 'w-3 h-3 text-[8px]' : 'w-3.5 h-3.5 text-[9px]';
 
   const toggle = () => {
-    if (visible) hide();
-    else {
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-      open();
+    if (pinned) {
+      hide();
+      return;
     }
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    if (!visible) open();
+    setPinned(true);
   };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLSpanElement>) => {
@@ -114,7 +125,7 @@ export default function HelpTip({
       <span
         ref={ref}
         onMouseEnter={show}
-        onMouseLeave={hide}
+        onMouseLeave={hideUnlessPinned}
         onFocus={show}
         onBlur={hide}
         onKeyDown={handleKeyDown}

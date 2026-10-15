@@ -1152,6 +1152,8 @@
       "loading": "Checking your setup…",
       "loadError": "Could not check your setup progress.",
       "retry": "Retry",
+      "hide": "Hide",
+      "hideAriaLabel": "Hide the getting-started guide",
       "status": {
         "done": "done",
         "current": "next step",
@@ -1175,7 +1177,8 @@
         "hint": "Open the “Connect” tab and follow the instructions for your AI client (Claude Desktop, Cursor…), then ask it a question about your data. This step is marked done only once a first successful call appears in the audit log.",
         "blocked": "Available once an MCP server is created.",
         "done": "A client has called this MCP server successfully.",
-        "action": "Connect a client"
+        "action": "Connect a client",
+        "recheck": "Check again"
       }
     }
   },
@@ -1439,13 +1442,7 @@
       "emptyTitle": "No MCP servers",
       "emptyDescription": "Create a server to expose your data configurations to AI clients.",
       "table": {
-        "headers": [
-          "Server",
-          "Status",
-          "Auth",
-          "Activity 24h",
-          "Trend"
-        ]
+        "headers": ["Server", "Status", "Auth", "Activity 24h", "Trend"]
       },
       "statusActive": "ACTIVE",
       "statusStopped": "STOPPED",

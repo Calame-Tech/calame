@@ -31,10 +31,48 @@ export function createNewProfile(name: string, label: string): Profile {
   return {
     name,
     label,
+    ...newMcpDefaults(),
+  };
+}
+
+/**
+ * Fresh copy of NEW_MCP_DEFAULTS (the nested `documentWrite` object must not
+ * be shared between profiles, which mutate it when the user edits them).
+ */
+export function newMcpDefaults(): Pick<Profile, 'authMode' | 'responseMode' | 'documentWrite'> {
+  return {
     authMode: NEW_MCP_DEFAULTS.authMode,
     responseMode: NEW_MCP_DEFAULTS.responseMode,
-    documentWrite: { enabled: false, sources: {} },
+    documentWrite: {
+      enabled: NEW_MCP_DEFAULTS.documentWrite.enabled,
+      sources: { ...NEW_MCP_DEFAULTS.documentWrite.sources },
+    },
   };
+}
+
+/**
+ * True only when the server confirms no saved profile has this name. Used to
+ * apply NEW_MCP_DEFAULTS without overwriting an existing profile's settings
+ * (POST /api/profiles/save merges fields). When existence cannot be checked
+ * it answers false: omitting the defaults is safe, the backend fallbacks are
+ * the same values.
+ */
+export async function isNewProfileName(name: string): Promise<boolean> {
+  try {
+    const res = await apiFetch('/api/profiles/load', { credentials: 'include' });
+    if (!res.ok) return false;
+    const data = (await res.json()) as { found?: boolean; profiles?: Record<string, unknown> };
+    return !data.found || !Object.prototype.hasOwnProperty.call(data.profiles ?? {}, name);
+  } catch {
+    return false;
+  }
+}
+
+/** NEW_MCP_DEFAULTS for a profile name not saved yet, nothing otherwise. */
+export async function newMcpDefaultsFor(
+  name: string,
+): Promise<Partial<Pick<Profile, 'authMode' | 'responseMode' | 'documentWrite'>>> {
+  return (await isNewProfileName(name)) ? newMcpDefaults() : {};
 }
 
 /**

@@ -16,6 +16,7 @@ import SourceForm, { type AiSettingOption } from './SourceForm.js';
 import FolderTreeView from './FolderTreeView.js';
 import DocumentUploader from './DocumentUploader.js';
 import IngestionStatusCard from './IngestionStatusCard.js';
+import { RAG_STRINGS } from './onboarding-strings.js';
 import SyncHistoryPanel from './SyncHistoryPanel.js';
 import EmbeddingUsageCard from './EmbeddingUsageCard.js';
 import {
@@ -96,7 +97,7 @@ function SyncStatusBadge({ source, jobInfo }: SyncStatusBadgeProps) {
         Synchronisation en cours…
         {/* Real counters from the job row — no estimate when the total is unknown. */}
         {activeJob.totalDocuments > 0 &&
-          ` (${activeJob.processedDocuments} / ${activeJob.totalDocuments} documents)`}
+          RAG_STRINGS.syncProgress(activeJob.processedDocuments, activeJob.totalDocuments)}
       </span>
     );
   }
@@ -721,18 +722,18 @@ export default function KnowledgeBaseManager({
         <div className="space-y-2">
           {loading && (
             <p role="status" className="text-sm text-gray-500 italic">
-              Chargement des sources…
+              {RAG_STRINGS.sourcesLoading}
             </p>
           )}
           {!loading && !sourcesLoaded && (
             <div className="px-3 py-6 text-center border border-dashed border-red-800/40 rounded-lg space-y-3">
-              <p className="text-sm text-red-400">Impossible de charger les sources.</p>
+              <p className="text-sm text-red-400">{RAG_STRINGS.sourcesLoadError}</p>
               <button
                 type="button"
                 onClick={() => void loadAll()}
                 className="px-3 py-1.5 rounded-lg text-sm bg-os-700 hover:bg-os-600 text-white"
               >
-                Réessayer
+                {RAG_STRINGS.retry}
               </button>
             </div>
           )}

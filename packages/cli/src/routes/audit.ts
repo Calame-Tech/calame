@@ -14,8 +14,20 @@ export function registerAuditRoute(app: Express, state: AppState): void {
       const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : undefined;
       const offset = req.query.offset ? parseInt(req.query.offset as string, 10) : undefined;
       const since = req.query.since as string | undefined;
+      // Optional outcome filter (e.g. the setup checklist only needs one
+      // successful call). Unknown values are ignored rather than matched.
+      const resultFilter =
+        req.query.result === 'success' || req.query.result === 'error'
+          ? req.query.result
+          : undefined;
 
-      const result = auditLog.getEntries({ profileName, limit, offset, since });
+      const result = auditLog.getEntries({
+        profileName,
+        limit,
+        offset,
+        since,
+        result: resultFilter,
+      });
       res.json({ success: true, ...result });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown error';

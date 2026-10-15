@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useTranslations } from 'use-intl/react';
 import { apiFetch, getCurrentTenant } from '../lib/api.js';
-import { slugifyProfileName } from '../lib/profiles.js';
+import { newMcpDefaultsFor, slugifyProfileName } from '../lib/profiles.js';
 import { buildMcpUrl } from '../lib/mcp-url.js';
 
 interface OnboardingWizardProps {
@@ -285,17 +285,15 @@ export default function OnboardingWizard({
       }
 
       // 2. Save the profile referencing the configuration by name (the shape
-      // every configuration-backed profile in the app uses).
+      // every configuration-backed profile in the app uses). Only a new MCP
+      // gets the safe defaults: an existing one keeps its access settings.
       const saveRes = await apiFetch('/api/profiles/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
           profiles: {
-            [name]: {
-              label,
-              configurations: [configName],
-            },
+            [name]: { ...(await newMcpDefaultsFor(name)), label, configurations: [configName] },
           },
         }),
       });

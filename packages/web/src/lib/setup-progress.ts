@@ -46,6 +46,11 @@ function hasData(p: SavedProfileSummary): boolean {
   return (p.configurations?.length ?? 0) > 0 || sources.length > 0;
 }
 
+/** Names of the saved profiles that count as a created MCP (see `hasData`). */
+export function mcpProfileNames(savedProfiles: SavedProfileSummary[]): string[] {
+  return savedProfiles.filter(hasData).map((p) => p.name);
+}
+
 export function computeSetupProgress({
   sourceCount,
   savedProfiles,

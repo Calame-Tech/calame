@@ -5,7 +5,8 @@
 import { useMemo, useState } from 'react';
 import type { RagSourceType } from '../types.js';
 import type { RagSourcePublic } from '../routes/api-types.js';
-import { apiPost, apiPatch, ApiError, type RagSourceResponse } from './api.js';
+import { apiPost, apiPatch, ApiError, ApiTimeoutError, type RagSourceResponse } from './api.js';
+import { RAG_STRINGS } from './onboarding-strings.js';
 import ReindexDialog from './ReindexDialog.js';
 import HelpTip from '../../../../packages/web/src/components/HelpTip.js';
 
@@ -237,10 +238,17 @@ function isValidHttpUrl(value: string): boolean {
   }
 }
 
-const GLOBS_INCLUDE_HELP = 'Une glob par ligne. Vide = tout inclure.';
-const GLOBS_EXCLUDE_HELP = 'Une glob par ligne.';
-const LOCAL_EMBEDDINGS_HELP =
-  "Traitement 100 % local — vos documents et vos requêtes ne quittent jamais cet ordinateur. Pour un corpus très volumineux ou une qualité maximale, vous pouvez configurer votre propre fournisseur d'embeddings dans « AI Settings ».";
+/**
+ * Upper bound for POST/PATCH /api/rag/sources and the "Tester" dry-run. Those
+ * routes await `connector.testConnection`, which has no server-side deadline:
+ * an unreachable network share (UNC path on Windows) or a silent host would
+ * otherwise leave "Enregistrement…" / "Test…" spinning forever. Set above the
+ * HTTP connector's own 60 s maximum so a legitimately slow check still
+ * completes.
+ */
+export const SOURCE_REQUEST_TIMEOUT_MS = 90_000;
+
+const HELP = RAG_STRINGS.help;
 
 // ---------------------------------------------------------------------------
 // Sub-components (inline — small enough to keep in one file)
@@ -468,6 +476,8 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
   // ---- ui state ----
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  // Set when the last save timed out: the error banner then offers a retry.
+  const [saveRetryable, setSaveRetryable] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
@@ -800,6 +810,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
   const handleSave = async () => {
     setError(null);
     setServerError(null);
+    setSaveRetryable(false);
     setTestResult(null);
     const validationError = validate();
     if (validationError) {
@@ -817,10 +828,13 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
           ? await apiPatch<RagSourceResponse>(
               `/api/rag/sources/${encodeURIComponent(initial.id)}`,
               payload,
+              { timeoutMs: SOURCE_REQUEST_TIMEOUT_MS },
             )
-          : await apiPost<RagSourceResponse>('/api/rag/sources', payload);
+          : await apiPost<RagSourceResponse>('/api/rag/sources', payload, {
+              timeoutMs: SOURCE_REQUEST_TIMEOUT_MS,
+            });
       if (!response?.source) {
-        throw new Error("Le serveur n'a pas renvoyé la source enregistrée. Rechargez la liste.");
+        throw new Error(RAG_STRINGS.saveMissingSource);
       }
       onSave(response.source);
     } catch (err) {
@@ -830,6 +844,9 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
             'Réessaie avec une config IA dont le modèle a la même dimension que les sources existantes.',
         );
         setServerError(err.message);
+      } else if (err instanceof ApiTimeoutError) {
+        setError(RAG_STRINGS.saveTimeout(Math.round(err.timeoutMs / 1000)));
+        setSaveRetryable(true);
       } else {
         const message =
           err instanceof ApiError
@@ -859,15 +876,21 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
       // used to create (or silently overwrite, when editing) the source as a
       // side effect just to have something to test against — surprising when
       // the user only wanted to check the config before committing to it.
-      await apiPost('/api/rag/sources/test-config', { type, config: buildConfig() });
+      await apiPost(
+        '/api/rag/sources/test-config',
+        { type, config: buildConfig() },
+        { timeoutMs: SOURCE_REQUEST_TIMEOUT_MS },
+      );
       setTestResult({ success: true, message: 'Connexion validée.' });
     } catch (err) {
       const message =
-        err instanceof ApiError
-          ? err.message
-          : err instanceof Error
+        err instanceof ApiTimeoutError
+          ? RAG_STRINGS.testTimeout(Math.round(err.timeoutMs / 1000))
+          : err instanceof ApiError
             ? err.message
-            : 'Échec du test.';
+            : err instanceof Error
+              ? err.message
+              : 'Échec du test.';
       setTestResult({ success: false, message });
     } finally {
       setTesting(false);
@@ -967,11 +990,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
       {type === 'local' && (
         <div className="space-y-4">
           <div>
-            <FieldLabel
-              htmlFor="rag-source-rootpath"
-              required
-              help="Le serveur doit pouvoir lire ce chemin. Les fichiers ajoutés ultérieurement sont indexés à la prochaine synchronisation."
-            >
+            <FieldLabel htmlFor="rag-source-rootpath" required help={HELP.rootPath}>
               Chemin absolu du dossier
             </FieldLabel>
             <div className="flex items-center gap-2 mt-1">
@@ -1003,8 +1022,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
             </div>
             {browsingFolder && (
               <p role="status" className="text-xs text-gray-400 mt-1">
-                En attente du sélecteur de dossier du système — il peut s&apos;ouvrir derrière la
-                fenêtre de Calame. Vous pouvez aussi saisir le chemin manuellement.
+                {RAG_STRINGS.folderPickerWaiting}
               </p>
             )}
             {browseError && (
@@ -1016,7 +1034,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <FieldLabel htmlFor="local-include-globs" help={GLOBS_INCLUDE_HELP}>
+              <FieldLabel htmlFor="local-include-globs" help={HELP.globsInclude}>
                 Include globs
               </FieldLabel>
               <textarea
@@ -1029,10 +1047,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               />
             </div>
             <div>
-              <FieldLabel
-                htmlFor="local-exclude-globs"
-                help="Une glob par ligne, ajoutée aux exclusions par défaut (node_modules, .git)."
-              >
+              <FieldLabel htmlFor="local-exclude-globs" help={HELP.localGlobsExclude}>
                 Exclude globs
               </FieldLabel>
               <textarea
@@ -1058,7 +1073,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               Inclure les fichiers cachés
             </label>
             <HelpTip
-              content="Fichiers et dossiers commençant par un point (.env, .cache…), exclus par défaut. Les fichiers de plus de 50 Mo sont toujours ignorés."
+              content={HELP.includeHidden}
               label="Inclure les fichiers cachés"
               position="right"
               maxWidth={320}
@@ -1090,7 +1105,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               />
             </div>
             <div>
-              <FieldLabel htmlFor="s3-region" required help="Utilisez 'auto' pour Cloudflare R2.">
+              <FieldLabel htmlFor="s3-region" required help={HELP.s3Region}>
                 Région
               </FieldLabel>
               <input
@@ -1154,10 +1169,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
             {s3ShowAdvanced && (
               <div className="px-3 pb-4 pt-1 space-y-3 border-t border-white/5">
                 <div>
-                  <FieldLabel
-                    htmlFor="s3-prefix"
-                    help="Racine logique dans le bucket. Laisser vide pour tout le bucket."
-                  >
+                  <FieldLabel htmlFor="s3-prefix" help={HELP.s3Prefix}>
                     Préfixe (racine logique)
                   </FieldLabel>
                   <input
@@ -1171,10 +1183,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                 </div>
 
                 <div>
-                  <FieldLabel
-                    htmlFor="s3-endpoint"
-                    help="Pour R2 / MinIO. Laisser vide pour AWS S3 standard."
-                  >
+                  <FieldLabel htmlFor="s3-endpoint" help={HELP.s3Endpoint}>
                     Endpoint personnalisé
                   </FieldLabel>
                   <input
@@ -1202,7 +1211,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                     Force path-style
                   </label>
                   <HelpTip
-                    content="Requis pour MinIO. Désactiver pour AWS S3 et Cloudflare R2."
+                    content={HELP.s3ForcePathStyle}
                     label="Force path-style"
                     position="right"
                     maxWidth={320}
@@ -1212,7 +1221,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <FieldLabel htmlFor="s3-include-globs" help={GLOBS_INCLUDE_HELP}>
+                    <FieldLabel htmlFor="s3-include-globs" help={HELP.globsInclude}>
                       Include globs
                     </FieldLabel>
                     <textarea
@@ -1225,7 +1234,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                     />
                   </div>
                   <div>
-                    <FieldLabel htmlFor="s3-exclude-globs" help={GLOBS_EXCLUDE_HELP}>
+                    <FieldLabel htmlFor="s3-exclude-globs" help={HELP.globsExclude}>
                       Exclude globs
                     </FieldLabel>
                     <textarea
@@ -1297,7 +1306,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
           {/* URLs textarea */}
           {httpMode === 'urls' && (
             <div>
-              <FieldLabel htmlFor="http-urls" required help="Une URL http(s):// par ligne.">
+              <FieldLabel htmlFor="http-urls" required help={HELP.httpUrls}>
                 URLs à indexer
               </FieldLabel>
               <textarea
@@ -1325,11 +1334,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
           {/* Sitemap URL */}
           {httpMode === 'sitemap' && (
             <div>
-              <FieldLabel
-                htmlFor="http-sitemap-url"
-                required
-                help="Le connecteur télécharge le XML et indexe chaque entrée <loc>."
-              >
+              <FieldLabel htmlFor="http-sitemap-url" required help={HELP.httpSitemap}>
                 URL du sitemap
               </FieldLabel>
               <input
@@ -1346,7 +1351,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
           {/* Common fields (always visible) */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <FieldLabel htmlFor="http-user-agent" help="Envoyé dans chaque requête HTTP.">
+              <FieldLabel htmlFor="http-user-agent" help={HELP.httpUserAgent}>
                 User-Agent
               </FieldLabel>
               <input
@@ -1359,10 +1364,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               />
             </div>
             <div>
-              <FieldLabel
-                htmlFor="http-timeout"
-                help="Min 1 000 ms, max 60 000 ms. Défaut : 10 000."
-              >
+              <FieldLabel htmlFor="http-timeout" help={HELP.httpTimeout}>
                 Timeout (ms)
               </FieldLabel>
               <input
@@ -1412,10 +1414,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <FieldLabel
-                      htmlFor="http-include-globs"
-                      help="Appliqués au pathname de l'URL. Vide = tout inclure."
-                    >
+                    <FieldLabel htmlFor="http-include-globs" help={HELP.httpGlobsInclude}>
                       Include globs (pathname)
                     </FieldLabel>
                     <textarea
@@ -1428,7 +1427,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                     />
                   </div>
                   <div>
-                    <FieldLabel htmlFor="http-exclude-globs" help={GLOBS_EXCLUDE_HELP}>
+                    <FieldLabel htmlFor="http-exclude-globs" help={HELP.globsExclude}>
                       Exclude globs (pathname)
                     </FieldLabel>
                     <textarea
@@ -2157,7 +2156,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
           required
           help={
             selectedSetting?.provider === 'local' && selectedSettingSupportsEmbeddings
-              ? LOCAL_EMBEDDINGS_HELP
+              ? HELP.localEmbeddings
               : undefined
           }
         >
@@ -2269,10 +2268,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
       {/* Polling interval (auto-sync)                                         */}
       {/* ------------------------------------------------------------------ */}
       <div>
-        <FieldLabel
-          htmlFor="rag-source-polling"
-          help="Choisissez la fréquence à laquelle la source est interrogée pour détecter les changements. La synchronisation manuelle reste toujours disponible."
-        >
+        <FieldLabel htmlFor="rag-source-polling" help={HELP.polling}>
           Intervalle de synchronisation auto
         </FieldLabel>
         <select
@@ -2304,6 +2300,16 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
         >
           <p>{error}</p>
           {serverError && <p className="text-xs text-red-300 opacity-80">{serverError}</p>}
+          {saveRetryable && (
+            <button
+              type="button"
+              onClick={() => void handleSave()}
+              disabled={saving}
+              className="mt-1 px-3 py-1.5 rounded-lg bg-red-900/40 hover:bg-red-900/60 border border-red-800/50 text-red-200 text-xs font-medium transition-all duration-200 disabled:opacity-50"
+            >
+              {RAG_STRINGS.retry}
+            </button>
+          )}
           {serverError && embeddingSettingName && (
             <button
               type="button"
@@ -2317,6 +2323,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
       )}
       {testResult && (
         <div
+          role={testResult.success ? 'status' : 'alert'}
           className={`p-2.5 rounded-lg text-sm ${
             testResult.success
               ? 'bg-green-950/30 border border-green-800/50 text-green-400'
@@ -2345,6 +2352,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
           Annuler
         </button>
       </div>
+      {saving && <p className="text-xs text-gray-500">{RAG_STRINGS.savingHint}</p>}
 
       {showReindexDialog && (
         <ReindexDialog

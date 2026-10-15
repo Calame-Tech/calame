@@ -2,8 +2,8 @@
 // form. Covers the collapsible behaviour (click / Enter / Space / Escape) and
 // the accessible wiring (localized name, aria-expanded, aria-describedby).
 
-import { describe, it, expect, afterEach } from 'vitest';
-import { render as rtlRender, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import { render as rtlRender, screen, fireEvent, act } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import HelpTip from '../HelpTip.js';
 import { I18nProvider } from '../../i18n/I18nProvider.js';
@@ -13,6 +13,7 @@ function render(ui: ReactElement) {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   localStorage.clear();
 });
 
@@ -53,6 +54,41 @@ describe('HelpTip', () => {
     fireEvent.click(tip);
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
     expect(tip).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('pins a tooltip already opened by hover instead of closing it on click', () => {
+    vi.useFakeTimers();
+    render(<HelpTip content="Secondary explanation" label="Field" />);
+    const tip = screen.getByRole('button', { name: 'Help: Field' });
+
+    fireEvent.mouseEnter(tip);
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
+    expect(screen.getByRole('tooltip')).toBeInTheDocument();
+
+    // Click while hover-open: stays open, and survives leaving the icon.
+    fireEvent.click(tip);
+    expect(screen.getByRole('tooltip')).toBeInTheDocument();
+    fireEvent.mouseLeave(tip);
+    expect(screen.getByRole('tooltip')).toBeInTheDocument();
+
+    // A second click folds it back.
+    fireEvent.click(tip);
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+  });
+
+  it('still closes on mouse leave when it was only hovered', () => {
+    vi.useFakeTimers();
+    render(<HelpTip content="Secondary explanation" />);
+    const tip = screen.getByRole('button', { name: 'Help' });
+
+    fireEvent.mouseEnter(tip);
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
+    fireEvent.mouseLeave(tip);
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
   });
 
   it('is operable from the keyboard: Enter and Space toggle, Escape closes', () => {

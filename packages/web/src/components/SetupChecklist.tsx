@@ -3,11 +3,12 @@
 // lib/setup-progress.ts) and links to the existing screen that performs it —
 // this component never creates anything itself.
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'use-intl/react';
 import { apiFetch } from '../lib/api.js';
 import {
   computeSetupProgress,
+  mcpProfileNames,
   type SavedProfileSummary,
   type SetupProgress,
   type SetupStepStatus,
@@ -15,8 +16,30 @@ import {
 import type { AuditLogEntry } from '../types/schema.js';
 import type { View } from '../router/index.js';
 
-/** Same cadence as the dashboard's recent-activity poller. */
-const POLL_INTERVAL_MS = 15_000;
+/**
+ * Set once the user hides the guide or a client call has been observed, so an
+ * installation that already works never shows it (nor queries for it) again.
+ */
+export const SETUP_CHECKLIST_HIDDEN_KEY = 'calame.setupChecklist.hidden';
+
+/** Upper bound on per-MCP audit lookups — first runs have one or two MCPs. */
+const MAX_PROFILES_CHECKED = 10;
+
+function isHidden(): boolean {
+  try {
+    return localStorage.getItem(SETUP_CHECKLIST_HIDDEN_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function persistHidden(): void {
+  try {
+    localStorage.setItem(SETUP_CHECKLIST_HIDDEN_KEY, '1');
+  } catch {
+    // Storage unavailable (private mode…): the guide just hides for this session.
+  }
+}
 
 interface SetupChecklistProps {
   /** Database connections + knowledge-base sources, as already loaded by the page. */
@@ -27,28 +50,42 @@ interface SetupChecklistProps {
 }
 
 type LoadState =
+  | { status: 'idle' }
   | { status: 'loading' }
   | { status: 'error' }
   | { status: 'ready'; profiles: SavedProfileSummary[]; audit: AuditLogEntry[] };
 
+async function fetchJson<T>(url: string): Promise<T> {
+  const res = await apiFetch(url, { credentials: 'include' });
+  if (!res.ok) throw new Error('setup resources unavailable');
+  return (await res.json()) as T;
+}
+
+/**
+ * Saved profiles, plus at most one successful audited call per MCP that has
+ * data — a targeted lookup (`result=success&limit=1`) instead of pulling the
+ * whole recent audit log on every refresh.
+ */
 async function fetchSetupResources(): Promise<{
   profiles: SavedProfileSummary[];
   audit: AuditLogEntry[];
 }> {
-  const [profilesRes, auditRes] = await Promise.all([
-    apiFetch('/api/profiles/load', { credentials: 'include' }),
-    apiFetch('/api/audit?limit=100&offset=0', { credentials: 'include' }),
-  ]);
-  if (!profilesRes.ok || !auditRes.ok) throw new Error('setup resources unavailable');
-  const profilesData = (await profilesRes.json()) as {
+  const profilesData = await fetchJson<{
     found?: boolean;
     profiles?: Record<string, Omit<SavedProfileSummary, 'name'>>;
-  };
-  const auditData = (await auditRes.json()) as { entries?: AuditLogEntry[] };
+  }>('/api/profiles/load');
   const profiles = Object.entries(profilesData.found ? (profilesData.profiles ?? {}) : {}).map(
     ([name, p]) => ({ name, configurations: p.configurations, sources: p.sources }),
   );
-  return { profiles, audit: auditData.entries ?? [] };
+  const mcpNames = mcpProfileNames(profiles).slice(0, MAX_PROFILES_CHECKED);
+  const auditPages = await Promise.all(
+    mcpNames.map((name) =>
+      fetchJson<{ entries?: AuditLogEntry[] }>(
+        `/api/audit?profileName=${encodeURIComponent(name)}&result=success&limit=1&offset=0`,
+      ),
+    ),
+  );
+  return { profiles, audit: auditPages.flatMap((page) => page.entries ?? []) };
 }
 
 export default function SetupChecklist({
@@ -57,20 +94,44 @@ export default function SetupChecklist({
   refreshKey = 0,
 }: SetupChecklistProps) {
   const t = useTranslations('onboarding.checklist');
-  const [state, setState] = useState<LoadState>({ status: 'loading' });
+  const [hidden, setHidden] = useState(isHidden);
+  const [state, setState] = useState<LoadState>({ status: 'idle' });
+  // Only the latest request may update the state: a slow response must not
+  // overwrite a newer one (e.g. a refresh triggered by a new source).
+  const requestIdRef = useRef(0);
 
   const load = useCallback(async () => {
+    const requestId = ++requestIdRef.current;
     try {
       const data = await fetchSetupResources();
-      setState({ status: 'ready', ...data });
+      if (requestId === requestIdRef.current) setState({ status: 'ready', ...data });
     } catch {
-      setState({ status: 'error' });
+      if (requestId === requestIdRef.current) setState({ status: 'error' });
     }
   }, []);
 
+  // Invalidate in-flight requests on unmount.
+  useEffect(() => () => void ++requestIdRef.current, []);
+
   useEffect(() => {
+    if (hidden) return;
     void load();
-  }, [load, sourceCount, refreshKey]);
+  }, [hidden, load, sourceCount, refreshKey]);
+
+  // No timer: re-check when the user comes back to Calame (typically after
+  // trying the MCP from their AI client) or asks for it explicitly.
+  useEffect(() => {
+    if (hidden) return;
+    const onFocus = () => {
+      if (document.visibilityState !== 'hidden') void load();
+    };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onFocus);
+    };
+  }, [hidden, load]);
 
   const progress: SetupProgress | null =
     state.status === 'ready'
@@ -81,21 +142,37 @@ export default function SetupChecklist({
         })
       : null;
 
-  // Keep polling until a client call shows up in the audit log.
   const allDone = progress?.allDone ?? false;
   useEffect(() => {
-    if (allDone) return;
-    const interval = setInterval(() => void load(), POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
-  }, [allDone, load]);
+    if (!allDone) return;
+    persistHidden();
+    setHidden(true);
+  }, [allDone]);
 
-  if (allDone) return null;
+  const hide = () => {
+    persistHidden();
+    setHidden(true);
+  };
+
+  // Nothing is shown before the first answer, so an installation that already
+  // has a used MCP never flashes the guide.
+  if (hidden || allDone || state.status === 'idle') return null;
 
   return (
     <section className="card-primary p-4" aria-labelledby="setup-checklist-title">
-      <h2 id="setup-checklist-title" className="text-sm font-semibold text-gray-100">
-        {t('title')}
-      </h2>
+      <div className="flex items-start justify-between gap-3">
+        <h2 id="setup-checklist-title" className="text-sm font-semibold text-gray-100">
+          {t('title')}
+        </h2>
+        <button
+          type="button"
+          onClick={hide}
+          aria-label={t('hideAriaLabel')}
+          className="flex-none text-[11px] text-gray-500 hover:text-gray-300 focus:outline-none focus-visible:ring-1 focus-visible:ring-os-500/40 rounded"
+        >
+          {t('hide')}
+        </button>
+      </div>
       <p className="text-xs text-gray-500 mb-3">{t('description')}</p>
 
       {state.status === 'loading' && (
@@ -164,6 +241,8 @@ export default function SetupChecklist({
                     })
                 : undefined
             }
+            secondaryActionLabel={progress.client === 'current' ? t('client.recheck') : undefined}
+            onSecondaryAction={() => void load()}
           />
         </ol>
       )}
@@ -179,9 +258,20 @@ interface SetupStepProps {
   actionLabel: string;
   /** Omitted when the step cannot be started yet. */
   onAction?: () => void;
+  secondaryActionLabel?: string;
+  onSecondaryAction?: () => void;
 }
 
-function SetupStep({ index, status, title, hint, actionLabel, onAction }: SetupStepProps) {
+function SetupStep({
+  index,
+  status,
+  title,
+  hint,
+  actionLabel,
+  onAction,
+  secondaryActionLabel,
+  onSecondaryAction,
+}: SetupStepProps) {
   const t = useTranslations('onboarding.checklist');
   return (
     <li
@@ -218,6 +308,15 @@ function SetupStep({ index, status, title, hint, actionLabel, onAction }: SetupS
           }`}
         >
           {actionLabel}
+        </button>
+      )}
+      {secondaryActionLabel && onSecondaryAction && (
+        <button
+          type="button"
+          onClick={onSecondaryAction}
+          className="flex-none text-[11px] text-os-300 hover:underline rounded focus:outline-none focus-visible:ring-1 focus-visible:ring-os-500/40"
+        >
+          {secondaryActionLabel}
         </button>
       )}
     </li>

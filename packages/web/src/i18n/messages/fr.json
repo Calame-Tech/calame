@@ -1152,6 +1152,8 @@
       "loading": "Vérification de votre configuration…",
       "loadError": "Impossible de vérifier l’avancement de la configuration.",
       "retry": "Réessayer",
+      "hide": "Masquer",
+      "hideAriaLabel": "Masquer le guide de démarrage",
       "status": {
         "done": "terminée",
         "current": "prochaine étape",
@@ -1175,7 +1177,8 @@
         "hint": "Ouvrez l’onglet « Connexion » et suivez les instructions pour votre client IA (Claude Desktop, Cursor…), puis posez-lui une question sur vos données. Cette étape n’est validée qu’à l’apparition d’un premier appel réussi dans le journal d’audit.",
         "blocked": "Disponible une fois un serveur MCP créé.",
         "done": "Un client a appelé ce serveur MCP avec succès.",
-        "action": "Connecter un client"
+        "action": "Connecter un client",
+        "recheck": "Vérifier à nouveau"
       }
     }
   },
@@ -1439,13 +1442,7 @@
       "emptyTitle": "Aucun serveur MCP",
       "emptyDescription": "Créez un serveur pour exposer vos configurations de données aux clients IA.",
       "table": {
-        "headers": [
-          "Serveur",
-          "Statut",
-          "Auth",
-          "Activité 24h",
-          "Tendance"
-        ]
+        "headers": ["Serveur", "Statut", "Auth", "Activité 24h", "Tendance"]
       },
       "statusActive": "ACTIF",
       "statusStopped": "ARRÊTÉ",

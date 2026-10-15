@@ -84,6 +84,39 @@ describe('audit routes', () => {
       expect(res.body.entries[0].profileName).toBe('prod');
       expect(res.body.total).toBe(1);
     });
+
+    it('filters by result when requested', async () => {
+      auditLog.addEntry({
+        profileName: 'prod',
+        toolName: 'query_orders',
+        toolArgs: {},
+        result: 'error',
+        durationMs: 5,
+      });
+      auditLog.addEntry({
+        profileName: 'prod',
+        toolName: 'query_orders',
+        toolArgs: {},
+        result: 'success',
+        durationMs: 5,
+      });
+
+      const res = await request(app)
+        .get('/api/audit?profileName=prod&result=success&limit=1')
+        .set('Cookie', cookie)
+        .expect(200);
+
+      expect(res.body.entries).toHaveLength(1);
+      expect(res.body.entries[0].result).toBe('success');
+      expect(res.body.total).toBe(1);
+
+      // Unknown values do not filter.
+      const all = await request(app)
+        .get('/api/audit?profileName=prod&result=bogus')
+        .set('Cookie', cookie)
+        .expect(200);
+      expect(all.body.total).toBe(2);
+    });
   });
 
   describe('GET /api/audit/export', () => {

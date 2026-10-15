@@ -817,10 +817,14 @@ export default function KnowledgeBaseManager({
                       </div>
                     )}
 
-                    {/* Document / folder counts */}
-                    <div className="text-xs text-gray-500 mt-0.5">
-                      {T.counts(source.documentCount, source.folderCount)}
-                    </div>
+                    {/* Document / folder counts — omitted rather than "undefined"
+                        if the server did not send them. */}
+                    {typeof source.documentCount === 'number' &&
+                      typeof source.folderCount === 'number' && (
+                        <div className="text-xs text-gray-500 mt-0.5">
+                          {T.counts(source.documentCount, source.folderCount)}
+                        </div>
+                      )}
                   </div>
                 </div>
 

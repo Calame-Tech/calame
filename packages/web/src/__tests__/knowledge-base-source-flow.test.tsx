@@ -294,3 +294,46 @@ describe('KnowledgeBaseManager — English locale', () => {
     expect(screen.queryByText(/Jamais synchronisé|Corbeille/)).not.toBeInTheDocument();
   });
 });
+
+describe('KnowledgeBaseManager — source card counters', () => {
+  it('shows the document and folder counts sent by the API', async () => {
+    sources = [{ ...CREATED_SOURCE, folderCount: 3, documentCount: 15 }];
+
+    render(<KnowledgeBaseManager />);
+
+    expect(await screen.findByText('15 documents · 3 dossiers')).toBeInTheDocument();
+    expect(screen.queryByText(/undefined/)).not.toBeInTheDocument();
+  });
+
+  it('omits the counters instead of printing "undefined" when they are missing', async () => {
+    sources = [{ ...CREATED_SOURCE }];
+
+    render(<KnowledgeBaseManager />);
+
+    expect(await screen.findByText('Docs')).toBeInTheDocument();
+    expect(screen.queryByText(/undefined/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/document.* · .*dossier/)).not.toBeInTheDocument();
+  });
+});
+
+describe('KnowledgeBaseManager — built-in embedding label', () => {
+  it('shows the server-seeded French label in English when the UI is in English', async () => {
+    localStorage.setItem('calame-locale', 'en');
+    overrides.push({
+      match: (url) => url.startsWith('/api/ai-settings'),
+      handler: () =>
+        json({
+          success: true,
+          settings: [{ ...LOCAL_SETTING, label: 'Embeddings locaux (inclus)' }],
+        }),
+    });
+
+    render(<KnowledgeBaseManager />);
+    fireEvent.click(await screen.findByRole('button', { name: '+ New source' }));
+
+    expect(
+      await screen.findByRole('option', { name: /^Local embeddings \(built in\)/ }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /Embeddings locaux/ })).not.toBeInTheDocument();
+  });
+});

@@ -9,6 +9,13 @@ root `package.json` version flows to the Docker image and `create-calame`).
 
 ### Fixed
 
+- Knowledge base source cards no longer show "undefined document · undefined
+  folder": the source list API now returns each source's document and folder
+  counts.
+- Configuration → Knowledge bases: remaining English words in the French UI
+  ("Scopes RAG", "profile", "knowledge bases") are translated, the selection
+  summary keeps its space ("10 documents sélectionnés"), and the built-in
+  local embedding option shows as "Local embeddings (built in)" in English.
 - Local-folder sources: "Test" no longer creates a missing folder and reports
   "Connection verified". Testing, saving and syncing now check that the folder
   exists, is a folder and can be listed (drive letters and UNC shares included).

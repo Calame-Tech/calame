@@ -6,7 +6,7 @@ import { useMemo, useState } from 'react';
 import type { RagSourceType } from '../types.js';
 import type { RagSourcePublic } from '../routes/api-types.js';
 import { apiPost, apiPatch, ApiError, ApiTimeoutError, type RagSourceResponse } from './api.js';
-import { RAG_STRINGS, translateJobError } from './onboarding-strings.js';
+import { RAG_STRINGS, RAG_STRING_TABLES, translateJobError } from './onboarding-strings.js';
 import ReindexDialog from './ReindexDialog.js';
 import { SOURCE_FORM_STRINGS as SF } from './strings/source-form.js';
 import HelpTip from '../../../../packages/web/src/components/HelpTip.js';
@@ -160,6 +160,17 @@ interface ServiceAccountKeyValidation {
   clientEmail: string | null;
   /** Human-readable error, or null when the key parses & has the required fields. */
   error: string | null;
+}
+
+/**
+ * Display label of an AI setting. The built-in local embedding setting is
+ * seeded server-side with a French label; show it in the UI locale unless the
+ * user renamed it.
+ */
+export function aiSettingDisplayLabel(s: { provider?: string; label: string }): string {
+  return s.provider === 'local' && s.label === RAG_STRING_TABLES.fr.localEmbeddingName
+    ? RAG_STRINGS.localEmbeddingName
+    : s.label;
 }
 
 function validateServiceAccountKey(raw: string): ServiceAccountKeyValidation {
@@ -2161,7 +2172,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               .map((s) => {
                 const supports = s.capabilities?.includes('embeddings');
                 const isLocal = s.provider === 'local';
-                let label = s.label;
+                let label = aiSettingDisplayLabel(s);
                 if (supports) {
                   if (isLocal) {
                     label += RAG_STRINGS.localEmbeddingSuffix;
@@ -2328,7 +2339,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
       {showReindexDialog && (
         <ReindexDialog
           targetSettingName={embeddingSettingName}
-          targetLabel={selectedSetting?.label}
+          targetLabel={selectedSetting ? aiSettingDisplayLabel(selectedSetting) : undefined}
           onClose={() => setShowReindexDialog(false)}
           onStarted={() => {
             setError(null);

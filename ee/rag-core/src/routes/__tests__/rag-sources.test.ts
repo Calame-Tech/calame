@@ -956,6 +956,31 @@ describe('registerRagSourcesRoutes — soft delete', () => {
     expect(ids).toContain(id2);
   });
 
+  it('GET /api/rag/sources returns document and folder counts for each source', async () => {
+    const empty = await createSource();
+    const indexed = await createSource();
+    db.prepare(
+      `INSERT INTO rag_folders (id, source_id, parent_id, path, name) VALUES ('f1', ?, NULL, 'a', 'a')`,
+    ).run(indexed);
+    const insertDoc = db.prepare(
+      `INSERT INTO rag_documents (id, source_id, folder_id, path, name, mime_type, size, hash, deleted_at)
+       VALUES (?, ?, 'f1', ?, ?, 'text/plain', 1, 'h', ?)`,
+    );
+    insertDoc.run('d1', indexed, 'a/1.txt', '1.txt', null);
+    insertDoc.run('d2', indexed, 'a/2.txt', '2.txt', null);
+    insertDoc.run('d3', indexed, 'a/3.txt', '3.txt', '2026-01-01T00:00:00Z');
+
+    const listRes = makeRes();
+    await captured.get('/api/rag/sources')(makeReq({}), listRes.res);
+
+    const body = listRes.body as {
+      sources: Array<{ id: string; documentCount: number; folderCount: number }>;
+    };
+    const byId = new Map(body.sources.map((s) => [s.id, s]));
+    expect(byId.get(empty)).toMatchObject({ documentCount: 0, folderCount: 0 });
+    expect(byId.get(indexed)).toMatchObject({ documentCount: 2, folderCount: 1 });
+  });
+
   it('GET /api/rag/sources?filter=deleted returns only soft-deleted sources', async () => {
     const id1 = await createSource();
     const id2 = await createSource();

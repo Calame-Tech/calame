@@ -81,6 +81,8 @@ const FR = {
   includeHidden: 'Inclure les fichiers cachés',
   embeddingLabel: "Configuration d'embeddings",
   selectEmbedding: 'Sélectionner une configuration IA…',
+  /** Display name of the built-in local embedding setting (seeded label, see local-embedding-meta.ts). */
+  localEmbeddingName: 'Embeddings locaux (inclus)',
   localEmbeddingSuffix: ' — inclus, 100 % local',
   modelLabel: 'Modèle :',
   dimensionsLabel: 'Dimensions :',
@@ -220,6 +222,7 @@ const EN: typeof FR = {
   includeHidden: 'Include hidden files',
   embeddingLabel: 'Embedding configuration',
   selectEmbedding: 'Select an AI configuration…',
+  localEmbeddingName: 'Local embeddings (built in)',
   localEmbeddingSuffix: ' — built in, 100% local',
   modelLabel: 'Model:',
   dimensionsLabel: 'Dimensions:',

@@ -5,6 +5,46 @@ every commit. Newest first.
 
 ---
 
+## 2026-10-15 — CALAME-1 : corrections du troisième test réel (compteurs de la fiche source, restes de traduction)
+
+- **« undefined document · undefined dossier » sur la fiche d'une source locale (cause établie)** :
+  `GET /api/rag/sources` (`ee/rag-core/src/routes/rag-sources.ts`) renvoyait seulement
+  `rowToSource(row)`, sans `documentCount` ni `folderCount`. Le type UI `RagSourceWithCounts`
+  (`ee/rag-core/src/web/api.ts`) annonçait pourtant ces champs, et `KnowledgeBaseManager` les
+  affichait tels quels. Seul l'adaptateur MCP (`packages/cli/src/rag/document-adapters.ts`,
+  `listSources`) les calculait. Le symptôme était donc indépendant de l'état de l'indexation.
+  Correctif : la route de liste calcule les deux compteurs en SQL, avec les mêmes définitions que
+  l'adaptateur (dossiers de la source, documents non supprimés). La fiche n'affiche plus la ligne
+  si les compteurs manquent, plutôt que « undefined ».
+- **Restes de traduction, Configuration → Bases de connaissances** (`strings/rag-access.ts`) :
+  « Bases de connaissances accessibles — profil », « Accès aux bases de connaissances mis à jour
+  pour le profil « … ». », « Recommandé pour les bases de connaissances volumineuses », et « ce
+  profil » dans l'introduction. Pour « 10 documentssélectionnés », l'espace ne reposait que sur
+  une marge CSS (`ml-1`) : il est désormais présent dans le texte. Le réglage local d'embeddings est
+  créé côté serveur avec le libellé français « Embeddings locaux (inclus) ». `aiSettingDisplayLabel`
+  (`SourceForm.tsx`) l'affiche dans la langue de l'interface (« Local embeddings (built in) ») tant
+  que l'utilisateur ne l'a pas renommé. La donnée en base n'est pas modifiée.
+- **Dossier local invalide (correction précédente)** : vérifiée en place. `assertReadableRoot`
+  est appelé par `testConnection` et par les listings racine. Les tests
+  `local-folder.test.ts` (« rejects a missing folder whose parent exists, without creating it »,
+  « fails root-level listings on a missing folder… ») et `onboarding-strings.test.ts` passent.
+  Deux commentaires de `rag-sources.ts` affirmaient encore que le dossier était créé
+  automatiquement : ils sont corrigés (commentaires seulement).
+- Tests ajoutés :
+  - `rag-sources.test.ts` : la liste renvoie les compteurs, à 0 pour une source vide, en excluant
+    les documents supprimés.
+  - `knowledge-base-source-flow.test.tsx` : fiche rendue avec et sans statistiques (jamais
+    « undefined ») ; libellé anglais du réglage local d'embeddings.
+  - `rag-access-selector-strings.test.tsx` : titre en français et « 10 documents sélectionnés »
+    avec l'espace. Ce test échoue sur l'ancien balisage, vérifié.
+- Vérifications : `pnpm format` puis `format:check` (OK), `lint` (0 erreur, 4 warnings
+  préexistants dans `write-indexing.integration.test.ts`), `typecheck` (OK), `build` (OK),
+  `test` (189 fichiers passés, 3 ignorés ; 2801 tests passés, 19 ignorés).
+- Non fait : le parcours bout en bout n'a pas été rejoué dans l'app desktop. **Rien n'a été
+  validé sous Windows.** La version testée reste non confirmée (package.json = 0.8.4).
+
+---
+
 ## 2026-10-15 — CALAME-1 : corrections du second test réel (dossier local invalide, traductions)
 
 - **Dossier local invalide accepté (cause établie)** : `LocalFolderConnector.testConnection`

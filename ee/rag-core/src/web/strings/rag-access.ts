@@ -33,12 +33,13 @@ const FR = {
   saving: 'Enregistrement…',
   save: 'Enregistrer',
   genericError: 'Erreur.',
-  savedToast: (profile: string) => `Accès RAG mis à jour pour le profile "${profile}".`,
+  savedToast: (profile: string) =>
+    `Accès aux bases de connaissances mis à jour pour le profil « ${profile} ».`,
   saveFailed: (msg: string) => `Échec de la sauvegarde : ${msg}`,
   loadingKbs: 'Chargement des bases de connaissance…',
-  headingPrefix: 'Scopes RAG — profile ',
+  headingPrefix: 'Bases de connaissances accessibles — profil ',
   introBeforeArrow:
-    'Sélectionnez les bases de connaissance et dossiers accessibles pour ce profile. Cliquez sur ',
+    'Sélectionnez les bases de connaissance et dossiers accessibles pour ce profil. Cliquez sur ',
   introAfterArrow:
     " pour parcourir le contenu d'une base et choisir des dossiers ou fichiers précis plutôt que tout inclure.",
   piiOffLabel: "Désactiver le masquage PII (le contenu sensible reste visible par l'IA)",
@@ -47,7 +48,7 @@ const FR = {
   directFetchOffLabel:
     'Désactiver la lecture directe des documents (le LLM ne pourra utiliser que la recherche sémantique)',
   directFetchOffHint:
-    'Recommandé pour les knowledge bases volumineuses : limite le coût des questions du type "résume tous mes fichiers".',
+    'Recommandé pour les bases de connaissances volumineuses : limite le coût des questions du type "résume tous mes fichiers".',
   noKnowledgeBase: 'Aucune base de connaissance configurée.',
 };
 

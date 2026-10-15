@@ -696,7 +696,7 @@ function SaveFooter({ counts, saving, onCancel, onSave }: SaveFooterProps) {
               <span className="mx-1 text-gray-600">·</span>
             )}
             {counts.documents > 0 && <span>{T.documentCount(counts.documents)}</span>}
-            <span className="ml-1">{T.selected(total)}</span>
+            <span>{` ${T.selected(total)}`}</span>
           </>
         ) : (
           <span>{T.noneSelected}</span>

@@ -37,7 +37,11 @@ describe('buildJobMap', () => {
 
   it('returns null for both activeJob and lastFailedJob when there are no jobs', () => {
     const map = buildJobMap([SOURCE_A], []);
-    expect(map.get(SOURCE_A)).toEqual({ activeJob: null, lastFailedJob: null });
+    expect(map.get(SOURCE_A)).toEqual({
+      activeJob: null,
+      lastFailedJob: null,
+      lastTerminalJobId: null,
+    });
   });
 
   it('sets lastFailedJob when the only terminal job is failed', () => {

@@ -171,7 +171,7 @@ describe('KnowledgeBaseManager — first source flow', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Enregistrer' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Connector validation failed: dossier introuvable',
+      'La vérification de la source a échoué : dossier introuvable',
     );
     const retry = screen.getByRole('button', { name: 'Enregistrer' });
     expect(retry).toBeEnabled();

@@ -2,9 +2,9 @@
 // Copyright (c) 2026 Calame Tech inc. Licensed under the Business Source License 1.1.
 // See ee/LICENSE.BUSL at the root of the ee/ directory for terms.
 
-import { constants as fsConstants, createReadStream } from 'node:fs';
-import { access, mkdir, readdir, stat } from 'node:fs/promises';
-import { basename, dirname, relative, resolve, sep } from 'node:path';
+import { createReadStream } from 'node:fs';
+import { opendir, readdir, stat } from 'node:fs/promises';
+import { basename, relative, resolve, sep } from 'node:path';
 import type { Readable } from 'node:stream';
 import chokidar from 'chokidar';
 import mime from 'mime-types';
@@ -197,6 +197,53 @@ export function buildWatchIgnored(
 }
 
 /**
+ * Error messages of `assertReadableRoot`. Stable English prefixes: the web UI
+ * matches them to show a translated message (rag-core onboarding-strings.ts,
+ * translateJobError) — keep both in sync.
+ */
+export const LOCAL_ROOT_ERRORS = {
+  missing: (root: string) => `Local folder "${root}" does not exist.`,
+  notDirectory: (root: string) => `Local folder "${root}" is not a folder.`,
+  notReadable: (root: string, code: string) => `Local folder "${root}" is not readable (${code}).`,
+} as const;
+
+/**
+ * Checks that `root` exists, is a directory and can be listed. Windows drive
+ * paths (`D:\docs`) and UNC shares (`\\server\share`) go through the same
+ * `stat` / `readdir` calls; an absent drive or unreachable share surfaces as
+ * ENOENT (missing) or another errno (not readable).
+ */
+export async function assertReadableRoot(root: string): Promise<void> {
+  const errnoCode = (err: unknown): string =>
+    err !== null && typeof err === 'object' && 'code' in err && typeof err.code === 'string'
+      ? err.code
+      : err instanceof Error
+        ? err.message
+        : String(err);
+  let stats;
+  try {
+    stats = await stat(root);
+  } catch (err: unknown) {
+    const code = errnoCode(err);
+    if (code === 'ENOENT' || code === 'ENOTDIR') {
+      throw new ConnectorConfigError('local', LOCAL_ROOT_ERRORS.missing(root));
+    }
+    throw new ConnectorConfigError('local', LOCAL_ROOT_ERRORS.notReadable(root, code));
+  }
+  if (!stats.isDirectory()) {
+    throw new ConnectorConfigError('local', LOCAL_ROOT_ERRORS.notDirectory(root));
+  }
+  try {
+    // access(R_OK) is not meaningful on Windows (ACLs) — actually opening
+    // the directory is the reliable "can list" probe on every platform.
+    const dir = await opendir(root);
+    await dir.close();
+  } catch (err: unknown) {
+    throw new ConnectorConfigError('local', LOCAL_ROOT_ERRORS.notReadable(root, errnoCode(err)));
+  }
+}
+
+/**
  * Raised by `fetchDocument` when the supplied `docId` cannot be resolved to a
  * real path. Phase 1 limitation: ids are encoded as `path:<relPath>`, so the
  * caller should always have a valid id straight from `listDocuments`.
@@ -235,7 +282,9 @@ function decodeDocId(docId: string): string {
  *
  * Phase 1 capabilities:
  *  - `testConnection` validates that `rootPath` exists, is a directory, and is
- *    readable.
+ *    readable (never creates it). Root-level listings run the same check, so a
+ *    sync on a missing / unreadable folder fails with that error instead of
+ *    completing with 0 documents.
  *  - `listFolders` / `listDocuments` walk **only the direct children** of the
  *    requested folder; recursion is the caller's job (via repeated calls).
  *  - `fetchDocument` opens a `fs.createReadStream` on the resolved path with
@@ -260,49 +309,7 @@ export class LocalFolderConnector implements DocumentSourceConnector {
 
   async testConnection(rawConfig: DocumentSourceConfig): Promise<void> {
     const config = narrowConfig(rawConfig);
-    const root = resolve(config.rootPath);
-    let stats;
-    try {
-      stats = await stat(root);
-    } catch (err: unknown) {
-      // Auto-create when the path is missing AND its parent exists. The
-      // parent-must-exist check is a guardrail against typos in the rootPath
-      // (e.g. "C:\\Usres\\..." with a typo) — we don't want to silently create
-      // unrelated directories. If the parent doesn't exist either, surface a
-      // clear error so the admin can fix the typo.
-      const isMissing =
-        err !== null &&
-        typeof err === 'object' &&
-        'code' in err &&
-        (err as NodeJS.ErrnoException).code === 'ENOENT';
-      if (!isMissing) {
-        const cause = err instanceof Error ? err.message : String(err);
-        throw new Error(`Root path "${root}" is not accessible: ${cause}`);
-      }
-      const parent = dirname(root);
-      try {
-        const parentStat = await stat(parent);
-        if (!parentStat.isDirectory()) {
-          throw new Error(`Parent "${parent}" of root path is not a directory`);
-        }
-      } catch {
-        throw new Error(
-          `Root path "${root}" does not exist and its parent "${parent}" is missing or unreadable. ` +
-            `Check the path for typos before retrying.`,
-        );
-      }
-      await mkdir(root, { recursive: false });
-      stats = await stat(root);
-    }
-    if (!stats.isDirectory()) {
-      throw new Error(`Root path "${root}" is not a directory`);
-    }
-    try {
-      await access(root, fsConstants.R_OK);
-    } catch (err) {
-      const cause = err instanceof Error ? err.message : String(err);
-      throw new Error(`Root path "${root}" is not readable: ${cause}`);
-    }
+    await assertReadableRoot(resolve(config.rootPath));
   }
 
   async listFolders(
@@ -312,6 +319,7 @@ export class LocalFolderConnector implements DocumentSourceConnector {
   ): Promise<RagFolder[]> {
     const config = narrowConfig(rawConfig);
     const root = resolve(config.rootPath);
+    if (!parent) await assertReadableRoot(root);
     const targetAbs = parent ? safeResolveUnderRoot(root, parent.path) : root;
     const entries = await readdir(targetAbs, { withFileTypes: true });
 
@@ -367,6 +375,7 @@ export class LocalFolderConnector implements DocumentSourceConnector {
   ): Promise<RagDocument[]> {
     const config = narrowConfig(rawConfig);
     const root = resolve(config.rootPath);
+    if (!folder) await assertReadableRoot(root);
     const targetAbs = folder ? safeResolveUnderRoot(root, folder.path) : root;
     const entries = await readdir(targetAbs, { withFileTypes: true });
 

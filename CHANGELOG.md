@@ -9,6 +9,18 @@ root `package.json` version flows to the Docker image and `create-calame`).
 
 ### Fixed
 
+- Local-folder sources: "Test" no longer creates a missing folder and reports
+  "Connection verified". Testing, saving and syncing now check that the folder
+  exists, is a folder and can be listed (drive letters and UNC shares included).
+  A missing or unreadable folder fails with a translated error that shows in the
+  sync history (ERROR column) and on the source card. A sync that completes
+  between two polls now refreshes the card too, so it no longer stays on
+  "Never synced".
+- Knowledge bases (Sources and Configuration, ee/rag-core): every visible
+  string now follows the chosen language (sync history, "+ New source",
+  embedding usage, empty states, PII-masking toggle, save buttons, dialogs,
+  relative times). The French embeddings help now points to « Paramètres IA ».
+  A test checks fr/en key parity.
 - Knowledge base, "+ Add source": saving a source now unwraps the server's
   `{ source }` response (the new source was shown as "undefined" and not
   selected), the source list shows an error with "Réessayer" instead of loading

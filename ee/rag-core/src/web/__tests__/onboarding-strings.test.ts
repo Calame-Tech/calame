@@ -40,3 +40,29 @@ describe('rag-core strings', () => {
     expect(translateJobError('connector exploded')).toBe('connector exploded');
   });
 });
+
+describe('local-folder root errors', () => {
+  beforeEach(() => vi.stubGlobal('localStorage', localStorage));
+  afterEach(() => {
+    store.clear();
+    vi.unstubAllGlobals();
+  });
+
+  it('translates missing / not-a-folder / unreadable, Windows paths included', () => {
+    localStorage.setItem('calame-locale', 'fr');
+    expect(
+      translateJobError('Local folder "C:\\docs\\inexistant-smeagol" does not exist.'),
+    ).toMatch(/^Le dossier « C:\\docs\\inexistant-smeagol » est introuvable\./);
+    expect(
+      translateJobError(
+        'Connector validation failed: Local folder "\\\\nas\\partage\\docs" is not readable (EPERM).',
+      ),
+    ).toMatch(
+      /^La vérification de la source a échoué : Le dossier « \\\\nas\\partage\\docs » n'est pas lisible par Calame \(EPERM\)/,
+    );
+    localStorage.setItem('calame-locale', 'en');
+    expect(translateJobError('Local folder "D:\\notes.md" is not a folder.')).toBe(
+      '"D:\\notes.md" is not a folder. Enter the folder that contains the documents.',
+    );
+  });
+});

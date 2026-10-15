@@ -5,6 +5,29 @@ every commit. Newest first.
 
 ---
 
+## 2026-10-15 — CALAME-1 : corrections du second test réel (dossier local invalide, traductions)
+
+- **Dossier local invalide accepté (cause établie)** : `LocalFolderConnector.testConnection`
+  créait le dossier manquant dès que son parent existait (`mkdir`). « Tester » renvoyait donc
+  « Connexion validée. » et la synchro d'un dossier vide finissait « Terminé, 0 / 0 ». La fiche
+  restait sur « Jamais synchronisé » parce qu'un job démarré et fini entre deux polls n'était
+  jamais vu actif, et que `refreshSources()` ne se déclenchait donc pas.
+  Correctif : la nouvelle fonction `assertReadableRoot` (dans `ee/rag-connectors/src/local-folder.ts`)
+  vérifie l'existence, le type et la lisibilité (`opendir`), sans création. Elle est appelée par
+  `testConnection` et par les listings racine. Une synchro sur un dossier introuvable échoue donc
+  avec l'erreur dans l'historique (ERREUR) et sur la fiche (encart d'erreur visible).
+  `translateJobError` traduit ces messages, et `useActiveSyncJobs` expose `lastTerminalJobId`
+  pour rafraîchir la fiche.
+  Windows : les chemins lecteur et UNC passent par les mêmes appels `stat`/`opendir`. La traduction
+  est testée avec des chemins Windows, mais aucune exécution réelle n'a eu lieu sous Windows.
+- **Traductions** : toutes les chaînes visibles de rag-core passent par des tables fr/en
+  (`ee/rag-core/src/web/strings/*.ts` et le helper `localized()` d'`onboarding-strings.ts`). Les
+  vues couvertes sont KnowledgeBaseManager, FolderTreeView, DocumentUploader, SourceForm,
+  RagAccessSelector, SyncHistoryPanel, IngestionStatusCard, EmbeddingUsageCard, ReindexDialog et
+  les temps relatifs. Le test `strings-parity.test.ts` vérifie la parité des clés et des arités.
+  Les messages d'erreur serveur non reconnus restent verbatim.
+- Version testée : toujours non confirmée (package.json = 0.8.4).
+
 ## 2026-10-14 — CALAME-1 : parcours de première configuration (retour testeur desktop Windows, points 05/07/08/09)
 
 Branche `agent/calame-1-fiabilise-le-parcours-guid-jusquau-premi`, 4 commits d'implémentation + ce compte rendu, puis une passe de corrections après relecture (Hermes + revue approfondie, voir plus bas). **Version testée par le testeur non confirmée** (0.8.3 ou 0.8.4) : `git diff v0.8.3 v0.8.4` ne touche ni `ee/rag-core/src/web`, ni `packages/web/src`, ni les routes `rag-sources`/`serve` — les causes ci-dessous valent pour les deux. **Rien n'a été validé sous Windows** (tout est exécuté sur macOS).

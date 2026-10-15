@@ -3,7 +3,7 @@
 // See ee/LICENSE.BUSL at the root of the ee/ directory for terms.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdir, mkdtemp, rm, stat, utimes, writeFile, unlink } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, rm, stat, utimes, writeFile, unlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -18,6 +18,7 @@ import {
   buildWatchIgnored,
   DEFAULT_EXCLUDE_GLOBS,
   DEFAULT_MAX_FILE_SIZE_BYTES,
+  LOCAL_ROOT_ERRORS,
   LocalFolderConnector,
 } from '../local-folder.js';
 import type { WatchEvent } from '../types.js';
@@ -416,5 +417,65 @@ describe('buildWatchIgnored — watcher-level pruning', () => {
       disableDefaultExcludes: true,
     });
     expect(escapeHatch(join(root, 'node_modules'))).toBe(false);
+  });
+});
+
+describe('LocalFolderConnector root checks (missing / not a folder / unreadable)', () => {
+  let base: string;
+  const connector = new LocalFolderConnector();
+
+  beforeEach(async () => {
+    base = await mkdtemp(join(tmpdir(), 'calame-local-root-'));
+  });
+  afterEach(async () => {
+    await chmod(base, 0o700).catch(() => undefined);
+    await rm(base, { recursive: true, force: true });
+  });
+
+  it('rejects a missing folder whose parent exists, without creating it', async () => {
+    const missing = join(base, 'inexistant-smeagol');
+    await expect(connector.testConnection({ rootPath: missing })).rejects.toThrow(
+      LOCAL_ROOT_ERRORS.missing(missing),
+    );
+    await expect(stat(missing)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('rejects a path that is a file', async () => {
+    const file = join(base, 'note.md');
+    await writeFile(file, 'x');
+    await expect(connector.testConnection({ rootPath: file })).rejects.toThrow(
+      LOCAL_ROOT_ERRORS.notDirectory(file),
+    );
+  });
+
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
+    'rejects a folder that cannot be listed',
+    async () => {
+      const locked = join(base, 'locked');
+      await mkdir(locked);
+      await chmod(locked, 0o000);
+      try {
+        await expect(connector.testConnection({ rootPath: locked })).rejects.toThrow(
+          /^Local folder ".*locked" is not readable \(EACCES\)\.$/,
+        );
+      } finally {
+        await chmod(locked, 0o700);
+      }
+    },
+  );
+
+  it('fails root-level listings on a missing folder instead of returning nothing', async () => {
+    const missing = join(base, 'gone');
+    await expect(connector.listDocuments({ rootPath: missing }, 'src')).rejects.toThrow(
+      LOCAL_ROOT_ERRORS.missing(missing),
+    );
+    await expect(connector.listFolders({ rootPath: missing }, 'src')).rejects.toThrow(
+      LOCAL_ROOT_ERRORS.missing(missing),
+    );
+  });
+
+  it('accepts an existing readable folder (empty is fine)', async () => {
+    await expect(connector.testConnection({ rootPath: base })).resolves.toBeUndefined();
+    await expect(connector.listDocuments({ rootPath: base }, 'src')).resolves.toEqual([]);
   });
 });

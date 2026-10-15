@@ -11,6 +11,7 @@ import {
   type RagReindexStartResponse,
   type RagReindexStatusResponse,
 } from './api.js';
+import { SYNC_PANELS_STRINGS as S } from './strings/sync-panels.js';
 
 interface ReindexDialogProps {
   /** The embedding setting every existing source should be migrated to. */
@@ -91,7 +92,7 @@ export default function ReindexDialog({
       } else {
         setStep({
           kind: 'error',
-          message: err instanceof Error ? err.message : 'Échec de la migration.',
+          message: err instanceof Error ? err.message : S.reindexMigrationFailed,
         });
       }
     }
@@ -112,13 +113,13 @@ export default function ReindexDialog({
       <div className="relative w-full max-w-md mx-4 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl p-6">
         <div className="flex items-center justify-between mb-4">
           <h2 id="reindex-dialog-title" className="text-base font-semibold text-gray-100">
-            Migration des sources RAG
+            {S.reindexTitle}
           </h2>
           {step.kind !== 'starting' && (
             <button
               type="button"
               onClick={onClose}
-              aria-label="Fermer"
+              aria-label={S.close}
               className="p-1.5 rounded-lg text-gray-500 hover:text-gray-200 hover:bg-gray-800 transition-colors"
             >
               <svg
@@ -136,25 +137,21 @@ export default function ReindexDialog({
           )}
         </div>
 
-        {step.kind === 'loading' && (
-          <p className="text-sm text-gray-500">Vérification de l'état de la migration…</p>
-        )}
+        {step.kind === 'loading' && <p className="text-sm text-gray-500">{S.reindexChecking}</p>}
 
         {step.kind === 'confirm' && (
           <div className="space-y-4">
             <p className="text-sm text-gray-300">
-              Toutes les sources RAG existantes doivent utiliser le même modèle d'embeddings. Passer
-              à <span className="font-medium text-gray-100">{label}</span> nécessite de{' '}
-              <span className="font-medium text-red-400">purger et ré-indexer</span> l'intégralité
-              des documents déjà indexés.
+              {S.reindexConfirmIntro} <span className="font-medium text-gray-100">{label}</span>{' '}
+              {S.reindexConfirmNeeds}{' '}
+              <span className="font-medium text-red-400">{S.reindexPurge}</span>{' '}
+              {S.reindexConfirmOutro}
             </p>
             <ul className="text-xs text-gray-500 list-disc pl-4 space-y-1">
-              <li>Les sources elles-mêmes (config, nom, planification) sont conservées.</li>
-              <li>
-                Leur contenu indexé (documents, chunks) est effacé puis ré-ingéré depuis zéro.
-              </li>
-              <li>Un redémarrage de Calame sera nécessaire pour terminer la migration.</li>
-              <li>La ré-indexation complète peut prendre plusieurs minutes selon le volume.</li>
+              <li>{S.reindexBullet1}</li>
+              <li>{S.reindexBullet2}</li>
+              <li>{S.reindexBullet3}</li>
+              <li>{S.reindexBullet4}</li>
             </ul>
             <div className="flex items-center gap-3 pt-1">
               <button
@@ -162,34 +159,30 @@ export default function ReindexDialog({
                 onClick={() => void handleConfirm()}
                 className="px-4 py-2 rounded-lg bg-red-700 hover:bg-red-600 text-white text-sm font-medium transition-all duration-200"
               >
-                Confirmer la migration
+                {S.reindexConfirmBtn}
               </button>
               <button
                 type="button"
                 onClick={onClose}
                 className="px-4 py-2 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-300 text-sm font-medium transition-all duration-200"
               >
-                Annuler
+                {S.cancel}
               </button>
             </div>
           </div>
         )}
 
-        {step.kind === 'starting' && (
-          <p className="text-sm text-gray-400">Purge et reconfiguration des sources en cours…</p>
-        )}
+        {step.kind === 'starting' && <p className="text-sm text-gray-400">{S.reindexStarting}</p>}
 
         {step.kind === 'no-op' && (
           <div className="space-y-4">
-            <p className="text-sm text-green-400">
-              Déjà à jour — aucune migration n'était nécessaire.
-            </p>
+            <p className="text-sm text-green-400">{S.reindexUpToDate}</p>
             <button
               type="button"
               onClick={onClose}
               className="px-4 py-2 rounded-lg bg-os-700 hover:bg-os-600 text-white text-sm font-medium transition-all duration-200"
             >
-              Fermer
+              {S.close}
             </button>
           </div>
         )}
@@ -197,18 +190,12 @@ export default function ReindexDialog({
         {step.kind === 'awaiting-restart' && (
           <div className="space-y-4">
             <div className="p-3 rounded-lg bg-amber-950/30 border border-amber-800/50">
-              <p className="text-sm text-amber-300 font-medium">
-                Redémarrez Calame pour terminer la migration.
-              </p>
-              <p className="text-xs text-amber-400/80 mt-1">
-                Les sources ont été reconfigurées et leur contenu purgé. La ré-indexation reprendra
-                automatiquement au prochain démarrage.
-              </p>
+              <p className="text-sm text-amber-300 font-medium">{S.reindexRestart}</p>
+              <p className="text-xs text-amber-400/80 mt-1">{S.reindexRestartDetail}</p>
             </div>
             {step.job && (
               <p className="text-xs text-gray-500">
-                {step.job.processedSources} / {step.job.totalSources} source(s) purgée(s) et
-                reconfigurée(s).
+                {S.reindexProgress(step.job.processedSources, step.job.totalSources)}
               </p>
             )}
             <button
@@ -216,7 +203,7 @@ export default function ReindexDialog({
               onClick={onClose}
               className="px-4 py-2 rounded-lg bg-os-700 hover:bg-os-600 text-white text-sm font-medium transition-all duration-200"
             >
-              Fermer
+              {S.close}
             </button>
           </div>
         )}
@@ -226,10 +213,7 @@ export default function ReindexDialog({
             <div className="p-2.5 rounded-lg text-sm bg-red-950/30 border border-red-800/50 text-red-400">
               <p>{step.message}</p>
               {step.code === 'other-tenants-have-chunks' && (
-                <p className="text-xs text-red-300 opacity-80 mt-1">
-                  Il s'agit d'une limitation de l'index vectoriel partagé entre tenants — cette
-                  migration ne peut pas la contourner seule.
-                </p>
+                <p className="text-xs text-red-300 opacity-80 mt-1">{S.reindexTenantLimit}</p>
               )}
             </div>
             <div className="flex items-center gap-3">
@@ -238,14 +222,14 @@ export default function ReindexDialog({
                 onClick={() => setStep({ kind: 'confirm' })}
                 className="px-4 py-2 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-300 text-sm font-medium transition-all duration-200"
               >
-                Réessayer
+                {S.retry}
               </button>
               <button
                 type="button"
                 onClick={onClose}
                 className="px-4 py-2 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-300 text-sm font-medium transition-all duration-200"
               >
-                Fermer
+                {S.close}
               </button>
             </div>
           </div>

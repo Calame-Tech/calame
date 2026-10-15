@@ -109,6 +109,16 @@ const FR = {
     `${count} document(s) ignoré(s) — format non pris en charge. Convertissez-les en PDF/DOCX/MD/TXT.`,
   jobTooLarge: (count: string) =>
     `${count} document(s) ignoré(s) — plus gros que la taille maximale de la source. Augmentez la limite ou découpez le fichier.`,
+  connectorValidationFailed: (detail: string) =>
+    `La vérification de la source a échoué : ${detail}`,
+  localRootMissing: (root: string) =>
+    `Le dossier « ${root} » est introuvable. Vérifiez le chemin (lettre de lecteur, partage réseau) ` +
+    "et que le dossier n'a pas été déplacé ou renommé.",
+  localRootNotDirectory: (root: string) =>
+    `« ${root} » n'est pas un dossier. Indiquez le dossier qui contient les documents.`,
+  localRootNotReadable: (root: string, code: string) =>
+    `Le dossier « ${root} » n'est pas lisible par Calame (${code}). Vérifiez les droits d'accès ` +
+    'ou que le partage réseau est connecté.',
 
   // KnowledgeBaseManager
   sourcesLoading: 'Chargement des sources…',
@@ -153,7 +163,7 @@ const FR = {
     httpGlobsInclude: "Appliqués au pathname de l'URL. Vide = tout inclure.",
     localEmbeddings:
       'Traitement 100 % local — vos documents et vos requêtes ne quittent jamais cet ordinateur. ' +
-      "Pour un corpus très volumineux ou une qualité maximale, vous pouvez configurer votre propre fournisseur d'embeddings dans « AI Settings ».",
+      "Pour un corpus très volumineux ou une qualité maximale, vous pouvez configurer votre propre fournisseur d'embeddings dans « Paramètres IA ».",
     polling:
       'Choisissez la fréquence à laquelle la source est interrogée pour détecter les changements. ' +
       'La synchronisation manuelle reste toujours disponible.',
@@ -237,6 +247,15 @@ const EN: typeof FR = {
     `${count} document(s) skipped — unsupported format. Convert them to PDF/DOCX/MD/TXT.`,
   jobTooLarge: (count: string) =>
     `${count} document(s) skipped — larger than the source's max file size. Raise the limit or split the file.`,
+  connectorValidationFailed: (detail: string) => `Source check failed: ${detail}`,
+  localRootMissing: (root: string) =>
+    `Folder "${root}" was not found. Check the path (drive letter, network share) and that the ` +
+    'folder has not been moved or renamed.',
+  localRootNotDirectory: (root: string) =>
+    `"${root}" is not a folder. Enter the folder that contains the documents.`,
+  localRootNotReadable: (root: string, code: string) =>
+    `Folder "${root}" cannot be read by Calame (${code}). Check the access rights or that the ` +
+    'network share is connected.',
 
   sourcesLoading: 'Loading sources…',
   sourcesLoadError: 'Could not load the sources.',
@@ -281,10 +300,20 @@ const EN: typeof FR = {
   },
 };
 
-/** Strings in the current locale — read at access time, so a locale change applies on next render. */
-export const RAG_STRINGS: typeof FR = new Proxy(FR, {
-  get: (_target, key) => (ragLocale() === 'fr' ? FR : EN)[key as keyof typeof FR],
-});
+/**
+ * Strings in the current locale — read at access time, so a locale change
+ * applies on next render. Shared by every rag-core view's string table.
+ */
+export function localized<T extends object>(fr: T, en: T): T {
+  return new Proxy(fr, {
+    get: (_target, key) => (ragLocale() === 'fr' ? fr : en)[key as keyof T],
+  });
+}
+
+export const RAG_STRINGS: typeof FR = localized(FR, EN);
+
+/** Raw tables, for the fr/en key-parity test. */
+export const RAG_STRING_TABLES = { fr: FR, en: EN };
 
 /**
  * Translates the sync-job error formats written by runSyncJob
@@ -292,8 +321,17 @@ export const RAG_STRINGS: typeof FR = new Proxy(FR, {
  * returned unchanged rather than guessed.
  */
 export function translateJobError(error: string): string {
+  const validation = /^Connector validation failed: ([\s\S]*)$/.exec(error);
+  if (validation) return RAG_STRINGS.connectorValidationFailed(translateJobError(validation[1]));
+  // Local-folder root checks (LOCAL_ROOT_ERRORS in rag-connectors/src/local-folder.ts).
+  const missing = /^Local folder "([\s\S]*)" does not exist\.$/.exec(error);
+  if (missing) return RAG_STRINGS.localRootMissing(missing[1]);
+  const notDir = /^Local folder "([\s\S]*)" is not a folder\.$/.exec(error);
+  if (notDir) return RAG_STRINGS.localRootNotDirectory(notDir[1]);
+  const notReadable = /^Local folder "([\s\S]*)" is not readable \(([^)]*)\)\.$/.exec(error);
+  if (notReadable) return RAG_STRINGS.localRootNotReadable(notReadable[1], notReadable[2]);
   const failed = /^(\d+)\/(\d+) failed; last: ([\s\S]*)$/.exec(error);
-  if (failed) return RAG_STRINGS.jobFailed(failed[1], failed[2], failed[3]);
+  if (failed) return RAG_STRINGS.jobFailed(failed[1], failed[2], translateJobError(failed[3]));
   const unsupported = /^(\d+) doc\(s\) skipped — unsupported format\./.exec(error);
   if (unsupported) return RAG_STRINGS.jobUnsupported(unsupported[1]);
   const tooLarge = /^(\d+) doc\(s\) skipped — larger than the source's max file size\./.exec(error);

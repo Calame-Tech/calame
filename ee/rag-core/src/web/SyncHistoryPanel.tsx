@@ -7,6 +7,7 @@ import type { RagJob, RagJobStatus } from '../types.js';
 import { apiGet, ApiError, type RagJobListResponse, type RagSourceWithCounts } from './api.js';
 import { formatRelativeTime } from './useActiveSyncJobs.js';
 import { translateJobError } from './onboarding-strings.js';
+import { SYNC_PANELS_STRINGS as S } from './strings/sync-panels.js';
 
 interface SyncHistoryPanelProps {
   /** Source list — used to populate the source filter dropdown and resolve names. */
@@ -25,13 +26,13 @@ const HISTORY_LIMIT = 100;
 function statusLabel(status: RagJobStatus): string {
   switch (status) {
     case 'pending':
-      return 'En attente';
+      return S.statusPending;
     case 'running':
-      return 'En cours';
+      return S.statusRunning;
     case 'completed':
-      return 'Terminé';
+      return S.statusCompleted;
     case 'failed':
-      return 'Échec';
+      return S.statusFailed;
   }
 }
 
@@ -67,7 +68,7 @@ function formatDuration(ms: number): string {
 
 /** Returns the job duration string, or "en cours" when still running. */
 function jobDuration(job: RagJob): string {
-  if (!job.finishedAt) return 'en cours';
+  if (!job.finishedAt) return S.jobRunning;
   try {
     const ms = new Date(job.finishedAt).getTime() - new Date(job.startedAt).getTime();
     if (!Number.isFinite(ms) || ms < 0) return '—';
@@ -81,7 +82,7 @@ function jobDuration(job: RagJob): string {
 function formatAbsolute(iso: string | null | undefined): string {
   if (!iso) return '—';
   try {
-    return new Date(iso).toLocaleString('fr-CA', {
+    return new Date(iso).toLocaleString(S.locale, {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
@@ -153,11 +154,7 @@ export default function SyncHistoryPanel({ sources, onClose }: SyncHistoryPanelP
     } catch (err) {
       if (cancelledRef.current) return [];
       const msg =
-        err instanceof ApiError
-          ? err.message
-          : err instanceof Error
-            ? err.message
-            : 'Erreur de chargement.';
+        err instanceof ApiError ? err.message : err instanceof Error ? err.message : S.loadError;
       setError(msg);
       setLoading(false);
       return [];
@@ -222,16 +219,14 @@ export default function SyncHistoryPanel({ sources, onClose }: SyncHistoryPanelP
               type="button"
               onClick={onClose}
               className="px-2.5 py-1.5 rounded-lg text-sm text-gray-300 hover:bg-gray-700/40 transition-colors flex-shrink-0"
-              aria-label="Retour à la liste des sources"
+              aria-label={S.backAria}
             >
-              ← Retour
+              {S.back}
             </button>
           )}
           <div className="min-w-0">
-            <h2 className="heading-md">Historique de sync</h2>
-            <p className="text-sm text-gray-500 mt-1">
-              Derniers {HISTORY_LIMIT} jobs de synchronisation, toutes sources confondues.
-            </p>
+            <h2 className="heading-md">{S.historyTitle}</h2>
+            <p className="text-sm text-gray-500 mt-1">{S.historySubtitle(HISTORY_LIMIT)}</p>
           </div>
         </div>
         <button
@@ -240,20 +235,20 @@ export default function SyncHistoryPanel({ sources, onClose }: SyncHistoryPanelP
           disabled={refreshing}
           className="px-3 py-1.5 rounded-lg text-sm bg-gray-700/40 hover:bg-gray-700/60 text-gray-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex-shrink-0"
         >
-          {refreshing ? 'Actualisation…' : 'Actualiser'}
+          {refreshing ? S.refreshing : S.refresh}
         </button>
       </div>
 
       {/* Filter bar */}
       <div className="card-primary p-3 flex flex-wrap items-center gap-3">
         <label className="text-xs text-gray-400 flex items-center gap-2">
-          <span>Source</span>
+          <span>{S.colSource}</span>
           <select
             value={sourceFilter}
             onChange={(e) => setSourceFilter(e.target.value)}
             className="bg-gray-900/60 border border-white/5 rounded px-2 py-1 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-os-500/40"
           >
-            <option value="">Toutes les sources</option>
+            <option value="">{S.allSources}</option>
             {sources.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name}
@@ -263,22 +258,21 @@ export default function SyncHistoryPanel({ sources, onClose }: SyncHistoryPanelP
         </label>
 
         <label className="text-xs text-gray-400 flex items-center gap-2">
-          <span>Statut</span>
+          <span>{S.colStatus}</span>
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
             className="bg-gray-900/60 border border-white/5 rounded px-2 py-1 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-os-500/40"
           >
-            <option value="all">Tous</option>
-            <option value="active">Actif (en attente / en cours)</option>
-            <option value="completed">Réussi</option>
-            <option value="failed">Échec</option>
+            <option value="all">{S.filterAll}</option>
+            <option value="active">{S.filterActive}</option>
+            <option value="completed">{S.filterCompleted}</option>
+            <option value="failed">{S.filterFailed}</option>
           </select>
         </label>
 
         <span className="text-xs text-gray-500 ml-auto">
-          {visibleJobs.length} job{visibleJobs.length > 1 ? 's' : ''} affiché
-          {visibleJobs.length > 1 ? 's' : ''} / {jobs.length}
+          {S.jobsShown(visibleJobs.length, jobs.length)}
         </span>
       </div>
 
@@ -290,13 +284,11 @@ export default function SyncHistoryPanel({ sources, onClose }: SyncHistoryPanelP
 
       {loading ? (
         <div className="card-primary p-6 text-center text-sm text-gray-500 italic">
-          Chargement de l'historique…
+          {S.historyLoading}
         </div>
       ) : visibleJobs.length === 0 ? (
         <div className="card-primary p-6 text-center text-sm text-gray-500 italic">
-          {jobs.length === 0
-            ? 'Aucun job de synchronisation enregistré.'
-            : 'Aucun job ne correspond aux filtres sélectionnés.'}
+          {jobs.length === 0 ? S.noJobs : S.noJobsMatch}
         </div>
       ) : (
         <div className="card-primary overflow-hidden">
@@ -304,12 +296,12 @@ export default function SyncHistoryPanel({ sources, onClose }: SyncHistoryPanelP
             <table className="w-full text-sm">
               <thead className="bg-gray-900/40 text-xs uppercase tracking-wide text-gray-500">
                 <tr>
-                  <th className="text-left px-3 py-2 font-medium">Source</th>
-                  <th className="text-left px-3 py-2 font-medium">Démarré</th>
-                  <th className="text-left px-3 py-2 font-medium">Durée</th>
-                  <th className="text-left px-3 py-2 font-medium">Statut</th>
-                  <th className="text-left px-3 py-2 font-medium">Progression</th>
-                  <th className="text-left px-3 py-2 font-medium">Erreur</th>
+                  <th className="text-left px-3 py-2 font-medium">{S.colSource}</th>
+                  <th className="text-left px-3 py-2 font-medium">{S.colStarted}</th>
+                  <th className="text-left px-3 py-2 font-medium">{S.colDuration}</th>
+                  <th className="text-left px-3 py-2 font-medium">{S.colStatus}</th>
+                  <th className="text-left px-3 py-2 font-medium">{S.colProgress}</th>
+                  <th className="text-left px-3 py-2 font-medium">{S.colError}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
@@ -332,8 +324,8 @@ export default function SyncHistoryPanel({ sources, onClose }: SyncHistoryPanelP
                         className="px-3 py-2 text-gray-400 whitespace-nowrap"
                         title={
                           job.finishedAt
-                            ? `Terminé : ${formatAbsolute(job.finishedAt)}`
-                            : 'Job en cours'
+                            ? S.finishedAt(formatAbsolute(job.finishedAt))
+                            : S.jobInProgress
                         }
                       >
                         {jobDuration(job)}
@@ -361,11 +353,11 @@ export default function SyncHistoryPanel({ sources, onClose }: SyncHistoryPanelP
                             </>
                           ) : (
                             <div className="text-xs text-gray-400">
-                              {job.processedDocuments} / {job.totalDocuments} documents
+                              {S.documentsCount(job.processedDocuments, job.totalDocuments)}
                               {job.skippedByEtag > 0 && (
                                 <span className="text-gray-500">
                                   {' '}
-                                  · {job.skippedByEtag} skipped (etag)
+                                  · {S.skippedEtag(job.skippedByEtag)}
                                 </span>
                               )}
                               {job.gcDeleted > 0 && (

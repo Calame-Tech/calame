@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { RagJob } from '../types.js';
 import { apiGet, type RagJobListResponse } from './api.js';
 import { translateJobError } from './onboarding-strings.js';
+import { SYNC_PANELS_STRINGS as S } from './strings/sync-panels.js';
 
 interface IngestionStatusCardProps {
   /** Optional source filter — when set, only jobs for this source are shown. */
@@ -24,13 +25,13 @@ function isActive(job: RagJob): boolean {
 function statusLabel(status: RagJob['status']): string {
   switch (status) {
     case 'pending':
-      return 'En attente';
+      return S.statusPending;
     case 'running':
-      return 'En cours';
+      return S.statusRunning;
     case 'completed':
-      return 'Terminé';
+      return S.statusCompleted;
     case 'failed':
-      return 'Échec';
+      return S.statusFailed;
   }
 }
 
@@ -78,7 +79,7 @@ export default function IngestionStatusCard({
         }
       } catch (err) {
         if (cancelledRef.current) return;
-        setError(err instanceof Error ? err.message : 'Erreur de chargement.');
+        setError(err instanceof Error ? err.message : S.loadError);
         setLoading(false);
         // Retry once after the interval — transient failures shouldn't
         // freeze the UI permanently.
@@ -100,7 +101,7 @@ export default function IngestionStatusCard({
   if (loading) {
     return (
       <div className="card-primary p-4">
-        <p className="text-sm text-gray-500">Chargement des jobs d'indexation…</p>
+        <p className="text-sm text-gray-500">{S.ingestionLoading}</p>
       </div>
     );
   }
@@ -116,7 +117,7 @@ export default function IngestionStatusCard({
   if (jobs.length === 0) {
     return (
       <div className="card-primary p-4">
-        <p className="text-sm text-gray-500">Aucun job d'indexation en cours.</p>
+        <p className="text-sm text-gray-500">{S.ingestionNone}</p>
       </div>
     );
   }
@@ -124,10 +125,8 @@ export default function IngestionStatusCard({
   return (
     <div className="card-primary p-4 space-y-3">
       <div className="flex items-center justify-between">
-        <h3 className="eyebrow">Indexation</h3>
-        <span className="text-xs text-gray-500">
-          {jobs.length} job{jobs.length > 1 ? 's' : ''}
-        </span>
+        <h3 className="eyebrow">{S.ingestionTitle}</h3>
+        <span className="text-xs text-gray-500">{S.jobsCount(jobs.length)}</span>
       </div>
       <ul className="space-y-2">
         {jobs.map((job) => {
@@ -154,9 +153,7 @@ export default function IngestionStatusCard({
                 />
               </div>
               <div className="flex items-center justify-between text-xs text-gray-500">
-                <span>
-                  {job.processedDocuments} / {total} documents
-                </span>
+                <span>{S.documentsCount(job.processedDocuments, total)}</span>
                 <span>{percent}%</span>
               </div>
               {job.error && (

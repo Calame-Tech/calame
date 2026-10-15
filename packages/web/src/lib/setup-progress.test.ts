@@ -72,3 +72,45 @@ describe('computeSetupProgress', () => {
     expect(p.allDone).toBe(true);
   });
 });
+
+describe('computeSetupProgress — knowledge-base readiness', () => {
+  const kb = (state: 'ready' | 'failed' | 'syncing' | 'not-synced') => ({
+    id: `kb-${state}`,
+    name: `KB ${state}`,
+    state,
+    error: state === 'failed' ? '1/1 failed; last: boom' : null,
+  });
+
+  it('does not complete "connect a source" when the only source failed to sync', () => {
+    const p = computeSetupProgress({
+      sourceCount: 0,
+      ragSources: [kb('failed')],
+      savedProfiles: [],
+      auditEntries: [],
+    });
+    expect(p.source).toBe('current');
+    expect(p.mcp).toBe('todo');
+    expect(p.failedSources.map((s) => s.name)).toEqual(['KB failed']);
+  });
+
+  it('keeps a saved but not yet indexed source as "not ready"', () => {
+    const p = computeSetupProgress({
+      sourceCount: 0,
+      ragSources: [kb('syncing')],
+      savedProfiles: [],
+      auditEntries: [],
+    });
+    expect(p.source).toBe('current');
+    expect(p.notReadySources).toHaveLength(1);
+  });
+
+  it('completes the step once a knowledge base is indexed', () => {
+    const p = computeSetupProgress({
+      sourceCount: 0,
+      ragSources: [kb('ready'), kb('failed')],
+      savedProfiles: [],
+      auditEntries: [],
+    });
+    expect([p.source, p.mcp]).toEqual(['done', 'current']);
+  });
+});

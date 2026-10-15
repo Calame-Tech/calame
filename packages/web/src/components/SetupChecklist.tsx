@@ -13,6 +13,7 @@ import {
   type SetupProgress,
   type SetupStepStatus,
 } from '../lib/setup-progress.js';
+import { fetchRagReadiness, type RagSourceReadiness } from '../lib/rag-source-readiness.js';
 import type { AuditLogEntry } from '../types/schema.js';
 import type { View } from '../router/index.js';
 
@@ -42,8 +43,13 @@ function persistHidden(): void {
 }
 
 interface SetupChecklistProps {
-  /** Database connections + knowledge-base sources, as already loaded by the page. */
+  /** Database connections, as already loaded by the page. */
   sourceCount: number;
+  /**
+   * When set, knowledge-base sources are fetched with their sync state: only
+   * an indexed one completes step 1 (a failed sync is reported, not hidden).
+   */
+  ragEnabled?: boolean;
   onNavigate: (view: View) => void;
   /** Bump to force a reload (e.g. the session `dataVersion`). */
   refreshKey?: number;
@@ -53,7 +59,12 @@ type LoadState =
   | { status: 'idle' }
   | { status: 'loading' }
   | { status: 'error' }
-  | { status: 'ready'; profiles: SavedProfileSummary[]; audit: AuditLogEntry[] };
+  | {
+      status: 'ready';
+      profiles: SavedProfileSummary[];
+      audit: AuditLogEntry[];
+      ragSources: RagSourceReadiness[];
+    };
 
 async function fetchJson<T>(url: string): Promise<T> {
   const res = await apiFetch(url, { credentials: 'include' });
@@ -66,10 +77,12 @@ async function fetchJson<T>(url: string): Promise<T> {
  * data — a targeted lookup (`result=success&limit=1`) instead of pulling the
  * whole recent audit log on every refresh.
  */
-async function fetchSetupResources(): Promise<{
+async function fetchSetupResources(ragEnabled: boolean): Promise<{
   profiles: SavedProfileSummary[];
   audit: AuditLogEntry[];
+  ragSources: RagSourceReadiness[];
 }> {
+  const ragSourcesPromise = ragEnabled ? fetchRagReadiness() : Promise.resolve([]);
   const profilesData = await fetchJson<{
     found?: boolean;
     profiles?: Record<string, Omit<SavedProfileSummary, 'name'>>;
@@ -85,11 +98,16 @@ async function fetchSetupResources(): Promise<{
       ),
     ),
   );
-  return { profiles, audit: auditPages.flatMap((page) => page.entries ?? []) };
+  return {
+    profiles,
+    audit: auditPages.flatMap((page) => page.entries ?? []),
+    ragSources: await ragSourcesPromise,
+  };
 }
 
 export default function SetupChecklist({
   sourceCount,
+  ragEnabled = false,
   onNavigate,
   refreshKey = 0,
 }: SetupChecklistProps) {
@@ -103,12 +121,12 @@ export default function SetupChecklist({
   const load = useCallback(async () => {
     const requestId = ++requestIdRef.current;
     try {
-      const data = await fetchSetupResources();
+      const data = await fetchSetupResources(ragEnabled);
       if (requestId === requestIdRef.current) setState({ status: 'ready', ...data });
     } catch {
       if (requestId === requestIdRef.current) setState({ status: 'error' });
     }
-  }, []);
+  }, [ragEnabled]);
 
   // Invalidate in-flight requests on unmount.
   useEffect(() => () => void ++requestIdRef.current, []);
@@ -137,10 +155,26 @@ export default function SetupChecklist({
     state.status === 'ready'
       ? computeSetupProgress({
           sourceCount,
+          ragSources: state.ragSources,
           savedProfiles: state.profiles,
           auditEntries: state.audit,
         })
       : null;
+
+  // A saved source that is not indexed must not read as "connected": name it
+  // (failed sync first) and point to it instead of to "Add a source".
+  const pendingSource =
+    progress && progress.source !== 'done'
+      ? (progress.failedSources[0] ?? progress.notReadySources[0] ?? null)
+      : null;
+  const sourceHint =
+    progress?.source === 'done'
+      ? t('source.done')
+      : pendingSource
+        ? t(pendingSource.state === 'failed' ? 'source.syncFailed' : 'source.notReady', {
+            name: pendingSource.name,
+          })
+        : t('source.hint');
 
   const allDone = progress?.allDone ?? false;
   useEffect(() => {
@@ -203,9 +237,14 @@ export default function SetupChecklist({
             index={1}
             status={progress.source}
             title={t('source.title')}
-            hint={progress.source === 'done' ? t('source.done') : t('source.hint')}
-            actionLabel={t('source.action')}
-            onAction={() => onNavigate({ page: 'sources' })}
+            hint={sourceHint}
+            alert={progress.source !== 'done' && progress.failedSources.length > 0}
+            actionLabel={pendingSource ? t('source.openSource') : t('source.action')}
+            onAction={() =>
+              onNavigate(
+                pendingSource ? { page: 'sources', tab: 'knowledge' } : { page: 'sources' },
+              )
+            }
           />
           <SetupStep
             index={2}
@@ -255,6 +294,8 @@ interface SetupStepProps {
   status: SetupStepStatus;
   title: string;
   hint: string;
+  /** Renders the hint as an error (e.g. a failed source sync). */
+  alert?: boolean;
   actionLabel: string;
   /** Omitted when the step cannot be started yet. */
   onAction?: () => void;
@@ -267,6 +308,7 @@ function SetupStep({
   status,
   title,
   hint,
+  alert = false,
   actionLabel,
   onAction,
   secondaryActionLabel,
@@ -295,7 +337,12 @@ function SetupStep({
         <p className={`text-sm ${status === 'todo' ? 'text-gray-500' : 'text-gray-200'}`}>
           {title} <span className="sr-only">— {t(`status.${status}`)}</span>
         </p>
-        <p className="text-xs text-gray-500">{hint}</p>
+        <p
+          className={`text-xs ${alert ? 'text-red-400' : 'text-gray-500'}`}
+          role={alert ? 'alert' : undefined}
+        >
+          {hint}
+        </p>
       </div>
       {onAction && status !== 'todo' && (
         <button

@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { RagJob, RagJobStatus } from '../types.js';
 import { apiGet, ApiError, type RagJobListResponse, type RagSourceWithCounts } from './api.js';
 import { formatRelativeTime } from './useActiveSyncJobs.js';
+import { translateJobError } from './onboarding-strings.js';
 
 interface SyncHistoryPanelProps {
   /** Source list — used to populate the source filter dropdown and resolve names. */
@@ -376,8 +377,8 @@ export default function SyncHistoryPanel({ sources, onClose }: SyncHistoryPanelP
                       </td>
                       <td className="px-3 py-2 text-xs text-red-400 max-w-[260px]">
                         {job.error ? (
-                          <span className="block truncate" title={job.error}>
-                            {job.error}
+                          <span className="block truncate" title={translateJobError(job.error)}>
+                            {translateJobError(job.error)}
                           </span>
                         ) : (
                           <span className="text-gray-600">—</span>

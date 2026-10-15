@@ -217,6 +217,8 @@ export function registerServeStatusRoute(app: Express, state: AppState): void {
         if (!anyKnowledge) {
           res.status(400).json({
             success: false,
+            // Stable code so the UI can show a translated message.
+            code: 'no_data_source',
             message:
               'No data source available. Connect a database or attach a knowledge base to this MCP first.',
           });

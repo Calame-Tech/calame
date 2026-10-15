@@ -20,6 +20,7 @@ import type {
   ServeStatus,
 } from '../../types/schema.js';
 import type { View } from '../../router/index.js';
+import type { RagSourceReadiness } from '../../lib/rag-source-readiness.js';
 
 interface PipelineStripProps {
   setView: Dispatch<SetStateAction<View>>;
@@ -29,7 +30,8 @@ interface PipelineStripProps {
   profiles: Profile[];
   serveStatus: ServeStatus;
   connectedCount: number;
-  ragSourceCount: number;
+  /** Knowledge-base sources with their sync state. */
+  ragSources: RagSourceReadiness[];
   activeMcpCount: number;
   totalMcpCount: number;
 }
@@ -105,11 +107,12 @@ export default function PipelineStrip({
   profiles,
   serveStatus,
   connectedCount,
-  ragSourceCount,
+  ragSources,
   activeMcpCount,
   totalMcpCount,
 }: PipelineStripProps) {
   const t = useTranslations('dashboard.pipeline');
+  const ragSourceCount = ragSources.length;
   const sourceCount = connections.length + ragSourceCount;
   const maskedConfigCount = configurations.filter((cfg) =>
     Object.values(getConfigurationColumnMasking(cfg)).some((cols) =>
@@ -169,7 +172,35 @@ export default function PipelineStrip({
                 </div>
               );
             })}
-            {connections.length === 0 && (
+            {ragSources.slice(0, Math.max(0, 4 - connections.length)).map((source) => (
+              <div key={source.id} className="flex items-center justify-between px-2 py-1">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div
+                    className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                      source.state === 'ready'
+                        ? 'bg-emerald-400'
+                        : source.state === 'failed'
+                          ? 'bg-rose-400'
+                          : 'bg-gray-600'
+                    }`}
+                    title={
+                      source.state === 'ready'
+                        ? t('sources.kbReadyTooltip')
+                        : source.state === 'failed'
+                          ? t('sources.kbFailedTooltip')
+                          : t('sources.kbNotReadyTooltip')
+                    }
+                  />
+                  <span className="font-mono-plex text-xs text-gray-300 truncate">
+                    {source.name}
+                  </span>
+                </div>
+                <span className="font-mono-plex text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 bg-purple-500/10 text-purple-300">
+                  {t('sources.kbBadge')}
+                </span>
+              </div>
+            ))}
+            {sourceCount === 0 && (
               <p className="text-[10px] text-gray-600 text-center py-2 eyebrow">
                 {t('sources.empty')}
               </p>

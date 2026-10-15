@@ -65,6 +65,8 @@ interface McpDetailPageProps {
   profiles: Profile[];
   setProfiles: Dispatch<SetStateAction<Profile[]>>;
   serveStatus: ServeStatus;
+  /** Re-reads /api/serve/status (shared app poller) right after start/stop. */
+  fetchServeStatus?: () => Promise<void>;
   configWithProfileOptions: Config;
   configurations: Configuration[];
   setConfigurations: Dispatch<SetStateAction<Configuration[]>>;
@@ -80,6 +82,7 @@ export default function McpDetailPage({
   profiles,
   setProfiles,
   serveStatus,
+  fetchServeStatus,
   configWithProfileOptions,
   configurations,
   setConfigurations,
@@ -107,6 +110,7 @@ export default function McpDetailPage({
         profileName={view.profileName}
         profiles={profiles}
         serveStatus={serveStatus}
+        onServeAction={fetchServeStatus}
         config={configWithProfileOptions}
         initialActiveSection={view.activeSection}
         configurations={configurations}
@@ -168,6 +172,12 @@ interface McpDetailViewProps {
   profileName: string;
   profiles: Profile[];
   serveStatus: ServeStatus;
+  /**
+   * Refreshes `serveStatus` after a start/stop, so the status badge and the
+   * Start/Stop button reflect the new state immediately instead of waiting
+   * for the next poll (or for the page to be reopened).
+   */
+  onServeAction?: () => Promise<void>;
   config: Config;
   configurations: Configuration[];
   onProfilesChange: React.Dispatch<React.SetStateAction<Profile[]>>;
@@ -185,6 +195,7 @@ function McpDetailView({
   profileName,
   profiles,
   serveStatus,
+  onServeAction,
   config,
   onProfilesChange,
   activeProfileIndex,
@@ -404,11 +415,18 @@ function McpDetailView({
       });
       const data = await res.json();
       if (data.success === false) {
-        setError(data.message || t('errors.startFailed', { name: profile.name }));
+        setError(
+          data.code === 'no_data_source'
+            ? t('errors.noDataSource')
+            : data.message || t('errors.startFailed', { name: profile.name }),
+        );
       }
     } catch {
       setError(t('errors.startNetworkError', { name: profile.name }));
     } finally {
+      // Keep the button busy until the refreshed status is in, so it never
+      // flips back to "Start" while the server is actually running.
+      await onServeAction?.();
       setTogglingProfile(false);
     }
   };
@@ -429,6 +447,7 @@ function McpDetailView({
     } catch {
       setError(t('errors.stopNetworkError', { name: profile.name }));
     } finally {
+      await onServeAction?.();
       setTogglingProfile(false);
     }
   };

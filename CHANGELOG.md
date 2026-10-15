@@ -17,6 +17,20 @@ root `package.json` version flows to the Docker image and `create-calame`).
 - Saving or testing a source no longer spins forever when the server cannot
   reach it (e.g. an unreachable network share): the request times out after
   90 s with an explicit message and a retry action.
+- Getting-started checklist and dashboard no longer treat a knowledge base
+  whose sync failed (or has not finished) as connected: step 1 only completes
+  once a source is indexed, a failed sync is named with a link to the source
+  and listed under "Needs attention", and the Sources card lists knowledge
+  bases instead of "No sources yet".
+- MCP server page: the status and Start/Stop button update right after
+  starting or stopping, instead of after reopening the page.
+- MCP test chat: with no AI provider for chat, it no longer shows "Using
+  Anthropic" (the built-in local embedding model was mistaken for a chat
+  provider) and explains what to configure in Settings → AI.
+- Knowledge base screens (list, sync status, trash, upload, local-folder source
+  form, help tips, sync errors) and the "No data source available" start error
+  now follow the app language (EN/FR). Fields specific to the S3, HTTP, Google,
+  Notion and SharePoint connectors are still French-only.
 
 ### Added
 
@@ -26,6 +40,10 @@ root `package.json` version flows to the Docker image and `create-calame`).
   after a successful audited call. It can be hidden and disappears for good
   once a client call succeeds.
 - `GET /api/audit` accepts an optional `result=success|error` filter.
+- The onboarding wizard's first screen offers a knowledge base next to
+  databases, and shows which getting-started step each screen belongs to.
+- `POST /api/serve/start` returns `code: "no_data_source"` alongside the
+  existing message when no source is available.
 
 ### Changed
 

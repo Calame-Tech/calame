@@ -3,6 +3,7 @@
 // the client — so the checklist shows the same state after a reload.
 
 import type { AuditLogEntry } from '../types/schema.js';
+import type { RagSourceReadiness } from './rag-source-readiness.js';
 
 export type SetupStepStatus = 'done' | 'current' | 'todo';
 
@@ -14,8 +15,14 @@ export interface SavedProfileSummary {
 }
 
 export interface SetupProgressInput {
-  /** Database connections + knowledge-base sources known to the server. */
+  /** Database connections known to the server. */
   sourceCount: number;
+  /**
+   * Knowledge-base sources with their sync state. Only a `ready` one (latest
+   * sync completed) completes the step: a registered source whose sync failed
+   * or is still running is not usable by an MCP yet.
+   */
+  ragSources?: RagSourceReadiness[];
   /** Profiles actually persisted on the server (not the UI placeholder). */
   savedProfiles: SavedProfileSummary[];
   /** Audit log entries — written by the MCP server on every tool call. */
@@ -26,6 +33,10 @@ export interface SetupProgress {
   source: SetupStepStatus;
   mcp: SetupStepStatus;
   client: SetupStepStatus;
+  /** Knowledge-base sources whose latest sync failed. */
+  failedSources: RagSourceReadiness[];
+  /** Knowledge-base sources registered but not ready (sync failed, running or never run). */
+  notReadySources: RagSourceReadiness[];
   /** MCP the "create" / "connect a client" actions point to, if any. */
   mcpName: string | null;
   allDone: boolean;
@@ -53,6 +64,7 @@ export function mcpProfileNames(savedProfiles: SavedProfileSummary[]): string[] 
 
 export function computeSetupProgress({
   sourceCount,
+  ragSources = [],
   savedProfiles,
   auditEntries,
 }: SetupProgressInput): SetupProgress {
@@ -63,7 +75,7 @@ export function computeSetupProgress({
   // "Connect" tab proves nothing, so it never completes this step.
   const usedEntry = auditEntries.find((e) => e.result === 'success' && mcpNames.has(e.profileName));
 
-  const sourceDone = sourceCount > 0;
+  const sourceDone = sourceCount > 0 || ragSources.some((s) => s.state === 'ready');
   const mcpDone = mcps.length > 0;
   const clientDone = mcpDone && usedEntry !== undefined;
 
@@ -75,6 +87,8 @@ export function computeSetupProgress({
     source,
     mcp,
     client,
+    failedSources: ragSources.filter((s) => s.state === 'failed'),
+    notReadySources: ragSources.filter((s) => s.state !== 'ready'),
     mcpName: usedEntry?.profileName ?? mcps[0]?.name ?? null,
     allDone: sourceDone && mcpDone && clientDone,
   };

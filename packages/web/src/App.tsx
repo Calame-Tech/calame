@@ -47,6 +47,7 @@ export default function App() {
     setUserAuthenticated,
     bumpDataVersion,
     logout,
+    ragEnabled,
   } = useSession();
 
   // Special, URL-driven pages (no admin auth needed). Resolved once from the
@@ -167,6 +168,14 @@ export default function App() {
           dismissOnboarding();
           setView({ page: 'mcp-detail', profileName, activeSection: 'connect' });
         }}
+        onConnectKnowledgeBase={
+          ragEnabled
+            ? () => {
+                dismissOnboarding();
+                setView({ page: 'sources', tab: 'knowledge' });
+              }
+            : undefined
+        }
       />
     );
   }
@@ -305,6 +314,7 @@ export default function App() {
                 profiles={profiles}
                 setProfiles={setProfiles}
                 serveStatus={serveStatus}
+                fetchServeStatus={fetchServeStatus}
                 configWithProfileOptions={configWithProfileOptions}
                 configurations={configurations}
                 setConfigurations={setConfigurations}

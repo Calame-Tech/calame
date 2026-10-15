@@ -1,4 +1,4 @@
-import React, { useState, useEffect, Suspense } from 'react';
+import React, { useState, useEffect, useCallback, Suspense } from 'react';
 import { useTranslations } from 'use-intl/react';
 import { apiFetch } from '../lib/api.js';
 import type { NamedConnection, DatabaseSchema } from '../types/schema.js';
@@ -69,6 +69,13 @@ export default function SourcesPage({
   const t = useTranslations('sources.sourcesPage');
   const [showAddModal, setShowAddModal] = useState(false);
   const [ragSourceCount, setRagSourceCount] = useState(0);
+  // Bumped on every knowledge-base list refresh so the checklist re-reads the
+  // sources' sync state (a new source is saved before it is indexed).
+  const [ragListVersion, setRagListVersion] = useState(0);
+  const handleRagSourcesChange = useCallback((count: number) => {
+    setRagSourceCount(count);
+    setRagListVersion((v) => v + 1);
+  }, []);
 
   // Fetch RAG source count when the component mounts and when ragEnabled changes.
   useEffect(() => {
@@ -136,7 +143,9 @@ export default function SourcesPage({
 
       {onNavigate && (
         <SetupChecklist
-          sourceCount={connections.length + (ragEnabled ? ragSourceCount : 0)}
+          sourceCount={connections.length}
+          ragEnabled={ragEnabled}
+          refreshKey={ragListVersion}
           onNavigate={onNavigate}
         />
       )}
@@ -220,7 +229,7 @@ export default function SourcesPage({
                 </div>
               }
             >
-              <KnowledgeBaseManagerComponent onSourcesChange={setRagSourceCount} />
+              <KnowledgeBaseManagerComponent onSourcesChange={handleRagSourcesChange} />
             </Suspense>
           ) : (
             /* Explanatory card when RAG is unavailable */

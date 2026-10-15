@@ -78,6 +78,7 @@
     },
     "errors": {
       "startFailed": "Failed to start MCP server \"{name}\".",
+      "noDataSource": "No data source available. Connect a database or attach a knowledge base to this MCP server first.",
       "startNetworkError": "Network error starting MCP server \"{name}\".",
       "stopFailed": "Failed to stop MCP server \"{name}\".",
       "stopNetworkError": "Network error stopping MCP server \"{name}\".",
@@ -979,7 +980,7 @@
       "usingLabel": "Using",
       "assignMore": "Assign more in the MCP detail page",
       "configureAiSettings": "Configure in AI Settings",
-      "aiNotConfigured": "AI is not configured. Go to <b>AI Settings</b> to set up a provider and API key.",
+      "aiNotConfigured": "No AI provider for chat is configured, so this test cannot run. Go to <b>Settings → AI</b> and add a provider (Anthropic, OpenRouter or a compatible endpoint) with its API key. The built-in local model only indexes documents and cannot answer.",
       "placeholderNoServer": "Start an MCP server first",
       "placeholderAiNotConfigured": "Configure AI in Settings first",
       "provider": {
@@ -996,8 +997,13 @@
       "networkError": "Network error. Please try again.",
       "step1": {
         "stepLabel": "Step 1",
-        "title": "Connect your first database",
-        "description": "Connect to a database to start exploring your data and building MCP servers.",
+        "title": "Connect your first source",
+        "description": "A source is the data your MCP server will read: a database, or a knowledge base made of documents.",
+        "knowledgeBase": {
+          "title": "Knowledge base (documents)",
+          "description": "Index a folder, uploaded files or another document source. You continue on the Knowledge base screen; the getting-started guide then shows the next steps.",
+          "button": "Add a knowledge base"
+        },
         "quickStart": {
           "title": "Quick start",
           "description": "Use our demo logistics database to explore Calame without any setup.",
@@ -1162,8 +1168,11 @@
       "source": {
         "title": "1. Connect a source",
         "hint": "Add a database or a knowledge base that the MCP will read from.",
-        "done": "A source is connected.",
-        "action": "Add a source"
+        "done": "A source is ready: it is indexed and can be queried.",
+        "action": "Add a source",
+        "syncFailed": "The sync of “{name}” failed: the source is saved but not usable yet. Open it to see the error and sync again.",
+        "notReady": "“{name}” is saved but not indexed yet. It becomes usable once its sync completes.",
+        "openSource": "Open the source"
       },
       "mcp": {
         "title": "2. Create the MCP server",
@@ -1376,6 +1385,8 @@
       "title": "Needs attention",
       "itemCount": "{count, plural, one {# item} other {# items}}",
       "allClear": "All clear — nothing needs your attention.",
+      "sourceSyncFailed": "The sync of knowledge base “{name}” failed — it cannot be queried yet.",
+      "openSource": "Open",
       "writeRequestBanner": "{count, plural, one {# write request awaiting your approval} other {# write requests awaiting your approval}}",
       "review": "Review"
     },
@@ -1404,7 +1415,11 @@
         "knowledgeBaseCount": "{count, plural, one {# knowledge base} other {# knowledge bases}}",
         "connectedTooltip": "Connected and schema loaded",
         "notConnectedTooltip": "Not connected",
-        "empty": "No sources yet"
+        "empty": "No sources yet",
+        "kbBadge": "KB",
+        "kbReadyTooltip": "Indexed, ready to query",
+        "kbFailedTooltip": "Last sync failed",
+        "kbNotReadyTooltip": "Not indexed yet"
       },
       "dataConfigurations": {
         "eyebrow": "DATA CONFIGURATIONS",

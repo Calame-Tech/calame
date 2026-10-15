@@ -5,6 +5,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { RagJob } from '../types.js';
 import { apiGet, type RagJobListResponse } from './api.js';
+import { translateJobError } from './onboarding-strings.js';
 
 interface IngestionStatusCardProps {
   /** Optional source filter — when set, only jobs for this source are shown. */
@@ -158,7 +159,9 @@ export default function IngestionStatusCard({
                 </span>
                 <span>{percent}%</span>
               </div>
-              {job.error && <p className="text-xs text-red-400 break-words">{job.error}</p>}
+              {job.error && (
+                <p className="text-xs text-red-400 break-words">{translateJobError(job.error)}</p>
+              )}
             </li>
           );
         })}

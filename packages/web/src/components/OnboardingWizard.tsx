@@ -3,6 +3,7 @@ import { useTranslations } from 'use-intl/react';
 import { apiFetch, getCurrentTenant } from '../lib/api.js';
 import { newMcpDefaultsFor, slugifyProfileName } from '../lib/profiles.js';
 import { buildMcpUrl } from '../lib/mcp-url.js';
+import * as SourceChoice from './OnboardingSourceChoice.js';
 
 interface OnboardingWizardProps {
   onComplete: () => void;
@@ -19,24 +20,17 @@ interface OnboardingWizardProps {
    * where the client-specific setup instructions live.
    */
   onNavigateToConnect?: (profileName: string) => void;
+  /**
+   * Leaves the wizard for the knowledge-base screen (documents, folders…),
+   * whose own "Add source" flow and the getting-started checklist take over.
+   * The knowledge-base choice is not offered when omitted (RAG disabled).
+   */
+  onConnectKnowledgeBase?: () => void;
 }
-
-type DbType = 'postgresql' | 'mysql' | 'sqlite' | 'mssql';
-
-/**
- * Example connection string per engine. Exhaustive over DbType so adding an
- * engine fails the build here rather than silently falling back.
- */
-const CONNECTION_STRING_PLACEHOLDERS: Record<DbType, string> = {
-  postgresql: 'postgresql://user:pass@host:5432/db',
-  mysql: 'mysql://user:pass@host:3306/db',
-  sqlite: '/path/to/database.db',
-  mssql: 'Server=host,1433;Database=db;User Id=user;Password=pass',
-};
 
 interface Step1State {
   connectionName: string;
-  dbType: DbType;
+  dbType: SourceChoice.DbType;
   connectionString: string;
   loading: boolean;
   error: string;
@@ -62,6 +56,7 @@ export default function OnboardingWizard({
   onSkip,
   onNavigateToConfig,
   onNavigateToConnect,
+  onConnectKnowledgeBase,
 }: OnboardingWizardProps) {
   const t = useTranslations('onboarding.wizard');
   const [step, setStep] = useState(1);
@@ -374,6 +369,7 @@ export default function OnboardingWizard({
           <img src="/logo.png" alt="Calame" className="h-7 w-7 object-contain" />
           <span className="text-sm font-medium text-gray-400">
             {t('stepIndicator', { step, total: TOTAL_STEPS })}
+            <SourceChoice.WizardPhase step={step} total={TOTAL_STEPS} />
           </span>
         </div>
         <button
@@ -394,6 +390,7 @@ export default function OnboardingWizard({
               setState={setStep1}
               onDemo={connectDemo}
               onCustom={connectCustom}
+              onKnowledgeBase={onConnectKnowledgeBase}
             />
           )}
           {step === 2 && (
@@ -458,9 +455,10 @@ interface StepConnectProps {
   setState: React.Dispatch<React.SetStateAction<Step1State>>;
   onDemo: () => void;
   onCustom: (e: React.FormEvent) => void;
+  onKnowledgeBase?: () => void;
 }
 
-function StepConnect({ state, setState, onDemo, onCustom }: StepConnectProps) {
+function StepConnect({ state, setState, onDemo, onCustom, onKnowledgeBase }: StepConnectProps) {
   const t = useTranslations('onboarding.wizard');
   return (
     <div className="space-y-6">
@@ -471,6 +469,8 @@ function StepConnect({ state, setState, onDemo, onCustom }: StepConnectProps) {
         <h1 className="heading-lg mb-2">{t('step1.title')}</h1>
         <p className="text-sm text-gray-400">{t('step1.description')}</p>
       </div>
+
+      <SourceChoice.KnowledgeBaseChoice onSelect={onKnowledgeBase} disabled={state.loading} />
 
       {/* Demo shortcut */}
       <div className="card-primary p-4 space-y-3">
@@ -525,7 +525,9 @@ function StepConnect({ state, setState, onDemo, onCustom }: StepConnectProps) {
           <select
             id="conn-type"
             value={state.dbType}
-            onChange={(e) => setState((s) => ({ ...s, dbType: e.target.value as DbType }))}
+            onChange={(e) =>
+              setState((s) => ({ ...s, dbType: e.target.value as SourceChoice.DbType }))
+            }
             className="input-editorial w-full"
           >
             <option value="postgresql">{t('step1.form.dbTypeOptions.postgresql')}</option>
@@ -548,7 +550,7 @@ function StepConnect({ state, setState, onDemo, onCustom }: StepConnectProps) {
             value={state.connectionString}
             onChange={(e) => setState((s) => ({ ...s, connectionString: e.target.value }))}
             className="input-editorial w-full font-mono text-sm"
-            placeholder={CONNECTION_STRING_PLACEHOLDERS[state.dbType]}
+            placeholder={SourceChoice.CONNECTION_STRING_PLACEHOLDERS[state.dbType]}
             autoComplete="off"
           />
         </div>

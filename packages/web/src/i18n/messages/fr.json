@@ -78,6 +78,7 @@
     },
     "errors": {
       "startFailed": "Échec du démarrage du serveur MCP « {name} ».",
+      "noDataSource": "Aucune source de données disponible. Connectez d’abord une base de données ou associez une base de connaissances à ce serveur MCP.",
       "startNetworkError": "Erreur réseau lors du démarrage du serveur MCP « {name} ».",
       "stopFailed": "Échec de l’arrêt du serveur MCP « {name} ».",
       "stopNetworkError": "Erreur réseau lors de l’arrêt du serveur MCP « {name} ».",
@@ -979,7 +980,7 @@
       "usingLabel": "Utilise",
       "assignMore": "Attribuez-en davantage depuis la page de détail du MCP",
       "configureAiSettings": "Configurez dans les paramètres IA",
-      "aiNotConfigured": "L’IA n’est pas configurée. Rendez-vous dans <b>Paramètres IA</b> pour configurer un fournisseur et une clé API.",
+      "aiNotConfigured": "Aucun fournisseur d’IA pour le chat n’est configuré : ce test ne peut pas s’exécuter. Ouvrez <b>Paramètres → IA</b> et ajoutez un fournisseur (Anthropic, OpenRouter ou un point d’accès compatible) avec sa clé API. Le modèle local intégré sert uniquement à indexer les documents et ne peut pas répondre.",
       "placeholderNoServer": "Démarrez d’abord un serveur MCP",
       "placeholderAiNotConfigured": "Configurez d’abord l’IA dans les paramètres",
       "provider": {
@@ -996,8 +997,13 @@
       "networkError": "Erreur réseau. Veuillez réessayer.",
       "step1": {
         "stepLabel": "Étape 1",
-        "title": "Connectez votre première base de données",
-        "description": "Connectez-vous à une base de données pour commencer à explorer vos données et créer des serveurs MCP.",
+        "title": "Connectez votre première source",
+        "description": "Une source, ce sont les données que votre serveur MCP pourra lire : une base de données, ou une base de connaissances faite de documents.",
+        "knowledgeBase": {
+          "title": "Base de connaissances (documents)",
+          "description": "Indexez un dossier, des fichiers envoyés ou une autre source de documents. Vous continuez dans l’écran Base de connaissances ; le guide de démarrage affiche ensuite les étapes suivantes.",
+          "button": "Ajouter une base de connaissances"
+        },
         "quickStart": {
           "title": "Démarrage rapide",
           "description": "Utilisez notre base de données logistique de démonstration pour découvrir Calame sans aucune configuration.",
@@ -1162,8 +1168,11 @@
       "source": {
         "title": "1. Connecter une source",
         "hint": "Ajoutez une base de données ou une base de connaissances que le MCP pourra lire.",
-        "done": "Une source est connectée.",
-        "action": "Ajouter une source"
+        "done": "Une source est prête : elle est indexée et interrogeable.",
+        "action": "Ajouter une source",
+        "syncFailed": "La synchronisation de « {name} » a échoué : la source est enregistrée mais pas encore utilisable. Ouvrez-la pour voir l’erreur et relancer la synchronisation.",
+        "notReady": "« {name} » est enregistrée mais pas encore indexée. Elle sera utilisable une fois sa synchronisation terminée.",
+        "openSource": "Ouvrir la source"
       },
       "mcp": {
         "title": "2. Créer le serveur MCP",
@@ -1376,6 +1385,8 @@
       "title": "Nécessite votre attention",
       "itemCount": "{count, plural, one {# élément} other {# éléments}}",
       "allClear": "Tout est en ordre — rien ne nécessite votre attention.",
+      "sourceSyncFailed": "La synchronisation de la base de connaissances « {name} » a échoué — elle n’est pas encore interrogeable.",
+      "openSource": "Ouvrir",
       "writeRequestBanner": "{count, plural, one {# demande d’écriture en attente de votre approbation} other {# demandes d’écriture en attente de votre approbation}}",
       "review": "Examiner"
     },
@@ -1404,7 +1415,11 @@
         "knowledgeBaseCount": "{count, plural, one {# base de connaissances} other {# bases de connaissances}}",
         "connectedTooltip": "Connectée, schéma chargé",
         "notConnectedTooltip": "Non connectée",
-        "empty": "Aucune source pour le moment"
+        "empty": "Aucune source pour le moment",
+        "kbBadge": "BC",
+        "kbReadyTooltip": "Indexée, prête à être interrogée",
+        "kbFailedTooltip": "La dernière synchronisation a échoué",
+        "kbNotReadyTooltip": "Pas encore indexée"
       },
       "dataConfigurations": {
         "eyebrow": "CONFIGURATIONS DE DONNÉES",

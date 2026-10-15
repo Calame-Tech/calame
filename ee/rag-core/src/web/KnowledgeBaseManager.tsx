@@ -16,7 +16,7 @@ import SourceForm, { type AiSettingOption } from './SourceForm.js';
 import FolderTreeView from './FolderTreeView.js';
 import DocumentUploader from './DocumentUploader.js';
 import IngestionStatusCard from './IngestionStatusCard.js';
-import { RAG_STRINGS } from './onboarding-strings.js';
+import { RAG_STRINGS, translateJobError } from './onboarding-strings.js';
 import SyncHistoryPanel from './SyncHistoryPanel.js';
 import EmbeddingUsageCard from './EmbeddingUsageCard.js';
 import {
@@ -53,7 +53,7 @@ function formatDate(value?: string): string {
 
 /**
  * Returns a human-readable label for the auto-sync mode of a source.
- * Examples: "Watch live", "Watch + polling 5 min", "Polling 60 min", "Manuel uniquement"
+ * Examples (EN): "Live watch", "Watch + polling 5 min", "Polling 60 min", "Manual only"
  */
 function syncModeLabel(source: RagSourcePublic): string {
   const isLocal = source.type === 'local';
@@ -61,16 +61,16 @@ function syncModeLabel(source: RagSourcePublic): string {
 
   if (isLocal && polling) {
     const minutes = Math.round(polling / 60);
-    return `Watch + polling ${minutes} min`;
+    return RAG_STRINGS.watchPlusPolling(minutes);
   }
   if (isLocal) {
-    return 'Watch live';
+    return RAG_STRINGS.watchLive;
   }
   if (polling) {
     const minutes = Math.round(polling / 60);
-    return `Polling ${minutes} min`;
+    return RAG_STRINGS.pollingEvery(minutes);
   }
-  return 'Manuel uniquement';
+  return RAG_STRINGS.manualOnly;
 }
 
 interface SyncStatusBadgeProps {
@@ -91,10 +91,10 @@ function SyncStatusBadge({ source, jobInfo }: SyncStatusBadgeProps) {
     return (
       <span
         className="inline-flex items-center gap-1.5 text-xs text-blue-400"
-        aria-label="Synchronisation en cours"
+        aria-label={RAG_STRINGS.syncing}
       >
         <span className="inline-block w-2 h-2 rounded-full bg-blue-400 animate-pulse flex-shrink-0" />
-        Synchronisation en cours…
+        {RAG_STRINGS.syncing}…
         {/* Real counters from the job row — no estimate when the total is unknown. */}
         {activeJob.totalDocuments > 0 &&
           RAG_STRINGS.syncProgress(activeJob.processedDocuments, activeJob.totalDocuments)}
@@ -104,14 +104,17 @@ function SyncStatusBadge({ source, jobInfo }: SyncStatusBadgeProps) {
 
   // Last job failed (and no active job)
   if (lastFailedJob) {
+    const lastFailedError = lastFailedJob.error
+      ? translateJobError(lastFailedJob.error)
+      : RAG_STRINGS.unknownError;
     return (
       <span
         className="inline-flex items-center gap-1.5 text-xs text-red-400"
-        title={lastFailedJob.error ?? 'Erreur inconnue'}
-        aria-label={`Échec de la dernière sync : ${lastFailedJob.error ?? 'Erreur inconnue'}`}
+        title={lastFailedError}
+        aria-label={RAG_STRINGS.lastSyncFailedAria(lastFailedError)}
       >
         <span className="inline-block w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />
-        Échec de la dernière sync
+        {RAG_STRINGS.lastSyncFailed}
       </span>
     );
   }
@@ -121,10 +124,10 @@ function SyncStatusBadge({ source, jobInfo }: SyncStatusBadgeProps) {
     return (
       <span
         className="inline-flex items-center gap-1.5 text-xs text-gray-500"
-        aria-label="Jamais synchronisé"
+        aria-label={RAG_STRINGS.neverSynced}
       >
         <span className="inline-block w-2 h-2 rounded-full bg-gray-600 flex-shrink-0" />
-        Jamais synchronisé
+        {RAG_STRINGS.neverSynced}
       </span>
     );
   }
@@ -492,7 +495,7 @@ export default function KnowledgeBaseManager({
           ? err.message
           : err instanceof Error
             ? err.message
-            : 'Échec de la suppression définitive.';
+            : RAG_STRINGS.purgeFailed;
       setError(message);
     }
   };
@@ -513,7 +516,7 @@ export default function KnowledgeBaseManager({
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="heading-md">Corbeille</h2>
+            <h2 className="heading-md">{RAG_STRINGS.trash}</h2>
             <p className="text-sm text-gray-500 mt-1">
               Sources supprimées au cours des {RETENTION_DAYS} derniers jours. Au-delà, elles sont
               définitivement effacées par le cron au prochain démarrage du serveur.
@@ -617,10 +620,8 @@ export default function KnowledgeBaseManager({
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="heading-md">Bases de connaissance</h2>
-          <p className="text-sm text-gray-500 mt-1">
-            Configurez les sources documentaires qui alimentent le RAG.
-          </p>
+          <h2 className="heading-md">{RAG_STRINGS.kbTitle}</h2>
+          <p className="text-sm text-gray-500 mt-1">{RAG_STRINGS.kbDescription}</p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -634,7 +635,7 @@ export default function KnowledgeBaseManager({
             className="px-3 py-1.5 rounded-lg text-sm bg-gray-700/40 hover:bg-gray-700/60 text-gray-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             title={`${deletedSources.length} source(s) dans la corbeille — restaurables pendant ${RETENTION_DAYS} jours`}
           >
-            Corbeille ({deletedSources.length})
+            {RAG_STRINGS.trashCount(deletedSources.length)}
           </button>
           <button
             type="button"
@@ -864,7 +865,7 @@ export default function KnowledgeBaseManager({
                       setShowCreateForm(false);
                       setEditingSource(source);
                     }}
-                    aria-label={`Modifier la source ${source.name}`}
+                    aria-label={RAG_STRINGS.editSourceAria(source.name)}
                     title="Modifier la configuration de cette source"
                     className="px-2 py-1 rounded text-xs text-gray-300 hover:bg-gray-700/40"
                   >
@@ -882,8 +883,8 @@ export default function KnowledgeBaseManager({
                     aria-label={`Re-synchroniser la source ${source.name}`}
                     title={
                       mergedJobInfo.activeJob
-                        ? 'Synchronisation déjà en cours'
-                        : 'Lancer une synchronisation manuelle'
+                        ? RAG_STRINGS.syncAlreadyRunning
+                        : RAG_STRINGS.startManualSync
                     }
                     className="inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs text-os-300 hover:bg-os-700/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                   >
@@ -929,7 +930,7 @@ export default function KnowledgeBaseManager({
               />
               {selectedSource.type === 'local' && (
                 <div className="card-primary p-4 space-y-2">
-                  <h3 className="eyebrow">Téléverser des fichiers</h3>
+                  <h3 className="eyebrow">{RAG_STRINGS.uploadFiles}</h3>
                   <DocumentUploader
                     source={selectedSource}
                     onUploaded={() => {

@@ -66,6 +66,8 @@ function route(url: string, init?: RequestInit): Promise<Response> | Response {
 }
 
 beforeEach(() => {
+  // rag-core strings follow the saved app locale; these assertions use French.
+  localStorage.setItem('calame-locale', 'fr');
   sources = [];
   jobs = [];
   overrides = [];
@@ -276,5 +278,19 @@ describe('KnowledgeBaseManager — first source flow', () => {
       "Le test n'a pas abouti après 90 s.",
     );
     expect(screen.getByRole('button', { name: 'Tester' })).toBeEnabled();
+  });
+});
+
+describe('KnowledgeBaseManager — English locale', () => {
+  it('renders the list, sync status and trash in English', async () => {
+    localStorage.setItem('calame-locale', 'en');
+    sources = [{ ...CREATED_SOURCE, lastSyncAt: null, folderCount: 0, documentCount: 0 }];
+
+    render(<KnowledgeBaseManager />);
+
+    expect(await screen.findByText('Knowledge bases')).toBeInTheDocument();
+    expect(await screen.findByLabelText('Never synced')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Trash (0)' })).toBeInTheDocument();
+    expect(screen.queryByText(/Jamais synchronisé|Corbeille/)).not.toBeInTheDocument();
   });
 });

@@ -20,7 +20,8 @@ interface ChatPanelProps {
 
 interface AiStatus {
   configured: boolean;
-  provider?: string;
+  /** Label of the setting actually used for chat (as named in AI settings). */
+  label?: string;
   model?: string;
 }
 
@@ -29,6 +30,21 @@ interface AiSettingMeta {
   label: string;
   provider: string;
   configured: boolean;
+  model?: string;
+  /** undefined = legacy setting, chat only (see settingSupports in cli/ai-config). */
+  capabilities?: string[];
+}
+
+/**
+ * First configured setting able to chat. The legacy `config` field of
+ * GET /api/ai-settings is just the first setting, which on a fresh install is
+ * the built-in local *embedding* model — it cannot answer a chat, so it must
+ * not be presented as the chat provider.
+ */
+export function findChatSetting(settings: AiSettingMeta[]): AiSettingMeta | undefined {
+  return settings.find(
+    (s) => s.configured && (s.capabilities === undefined || s.capabilities.includes('chat')),
+  );
 }
 
 export default function ChatPanel({ selectedTables, activeProfiles }: ChatPanelProps) {
@@ -54,13 +70,11 @@ export default function ChatPanel({ selectedTables, activeProfiles }: ChatPanelP
         const res = await apiFetch('/api/ai-settings', { credentials: 'include' });
         const data = await res.json();
         if (data.success) {
-          setAllAiSettings((data.settings ?? []) as AiSettingMeta[]);
-          if (data.config) {
-            setAiStatus({
-              configured: data.config.configured,
-              provider: data.config.provider,
-              model: data.config.model,
-            });
+          const settings = (data.settings ?? []) as AiSettingMeta[];
+          setAllAiSettings(settings);
+          const chatSetting = findChatSetting(settings);
+          if (chatSetting) {
+            setAiStatus({ configured: true, label: chatSetting.label, model: chatSetting.model });
           }
         }
       } catch {
@@ -176,13 +190,6 @@ export default function ChatPanel({ selectedTables, activeProfiles }: ChatPanelP
     );
   };
 
-  const providerLabel =
-    aiStatus.provider === 'openrouter'
-      ? 'OpenRouter'
-      : aiStatus.provider === 'custom'
-        ? t('panel.provider.custom')
-        : 'Anthropic';
-
   return (
     <div>
       <h2 className="heading-md mb-2">{t('panel.heading')}</h2>
@@ -240,7 +247,7 @@ export default function ChatPanel({ selectedTables, activeProfiles }: ChatPanelP
               <span className="text-gray-400">
                 {t('panel.usingLabel')}{' '}
                 <span className="text-gray-200 font-medium">
-                  {profileAiSettings?.[0]?.label ?? providerLabel}
+                  {profileAiSettings?.[0]?.label ?? aiStatus.label}
                 </span>
                 {aiStatus.model && !profileAiSettings?.[0] && (
                   <span className="text-gray-500"> / {aiStatus.model}</span>

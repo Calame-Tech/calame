@@ -54,16 +54,17 @@ interface SourceTypeMeta {
  */
 interface PollingIntervalOption {
   value: number | null;
-  label: string;
+  labelKey: keyof typeof RAG_STRINGS.polling;
 }
 
+// Labels are resolved at render time so they follow the app locale.
 const POLLING_INTERVAL_OPTIONS: readonly PollingIntervalOption[] = [
-  { value: null, label: 'Désactivé (sync manuelle uniquement)' },
-  { value: 300, label: 'Toutes les 5 minutes' },
-  { value: 900, label: 'Toutes les 15 minutes' },
-  { value: 3600, label: 'Toutes les heures' },
-  { value: 21600, label: 'Toutes les 6 heures' },
-  { value: 86400, label: 'Tous les jours' },
+  { value: null, labelKey: 'off' },
+  { value: 300, labelKey: 'every5min' },
+  { value: 900, labelKey: 'every15min' },
+  { value: 3600, labelKey: 'hourly' },
+  { value: 21600, labelKey: 'every6h' },
+  { value: 86400, labelKey: 'daily' },
 ];
 
 const SOURCE_TYPES: readonly SourceTypeMeta[] = [
@@ -247,8 +248,6 @@ function isValidHttpUrl(value: string): boolean {
  * completes.
  */
 export const SOURCE_REQUEST_TIMEOUT_MS = 90_000;
-
-const HELP = RAG_STRINGS.help;
 
 // ---------------------------------------------------------------------------
 // Sub-components (inline — small enough to keep in one file)
@@ -504,10 +503,10 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
   // ---------------------------------------------------------------------------
 
   const validate = (): string | null => {
-    if (!name.trim()) return 'Le nom de la source est requis.';
+    if (!name.trim()) return RAG_STRINGS.nameRequired;
 
     if (type === 'local' && !rootPath.trim()) {
-      return 'Le chemin du dossier est requis.';
+      return RAG_STRINGS.rootPathRequired;
     }
 
     if (type === 's3') {
@@ -585,10 +584,10 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
     }
 
     if (!embeddingSettingName) {
-      return 'Sélectionnez une configuration IA pour les embeddings.';
+      return RAG_STRINGS.embeddingRequired;
     }
     if (!selectedSettingSupportsEmbeddings) {
-      return 'La configuration IA sélectionnée ne supporte pas les embeddings.';
+      return RAG_STRINGS.embeddingUnsupported;
     }
     return null;
   };
@@ -853,7 +852,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
             ? err.message
             : err instanceof Error
               ? err.message
-              : "Échec de l'enregistrement.";
+              : RAG_STRINGS.saveFailed;
         setError(message);
       }
     } finally {
@@ -881,7 +880,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
         { type, config: buildConfig() },
         { timeoutMs: SOURCE_REQUEST_TIMEOUT_MS },
       );
-      setTestResult({ success: true, message: 'Connexion validée.' });
+      setTestResult({ success: true, message: RAG_STRINGS.testSucceeded });
     } catch (err) {
       const message =
         err instanceof ApiTimeoutError
@@ -890,7 +889,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
             ? err.message
             : err instanceof Error
               ? err.message
-              : 'Échec du test.';
+              : RAG_STRINGS.testFailed;
       setTestResult({ success: false, message });
     } finally {
       setTesting(false);
@@ -917,7 +916,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
           ? err.message
           : err instanceof Error
             ? err.message
-            : 'Sélecteur de dossier indisponible.';
+            : RAG_STRINGS.folderPickerUnavailable;
       setBrowseError(message);
     } finally {
       setBrowsingFolder(false);
@@ -932,21 +931,21 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
     <div className="card-primary p-5 space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="heading-md text-xl">
-          {isEditing ? 'Modifier la source' : 'Nouvelle source'}
+          {isEditing ? RAG_STRINGS.editSource : RAG_STRINGS.newSource}
         </h3>
         <button
           type="button"
           onClick={onCancel}
           className="text-xs text-gray-400 hover:text-gray-200"
         >
-          Fermer
+          {RAG_STRINGS.close}
         </button>
       </div>
 
       {/* Name */}
       <div>
         <FieldLabel htmlFor="rag-source-name" required>
-          Nom de la source
+          {RAG_STRINGS.sourceNameLabel}
         </FieldLabel>
         <input
           id="rag-source-name"
@@ -961,7 +960,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
       {/* Type */}
       <div>
         <FieldLabel htmlFor="rag-source-type" required>
-          Type
+          {RAG_STRINGS.typeLabel}
         </FieldLabel>
         <select
           id="rag-source-type"
@@ -972,16 +971,12 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
         >
           {SOURCE_TYPES.map((t) => (
             <option key={t.value} value={t.value} disabled={!t.available} className="bg-gray-800">
-              {t.label}
-              {!t.available ? ' — Bientôt' : ''}
+              {t.value === 'local' ? RAG_STRINGS.localFolderType : t.label}
+              {!t.available ? RAG_STRINGS.comingSoon : ''}
             </option>
           ))}
         </select>
-        {isEditing && (
-          <p className="text-xs text-gray-600 mt-1">
-            Le type d'une source ne peut pas être modifié après création.
-          </p>
-        )}
+        {isEditing && <p className="text-xs text-gray-600 mt-1">{RAG_STRINGS.typeImmutable}</p>}
       </div>
 
       {/* ------------------------------------------------------------------ */}
@@ -990,8 +985,8 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
       {type === 'local' && (
         <div className="space-y-4">
           <div>
-            <FieldLabel htmlFor="rag-source-rootpath" required help={HELP.rootPath}>
-              Chemin absolu du dossier
+            <FieldLabel htmlFor="rag-source-rootpath" required help={RAG_STRINGS.help.rootPath}>
+              {RAG_STRINGS.rootPathLabel}
             </FieldLabel>
             <div className="flex items-center gap-2 mt-1">
               <input
@@ -1006,10 +1001,10 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                 type="button"
                 onClick={() => void handleBrowseFolder()}
                 disabled={browsingFolder || saving}
-                title="Ouvrir le sélecteur de dossier natif sur la machine du serveur"
+                title={RAG_STRINGS.browseTitle}
                 className="px-3 py-2 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-300 text-sm font-medium transition-all duration-200 disabled:opacity-50"
               >
-                {browsingFolder ? 'Ouverture…' : 'Parcourir…'}
+                {browsingFolder ? RAG_STRINGS.browsing : RAG_STRINGS.browse}
               </button>
               <button
                 type="button"
@@ -1017,7 +1012,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                 disabled={testing || saving}
                 className="px-3 py-2 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-300 text-sm font-medium transition-all duration-200 disabled:opacity-50"
               >
-                {testing ? 'Test…' : 'Tester'}
+                {testing ? RAG_STRINGS.testing : RAG_STRINGS.test}
               </button>
             </div>
             {browsingFolder && (
@@ -1027,15 +1022,15 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
             )}
             {browseError && (
               <p className="text-xs text-amber-400 mt-1">
-                {browseError} Vous pouvez toujours saisir le chemin manuellement.
+                {browseError} {RAG_STRINGS.typePathManually}
               </p>
             )}
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <FieldLabel htmlFor="local-include-globs" help={HELP.globsInclude}>
-                Include globs
+              <FieldLabel htmlFor="local-include-globs" help={RAG_STRINGS.help.globsInclude}>
+                {RAG_STRINGS.includeGlobs}
               </FieldLabel>
               <textarea
                 id="local-include-globs"
@@ -1047,8 +1042,8 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               />
             </div>
             <div>
-              <FieldLabel htmlFor="local-exclude-globs" help={HELP.localGlobsExclude}>
-                Exclude globs
+              <FieldLabel htmlFor="local-exclude-globs" help={RAG_STRINGS.help.localGlobsExclude}>
+                {RAG_STRINGS.excludeGlobs}
               </FieldLabel>
               <textarea
                 id="local-exclude-globs"
@@ -1070,11 +1065,11 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               className="mt-0.5 accent-os-500 focus:ring-2 focus:ring-os-500"
             />
             <label htmlFor="local-include-hidden" className="text-sm text-gray-400 select-none">
-              Inclure les fichiers cachés
+              {RAG_STRINGS.includeHidden}
             </label>
             <HelpTip
-              content={HELP.includeHidden}
-              label="Inclure les fichiers cachés"
+              content={RAG_STRINGS.help.includeHidden}
+              label={RAG_STRINGS.includeHidden}
               position="right"
               maxWidth={320}
               size="xs"
@@ -1105,7 +1100,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               />
             </div>
             <div>
-              <FieldLabel htmlFor="s3-region" required help={HELP.s3Region}>
+              <FieldLabel htmlFor="s3-region" required help={RAG_STRINGS.help.s3Region}>
                 Région
               </FieldLabel>
               <input
@@ -1160,7 +1155,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               className="w-full flex items-center justify-between px-3 py-2.5 text-xs text-gray-400 hover:text-gray-300 hover:bg-white/[0.03] transition-colors"
               aria-expanded={s3ShowAdvanced}
             >
-              <span className="font-medium">Avancé (optionnel)</span>
+              <span className="font-medium">{RAG_STRINGS.advancedOptional}</span>
               <span aria-hidden="true" className="text-gray-600">
                 {s3ShowAdvanced ? '▲' : '▼'}
               </span>
@@ -1169,7 +1164,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
             {s3ShowAdvanced && (
               <div className="px-3 pb-4 pt-1 space-y-3 border-t border-white/5">
                 <div>
-                  <FieldLabel htmlFor="s3-prefix" help={HELP.s3Prefix}>
+                  <FieldLabel htmlFor="s3-prefix" help={RAG_STRINGS.help.s3Prefix}>
                     Préfixe (racine logique)
                   </FieldLabel>
                   <input
@@ -1183,7 +1178,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                 </div>
 
                 <div>
-                  <FieldLabel htmlFor="s3-endpoint" help={HELP.s3Endpoint}>
+                  <FieldLabel htmlFor="s3-endpoint" help={RAG_STRINGS.help.s3Endpoint}>
                     Endpoint personnalisé
                   </FieldLabel>
                   <input
@@ -1211,7 +1206,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                     Force path-style
                   </label>
                   <HelpTip
-                    content={HELP.s3ForcePathStyle}
+                    content={RAG_STRINGS.help.s3ForcePathStyle}
                     label="Force path-style"
                     position="right"
                     maxWidth={320}
@@ -1221,8 +1216,8 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <FieldLabel htmlFor="s3-include-globs" help={HELP.globsInclude}>
-                      Include globs
+                    <FieldLabel htmlFor="s3-include-globs" help={RAG_STRINGS.help.globsInclude}>
+                      {RAG_STRINGS.includeGlobs}
                     </FieldLabel>
                     <textarea
                       id="s3-include-globs"
@@ -1234,8 +1229,8 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                     />
                   </div>
                   <div>
-                    <FieldLabel htmlFor="s3-exclude-globs" help={HELP.globsExclude}>
-                      Exclude globs
+                    <FieldLabel htmlFor="s3-exclude-globs" help={RAG_STRINGS.help.globsExclude}>
+                      {RAG_STRINGS.excludeGlobs}
                     </FieldLabel>
                     <textarea
                       id="s3-exclude-globs"
@@ -1259,7 +1254,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               disabled={testing || saving}
               className="px-3 py-2 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-300 text-sm font-medium transition-all duration-200 disabled:opacity-50"
             >
-              {testing ? 'Test…' : 'Tester la connexion'}
+              {testing ? RAG_STRINGS.testing : RAG_STRINGS.testConnection}
             </button>
           </div>
         </div>
@@ -1306,7 +1301,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
           {/* URLs textarea */}
           {httpMode === 'urls' && (
             <div>
-              <FieldLabel htmlFor="http-urls" required help={HELP.httpUrls}>
+              <FieldLabel htmlFor="http-urls" required help={RAG_STRINGS.help.httpUrls}>
                 URLs à indexer
               </FieldLabel>
               <textarea
@@ -1334,7 +1329,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
           {/* Sitemap URL */}
           {httpMode === 'sitemap' && (
             <div>
-              <FieldLabel htmlFor="http-sitemap-url" required help={HELP.httpSitemap}>
+              <FieldLabel htmlFor="http-sitemap-url" required help={RAG_STRINGS.help.httpSitemap}>
                 URL du sitemap
               </FieldLabel>
               <input
@@ -1351,7 +1346,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
           {/* Common fields (always visible) */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <FieldLabel htmlFor="http-user-agent" help={HELP.httpUserAgent}>
+              <FieldLabel htmlFor="http-user-agent" help={RAG_STRINGS.help.httpUserAgent}>
                 User-Agent
               </FieldLabel>
               <input
@@ -1364,7 +1359,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               />
             </div>
             <div>
-              <FieldLabel htmlFor="http-timeout" help={HELP.httpTimeout}>
+              <FieldLabel htmlFor="http-timeout" help={RAG_STRINGS.help.httpTimeout}>
                 Timeout (ms)
               </FieldLabel>
               <input
@@ -1414,8 +1409,11 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <FieldLabel htmlFor="http-include-globs" help={HELP.httpGlobsInclude}>
-                      Include globs (pathname)
+                    <FieldLabel
+                      htmlFor="http-include-globs"
+                      help={RAG_STRINGS.help.httpGlobsInclude}
+                    >
+                      {RAG_STRINGS.includeGlobsPathname}
                     </FieldLabel>
                     <textarea
                       id="http-include-globs"
@@ -1427,8 +1425,8 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                     />
                   </div>
                   <div>
-                    <FieldLabel htmlFor="http-exclude-globs" help={HELP.globsExclude}>
-                      Exclude globs (pathname)
+                    <FieldLabel htmlFor="http-exclude-globs" help={RAG_STRINGS.help.globsExclude}>
+                      {RAG_STRINGS.excludeGlobsPathname}
                     </FieldLabel>
                     <textarea
                       id="http-exclude-globs"
@@ -1452,7 +1450,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               disabled={testing || saving}
               className="px-3 py-2 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-300 text-sm font-medium transition-all duration-200 disabled:opacity-50"
             >
-              {testing ? 'Test…' : 'Tester la connexion'}
+              {testing ? RAG_STRINGS.testing : RAG_STRINGS.testConnection}
             </button>
           </div>
         </div>
@@ -1618,7 +1616,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               disabled={testing || saving}
               className="px-3 py-2 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-300 text-sm font-medium transition-all duration-200 disabled:opacity-50"
             >
-              {testing ? 'Test…' : 'Tester la connexion'}
+              {testing ? RAG_STRINGS.testing : RAG_STRINGS.testConnection}
             </button>
           </div>
         </div>
@@ -1835,7 +1833,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               disabled={testing || saving}
               className="px-3 py-2 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-300 text-sm font-medium transition-all duration-200 disabled:opacity-50"
             >
-              {testing ? 'Test…' : 'Tester la connexion'}
+              {testing ? RAG_STRINGS.testing : RAG_STRINGS.testConnection}
             </button>
           </div>
         </div>
@@ -1925,7 +1923,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               disabled={testing || saving}
               className="px-3 py-2 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-300 text-sm font-medium transition-all duration-200 disabled:opacity-50"
             >
-              {testing ? 'Test…' : 'Tester la connexion'}
+              {testing ? RAG_STRINGS.testing : RAG_STRINGS.testConnection}
             </button>
           </div>
         </div>
@@ -2141,7 +2139,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               disabled={testing || saving}
               className="px-3 py-2 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-300 text-sm font-medium transition-all duration-200 disabled:opacity-50"
             >
-              {testing ? 'Test…' : 'Tester la connexion'}
+              {testing ? RAG_STRINGS.testing : RAG_STRINGS.testConnection}
             </button>
           </div>
         </div>
@@ -2156,11 +2154,11 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
           required
           help={
             selectedSetting?.provider === 'local' && selectedSettingSupportsEmbeddings
-              ? HELP.localEmbeddings
+              ? RAG_STRINGS.help.localEmbeddings
               : undefined
           }
         >
-          Configuration d'embeddings
+          {RAG_STRINGS.embeddingLabel}
         </FieldLabel>
         {aiSettings.length === 0 ? (
           <p className="text-xs text-amber-400 mt-1">
@@ -2175,7 +2173,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
             className="input-editorial w-full text-sm mt-1"
           >
             <option value="" className="bg-gray-800">
-              Sélectionner une configuration IA…
+              {RAG_STRINGS.selectEmbedding}
             </option>
             {/* Le fournisseur local trie en premier — c'est ce qui rend le RAG
                 utilisable sans configuration : la plupart des utilisateurs
@@ -2188,7 +2186,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                 let label = s.label;
                 if (supports) {
                   if (isLocal) {
-                    label += ' — inclus, 100 % local';
+                    label += RAG_STRINGS.localEmbeddingSuffix;
                     if (s.embeddingDimensions !== undefined)
                       label += ` (${s.embeddingDimensions} dims)`;
                   } else if (s.embeddingModel) {
@@ -2221,7 +2219,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
           <>
             <div className="flex items-center gap-4 mt-1">
               <p className="text-xs text-gray-500">
-                Modèle :{' '}
+                {RAG_STRINGS.modelLabel}{' '}
                 <span className="font-mono-plex text-gray-400">
                   {selectedSetting.embeddingModel ?? '(non spécifié)'}
                 </span>
@@ -2229,7 +2227,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               {(selectedSetting.embeddingDimensions ?? initial?.embeddingDimensions) !==
                 undefined && (
                 <p className="text-xs text-gray-500">
-                  Dimensions :{' '}
+                  {RAG_STRINGS.dimensionsLabel}{' '}
                   <span className="font-mono-plex text-gray-400">
                     {selectedSetting.embeddingDimensions ?? initial?.embeddingDimensions}
                   </span>
@@ -2268,8 +2266,8 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
       {/* Polling interval (auto-sync)                                         */}
       {/* ------------------------------------------------------------------ */}
       <div>
-        <FieldLabel htmlFor="rag-source-polling" help={HELP.polling}>
-          Intervalle de synchronisation auto
+        <FieldLabel htmlFor="rag-source-polling" help={RAG_STRINGS.help.polling}>
+          {RAG_STRINGS.pollingLabel}
         </FieldLabel>
         <select
           id="rag-source-polling"
@@ -2286,7 +2284,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               value={opt.value === null ? '' : String(opt.value)}
               className="bg-gray-800"
             >
-              {opt.label}
+              {RAG_STRINGS.polling[opt.labelKey]}
             </option>
           ))}
         </select>
@@ -2342,14 +2340,14 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
           aria-busy={saving}
           className="px-4 py-2 rounded-lg bg-os-700 hover:bg-os-600 text-white text-sm font-medium transition-all duration-200 disabled:opacity-50 shadow-md shadow-os-900/20"
         >
-          {saving ? 'Enregistrement…' : 'Enregistrer'}
+          {saving ? RAG_STRINGS.saving : RAG_STRINGS.save}
         </button>
         <button
           type="button"
           onClick={onCancel}
           className="px-4 py-2 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-300 text-sm font-medium transition-all duration-200"
         >
-          Annuler
+          {RAG_STRINGS.cancel}
         </button>
       </div>
       {saving && <p className="text-xs text-gray-500">{RAG_STRINGS.savingHint}</p>}

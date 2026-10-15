@@ -5,7 +5,7 @@
  */
 import { render as rtlRender, screen, fireEvent, within } from '@testing-library/react';
 import type { ReactElement } from 'react';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { SourceForm } from '@calame-ee/rag-core/web';
 import type { AiSettingOption } from '../../../../ee/rag-core/src/web/SourceForm.js';
 import { I18nProvider } from '../i18n/I18nProvider.js';
@@ -37,12 +37,15 @@ function renderForm(props: Partial<React.ComponentProps<typeof SourceForm>> = {}
 
 const LOCAL_HELPS: Array<[string, RegExp]> = [
   ['Chemin absolu du dossier', /Le serveur doit pouvoir lire ce chemin/],
-  ['Include globs', /Vide = tout inclure/],
-  ['Exclude globs', /exclusions par défaut \(node_modules, \.git\)/],
+  ['Globs à inclure', /Vide = tout inclure/],
+  ['Globs à exclure', /exclusions par défaut \(node_modules, \.git\)/],
   ['Inclure les fichiers cachés', /exclus par défaut/],
   ["Configuration d'embeddings", /Traitement 100 % local/],
   ['Intervalle de synchronisation auto', /La synchronisation manuelle reste toujours disponible/],
 ];
+
+// rag-core strings follow the saved app locale; these assertions use French.
+beforeEach(() => localStorage.setItem('calame-locale', 'fr'));
 
 describe('SourceForm — collapsible "?" help', () => {
   it('folds the secondary explanations of the local-folder form behind "?" tips', () => {
@@ -52,7 +55,7 @@ describe('SourceForm — collapsible "?" help', () => {
       expect(screen.queryByText(text)).not.toBeInTheDocument();
     }
     for (const [label] of LOCAL_HELPS) {
-      const tip = screen.getByRole('button', { name: `Help: ${label}` });
+      const tip = screen.getByRole('button', { name: `Aide : ${label}` });
       expect(tip).toHaveAttribute('tabindex', '0');
       expect(tip).toHaveAttribute('aria-expanded', 'false');
     }
@@ -62,7 +65,7 @@ describe('SourceForm — collapsible "?" help', () => {
     renderForm();
 
     for (const [label, text] of LOCAL_HELPS) {
-      const tip = screen.getByRole('button', { name: `Help: ${label}` });
+      const tip = screen.getByRole('button', { name: `Aide : ${label}` });
       fireEvent.keyDown(tip, { key: 'Enter' });
       expect(screen.getByRole('tooltip')).toHaveTextContent(text);
       expect(tip).toHaveAttribute('aria-expanded', 'true');
@@ -77,8 +80,8 @@ describe('SourceForm — collapsible "?" help', () => {
     expect(screen.getByLabelText(/^Nom de la source/)).toBeInTheDocument();
     expect(screen.getByLabelText(/^Type/)).toBeInTheDocument();
     expect(screen.getByLabelText(/^Chemin absolu du dossier/)).toBeInTheDocument();
-    expect(screen.getByLabelText(/^Include globs/)).toBeInTheDocument();
-    expect(screen.getByLabelText(/^Exclude globs/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Globs à inclure/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Globs à exclure/)).toBeInTheDocument();
     expect(screen.getByLabelText('Inclure les fichiers cachés')).toBeInTheDocument();
     expect(screen.getByLabelText(/^Configuration d'embeddings/)).toBeInTheDocument();
     expect(screen.getByLabelText(/^Intervalle de synchronisation auto/)).toBeInTheDocument();
@@ -91,7 +94,7 @@ describe('SourceForm — collapsible "?" help', () => {
 
   it('clicking the "?" of the hidden-files checkbox does not tick it', () => {
     renderForm();
-    fireEvent.click(screen.getByRole('button', { name: 'Help: Inclure les fichiers cachés' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Aide : Inclure les fichiers cachés' }));
     expect(screen.getByLabelText('Inclure les fichiers cachés')).not.toBeChecked();
     expect(screen.getByRole('tooltip')).toHaveTextContent(/50 Mo/);
   });
@@ -103,7 +106,7 @@ describe('SourceForm — collapsible "?" help', () => {
     ).toBeVisible();
     // No "?" on the embeddings label: the remote notice is not secondary.
     expect(
-      screen.queryByRole('button', { name: "Help: Configuration d'embeddings" }),
+      screen.queryByRole('button', { name: "Aide : Configuration d'embeddings" }),
     ).not.toBeInTheDocument();
   });
 
@@ -129,10 +132,29 @@ describe('SourceForm — collapsible "?" help', () => {
     ).toBeVisible();
     expect(screen.getByText('Laissez vide pour conserver la clé existante.')).toBeVisible();
     expect(screen.queryByText("Utilisez 'auto' pour Cloudflare R2.")).not.toBeInTheDocument();
-    const region = screen.getByRole('button', { name: 'Help: Région' });
+    const region = screen.getByRole('button', { name: 'Aide : Région' });
     fireEvent.click(region);
     expect(within(document.body).getByRole('tooltip')).toHaveTextContent(
       "Utilisez 'auto' pour Cloudflare R2.",
     );
+  });
+});
+
+describe('SourceForm — English locale', () => {
+  it('renders the knowledge-base source labels in English', () => {
+    localStorage.setItem('calame-locale', 'en');
+    renderForm();
+    expect(screen.getByText('New source')).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Absolute folder path/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument();
+    expect(screen.queryByText('Enregistrer')).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/^Source name/)).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Local (folder)' })).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Automatic sync interval/)).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Every hour' })).toBeInTheDocument();
+    expect(screen.queryByText('Toutes les heures')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Browse…' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Include hidden files')).toBeInTheDocument();
   });
 });

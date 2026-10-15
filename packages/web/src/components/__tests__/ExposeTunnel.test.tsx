@@ -110,12 +110,21 @@ describe('ExposeTunnel', () => {
     vi.unstubAllGlobals();
   });
 
-  it('shows a muted note with the reason when unavailable', async () => {
-    installFetchMock({ available: false, unavailableReason: 'cloudflared binary not found.' });
+  it('shows a translated note, not the raw dev diagnostic, when unavailable', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    installFetchMock({
+      available: false,
+      unavailableReason:
+        'cloudflared binary not found (looked at "x"). Run "node scripts/prepare-desktop.mjs" to download it.',
+    });
     render(<ExposeTunnel profileName="default" />);
     await flushEffects();
 
-    expect(screen.getByText('cloudflared binary not found.')).toBeTruthy();
+    expect(screen.getByText(/Remote access \(Copilot, ChatGPT\) is not available/)).toBeTruthy();
+    expect(screen.queryByText(/cloudflared|prepare-desktop/)).toBeNull();
+    // The technical detail stays available in the logs.
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('prepare-desktop.mjs'));
+    warn.mockRestore();
     expect(screen.queryByText('Expose this server')).toBeNull();
   });
 

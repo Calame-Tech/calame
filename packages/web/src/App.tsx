@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslations } from 'use-intl/react';
 import Sidebar from './components/Sidebar.js';
 import LoginPage from './components/LoginPage.js';
@@ -8,6 +8,7 @@ import UserDashboard from './components/UserDashboard.js';
 import WelcomePage from './components/WelcomePage.js';
 import ChatEntryPage from './components/ChatEntryPage.js';
 import ProfilePreview from './components/ProfilePreview.js';
+import SetupChecklist from './components/SetupChecklist.js';
 import { Redirect, useNavigation, resolveLocationRoutes } from './router/index.js';
 import type { View } from './router/index.js';
 import { useSession } from './context/SessionContext.js';
@@ -94,6 +95,10 @@ export default function App() {
     handleConfigurationSave,
     handleConfigurationDelete,
   } = useAppData(isUserPage);
+
+  // The floating getting-started guide re-checks the server whenever the
+  // user navigates or saves a data profile / MCP.
+  const setupRefreshKey = useMemo(() => ({}), [view, configurations, profiles]);
 
   // Profile preview modal state
   const [previewProfile, setPreviewProfile] = useState<string | null>(null);
@@ -370,6 +375,14 @@ export default function App() {
             {view.page === 'audit-log' && <AuditLogPage setView={setView} profiles={profiles} />}
           </div>
         </main>
+
+        {/* Guided first-run path, on every page until the first MCP is used */}
+        <SetupChecklist
+          sourceCount={connections.length}
+          ragEnabled={ragEnabled}
+          onNavigate={setView}
+          refreshKey={setupRefreshKey}
+        />
 
         {/* Profile preview modal */}
         {previewProfile && (

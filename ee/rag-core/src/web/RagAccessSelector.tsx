@@ -61,6 +61,15 @@ interface RagAccessSelectorProps {
     sources: string[];
     scopes: Record<string, ScopeSelection>;
   }) => unknown;
+  /**
+   * Embedded mode: the host owns the only Save action. The selector hides its
+   * own Save/Cancel buttons and reports the selection it would save after
+   * every user edit, so the host persists exactly what is displayed.
+   */
+  onSelectionChange?: (payload: {
+    sources: string[];
+    scopes: Record<string, ScopeSelection>;
+  }) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -405,18 +414,13 @@ function FolderRow({
           {node.loading ? <SpinnerIcon /> : <ChevronIcon open={node.expanded} />}
         </button>
 
-        {/* Checkbox — locked when an ancestor is auto-include (the descendant
-            is already covered recursively and toggling it here is a no-op at
-            save time). Surface a tooltip so the user understands why. */}
+        {/* Checkbox — (un)checking applies to the whole sub-tree; under an
+            auto-include ancestor it carves this folder out of the coverage. */}
         <TriStateCheckbox
           state={checkState}
           onChange={(next) => onToggleFolder(folderId, next)}
-          label={
-            coveredByAncestor
-              ? T.coveredByParent(node.folder.name)
-              : T.includeFolder(node.folder.name)
-          }
-          disabled={saving || !sourceIncluded || coveredByAncestor}
+          label={T.includeFolder(node.folder.name)}
+          disabled={saving || !sourceIncluded}
         />
 
         <FolderIcon open={node.expanded} />
@@ -476,12 +480,10 @@ function FolderRow({
             // the doc is in the explicit allowlist of a strict folder.
             const checked =
               node.mode === 'auto-include' || coveredByAncestor || node.checkedDocIds.has(doc.id);
-            // Lock the doc checkbox only when an ancestor is auto-include —
-            // toggling has no effect at save time. When the folder itself is
-            // auto-include, clicking a doc remains useful: it bascules into
-            // strict mode with every OTHER doc pre-checked (the user wanted
-            // to exclude this one specific file).
-            const docDisabled = saving || !sourceIncluded || coveredByAncestor;
+            // Unchecking a doc covered by an auto-include folder (this one or
+            // an ancestor) bascules it into strict mode with every OTHER item
+            // still selected (the user wanted to exclude this one file).
+            const docDisabled = saving || !sourceIncluded;
             return (
               <DocumentRow
                 key={doc.id}
@@ -680,7 +682,8 @@ interface SaveFooterProps {
   counts: { folders: number; documents: number };
   saving: boolean;
   onCancel?: () => void;
-  onSave: () => void;
+  /** Omitted in embedded mode: the host's Save button persists the selection. */
+  onSave?: () => void;
 }
 
 function SaveFooter({ counts, saving, onCancel, onSave }: SaveFooterProps) {
@@ -703,26 +706,28 @@ function SaveFooter({ counts, saving, onCancel, onSave }: SaveFooterProps) {
         )}
       </p>
 
-      <div className="flex items-center gap-2">
-        {onCancel && (
+      {onSave && (
+        <div className="flex items-center gap-2">
+          {onCancel && (
+            <button
+              type="button"
+              onClick={onCancel}
+              disabled={saving}
+              className="px-3 py-1.5 rounded-lg text-sm text-gray-400 hover:text-gray-200 disabled:opacity-50 transition-colors"
+            >
+              {T.cancel}
+            </button>
+          )}
           <button
             type="button"
-            onClick={onCancel}
+            onClick={onSave}
             disabled={saving}
-            className="px-3 py-1.5 rounded-lg text-sm text-gray-400 hover:text-gray-200 disabled:opacity-50 transition-colors"
+            className="px-4 py-1.5 rounded-lg bg-os-700 hover:bg-os-600 text-white text-sm font-medium disabled:opacity-50 transition-all duration-200 shadow-md shadow-os-900/20 focus:outline-none focus:ring-2 focus:ring-os-500/40"
           >
-            {T.cancel}
+            {saving ? T.saving : T.save}
           </button>
-        )}
-        <button
-          type="button"
-          onClick={onSave}
-          disabled={saving}
-          className="px-4 py-1.5 rounded-lg bg-os-700 hover:bg-os-600 text-white text-sm font-medium disabled:opacity-50 transition-all duration-200 shadow-md shadow-os-900/20 focus:outline-none focus:ring-2 focus:ring-os-500/40"
-        >
-          {saving ? T.saving : T.save}
-        </button>
-      </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -740,6 +745,7 @@ export default function RagAccessSelector({
   saveEndpoint,
   saveMethod = 'POST',
   saveBodyTransform,
+  onSelectionChange,
 }: RagAccessSelectorProps) {
   // Defensive: a profile with no scopes yet passes `undefined` from the host.
   // Coerce to {} so `initialScopes[source.id]` lookups never throw.
@@ -761,6 +767,10 @@ export default function RagAccessSelector({
   );
 
   const abortRef = useRef<AbortController | null>(null);
+  // Bumped by every user edit; selection changes are only reported once the
+  // user touched something (initial loading is not an edit).
+  const [editCount, setEditCount] = useState(0);
+  const markEdited = useCallback(() => setEditCount((n) => n + 1), []);
 
   // ---------------------------------------------------------------------------
   // Toast helpers
@@ -1050,6 +1060,7 @@ export default function RagAccessSelector({
   };
 
   const handleToggleSourceIncluded = (sourceId: string, next: CheckState) => {
+    markEdited();
     setSourceNodes((prev) =>
       prev.map((n) => {
         if (n.source.id !== sourceId) return n;
@@ -1077,62 +1088,90 @@ export default function RagAccessSelector({
     }));
   };
 
-  const handleToggleFolder = useCallback((folderId: string, nextCheck: CheckState) => {
-    setFolderMap((prev) => applyToggleFolder(folderId, nextCheck, prev));
-  }, []);
+  const handleToggleFolder = useCallback(
+    (folderId: string, nextCheck: CheckState) => {
+      markEdited();
+      setFolderMap((prev) => applyToggleFolder(folderId, nextCheck, prev));
+    },
+    [markEdited],
+  );
 
   const handleToggleDocument = useCallback(
     (folderId: string, docId: string) => {
+      markEdited();
       setFolderMap((prev) => {
         const { folderMap: nextMap, toastMessage } = applyToggleDocument(folderId, docId, prev);
         if (toastMessage) pushToast(toastMessage, 'info');
         return nextMap;
       });
     },
-    [pushToast],
+    [pushToast, markEdited],
   );
 
-  const handleForceAutoInclude = useCallback((folderId: string) => {
-    setFolderMap((prev) => ({
-      ...prev,
-      [folderId]: { ...prev[folderId]!, mode: 'auto-include', checkedDocIds: new Set() },
-    }));
-  }, []);
+  const handleForceAutoInclude = useCallback(
+    (folderId: string) => {
+      markEdited();
+      setFolderMap((prev) => ({
+        ...prev,
+        [folderId]: { ...prev[folderId]!, mode: 'auto-include', checkedDocIds: new Set() },
+      }));
+    },
+    [markEdited],
+  );
 
   // ---------------------------------------------------------------------------
   // Save
   // ---------------------------------------------------------------------------
 
+  const buildSelection = () => {
+    const updatedScopes: Record<string, ScopeSelection> = { ...initialScopes };
+    const updatedSources = [...initialSources];
+
+    for (const sourceNode of sourceNodes) {
+      const sid = sourceNode.source.id;
+
+      if (!sourceNode.included) {
+        const idx = updatedSources.indexOf(sid);
+        if (idx !== -1) updatedSources.splice(idx, 1);
+        delete updatedScopes[sid];
+        continue;
+      }
+
+      if (!updatedSources.includes(sid)) {
+        updatedSources.push(sid);
+      }
+
+      updatedScopes[sid] = buildDocumentScope(
+        sourceNode.included,
+        sourceNode.rootFolderIds,
+        sourceNode.rootDocuments,
+        folderMap,
+        piiMaskingDisabled ? 'off' : 'inherit',
+        directFetchDisabled,
+      );
+    }
+    return { sources: updatedSources, scopes: updatedScopes };
+  };
+
+  // Embedded mode: report what a save would persist after each user edit
+  // (and when an edit triggers a load, e.g. including a source).
+  const buildSelectionRef = useRef(buildSelection);
+  buildSelectionRef.current = buildSelection;
+  useEffect(() => {
+    if (editCount > 0) onSelectionChange?.(buildSelectionRef.current());
+  }, [
+    editCount,
+    sourceNodes,
+    folderMap,
+    piiMaskingDisabled,
+    directFetchDisabled,
+    onSelectionChange,
+  ]);
+
   const handleSave = async () => {
     setSaving(true);
     try {
-      const updatedScopes: Record<string, ScopeSelection> = { ...initialScopes };
-      const updatedSources = [...initialSources];
-
-      for (const sourceNode of sourceNodes) {
-        const sid = sourceNode.source.id;
-
-        if (!sourceNode.included) {
-          const idx = updatedSources.indexOf(sid);
-          if (idx !== -1) updatedSources.splice(idx, 1);
-          delete updatedScopes[sid];
-          continue;
-        }
-
-        if (!updatedSources.includes(sid)) {
-          updatedSources.push(sid);
-        }
-
-        updatedScopes[sid] = buildDocumentScope(
-          sourceNode.included,
-          sourceNode.rootFolderIds,
-          sourceNode.rootDocuments,
-          folderMap,
-          piiMaskingDisabled ? 'off' : 'inherit',
-          directFetchDisabled,
-        );
-      }
-
+      const { sources: updatedSources, scopes: updatedScopes } = buildSelection();
       const endpoint = saveEndpoint ?? `/api/profiles/${encodeURIComponent(profileName)}/scopes`;
       const rawPayload = { sources: updatedSources, scopes: updatedScopes };
       const body = saveBodyTransform ? saveBodyTransform(rawPayload) : rawPayload;
@@ -1209,7 +1248,10 @@ export default function RagAccessSelector({
           <input
             type="checkbox"
             checked={piiMaskingDisabled}
-            onChange={(e) => setPiiMaskingDisabled(e.target.checked)}
+            onChange={(e) => {
+              markEdited();
+              setPiiMaskingDisabled(e.target.checked);
+            }}
             className="mt-0.5 w-4 h-4 rounded border border-gray-600 bg-gray-800 accent-os-600 cursor-pointer flex-shrink-0"
           />
           <span className="flex flex-col gap-0.5">
@@ -1223,7 +1265,10 @@ export default function RagAccessSelector({
           <input
             type="checkbox"
             checked={directFetchDisabled}
-            onChange={(e) => setDirectFetchDisabled(e.target.checked)}
+            onChange={(e) => {
+              markEdited();
+              setDirectFetchDisabled(e.target.checked);
+            }}
             className="mt-0.5 w-4 h-4 rounded border border-gray-600 bg-gray-800 accent-os-600 cursor-pointer flex-shrink-0"
           />
           <span className="flex flex-col gap-0.5">
@@ -1269,7 +1314,7 @@ export default function RagAccessSelector({
         counts={totalCounts}
         saving={saving}
         onCancel={onCancel}
-        onSave={() => void handleSave()}
+        onSave={onSelectionChange ? undefined : () => void handleSave()}
       />
     </div>
   );

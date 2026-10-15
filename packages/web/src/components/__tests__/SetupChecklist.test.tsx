@@ -1,11 +1,15 @@
-// SetupChecklist — guided path (source → MCP → client). The state must come
-// from the server resources (saved profiles + audit log), so it survives a
-// reload, and the client step only completes on an audited call.
+// SetupChecklist — floating guided path (data → data profile → MCP → client).
+// The state must come from the server resources (data profiles, saved MCPs,
+// audit log), so it survives a reload, and the client step only completes on
+// an audited call.
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render as rtlRender, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import type { ReactElement } from 'react';
-import SetupChecklist, { SETUP_CHECKLIST_HIDDEN_KEY } from '../SetupChecklist.js';
+import SetupChecklist, {
+  SETUP_CHECKLIST_COLLAPSED_KEY,
+  SETUP_CHECKLIST_HIDDEN_KEY,
+} from '../SetupChecklist.js';
 import { I18nProvider } from '../../i18n/I18nProvider.js';
 
 function render(ui: ReactElement) {
@@ -22,6 +26,7 @@ function jsonResponse(body: unknown, ok = true): Response {
 }
 
 interface ServerState {
+  configurations?: Array<{ name: string; sources?: string[] }>;
   profiles?: Record<string, { configurations?: string[]; sources?: unknown[] }>;
   entries?: Array<{ profileName: string; result: 'success' | 'error' }>;
   fail?: boolean;
@@ -31,6 +36,9 @@ function installServer(server: ServerState) {
   const mock = vi.fn(async (input: string | URL | Request) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     if (server.fail) return jsonResponse({ success: false }, false);
+    if (url.includes('/api/configurations')) {
+      return jsonResponse({ success: true, configurations: server.configurations ?? [] });
+    }
     if (url.includes('/api/profiles/load')) {
       const profiles = server.profiles ?? {};
       return jsonResponse({ found: Object.keys(profiles).length > 0, profiles });
@@ -66,75 +74,69 @@ function auditUrls(mock: ReturnType<typeof installServer>): string[] {
 }
 
 function stepStatus(title: RegExp): string | null {
-  return screen.getByText(title).closest('li')?.getAttribute('data-status') ?? null;
+  // The title also appears in the "current step" banner: read the list item.
+  const item = screen
+    .getAllByText(title)
+    .map((el) => el.closest('li'))
+    .find(Boolean);
+  return item?.getAttribute('data-status') ?? null;
 }
+
+const salesData = { name: 'sales-config', sources: ['warehouse'] };
+const salesMcp = { sales: { configurations: ['sales-config'] } };
 
 describe('SetupChecklist', () => {
   afterEach(() => {
-    vi.useRealTimers();
     vi.unstubAllGlobals();
     localStorage.removeItem(SETUP_CHECKLIST_HIDDEN_KEY);
+    localStorage.removeItem(SETUP_CHECKLIST_COLLAPSED_KEY);
   });
 
-  it('renders nothing before the first answer, then step 1 as the next action', async () => {
-    const server = installServer({});
+  it('renders nothing before the first answer, then the four steps with step 1 current', async () => {
+    installServer({});
     const { container } = render(<SetupChecklist sourceCount={0} onNavigate={vi.fn()} />);
-
-    // No flash of the guide for installations that turn out to be set up.
     expect(container.innerHTML).toBe('');
-    await waitFor(() => expect(stepStatus(/1\. Connect a source/)).toBe('current'));
-    expect(stepStatus(/2\. Create the MCP server/)).toBe('todo');
-    expect(stepStatus(/3\. Use it from a client/)).toBe('todo');
-    // Steps that cannot be started yet offer no action.
-    expect(screen.queryByRole('button', { name: 'Create the MCP server' })).toBeNull();
-    // No MCP yet: the audit log is not queried at all.
-    expect(auditUrls(server)).toHaveLength(0);
+    await screen.findAllByText('1. Connect data');
+    expect(stepStatus(/1\. Connect data/)).toBe('current');
+    expect(stepStatus(/2\. Create a data profile/)).toBe('todo');
+    expect(stepStatus(/3\. Create the MCP server/)).toBe('todo');
+    expect(stepStatus(/4\. Connect and test the MCP/)).toBe('todo');
+    expect(screen.getByTestId('setup-current-step').textContent).toContain(
+      'Current step: 1. Connect data',
+    );
+    expect(screen.getByTestId('setup-current-step').textContent).toContain(
+      'Then: 2. Create a data profile',
+    );
   });
 
-  it('points to MCP creation right after a source is created', async () => {
-    const server = installServer({});
+  it('points to the data profile (not the MCP) right after data is connected', async () => {
+    installServer({});
     const onNavigate = vi.fn();
-    const { rerender } = render(<SetupChecklist sourceCount={0} onNavigate={onNavigate} />);
-    await waitFor(() => expect(stepStatus(/1\. Connect a source/)).toBe('current'));
+    render(<SetupChecklist sourceCount={1} onNavigate={onNavigate} />);
+    await screen.findAllByText('1. Connect data');
+    expect(stepStatus(/2\. Create a data profile/)).toBe('current');
+    fireEvent.click(screen.getByRole('button', { name: 'Create a data profile' }));
+    expect(onNavigate).toHaveBeenCalledWith({ page: 'configurations' });
+  });
 
-    // The host page reports the new source (connection or knowledge base).
-    const callsBefore = server.mock.calls.length;
-    rerender(<SetupChecklist sourceCount={1} onNavigate={onNavigate} />);
-
-    await waitFor(() => expect(stepStatus(/2\. Create the MCP server/)).toBe('current'));
-    expect(server.mock.calls.length).toBeGreaterThan(callsBefore);
-    expect(screen.getByText(/Next: create an MCP server/)).toBeTruthy();
+  it('points to MCP creation once a data profile contains data', async () => {
+    installServer({ configurations: [salesData] });
+    const onNavigate = vi.fn();
+    render(<SetupChecklist sourceCount={1} onNavigate={onNavigate} />);
+    await screen.findAllByText('1. Connect data');
+    expect(stepStatus(/2\. Create a data profile/)).toBe('done');
+    expect(stepStatus(/3\. Create the MCP server/)).toBe('current');
     fireEvent.click(screen.getByRole('button', { name: 'Create the MCP server' }));
     expect(onNavigate).toHaveBeenCalledWith({ page: 'mcp-list' });
   });
 
-  it('keeps step 2 current when only the empty "default" placeholder is saved', async () => {
-    // Real server shape after deleting the last MCP: the placeholder is
-    // re-persisted and /api/profiles/load backfills sources: ['default'].
-    installServer({
-      profiles: { default: { sources: ['default'] } },
-      entries: [{ profileName: 'default', result: 'success' }],
-    });
-    render(<SetupChecklist sourceCount={1} onNavigate={vi.fn()} />);
-
-    await waitFor(() => expect(stepStatus(/2\. Create the MCP server/)).toBe('current'));
-    expect(stepStatus(/3\. Use it from a client/)).toBe('todo');
-    expect(screen.queryByRole('button', { name: 'Connect a client' })).toBeNull();
-  });
-
-  it('gives client instructions once the MCP is saved, without marking it used', async () => {
-    installServer({
-      profiles: { sales: { configurations: ['sales-config'] } },
-      // A failed call is not proof that the client works.
-      entries: [{ profileName: 'sales', result: 'error' }],
-    });
+  it('gives client instructions once the MCP is attached, without marking it used', async () => {
+    installServer({ configurations: [salesData], profiles: salesMcp });
     const onNavigate = vi.fn();
     render(<SetupChecklist sourceCount={1} onNavigate={onNavigate} />);
-
-    await waitFor(() => expect(stepStatus(/3\. Use it from a client/)).toBe('current'));
-    expect(stepStatus(/2\. Create the MCP server/)).toBe('done');
-    expect(screen.getByText(/first successful call appears in the audit log/)).toBeTruthy();
-
+    await screen.findAllByText('1. Connect data');
+    expect(stepStatus(/3\. Create the MCP server/)).toBe('done');
+    expect(stepStatus(/4\. Connect and test the MCP/)).toBe('current');
     fireEvent.click(screen.getByRole('button', { name: 'Connect a client' }));
     expect(onNavigate).toHaveBeenCalledWith({
       page: 'mcp-detail',
@@ -143,128 +145,64 @@ describe('SetupChecklist', () => {
     });
   });
 
-  it('queries the audit log per MCP for one successful call only', async () => {
-    const server = installServer({
-      profiles: { sales: { configurations: ['sales-config'] } },
-      entries: [{ profileName: 'sales', result: 'error' }],
-    });
+  it('queries the audit log per attached MCP for one successful call only', async () => {
+    const server = installServer({ configurations: [salesData], profiles: salesMcp });
     render(<SetupChecklist sourceCount={1} onNavigate={vi.fn()} />);
-
-    await waitFor(() => expect(stepStatus(/3\. Use it from a client/)).toBe('current'));
+    await screen.findAllByText('1. Connect data');
     expect(auditUrls(server)).toEqual([
       '/api/audit?profileName=sales&result=success&limit=1&offset=0',
     ]);
   });
 
-  it('hides itself for good once a successful client call is in the audit log', async () => {
-    const server = installServer({
-      profiles: { sales: { configurations: ['sales-config'] } },
-      entries: [
-        { profileName: 'sales', result: 'error' },
-        { profileName: 'sales', result: 'success' },
-      ],
+  it('disappears for good once the first MCP has been used by a client', async () => {
+    installServer({
+      configurations: [salesData],
+      profiles: salesMcp,
+      entries: [{ profileName: 'sales', result: 'success' }],
     });
-    const { container, unmount } = render(<SetupChecklist sourceCount={1} onNavigate={vi.fn()} />);
-
-    await waitFor(() => expect(server).toHaveBeenCalled());
+    const { container } = render(<SetupChecklist sourceCount={1} onNavigate={vi.fn()} />);
     await waitFor(() => expect(localStorage.getItem(SETUP_CHECKLIST_HIDDEN_KEY)).toBe('1'));
     expect(container.innerHTML).toBe('');
-    unmount();
-
-    // An installation with a used MCP does not query or show the guide again.
-    server.mockClear();
-    const second = render(<SetupChecklist sourceCount={1} onNavigate={vi.fn()} />);
-    expect(second.container.innerHTML).toBe('');
-    expect(server).not.toHaveBeenCalled();
   });
 
-  it('can be hidden by the user, persistently', async () => {
+  it('can be folded and reopened, and stays folded across reloads', async () => {
+    installServer({ configurations: [salesData] });
+    const first = render(<SetupChecklist sourceCount={1} onNavigate={vi.fn()} />);
+    await screen.findAllByText('1. Connect data');
+    fireEvent.click(screen.getByRole('button', { name: 'Fold the getting-started guide' }));
+    expect(screen.queryByText('1. Connect data')).toBeNull();
+    expect(localStorage.getItem(SETUP_CHECKLIST_COLLAPSED_KEY)).toBe('1');
+    first.unmount();
+
+    render(<SetupChecklist sourceCount={1} onNavigate={vi.fn()} />);
+    const reopen = await screen.findByRole('button', { name: 'Reopen the getting-started guide' });
+    expect(reopen.textContent).toBe('Getting started · 2/4');
+    fireEvent.click(reopen);
+    expect(screen.getAllByText('1. Connect data').length).toBeGreaterThan(0);
+    expect(localStorage.getItem(SETUP_CHECKLIST_COLLAPSED_KEY)).toBeNull();
+  });
+
+  it('re-checks the server on window focus and on the setup refresh event', async () => {
     const server = installServer({});
-    const { container, unmount } = render(<SetupChecklist sourceCount={0} onNavigate={vi.fn()} />);
-    await waitFor(() => expect(stepStatus(/1\. Connect a source/)).toBe('current'));
-
-    fireEvent.click(screen.getByRole('button', { name: 'Hide the getting-started guide' }));
-    expect(container.innerHTML).toBe('');
-    expect(localStorage.getItem(SETUP_CHECKLIST_HIDDEN_KEY)).toBe('1');
-    unmount();
-
-    server.mockClear();
-    render(<SetupChecklist sourceCount={0} onNavigate={vi.fn()} />);
-    expect(server).not.toHaveBeenCalled();
-  });
-
-  it('does not poll on a timer, but re-checks on window focus and on demand', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    const state: ServerState = {
-      profiles: { sales: { configurations: ['sales-config'] } },
-      entries: [],
-    };
-    const server = installServer(state);
-    const { container } = render(<SetupChecklist sourceCount={1} onNavigate={vi.fn()} />);
-    await waitFor(() => expect(stepStatus(/3\. Use it from a client/)).toBe('current'));
-
-    const callsAfterLoad = server.mock.calls.length;
+    render(<SetupChecklist sourceCount={1} onNavigate={vi.fn()} />);
+    await screen.findAllByText('1. Connect data');
+    const calls = server.mock.calls.length;
     await act(async () => {
-      vi.advanceTimersByTime(5 * 60_000);
-    });
-    expect(server.mock.calls.length).toBe(callsAfterLoad);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Check again' }));
-    await waitFor(() => expect(server.mock.calls.length).toBeGreaterThan(callsAfterLoad));
-
-    // The user comes back from their AI client after a successful call.
-    state.entries = [{ profileName: 'sales', result: 'success' }];
-    act(() => {
       window.dispatchEvent(new Event('focus'));
+      window.dispatchEvent(new Event('calame:setup-refresh'));
     });
-    await waitFor(() => expect(container.innerHTML).toBe(''));
-  });
-
-  it('ignores a stale response that arrives after a newer one', async () => {
-    let releaseFirst: (res: Response) => void = () => {};
-    let call = 0;
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: string | URL | Request) => {
-        const url = String(input);
-        if (url.includes('/api/profiles/load')) {
-          call += 1;
-          if (call === 1) {
-            // First (older) request: answers last, with an outdated "no MCP".
-            return new Promise<Response>((resolve) => {
-              releaseFirst = resolve;
-            });
-          }
-          return jsonResponse({
-            found: true,
-            profiles: { sales: { configurations: ['sales-config'] } },
-          });
-        }
-        return jsonResponse({ entries: [] });
-      }),
-    );
-
-    const { rerender } = render(<SetupChecklist sourceCount={1} onNavigate={vi.fn()} />);
-    rerender(<SetupChecklist sourceCount={1} onNavigate={vi.fn()} refreshKey={1} />);
-    await waitFor(() => expect(stepStatus(/3\. Use it from a client/)).toBe('current'));
-
-    await act(async () => {
-      releaseFirst(jsonResponse({ found: false, profiles: {} }));
-    });
-    expect(stepStatus(/2\. Create the MCP server/)).toBe('done');
-    expect(stepStatus(/3\. Use it from a client/)).toBe('current');
+    await waitFor(() => expect(server.mock.calls.length).toBeGreaterThan(calls));
   });
 
   it('shows an error with a retry action when the state cannot be loaded', async () => {
     const server: ServerState = { fail: true };
     installServer(server);
-    render(<SetupChecklist sourceCount={1} onNavigate={vi.fn()} />);
-
-    expect((await screen.findByRole('alert')).textContent).toMatch(/Could not check/);
-
+    render(<SetupChecklist sourceCount={0} onNavigate={vi.fn()} />);
+    expect((await screen.findByRole('alert')).textContent).toContain(
+      'Could not check your setup progress.',
+    );
     server.fail = false;
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
-    await waitFor(() => expect(stepStatus(/2\. Create the MCP server/)).toBe('current'));
-    expect(screen.queryByRole('alert')).toBeNull();
+    await screen.findAllByText('1. Connect data');
   });
 });

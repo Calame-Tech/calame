@@ -4,8 +4,7 @@ import { apiFetch } from '../lib/api.js';
 import type { NamedConnection, DatabaseSchema } from '../types/schema.js';
 import ConnectionManager from './ConnectionManager.js';
 import AddSourceModal from './AddSourceModal.js';
-import SetupChecklist from './SetupChecklist.js';
-import type { View } from '../router/index.js';
+import { SETUP_REFRESH_EVENT } from './SetupChecklist.js';
 
 export type SourcesTab = 'databases' | 'knowledge';
 
@@ -22,13 +21,6 @@ export interface SourcesPageProps {
   onConnectionsChange: (connections: NamedConnection[]) => void;
   onSchemaLoaded: (connectionName: string, schema: DatabaseSchema) => void;
   editConnectionName?: string;
-
-  /**
-   * Navigation for the guided setup checklist shown above the tabs, so the
-   * next step (create the MCP) is visible right after a source is created.
-   * The checklist is not rendered when omitted.
-   */
-  onNavigate?: (view: View) => void;
 
   // --- RAG capability ---
   ragEnabled: boolean;
@@ -61,7 +53,6 @@ export default function SourcesPage({
   onConnectionsChange,
   onSchemaLoaded,
   editConnectionName,
-  onNavigate,
   ragEnabled,
   ragDisabledReason,
   KnowledgeBaseManagerComponent,
@@ -69,12 +60,11 @@ export default function SourcesPage({
   const t = useTranslations('sources.sourcesPage');
   const [showAddModal, setShowAddModal] = useState(false);
   const [ragSourceCount, setRagSourceCount] = useState(0);
-  // Bumped on every knowledge-base list refresh so the checklist re-reads the
-  // sources' sync state (a new source is saved before it is indexed).
-  const [ragListVersion, setRagListVersion] = useState(0);
+  // On every knowledge-base list refresh, the floating setup guide re-reads
+  // the sources' sync state (a new source is saved before it is indexed).
   const handleRagSourcesChange = useCallback((count: number) => {
     setRagSourceCount(count);
-    setRagListVersion((v) => v + 1);
+    window.dispatchEvent(new Event(SETUP_REFRESH_EVENT));
   }, []);
 
   // Fetch RAG source count when the component mounts and when ragEnabled changes.
@@ -140,15 +130,6 @@ export default function SourcesPage({
           {t('addSource')}
         </button>
       </div>
-
-      {onNavigate && (
-        <SetupChecklist
-          sourceCount={connections.length}
-          ragEnabled={ragEnabled}
-          refreshKey={ragListVersion}
-          onNavigate={onNavigate}
-        />
-      )}
 
       {/* Tab bar — matches the McpDetailView section tabs style */}
       <div className="border-b border-gray-700">

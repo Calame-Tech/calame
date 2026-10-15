@@ -15,12 +15,39 @@ vi.mock('../../context/SessionContext.js', () => ({
 // module so the license boundary and heavy imports are avoided.
 vi.mock('@calame-ee/rag-core/web', () => ({
   KnowledgeBaseManager: () => <div>KB Manager (mock)</div>,
-  RagAccessSelector: () => <div>Rag selector (mock)</div>,
+  // Embedded mode: reports its selection to the page instead of saving it.
+  RagAccessSelector: ({
+    onSelectionChange,
+  }: {
+    onSelectionChange?: (p: { sources: string[]; scopes: Record<string, unknown> }) => void;
+  }) => (
+    <div>
+      Rag selector (mock)
+      <button
+        type="button"
+        onClick={() =>
+          onSelectionChange?.({
+            sources: ['kb1'],
+            scopes: {
+              kb1: {
+                kind: 'document',
+                mode: 'allowList',
+                allowedFolders: ['docs'],
+                allowedDocuments: [],
+              },
+            },
+          })
+        }
+      >
+        Pick folder (mock)
+      </button>
+    </div>
+  ),
 }));
 
 const configurations: Configuration[] = [{ name: 'sales', label: 'Sales' }];
 
-function renderPage(setView = vi.fn()) {
+function renderPage(setView = vi.fn(), handleConfigurationSave = vi.fn(async () => true)) {
   render(
     <ConfigurationDetailPage
       view={{ page: 'config-detail', configName: 'sales' }}
@@ -32,7 +59,7 @@ function renderPage(setView = vi.fn()) {
       scanning={false}
       globalMaskingRules={[]}
       handleScanPii={vi.fn()}
-      handleConfigurationSave={vi.fn(async () => true)}
+      handleConfigurationSave={handleConfigurationSave}
       handleConfigurationDelete={vi.fn(async () => {})}
       handleSchemaLoaded={vi.fn()}
       handlePiiOverride={vi.fn()}
@@ -73,6 +100,29 @@ describe('ConfigurationDetailPage', () => {
     fireEvent.click(screen.getByText('Knowledge bases'));
     expect(await screen.findByText('Rag selector (mock)')).toBeTruthy();
     await flushEffects();
+  });
+
+  it('has a single Save that persists the knowledge-base selection shown on screen', async () => {
+    vi.mocked(useSession).mockReturnValue(makeSession({ ragEnabled: true }));
+    const save = vi.fn(async (_config: Configuration) => true);
+    renderPage(vi.fn(), save);
+    fireEvent.click(screen.getByText('Knowledge bases'));
+    fireEvent.click(await screen.findByText('Pick folder (mock)'));
+    // Switching tabs keeps the unsaved selection (the selector stays mounted).
+    fireEvent.click(screen.getByText('Databases'));
+
+    const saveButtons = screen.getAllByRole('button', { name: 'Save changes' });
+    expect(saveButtons).toHaveLength(1);
+    expect(saveButtons[0]).not.toBeDisabled();
+    fireEvent.click(saveButtons[0]!);
+    await flushEffects();
+
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(save.mock.calls[0]![0]).toMatchObject({
+      name: 'sales',
+      sources: ['kb1'],
+      scopes: { kb1: { kind: 'document', allowedFolders: ['docs'] } },
+    });
   });
 
   it('disables Save until the configuration is edited, then enables it', () => {

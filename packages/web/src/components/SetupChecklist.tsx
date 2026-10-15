@@ -1,7 +1,9 @@
-// Guided first-run path in three steps: 1. connect a source, 2. create the
-// MCP, 3. use it from a client. Each step reflects server-side resources (see
-// lib/setup-progress.ts) and links to the existing screen that performs it —
-// this component never creates anything itself.
+// Guided first-run path in four steps: 1. connect data, 2. create a data
+// profile that contains it, 3. create an MCP attached to that profile,
+// 4. connect / test the MCP from a client. Shown as a floating card on every
+// page until the first MCP is used; each step reflects server-side resources
+// (see lib/setup-progress.ts) and links to the existing screen that performs
+// it — this component never creates anything itself.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'use-intl/react';
@@ -9,7 +11,10 @@ import { apiFetch } from '../lib/api.js';
 import {
   computeSetupProgress,
   mcpProfileNames,
+  SETUP_STEPS,
+  type DataProfileSummary,
   type SavedProfileSummary,
+  type SetupStepId,
   type SetupProgress,
   type SetupStepStatus,
 } from '../lib/setup-progress.js';
@@ -18,27 +23,33 @@ import type { AuditLogEntry } from '../types/schema.js';
 import type { View } from '../router/index.js';
 
 /**
- * Set once the user hides the guide or a client call has been observed, so an
- * installation that already works never shows it (nor queries for it) again.
+ * Set once a client call has been observed, so an installation that already
+ * works never shows the guide (nor queries for it) again.
  */
 export const SETUP_CHECKLIST_HIDDEN_KEY = 'calame.setupChecklist.hidden';
+/** Set while the user has folded the card; a button reopens it. */
+export const SETUP_CHECKLIST_COLLAPSED_KEY = 'calame.setupChecklist.collapsed';
+
+/** Window event asking the guide to re-check the server (e.g. a source list refresh). */
+export const SETUP_REFRESH_EVENT = 'calame:setup-refresh';
 
 /** Upper bound on per-MCP audit lookups — first runs have one or two MCPs. */
 const MAX_PROFILES_CHECKED = 10;
 
-function isHidden(): boolean {
+function readFlag(key: string): boolean {
   try {
-    return localStorage.getItem(SETUP_CHECKLIST_HIDDEN_KEY) === '1';
+    return localStorage.getItem(key) === '1';
   } catch {
     return false;
   }
 }
 
-function persistHidden(): void {
+function writeFlag(key: string, value: boolean): void {
   try {
-    localStorage.setItem(SETUP_CHECKLIST_HIDDEN_KEY, '1');
+    if (value) localStorage.setItem(key, '1');
+    else localStorage.removeItem(key);
   } catch {
-    // Storage unavailable (private mode…): the guide just hides for this session.
+    // Storage unavailable (private mode…): the state just lasts for this session.
   }
 }
 
@@ -51,8 +62,8 @@ interface SetupChecklistProps {
    */
   ragEnabled?: boolean;
   onNavigate: (view: View) => void;
-  /** Bump to force a reload (e.g. the session `dataVersion`). */
-  refreshKey?: number;
+  /** Any change (by identity) forces a reload, e.g. a navigation or a save. */
+  refreshKey?: unknown;
 }
 
 type LoadState =
@@ -61,6 +72,7 @@ type LoadState =
   | { status: 'error' }
   | {
       status: 'ready';
+      dataProfiles: DataProfileSummary[];
       profiles: SavedProfileSummary[];
       audit: AuditLogEntry[];
       ragSources: RagSourceReadiness[];
@@ -73,24 +85,32 @@ async function fetchJson<T>(url: string): Promise<T> {
 }
 
 /**
- * Saved profiles, plus at most one successful audited call per MCP that has
- * data — a targeted lookup (`result=success&limit=1`) instead of pulling the
+ * Data profiles and saved MCPs, plus at most one successful audited call per
+ * MCP attached to a data profile with data — a targeted lookup (`result=success&limit=1`) instead of pulling the
  * whole recent audit log on every refresh.
  */
 async function fetchSetupResources(ragEnabled: boolean): Promise<{
+  dataProfiles: DataProfileSummary[];
   profiles: SavedProfileSummary[];
   audit: AuditLogEntry[];
   ragSources: RagSourceReadiness[];
 }> {
   const ragSourcesPromise = ragEnabled ? fetchRagReadiness() : Promise.resolve([]);
-  const profilesData = await fetchJson<{
-    found?: boolean;
-    profiles?: Record<string, Omit<SavedProfileSummary, 'name'>>;
-  }>('/api/profiles/load');
+  const [configurationsData, profilesData] = await Promise.all([
+    fetchJson<{ configurations?: DataProfileSummary[] }>('/api/configurations'),
+    fetchJson<{
+      found?: boolean;
+      profiles?: Record<string, Omit<SavedProfileSummary, 'name'>>;
+    }>('/api/profiles/load'),
+  ]);
+  const dataProfiles = (configurationsData.configurations ?? []).map((c) => ({
+    name: c.name,
+    sources: c.sources,
+  }));
   const profiles = Object.entries(profilesData.found ? (profilesData.profiles ?? {}) : {}).map(
     ([name, p]) => ({ name, configurations: p.configurations, sources: p.sources }),
   );
-  const mcpNames = mcpProfileNames(profiles).slice(0, MAX_PROFILES_CHECKED);
+  const mcpNames = mcpProfileNames(profiles, dataProfiles).slice(0, MAX_PROFILES_CHECKED);
   const auditPages = await Promise.all(
     mcpNames.map((name) =>
       fetchJson<{ entries?: AuditLogEntry[] }>(
@@ -99,6 +119,7 @@ async function fetchSetupResources(ragEnabled: boolean): Promise<{
     ),
   );
   return {
+    dataProfiles,
     profiles,
     audit: auditPages.flatMap((page) => page.entries ?? []),
     ragSources: await ragSourcesPromise,
@@ -112,7 +133,8 @@ export default function SetupChecklist({
   refreshKey = 0,
 }: SetupChecklistProps) {
   const t = useTranslations('onboarding.checklist');
-  const [hidden, setHidden] = useState(isHidden);
+  const [hidden, setHidden] = useState(() => readFlag(SETUP_CHECKLIST_HIDDEN_KEY));
+  const [collapsed, setCollapsed] = useState(() => readFlag(SETUP_CHECKLIST_COLLAPSED_KEY));
   const [state, setState] = useState<LoadState>({ status: 'idle' });
   // Only the latest request may update the state: a slow response must not
   // overwrite a newer one (e.g. a refresh triggered by a new source).
@@ -144,9 +166,11 @@ export default function SetupChecklist({
       if (document.visibilityState !== 'hidden') void load();
     };
     window.addEventListener('focus', onFocus);
+    window.addEventListener(SETUP_REFRESH_EVENT, onFocus);
     document.addEventListener('visibilitychange', onFocus);
     return () => {
       window.removeEventListener('focus', onFocus);
+      window.removeEventListener(SETUP_REFRESH_EVENT, onFocus);
       document.removeEventListener('visibilitychange', onFocus);
     };
   }, [hidden, load]);
@@ -156,51 +180,133 @@ export default function SetupChecklist({
       ? computeSetupProgress({
           sourceCount,
           ragSources: state.ragSources,
+          dataProfiles: state.dataProfiles,
           savedProfiles: state.profiles,
           auditEntries: state.audit,
         })
       : null;
 
-  // A saved source that is not indexed must not read as "connected": name it
-  // (failed sync first) and point to it instead of to "Add a source".
-  const pendingSource =
-    progress && progress.source !== 'done'
-      ? (progress.failedSources[0] ?? progress.notReadySources[0] ?? null)
-      : null;
-  const sourceHint =
-    progress?.source === 'done'
-      ? t('source.done')
-      : pendingSource
-        ? t(pendingSource.state === 'failed' ? 'source.syncFailed' : 'source.notReady', {
-            name: pendingSource.name,
-          })
-        : t('source.hint');
-
+  // The loop is complete once a client has used the first MCP: the guide
+  // disappears for good.
   const allDone = progress?.allDone ?? false;
   useEffect(() => {
     if (!allDone) return;
-    persistHidden();
+    writeFlag(SETUP_CHECKLIST_HIDDEN_KEY, true);
     setHidden(true);
   }, [allDone]);
 
-  const hide = () => {
-    persistHidden();
-    setHidden(true);
+  const setFolded = (value: boolean) => {
+    writeFlag(SETUP_CHECKLIST_COLLAPSED_KEY, value);
+    setCollapsed(value);
   };
 
   // Nothing is shown before the first answer, so an installation that already
   // has a used MCP never flashes the guide.
   if (hidden || allDone || state.status === 'idle') return null;
 
+  // A saved source that is not indexed must not read as "connected": name it
+  // (failed sync first) and point to it instead of to "Add data".
+  const pendingSource =
+    progress && progress.source !== 'done'
+      ? (progress.failedSources[0] ?? progress.notReadySources[0] ?? null)
+      : null;
+
+  const steps: Record<SetupStepId, Omit<SetupStepProps, 'index' | 'status'>> | null = progress
+    ? {
+        source: {
+          title: t('source.title'),
+          hint:
+            progress.source === 'done'
+              ? t('source.done')
+              : pendingSource
+                ? t(pendingSource.state === 'failed' ? 'source.syncFailed' : 'source.notReady', {
+                    name: pendingSource.name,
+                  })
+                : t('source.hint'),
+          alert: progress.source !== 'done' && progress.failedSources.length > 0,
+          actionLabel: pendingSource ? t('source.openSource') : t('source.action'),
+          onAction: () =>
+            onNavigate(pendingSource ? { page: 'sources', tab: 'knowledge' } : { page: 'sources' }),
+        },
+        dataProfile: {
+          title: t('dataProfile.title'),
+          hint:
+            progress.dataProfile === 'done'
+              ? t('dataProfile.done')
+              : progress.dataProfile === 'current'
+                ? t('dataProfile.hint')
+                : t('dataProfile.blocked'),
+          actionLabel:
+            progress.dataProfile === 'done' ? t('dataProfile.openAction') : t('dataProfile.action'),
+          onAction: () =>
+            progress.dataProfile === 'done' && progress.dataProfileName
+              ? onNavigate({ page: 'config-detail', configName: progress.dataProfileName })
+              : onNavigate({ page: 'configurations' }),
+        },
+        mcp: {
+          title: t('mcp.title'),
+          hint:
+            progress.mcp === 'done'
+              ? t('mcp.done')
+              : progress.mcp === 'current'
+                ? t('mcp.hint')
+                : t('mcp.blocked'),
+          actionLabel: progress.mcp === 'done' ? t('mcp.openAction') : t('mcp.action'),
+          onAction: () =>
+            progress.mcp === 'done' && progress.mcpName
+              ? onNavigate({ page: 'mcp-detail', profileName: progress.mcpName })
+              : onNavigate({ page: 'mcp-list' }),
+        },
+        client: {
+          title: t('client.title'),
+          hint:
+            progress.client === 'done'
+              ? t('client.done')
+              : progress.client === 'current'
+                ? t('client.hint')
+                : t('client.blocked'),
+          actionLabel: t('client.action'),
+          onAction: progress.mcpName
+            ? () =>
+                onNavigate({
+                  page: 'mcp-detail',
+                  profileName: progress.mcpName as string,
+                  activeSection: 'connect',
+                })
+            : undefined,
+          secondaryActionLabel: progress.client === 'current' ? t('client.recheck') : undefined,
+          onSecondaryAction: () => void load(),
+        },
+      }
+    : null;
+
+  if (collapsed) {
+    return (
+      <button
+        type="button"
+        onClick={() => setFolded(false)}
+        aria-label={t('showAriaLabel')}
+        className="fixed bottom-4 right-4 z-40 rounded-full bg-os-600 hover:bg-os-500 text-white text-xs font-semibold px-4 py-2 shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-os-300"
+      >
+        {progress
+          ? t('reopen', { done: progress.doneCount, total: SETUP_STEPS.length })
+          : t('title')}
+      </button>
+    );
+  }
+
   return (
-    <section className="card-primary p-4" aria-labelledby="setup-checklist-title">
+    <section
+      className="fixed bottom-4 right-4 z-40 w-[22rem] max-w-[calc(100vw-2rem)] max-h-[calc(100vh-2rem)] overflow-y-auto card-primary p-4 shadow-2xl"
+      aria-labelledby="setup-checklist-title"
+    >
       <div className="flex items-start justify-between gap-3">
         <h2 id="setup-checklist-title" className="text-sm font-semibold text-gray-100">
           {t('title')}
         </h2>
         <button
           type="button"
-          onClick={hide}
+          onClick={() => setFolded(true)}
           aria-label={t('hideAriaLabel')}
           className="flex-none text-[11px] text-gray-500 hover:text-gray-300 focus:outline-none focus-visible:ring-1 focus-visible:ring-os-500/40 rounded"
         >
@@ -231,58 +337,25 @@ export default function SetupChecklist({
         </div>
       )}
 
-      {progress && (
+      {progress && steps && progress.currentStep && (
+        <p className="text-xs text-gray-300 mb-3" data-testid="setup-current-step">
+          {t('currentStep', { step: steps[progress.currentStep].title })}
+          {progress.nextStep && (
+            <>
+              <br />
+              <span className="text-gray-500">
+                {t('nextStep', { step: steps[progress.nextStep].title })}
+              </span>
+            </>
+          )}
+        </p>
+      )}
+
+      {progress && steps && (
         <ol className="space-y-2">
-          <SetupStep
-            index={1}
-            status={progress.source}
-            title={t('source.title')}
-            hint={sourceHint}
-            alert={progress.source !== 'done' && progress.failedSources.length > 0}
-            actionLabel={pendingSource ? t('source.openSource') : t('source.action')}
-            onAction={() =>
-              onNavigate(
-                pendingSource ? { page: 'sources', tab: 'knowledge' } : { page: 'sources' },
-              )
-            }
-          />
-          <SetupStep
-            index={2}
-            status={progress.mcp}
-            title={t('mcp.title')}
-            hint={progress.mcp === 'done' ? t('mcp.done') : t('mcp.hint')}
-            actionLabel={progress.mcp === 'done' ? t('mcp.openAction') : t('mcp.action')}
-            onAction={() =>
-              progress.mcp === 'done' && progress.mcpName
-                ? onNavigate({ page: 'mcp-detail', profileName: progress.mcpName })
-                : onNavigate({ page: 'mcp-list' })
-            }
-          />
-          <SetupStep
-            index={3}
-            status={progress.client}
-            title={t('client.title')}
-            hint={
-              progress.client === 'done'
-                ? t('client.done')
-                : progress.client === 'current'
-                  ? t('client.hint')
-                  : t('client.blocked')
-            }
-            actionLabel={t('client.action')}
-            onAction={
-              progress.mcpName
-                ? () =>
-                    onNavigate({
-                      page: 'mcp-detail',
-                      profileName: progress.mcpName as string,
-                      activeSection: 'connect',
-                    })
-                : undefined
-            }
-            secondaryActionLabel={progress.client === 'current' ? t('client.recheck') : undefined}
-            onSecondaryAction={() => void load()}
-          />
+          {SETUP_STEPS.map((id, i) => (
+            <SetupStep key={id} index={i + 1} status={progress[id]} {...steps[id]} />
+          ))}
         </ol>
       )}
     </section>

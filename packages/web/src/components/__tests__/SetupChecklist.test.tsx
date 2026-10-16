@@ -159,6 +159,25 @@ describe('SetupChecklist', () => {
     });
   });
 
+  it('renders step actions under the title and hint, not beside them', async () => {
+    installServer({ configurations: [salesData], profiles: salesMcp });
+    render(<SetupChecklist sourceCount={1} onNavigate={vi.fn()} />);
+    await screen.findAllByText('1. Connect data');
+    // Step 4 has two actions; done steps keep a single one. All must sit in the
+    // text column so the title and hint keep the full card width.
+    expect(screen.getByRole('button', { name: 'Check again' })).toBeTruthy();
+    const items = screen.getAllByRole('listitem');
+    expect(items).toHaveLength(4);
+    const buttons = items.flatMap((li) => Array.from(li.querySelectorAll('button')));
+    expect(buttons).toHaveLength(5);
+    for (const button of buttons) {
+      const textColumn = button.closest('li')?.querySelector(':scope > div');
+      expect(textColumn).toBeTruthy();
+      expect(textColumn?.contains(button)).toBe(true);
+      expect(button.parentElement?.className).toContain('flex-wrap');
+    }
+  });
+
   it('queries the audit log per attached MCP for one successful call only', async () => {
     const server = installServer({ configurations: [salesData], profiles: salesMcp });
     render(<SetupChecklist sourceCount={1} onNavigate={vi.fn()} />);

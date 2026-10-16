@@ -493,29 +493,33 @@ function SetupStep({
         >
           {hint}
         </p>
+        {((onAction && status !== 'todo') || (secondaryActionLabel && onSecondaryAction)) && (
+          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+            {onAction && status !== 'todo' && (
+              <button
+                type="button"
+                onClick={onAction}
+                className={`text-[11px] font-semibold rounded-md px-2.5 py-1 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-os-500/40 ${
+                  status === 'current'
+                    ? 'bg-os-600 hover:bg-os-500 text-white'
+                    : 'text-os-300 bg-os-500/10 hover:bg-os-500/20'
+                }`}
+              >
+                {actionLabel}
+              </button>
+            )}
+            {secondaryActionLabel && onSecondaryAction && (
+              <button
+                type="button"
+                onClick={onSecondaryAction}
+                className="text-[11px] text-os-300 hover:underline rounded focus:outline-none focus-visible:ring-1 focus-visible:ring-os-500/40"
+              >
+                {secondaryActionLabel}
+              </button>
+            )}
+          </div>
+        )}
       </div>
-      {onAction && status !== 'todo' && (
-        <button
-          type="button"
-          onClick={onAction}
-          className={`flex-none text-[11px] font-semibold rounded-md px-2.5 py-1 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-os-500/40 ${
-            status === 'current'
-              ? 'bg-os-600 hover:bg-os-500 text-white'
-              : 'text-os-300 bg-os-500/10 hover:bg-os-500/20'
-          }`}
-        >
-          {actionLabel}
-        </button>
-      )}
-      {secondaryActionLabel && onSecondaryAction && (
-        <button
-          type="button"
-          onClick={onSecondaryAction}
-          className="flex-none text-[11px] text-os-300 hover:underline rounded focus:outline-none focus-visible:ring-1 focus-visible:ring-os-500/40"
-        >
-          {secondaryActionLabel}
-        </button>
-      )}
     </li>
   );
 }

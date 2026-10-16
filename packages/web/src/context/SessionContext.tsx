@@ -20,6 +20,14 @@ export interface SessionUser {
 export interface SessionState {
   /** True once the initial auth/health probe has resolved. */
   authChecked: boolean;
+  /**
+   * The auth probe could not reach the server (network error or 5xx). Unlike
+   * an invalid/expired session, this must not send the user to the login
+   * page: the stored session may still be perfectly valid.
+   */
+  authCheckFailed: boolean;
+  /** Re-run the auth probe (after {@link authCheckFailed}). */
+  retryAuthCheck: () => void;
   /** Admin authenticated. */
   authenticated: boolean;
   /** Whether the backend requires admin auth at all. */
@@ -58,6 +66,8 @@ const SessionContext = createContext<SessionState | null>(null);
  */
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [authChecked, setAuthChecked] = useState(false);
+  const [authCheckFailed, setAuthCheckFailed] = useState(false);
+  const [authCheckAttempt, setAuthCheckAttempt] = useState(0);
   const [authenticated, setAuthenticated] = useState(false);
   const [ragEnabled, setRagEnabled] = useState(false);
   const [ragDisabledReason, setRagDisabledReason] = useState<string | null>(null);
@@ -75,6 +85,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setAuthChecked(true);
       return;
     }
+    setAuthChecked(false);
+    setAuthCheckFailed(false);
     (async () => {
       try {
         // Always check both admin and user auth status and health (for ragEnabled).
@@ -83,6 +95,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           apiFetch('/api/auth/user-status', { credentials: 'include' }),
           apiFetch('/health').catch(() => null),
         ]);
+        if (!adminRes.ok || !userRes.ok) {
+          // Server unreachable or failing — the session state is unknown,
+          // not invalid.
+          setAuthCheckFailed(true);
+          return;
+        }
 
         if (healthRes?.ok) {
           try {
@@ -116,12 +134,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           }
         }
       } catch {
-        // Network error — keep defaults (not authenticated)
+        // Network error — the session state is unknown, not invalid.
+        setAuthCheckFailed(true);
       } finally {
         setAuthChecked(true);
       }
     })();
-  }, []);
+  }, [authCheckAttempt]);
+
+  const retryAuthCheck = useCallback(() => setAuthCheckAttempt((n) => n + 1), []);
 
   // In-progress MCP creation drafts never outlive the admin session (logout,
   // expired or revoked session), so they cannot leak to the next account.
@@ -139,10 +160,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       /* ignore network errors */
     }
     setAuthenticated(false);
+    setCurrentUser(null);
   }, []);
 
   const value: SessionState = {
     authChecked,
+    authCheckFailed,
+    retryAuthCheck,
     authenticated,
     authRequired,
     needsSetup,

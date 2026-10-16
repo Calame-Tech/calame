@@ -6,6 +6,8 @@
     "rowCount": "{count, plural, one {# ligne} other {# lignes}}",
     "dashboard": "Tableau de bord",
     "loading": "Chargement…",
+    "serverUnreachable": "Impossible de joindre le serveur Calame. Votre session est conservée.",
+    "retry": "Réessayer",
     "breadcrumbAriaLabel": "Fil d’Ariane",
     "noOptionAvailable": "Aucune option disponible",
     "selectPlaceholder": "Sélectionner…"

@@ -6,6 +6,8 @@
     "rowCount": "{count, plural, one {# row} other {# rows}}",
     "dashboard": "Dashboard",
     "loading": "Loading…",
+    "serverUnreachable": "Cannot reach the Calame server. Your session is kept.",
+    "retry": "Retry",
     "breadcrumbAriaLabel": "Breadcrumb",
     "noOptionAvailable": "No option available",
     "selectPlaceholder": "Select…"

@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiGet, ApiError, type RagSourceListResponse, type RagSourceWithCounts } from './api.js';
 import { RAG_STRINGS } from './onboarding-strings.js';
+import type { SourceJobInfo } from './useActiveSyncJobs.js';
 import { KB_MANAGER_STRINGS as T } from './strings/kb-manager.js';
 
 /**
@@ -99,4 +100,51 @@ export function useSourceList(
   }, []);
 
   return { sources, sourcesLoaded, refreshing: pendingRequests > 0, refreshSources };
+}
+
+/**
+ * Refresh rule shared by every view of the source list (Sources and the
+ * data-configuration knowledge tab, tester feedback #12): re-read the list
+ * once a sync job finishes.
+ *
+ * `jobMap` only carries job status (from /api/rag/jobs) — it never updates
+ * `source.lastSyncAt` / connector-level error state, which live on the
+ * `sources` array and are only (re)fetched by refreshSources(). Without
+ * this, a source whose sync just finished would clear its "in progress"
+ * badge but then fall through to showing a STALE lastSyncAt — e.g. "Jamais
+ * synchronisé" right after a successful first sync — until the page was
+ * manually reloaded. Detect the active → done transition here and refresh
+ * the source list once it happens.
+ * A job can also start AND finish between two polls (empty or missing
+ * folder), so a new terminal job id counts as "just finished" too.
+ */
+export function useRefreshWhenSyncFinishes(
+  jobMap: Map<string, SourceJobInfo>,
+  refreshSources: () => Promise<void>,
+): void {
+  const previouslyActiveIdsRef = useRef<Set<string>>(new Set());
+  const previousTerminalIdsRef = useRef<Map<string, string | null> | null>(null);
+  useEffect(() => {
+    const currentlyActive = new Set(
+      [...jobMap.entries()].filter(([, info]) => info.activeJob !== null).map(([id]) => id),
+    );
+    const previousTerminal = previousTerminalIdsRef.current;
+    const newTerminal =
+      previousTerminal !== null &&
+      [...jobMap.entries()].some(
+        ([id, info]) =>
+          previousTerminal.has(id) && previousTerminal.get(id) !== info.lastTerminalJobId,
+      );
+    const justFinished =
+      newTerminal || [...previouslyActiveIdsRef.current].some((id) => !currentlyActive.has(id));
+    previouslyActiveIdsRef.current = currentlyActive;
+    if (jobMap.size > 0) {
+      previousTerminalIdsRef.current = new Map(
+        [...jobMap.entries()].map(([id, info]) => [id, info.lastTerminalJobId]),
+      );
+    }
+    if (justFinished) {
+      void refreshSources();
+    }
+  }, [jobMap, refreshSources]);
 }

@@ -32,6 +32,7 @@ import type {
 } from '../types/schema.js';
 import type { View } from '../router/index.js';
 import { useSession } from '../context/SessionContext.js';
+import { useKnownRagSourcesCache, type KnownListCache } from '../lib/known-rag-sources.js';
 
 /**
  * Lazy-loaded RagAccessSelector from the ee package. Only loaded when the user
@@ -88,7 +89,9 @@ export default function ConfigurationDetailPage({
   handlePiiOverride,
   handleGlobalMaskingRulesChange,
 }: ConfigurationDetailPageProps) {
-  const { ragEnabled } = useSession();
+  const { ragEnabled, currentUser } = useSession();
+  // Same knowledge-base list as the Sources page (tester feedback #12).
+  const ragSourcesCache = useKnownRagSourcesCache<never>(currentUser?.email ?? '');
   const t = useTranslations('configurationDetail');
   const tCommon = useTranslations('common');
   // Reported up from ConfigurationDetailView (Lot D3) so the breadcrumb and
@@ -173,6 +176,7 @@ export default function ConfigurationDetailPage({
         }
         onDirtyChange={setIsDirty}
         ragEnabled={ragEnabled}
+        ragSourcesCache={ragSourcesCache}
       />
     </div>
   );
@@ -201,6 +205,8 @@ interface ConfigurationDetailViewProps {
   onNavigateToEditConnection?: (connName: string) => void;
   /** Whether the RAG runtime is available on this instance. Controls visibility of the Knowledge tab. */
   ragEnabled?: boolean;
+  /** Known knowledge-base list shared with the Sources page (opaque: EE item type). */
+  ragSourcesCache?: KnownListCache<never>;
   /** Reports the current dirty state up to the wrapper (Lot D3) so it can guard the breadcrumb. */
   onDirtyChange?: (dirty: boolean) => void;
 }
@@ -223,6 +229,7 @@ function ConfigurationDetailView({
   onNavigateToConnections,
   onNavigateToEditConnection,
   ragEnabled = false,
+  ragSourcesCache,
   onDirtyChange,
 }: ConfigurationDetailViewProps) {
   const t = useTranslations('configurationDetail');
@@ -868,12 +875,14 @@ function ConfigurationDetailView({
             }
           >
             <RagAccessSelector
+              key={ragSourcesCache?.scope}
               profileName={configName}
               initialScopes={configDocumentScopes}
               initialSources={configDocumentSources}
               // Single save action: the header Save persists this selection
               // together with the Databases tab (no second, diverging Save).
               onSelectionChange={setPendingDocSelection}
+              sourcesCache={ragSourcesCache}
             />
           </Suspense>
         </div>

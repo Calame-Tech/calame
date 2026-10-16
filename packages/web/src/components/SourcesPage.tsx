@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useCallback, useMemo, Suspense } from 'react';
+import React, { useState, useEffect, useCallback, Suspense } from 'react';
 import { useTranslations } from 'use-intl/react';
-import { apiFetch, getCurrentTenant } from '../lib/api.js';
-import { knownRagSourcesCache, type KnownListCache } from '../lib/known-rag-sources.js';
+import { apiFetch } from '../lib/api.js';
+import { useKnownRagSourcesCache, type KnownListCache } from '../lib/known-rag-sources.js';
 import type { NamedConnection, DatabaseSchema } from '../types/schema.js';
 import ConnectionManager from './ConnectionManager.js';
 import AddSourceModal from './AddSourceModal.js';
@@ -79,11 +79,7 @@ export default function SourcesPage({
 }: SourcesPageProps) {
   const t = useTranslations('sources.sourcesPage');
   const [showAddModal, setShowAddModal] = useState(false);
-  const tenant = getCurrentTenant();
-  const sourcesCache = useMemo(
-    () => knownRagSourcesCache<never>(account, tenant),
-    [account, tenant],
-  );
+  const sourcesCache = useKnownRagSourcesCache<never>(account);
   const [ragSourceCount, setRagSourceCount] = useState(() => sourcesCache.get()?.length ?? 0);
   // On every knowledge-base list refresh, the floating setup guide re-reads
   // the sources' sync state (a new source is saved before it is indexed).
@@ -240,7 +236,7 @@ export default function SourcesPage({
               {/* Keyed by account/workspace: switching remounts the manager
                   with that scope's own list, never the previous one. */}
               <KnowledgeBaseManagerComponent
-                key={JSON.stringify([account, tenant])}
+                key={sourcesCache.scope}
                 onSourcesChange={handleRagSourcesChange}
                 onCreateProfileFromSource={onCreateProfileFromSource}
                 sourcesCache={sourcesCache}

@@ -236,7 +236,9 @@
       "effectiveHeading": "Effective Tables (merged from {count, plural, one {# configuration} other {# configurations}})",
       "noTablesSelected": "No tables selected in configurations.",
       "colsLabel": "{count} cols",
-      "toolTitle": "Tool: {tool}"
+      "toolTitle": "Tool: {tool}",
+      "suggestAttach": "Attach the data configuration “{label}” to this server?",
+      "suggestAttachButton": "Attach"
     },
     "users": {
       "heading": "Users with access to {name}"
@@ -284,6 +286,12 @@
       "tableToolsHelp": "Configure each table individually: exposed tools, row limit, filterable/groupable columns, and sensitive data masking.",
       "filterPlaceholder": "Filter tables...",
       "filterHelp": "Filter the displayed tables by name."
+    },
+    "nextStep": {
+      "description": "Next step: expose this data configuration through an MCP server.",
+      "createMcp": "Create an MCP server with this configuration",
+      "attachLabel": "Existing MCP server",
+      "attachMcp": "Attach to this server…"
     }
   },
   "configGraph": {
@@ -1216,6 +1224,16 @@
           "protocol": "protocol error",
           "backend": "server error"
         }
+      },
+      "success": {
+        "pill": "Your MCP works ✓",
+        "congrats": "Congratulations, your MCP server works!",
+        "next": "What you can do next:",
+        "openMcp": "Open the MCP server",
+        "auditLog": "See the calls in the audit log",
+        "addData": "Add more data",
+        "closeHint": "The guide will not come back once closed.",
+        "close": "Close the guide"
       }
     }
   },
@@ -1247,7 +1265,8 @@
       "maskedColumnsBadge": "{count, plural, one {# masked column} other {# masked columns}}",
       "mountedByPrefix": "Mounted by",
       "stopped": "(stopped)",
-      "notMounted": "Not mounted by any server"
+      "notMounted": "Not mounted by any server",
+      "includedSource": "Included source: {name} (fully accessible, editable later in the Knowledge bases tab)"
     },
     "sourcesPage": {
       "kbDisabledDefault": "Knowledge base features are unavailable on this instance",
@@ -1462,7 +1481,8 @@
         "eyebrow": "MCP SERVERS",
         "help": "Start, stop and manage your MCP servers exposed to AI clients",
         "activeSuffix": "· {count} active",
-        "servingOnPort": "serving on port {port}",
+        "servingAt": "serving at {address}",
+        "servingAddressUnknown": "serving (address not available yet)",
         "noServerRunning": "no server running",
         "on": "ON",
         "off": "OFF",
@@ -2146,7 +2166,8 @@
           "responseMode": "Natural answers: plain language, no table or column names.",
           "documentWrite": "Read-only: the MCP cannot create or edit files.",
           "changeLater": "You can change them later under \"Advanced options\" on the MCP page."
-        }
+        },
+        "includedConfiguration": "Included data configuration: {label}"
       },
       "newServerCard": "New MCP Server",
       "deleteConfirm": {
@@ -2278,7 +2299,9 @@
         "connectFailed": "Failed to connect to Claude Desktop.",
         "connectNetworkError": "Network error connecting to Claude Desktop.",
         "snippetLoadFailed": "Failed to load the manual configuration snippet.",
-        "snippetLoadNetworkError": "Network error loading the manual configuration snippet."
+        "snippetLoadNetworkError": "Network error loading the manual configuration snippet.",
+        "createKeyFailed": "Couldn't create the API key.",
+        "createKeyNetworkError": "The API key could not be created: the server is unreachable."
       },
       "heading": "Connect your AI",
       "headingHelp": "Wire this MCP server into Claude Desktop, or grab a manual snippet for other MCP clients.",
@@ -2291,7 +2314,14 @@
       "connectingButton": "Connecting…",
       "notFound": "Claude Desktop wasn't found on this machine.",
       "manualToggle": "Other clients / another machine",
-      "snippetHostPlaceholder": "Replace <code1>YOUR-CALAME-HOST</code1> and <code2>TOKEN</code2> with your Calame host and an API key."
+      "snippetTokenPlaceholder": "Replace <code>TOKEN</code> with an API key.",
+      "createKey": {
+        "button": "Create an API key and insert it",
+        "creating": "Creating key…",
+        "retry": "Try again",
+        "keyLabel": "Connection snippet",
+        "revealedOnce": "A new API key has been inserted into the snippet below. It is shown only once: copy the snippet now — it will not be displayed again. You can revoke it from the API keys tab."
+      }
     }
   },
   "setupLogin": {

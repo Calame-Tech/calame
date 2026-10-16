@@ -9,6 +9,7 @@ import {
 } from '@calame/core';
 import { readConfigurationsFile } from './configurations.js';
 import { getTenantId } from '../tenancy.js';
+import { resolveMcpOrigin } from '../utils/mcp-url.js';
 
 /**
  * True when the profile carries at least one document (knowledge / RAG) scope —
@@ -133,9 +134,13 @@ export function registerServeStatusRoute(app: Express, state: AppState): void {
           endpoint: `/mcp/${name}`,
         };
       }
+      // Effective MCP address — same helper as the Connexion snippet, so the
+      // dashboard never reports a placeholder port.
+      const mcpOrigin = resolveMcpOrigin(req, state.config?.port);
       res.json({
         success: true,
         serving: state.serveMode,
+        mcpOrigin,
         profiles: profileNames,
         profileStatuses,
         hasDatabase: state.connections.size > 0,

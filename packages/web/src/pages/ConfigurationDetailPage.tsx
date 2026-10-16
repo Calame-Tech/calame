@@ -10,6 +10,7 @@ import { Button, EmptyState, Eyebrow, Breadcrumb } from '../components/ui/index.
 import HelpTip from '../components/HelpTip.js';
 import SchemaExplorer from '../components/SchemaExplorer.js';
 import ConfigPanel from '../components/ConfigPanel.js';
+import McpNextStepCard from '../components/McpNextStepCard.js';
 import { setsToArrays, arraysToSets } from '../lib/profiles.js';
 import {
   getConfigurationSelectedTables,
@@ -26,6 +27,7 @@ import type {
   ColumnMasking,
   GlobalMaskingRule,
   NamedConnection,
+  Profile,
   ScopeSelection,
 } from '../types/schema.js';
 import type { View } from '../router/index.js';
@@ -50,6 +52,8 @@ interface ConfigurationDetailPageProps {
   view: Extract<View, { page: 'config-detail' }>;
   setView: Dispatch<SetStateAction<View>>;
   configurations: Configuration[];
+  /** MCP servers — for the guided "create / attach a server" next step. */
+  profiles?: Profile[];
   connections: NamedConnection[];
   connectionSchemas: Record<string, DatabaseSchema>;
   piiDetections: Record<string, Record<string, PiiDetection>> | null;
@@ -71,6 +75,7 @@ export default function ConfigurationDetailPage({
   view,
   setView,
   configurations,
+  profiles = [],
   connections,
   connectionSchemas,
   piiDetections,
@@ -90,6 +95,11 @@ export default function ConfigurationDetailPage({
   // "manage connections" links can warn before discarding unsaved edits.
   const [isDirty, setIsDirty] = useState(false);
   const guardedNav = (fn: () => void) => guardedNavigate(isDirty, fn, t('unsavedChangesConfirm'));
+  const config = configurations.find((c) => c.name === view.configName);
+  // Guided next step: a configuration with sources that no server mounts yet.
+  const showMcpNextStep =
+    (config?.sources ?? []).length > 0 &&
+    !profiles.some((p) => p.configurations?.includes(view.configName));
 
   return (
     <div className="max-w-7xl mx-auto">
@@ -122,6 +132,24 @@ export default function ConfigurationDetailPage({
           },
         ]}
       />
+      {showMcpNextStep && (
+        <McpNextStepCard
+          profiles={profiles}
+          onCreateMcp={() =>
+            guardedNav(() => setView({ page: 'mcp-list', prefillConfiguration: view.configName }))
+          }
+          onAttachMcp={(profileName) =>
+            guardedNav(() =>
+              setView({
+                page: 'mcp-detail',
+                profileName,
+                activeSection: 'tables',
+                suggestConfiguration: view.configName,
+              }),
+            )
+          }
+        />
+      )}
       <ConfigurationDetailView
         configName={view.configName}
         configurations={configurations}

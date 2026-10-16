@@ -70,7 +70,7 @@ function installFetchMock(
               mcpServers: {
                 'calame-default': {
                   command: 'npx',
-                  args: ['-y', 'calame-mcp-bridge', '<YOUR-CALAME-HOST>', '<TOKEN>'],
+                  args: ['-y', 'calame-mcp-bridge', 'http://127.0.0.1:4567/mcp/default', '<TOKEN>'],
                 },
               },
             },
@@ -201,7 +201,8 @@ describe('ConnectClaudeDesktop', () => {
     await waitFor(() => {
       expect(screen.getByText(/calame-mcp-bridge/)).toBeTruthy();
     });
-    expect(screen.getAllByText(/YOUR-CALAME-HOST/).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText(/http:\/\/127\.0\.0\.1:4567\/mcp\/default/)).toBeTruthy();
+    expect(screen.queryByText(/YOUR-CALAME-HOST/)).toBeNull();
 
     fireEvent.click(screen.getByText('Copy'));
     await waitFor(() => {
@@ -224,6 +225,112 @@ describe('ConnectClaudeDesktop', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Failed to build the snippet.')).toBeTruthy();
+    });
+  });
+
+  describe('creating an API key from the Connexion tab', () => {
+    /** Wraps the default mock so /api/tokens/generate follows `generate`. */
+    function installWithGenerate(generate: () => Promise<Response>) {
+      const base = installFetchMock({ supported: false });
+      const mock = vi.fn(async (input: string | URL | Request) => {
+        const url =
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (url.includes('/api/tokens/generate')) return generate();
+        return base(input);
+      });
+      vi.stubGlobal('fetch', mock);
+      return mock;
+    }
+
+    const generateCalls = (mock: ReturnType<typeof vi.fn>) =>
+      mock.mock.calls.filter((call) => String(call[0]).includes('/api/tokens/generate'));
+
+    const snippetText = () => document.querySelector('pre')?.textContent ?? '';
+
+    async function openSnippet() {
+      render(<ConnectClaudeDesktop profileName="default" />);
+      await flushEffects();
+      fireEvent.click(screen.getByText('Other clients / another machine'));
+      await waitFor(() => expect(snippetText()).toContain('<TOKEN>'));
+    }
+
+    it('mints one key on double click and inserts it into the copyable snippet', async () => {
+      let resolveGenerate!: (res: Response) => void;
+      const fetchMock = installWithGenerate(
+        () => new Promise<Response>((resolve) => (resolveGenerate = resolve)),
+      );
+      const setItem = vi.spyOn(Storage.prototype, 'setItem');
+      await openSnippet();
+
+      const button = screen.getByText('Create an API key and insert it');
+      fireEvent.click(button);
+      fireEvent.click(button);
+      expect(generateCalls(fetchMock)).toHaveLength(1);
+      const body = JSON.parse(String((generateCalls(fetchMock)[0][1] as RequestInit).body));
+      expect(body.profileName).toBe('default');
+
+      await act(async () => {
+        resolveGenerate(
+          jsonResponse({ success: true, token: { id: 't1', plaintextToken: 'cal_secret123' } }),
+        );
+      });
+
+      await waitFor(() => expect(snippetText()).toContain('cal_secret123'));
+      expect(snippetText()).not.toContain('<TOKEN>');
+      expect(screen.getByRole('alert').textContent).toMatch(/shown only once/);
+      expect(screen.queryByText('Create an API key and insert it')).toBeNull();
+
+      fireEvent.click(screen.getByText('Copy'));
+      await waitFor(() => {
+        const copied = (navigator.clipboard.writeText as ReturnType<typeof vi.fn>).mock.calls[0][0];
+        expect(copied).toContain('cal_secret123');
+        expect(copied).not.toContain('<TOKEN>');
+      });
+      // The secret never reaches browser storage.
+      expect(setItem.mock.calls.some((call) => String(call[1]).includes('cal_secret123'))).toBe(
+        false,
+      );
+      setItem.mockRestore();
+    });
+
+    it('shows an understandable error and lets the user retry', async () => {
+      let attempt = 0;
+      const fetchMock = installWithGenerate(async () => {
+        attempt += 1;
+        return attempt === 1
+          ? jsonResponse({ success: false, message: 'Token manager not initialized.' })
+          : jsonResponse({ success: true, token: { id: 't2', plaintextToken: 'cal_retry456' } });
+      });
+      await openSnippet();
+
+      fireEvent.click(screen.getByText('Create an API key and insert it'));
+      await waitFor(() => expect(screen.getByText('Token manager not initialized.')).toBeTruthy());
+      expect(snippetText()).toContain('<TOKEN>');
+
+      fireEvent.click(screen.getByText('Try again'));
+      await waitFor(() => expect(snippetText()).toContain('cal_retry456'));
+      expect(generateCalls(fetchMock)).toHaveLength(2);
+      expect(screen.queryByText('Token manager not initialized.')).toBeNull();
+    });
+
+    it('surfaces a network error without leaving the button stuck', async () => {
+      installWithGenerate(async () => {
+        throw new Error('offline');
+      });
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+      await openSnippet();
+
+      fireEvent.click(screen.getByText('Create an API key and insert it'));
+      await waitFor(() =>
+        expect(
+          screen.getByText('The API key could not be created: the server is unreachable.'),
+        ).toBeTruthy(),
+      );
+      expect((screen.getByText('Try again') as HTMLButtonElement).disabled).toBe(false);
+      // The technical detail stays in the console, not in the message.
+      expect(screen.queryByText(/offline/)).toBeNull();
+      expect(consoleError).toHaveBeenCalled();
+      consoleError.mockRestore();
     });
   });
 });

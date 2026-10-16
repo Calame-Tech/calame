@@ -7,22 +7,27 @@ import type { Dispatch, SetStateAction } from 'react';
 import { useTranslations } from 'use-intl/react';
 import { PageHeader } from '../components/ui/index.js';
 import ServePanel from '../components/ServePanel.js';
-import type { Config, Profile, ServeStatus } from '../types/schema.js';
+import type { Config, Configuration, Profile, ServeStatus } from '../types/schema.js';
 import type { View } from '../router/index.js';
 
 interface McpListPageProps {
+  /** Data configuration to preselect in the creation form (guided configuration → server step). */
+  prefillConfiguration?: string;
+  configurations?: Configuration[];
   setView: Dispatch<SetStateAction<View>>;
   configWithProfileOptions: Config;
   selectedTables: Record<string, Set<string>>;
   profiles: Profile[];
   serveStatus: ServeStatus;
   fetchServeStatus: () => Promise<void>;
-  handleProfileCreate: (name: string, label: string) => void;
+  handleProfileCreate: (name: string, label: string, configurations?: string[]) => void;
   handleProfileDelete: (index: number) => Promise<void>;
   setPreviewProfile: Dispatch<SetStateAction<string | null>>;
 }
 
 export default function McpListPage({
+  prefillConfiguration,
+  configurations = [],
   setView,
   configWithProfileOptions,
   selectedTables,
@@ -59,8 +64,18 @@ export default function McpListPage({
           serveStatus={serveStatus}
           onServeAction={fetchServeStatus}
           onSelectProfile={handleSelectProfile}
-          onCreateProfile={(name, label) => {
-            handleProfileCreate(name, label);
+          prefillConfigurationLabel={
+            prefillConfiguration
+              ? (configurations.find((c) => c.name === prefillConfiguration)?.label ??
+                prefillConfiguration)
+              : undefined
+          }
+          onCreateProfile={(name, label, withPrefill) => {
+            handleProfileCreate(
+              name,
+              label,
+              withPrefill && prefillConfiguration ? [prefillConfiguration] : undefined,
+            );
             setView({ page: 'mcp-detail', profileName: name });
           }}
           onDeleteProfile={handleProfileDelete}

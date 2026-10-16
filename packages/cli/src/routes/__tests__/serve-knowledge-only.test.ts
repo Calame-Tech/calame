@@ -253,4 +253,14 @@ describe('serve/start — knowledge-only profiles (no database connection)', () 
     expect(loaded.sources).toEqual(['default']);
     expect(loaded.scopes?.['default'].kind).toBe('relational');
   });
+
+  it('reports the effective MCP origin (protocol, host and port) instead of a placeholder', async () => {
+    const res = await request(app)
+      .get('/api/serve/status')
+      .set('Cookie', cookie)
+      .set('Host', 'calame.local:4567')
+      .expect(200);
+
+    expect(res.body.mcpOrigin).toBe('http://calame.local:4567');
+  });
 });

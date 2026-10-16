@@ -8,7 +8,10 @@ import { render as rtlRender, screen, fireEvent, waitFor, act } from '@testing-l
 import type { ReactElement } from 'react';
 import SetupChecklist, {
   SETUP_CHECKLIST_COLLAPSED_KEY,
-  SETUP_CHECKLIST_HIDDEN_KEY,
+  SETUP_CHECKLIST_DISMISSED_KEY,
+  SETUP_CHECKLIST_LEGACY_HIDDEN_KEY,
+  SETUP_POLL_INTERVAL_MS,
+  SETUP_POLL_MAX_ATTEMPTS,
 } from '../SetupChecklist.js';
 import { I18nProvider } from '../../i18n/I18nProvider.js';
 
@@ -106,8 +109,10 @@ const salesMcp = { sales: { configurations: ['sales-config'] } };
 
 describe('SetupChecklist', () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
-    localStorage.removeItem(SETUP_CHECKLIST_HIDDEN_KEY);
+    localStorage.removeItem(SETUP_CHECKLIST_DISMISSED_KEY);
+    localStorage.removeItem(SETUP_CHECKLIST_LEGACY_HIDDEN_KEY);
     localStorage.removeItem(SETUP_CHECKLIST_COLLAPSED_KEY);
   });
 
@@ -193,7 +198,7 @@ describe('SetupChecklist', () => {
       expect(step4Hint()).toContain('Connection verified ✓ (3 tools discovered)');
       expect(step4Hint()).toContain('ask a question about your data from your AI client');
       expect(screen.queryByRole('alert')).toBeNull();
-      expect(localStorage.getItem(SETUP_CHECKLIST_HIDDEN_KEY)).toBeNull();
+      expect(localStorage.getItem(SETUP_CHECKLIST_DISMISSED_KEY)).toBeNull();
     });
 
     it('test failed: shows the short reason as an alert', async () => {
@@ -245,15 +250,157 @@ describe('SetupChecklist', () => {
     ]);
   });
 
-  it('disappears for good once the first MCP has been used by a client', async () => {
-    installServer({
+  describe('success state once a client has called the MCP', () => {
+    const usedServer: ServerState = {
       configurations: [salesData],
       profiles: salesMcp,
       entries: [{ profileName: 'sales', result: 'success' }],
+    };
+
+    it('shows 4/4, congratulations, the client confirmation and next actions', async () => {
+      installServer(usedServer);
+      const onNavigate = vi.fn();
+      render(<SetupChecklist sourceCount={1} onNavigate={onNavigate} />);
+      const success = await screen.findByTestId('setup-success');
+      expect(screen.getByRole('heading').textContent).toBe('Getting started · 4/4');
+      expect(success.textContent).toContain('Congratulations, your MCP server works!');
+      expect(success.textContent).toContain('A client has called this MCP server successfully.');
+      // Not hidden automatically: nothing is persisted until the user closes it.
+      expect(localStorage.getItem(SETUP_CHECKLIST_DISMISSED_KEY)).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: 'Open the MCP server' }));
+      expect(onNavigate).toHaveBeenCalledWith({ page: 'mcp-detail', profileName: 'sales' });
+      fireEvent.click(screen.getByRole('button', { name: 'See the calls in the audit log' }));
+      expect(onNavigate).toHaveBeenCalledWith({ page: 'audit-log' });
+      expect(screen.getByTestId('setup-success')).toBeTruthy();
     });
-    const { container } = render(<SetupChecklist sourceCount={1} onNavigate={vi.fn()} />);
-    await waitFor(() => expect(localStorage.getItem(SETUP_CHECKLIST_HIDDEN_KEY)).toBe('1'));
-    expect(container.innerHTML).toBe('');
+
+    it('stays visible across reloads until it is closed, then stays closed', async () => {
+      const server = installServer(usedServer);
+      const first = render(<SetupChecklist sourceCount={1} onNavigate={vi.fn()} />);
+      await screen.findByTestId('setup-success');
+      first.unmount();
+
+      const second = render(<SetupChecklist sourceCount={1} onNavigate={vi.fn()} />);
+      await screen.findByTestId('setup-success');
+      fireEvent.click(screen.getByRole('button', { name: 'Close the guide' }));
+      expect(screen.queryByTestId('setup-success')).toBeNull();
+      expect(localStorage.getItem(SETUP_CHECKLIST_DISMISSED_KEY)).toBe('1');
+      second.unmount();
+
+      const calls = server.mock.calls.length;
+      const { container } = render(<SetupChecklist sourceCount={1} onNavigate={vi.fn()} />);
+      expect(container.innerHTML).toBe('');
+      // Closed for good: the server is not even queried.
+      expect(server.mock.calls.length).toBe(calls);
+    });
+
+    it('shows the success once to installations hidden automatically by the former flag', async () => {
+      localStorage.setItem(SETUP_CHECKLIST_LEGACY_HIDDEN_KEY, '1');
+      installServer(usedServer);
+      render(<SetupChecklist sourceCount={1} onNavigate={vi.fn()} />);
+      await screen.findByTestId('setup-success');
+      fireEvent.click(screen.getByRole('button', { name: 'Close the guide' }));
+      expect(localStorage.getItem(SETUP_CHECKLIST_DISMISSED_KEY)).toBe('1');
+      expect(localStorage.getItem(SETUP_CHECKLIST_LEGACY_HIDDEN_KEY)).toBeNull();
+    });
+
+    it('names the success in the folded pill', async () => {
+      localStorage.setItem(SETUP_CHECKLIST_COLLAPSED_KEY, '1');
+      installServer(usedServer);
+      render(<SetupChecklist sourceCount={1} onNavigate={vi.fn()} />);
+      const pill = await screen.findByRole('button', { name: 'Reopen the getting-started guide' });
+      expect(pill.textContent).toContain('Getting started · 4/4');
+      expect(screen.getByTestId('setup-pill-step').textContent).toBe('Your MCP works ✓');
+    });
+  });
+
+  describe('periodic check while step 4 waits for a client call', () => {
+    function auditCount(server: ReturnType<typeof installServer>): number {
+      return auditUrls(server).length;
+    }
+
+    it('detects the first client call without focus or "Check again", then stops', async () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+      const state: ServerState = { configurations: [salesData], profiles: salesMcp };
+      const server = installServer(state);
+      render(<SetupChecklist sourceCount={1} onNavigate={vi.fn()} />);
+      await screen.findAllByText('1. Connect data');
+      expect(stepStatus(/4\. Connect and test the MCP/)).toBe('current');
+
+      // A client calls the MCP from another application.
+      state.entries = [{ profileName: 'sales', result: 'success' }];
+      await act(async () => {
+        vi.advanceTimersByTime(SETUP_POLL_INTERVAL_MS);
+      });
+      await screen.findByTestId('setup-success');
+
+      const calls = auditCount(server);
+      await act(async () => {
+        vi.advanceTimersByTime(SETUP_POLL_INTERVAL_MS * 3);
+      });
+      expect(auditCount(server)).toBe(calls);
+    });
+
+    it('does not poll before step 4', async () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+      const server = installServer({ configurations: [salesData] });
+      render(<SetupChecklist sourceCount={1} onNavigate={vi.fn()} />);
+      await screen.findAllByText('1. Connect data');
+      const calls = server.mock.calls.length;
+      await act(async () => {
+        vi.advanceTimersByTime(SETUP_POLL_INTERVAL_MS * 3);
+      });
+      expect(server.mock.calls.length).toBe(calls);
+    });
+
+    it('is bounded, skips ticks while a request is pending, and is cleared on unmount', async () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+      const server = installServer({ configurations: [salesData], profiles: salesMcp });
+      const view = render(<SetupChecklist sourceCount={1} onNavigate={vi.fn()} />);
+      await screen.findAllByText('1. Connect data');
+      const initial = auditCount(server);
+
+      // A pending request: further ticks must not start concurrent ones.
+      let release: () => void = () => {};
+      const realFetch = server.getMockImplementation()!;
+      server.mockImplementationOnce(async (input) => {
+        await new Promise<void>((resolve) => (release = resolve));
+        return realFetch(input);
+      });
+      await act(async () => {
+        vi.advanceTimersByTime(SETUP_POLL_INTERVAL_MS * 3);
+      });
+      const pendingCalls = server.mock.calls.length;
+      await act(async () => {
+        vi.advanceTimersByTime(SETUP_POLL_INTERVAL_MS * 2);
+      });
+      expect(server.mock.calls.length).toBe(pendingCalls);
+      await act(async () => release());
+      await waitFor(() => expect(auditCount(server)).toBe(initial + 1));
+
+      for (let i = 0; i < SETUP_POLL_MAX_ATTEMPTS + 5; i++) {
+        await act(async () => {
+          vi.advanceTimersByTime(SETUP_POLL_INTERVAL_MS);
+        });
+      }
+      expect(auditCount(server)).toBe(initial + SETUP_POLL_MAX_ATTEMPTS);
+
+      view.unmount();
+      expect(vi.getTimerCount()).toBe(0);
+    });
+  });
+
+  it('re-checks after an action that changes a step (new data profile / MCP)', async () => {
+    const state: ServerState = { configurations: [salesData] };
+    const server = installServer(state);
+    const view = render(<SetupChecklist sourceCount={1} onNavigate={vi.fn()} refreshKey={1} />);
+    await screen.findAllByText('1. Connect data');
+    expect(stepStatus(/3\. Create the MCP server/)).toBe('current');
+    state.profiles = salesMcp;
+    const calls = server.mock.calls.length;
+    view.rerender(<SetupChecklist sourceCount={1} onNavigate={vi.fn()} refreshKey={2} />);
+    await waitFor(() => expect(stepStatus(/3\. Create the MCP server/)).toBe('done'));
+    expect(server.mock.calls.length).toBeGreaterThan(calls);
   });
 
   it('can be folded and reopened, and stays folded across reloads', async () => {
@@ -336,7 +483,7 @@ describe('SetupChecklist', () => {
     vi.stubGlobal(
       'matchMedia',
       vi.fn((query: string) => ({
-        matches: query === '(max-width: 1023px)',
+        matches: query === '(max-width: 899px)',
         media: query,
         addEventListener: vi.fn(),
         removeEventListener: vi.fn(),
@@ -358,7 +505,7 @@ describe('SetupChecklist', () => {
     vi.stubGlobal(
       'matchMedia',
       vi.fn((query: string) => ({
-        matches: query === '(max-width: 1023px)',
+        matches: query === '(max-width: 899px)',
         media: query,
         addEventListener: vi.fn(),
         removeEventListener: vi.fn(),
@@ -377,19 +524,77 @@ describe('SetupChecklist', () => {
     expect(screen.queryByRole('button', { name: 'Add data' })).toBeNull();
   });
 
-  it('reserves room at the bottom of the page for the floating card', async () => {
-    const rect = vi
-      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
-      .mockReturnValue({ height: 40 } as DOMRect);
-    try {
-      installServer({});
-      render(<SetupChecklist sourceCount={0} onNavigate={vi.fn()} />);
-      await screen.findAllByText('1. Connect data');
-      const spacer = screen.getByTestId('setup-checklist-spacer');
-      expect(spacer.style.height).toBe('64px');
-      expect(spacer.getAttribute('aria-hidden')).toBe('true');
-    } finally {
-      rect.mockRestore();
-    }
+  // The guide is laid out with the page (a column or a block above it): it
+  // can cover nothing, whatever the page or the scroll position.
+  const expectInLayout = (el: HTMLElement) => {
+    for (const cls of ['fixed', 'absolute']) expect(el.className.split(/\s+/)).not.toContain(cls);
+    expect(el.className).not.toMatch(/(^|\s)(inset-|bottom-|right-|z-)/);
+  };
+
+  it('keeps the folded pill in the page layout, above the content', async () => {
+    localStorage.setItem(SETUP_CHECKLIST_COLLAPSED_KEY, '1');
+    const onLayoutChange = vi.fn();
+    installServer({});
+    render(<SetupChecklist sourceCount={0} onNavigate={vi.fn()} onLayoutChange={onLayoutChange} />);
+    const pill = await screen.findByRole('button', { name: 'Reopen the getting-started guide' });
+    expectInLayout(pill);
+    expectInLayout(screen.getByTestId('setup-checklist-pill-row'));
+    expect(onLayoutChange).toHaveBeenLastCalledWith('top');
+  });
+
+  it('lays the expanded guide out as a column beside the page on a wide window', async () => {
+    installServer({});
+    const onLayoutChange = vi.fn();
+    render(<SetupChecklist sourceCount={0} onNavigate={vi.fn()} onLayoutChange={onLayoutChange} />);
+    await screen.findAllByText('1. Connect data');
+    const panel = screen.getByTestId('setup-checklist-panel');
+    expect(panel.getAttribute('data-layout')).toBe('column');
+    expectInLayout(panel);
+    // Its own scroll, viewport-high, with a fixed width taken from the content.
+    expect(panel.className).toContain('overflow-y-auto');
+    expect(panel.className).toContain('flex-none');
+    expect(onLayoutChange).toHaveBeenLastCalledWith('column');
+
+    // Folding to the pill gives the width back to the page.
+    fireEvent.click(screen.getByRole('button', { name: 'Fold the getting-started guide' }));
+    expect(onLayoutChange).toHaveBeenLastCalledWith('top');
+  });
+
+  it('opens as a block above the content on a narrow window, never a column', async () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn((query: string) => ({
+        matches: query === '(max-width: 899px)',
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    );
+    installServer({});
+    const onLayoutChange = vi.fn();
+    render(<SetupChecklist sourceCount={0} onNavigate={vi.fn()} onLayoutChange={onLayoutChange} />);
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Reopen the getting-started guide' }),
+    );
+    const panel = screen.getByTestId('setup-checklist-panel');
+    expect(panel.getAttribute('data-layout')).toBe('top');
+    expectInLayout(panel);
+    expectInLayout(panel.parentElement as HTMLElement);
+    expect(onLayoutChange).not.toHaveBeenCalledWith('column');
+    expect(onLayoutChange).toHaveBeenLastCalledWith('top');
+  });
+
+  it('gives the layout back when the guide is closed after success', async () => {
+    installServer({
+      configurations: [salesData],
+      profiles: salesMcp,
+      entries: [{ profileName: 'sales', result: 'success' }],
+    });
+    const onLayoutChange = vi.fn();
+    render(<SetupChecklist sourceCount={1} onNavigate={vi.fn()} onLayoutChange={onLayoutChange} />);
+    await screen.findByTestId('setup-success');
+    expect(onLayoutChange).toHaveBeenLastCalledWith('column');
+    fireEvent.click(screen.getByRole('button', { name: 'Close the guide' }));
+    expect(onLayoutChange).toHaveBeenLastCalledWith('none');
   });
 });

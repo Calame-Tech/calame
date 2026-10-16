@@ -5,7 +5,7 @@
 // and always offers a manual npx-based snippet for other clients or
 // machines. Mirrors TokenManager.tsx's fetch/copy/error conventions.
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useTranslations } from 'use-intl/react';
 import { apiFetch, getCurrentTenant } from '../lib/api.js';
 import HelpTip from './HelpTip.js';
@@ -44,6 +44,15 @@ export default function ConnectClaudeDesktop({ profileName }: ConnectClaudeDeskt
   const [snippetLoading, setSnippetLoading] = useState(false);
   const [snippetError, setSnippetError] = useState<string | null>(null);
   const [snippetCopied, setSnippetCopied] = useState(false);
+
+  // API key minted from this tab to fill the snippet's <TOKEN>. Kept only in
+  // component state (never persisted): the server reveals it exactly once.
+  const [createdKey, setCreatedKey] = useState<string | null>(null);
+  const [creatingKey, setCreatingKey] = useState(false);
+  const [keyError, setKeyError] = useState<string | null>(null);
+  // Synchronous guard so a double click can't mint two keys before the
+  // `creatingKey` re-render disables the button.
+  const creatingKeyRef = useRef(false);
 
   const fetchStatus = useCallback(async () => {
     setStatusLoading(true);
@@ -129,9 +138,40 @@ export default function ConnectClaudeDesktop({ profileName }: ConnectClaudeDeskt
     }
   };
 
+  const handleCreateKey = async () => {
+    if (creatingKeyRef.current || createdKey) return;
+    creatingKeyRef.current = true;
+    setCreatingKey(true);
+    setKeyError(null);
+    try {
+      const res = await apiFetch('/api/tokens/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ profileName, label: t('createKey.keyLabel') }),
+      });
+      const data = await res.json();
+      const plaintext: unknown = data?.token?.plaintextToken;
+      if (data.success !== false && typeof plaintext === 'string' && plaintext) {
+        setCreatedKey(plaintext);
+      } else {
+        setKeyError(data.message || t('errors.createKeyFailed'));
+      }
+    } catch (err) {
+      // Technical detail (e.g. "Failed to fetch") for the console only.
+      console.error('[connect] API key creation failed', err);
+      setKeyError(t('errors.createKeyNetworkError'));
+    } finally {
+      creatingKeyRef.current = false;
+      setCreatingKey(false);
+    }
+  };
+
+  const displayedSnippet =
+    snippet && createdKey ? snippet.split('<TOKEN>').join(createdKey) : snippet;
+
   const handleCopySnippet = () => {
-    if (!snippet) return;
-    navigator.clipboard.writeText(snippet).then(() => {
+    if (!displayedSnippet) return;
+    navigator.clipboard.writeText(displayedSnippet).then(() => {
       setSnippetCopied(true);
       setTimeout(() => setSnippetCopied(false), 2000);
     });
@@ -209,20 +249,43 @@ export default function ConnectClaudeDesktop({ profileName }: ConnectClaudeDeskt
         </button>
         {snippetOpen && (
           <div className="mt-2 space-y-2">
-            <p className="text-xs text-gray-600">
-              {t.rich('snippetHostPlaceholder', {
-                code1: (chunks) => <code className="text-gray-500">&lt;{chunks}&gt;</code>,
-                code2: (chunks) => <code className="text-gray-500">&lt;{chunks}&gt;</code>,
-              })}
-            </p>
+            {createdKey ? (
+              <p
+                role="alert"
+                className="p-2 rounded border border-yellow-700/60 bg-yellow-900/20 text-xs text-yellow-400"
+              >
+                {t('createKey.revealedOnce')}
+              </p>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-xs text-gray-600">
+                  {t.rich('snippetTokenPlaceholder', {
+                    code: (chunks) => <code className="text-gray-500">&lt;{chunks}&gt;</code>,
+                  })}
+                </p>
+                <button
+                  type="button"
+                  onClick={handleCreateKey}
+                  disabled={creatingKey}
+                  className="px-3 py-1.5 rounded-lg bg-os-700 hover:bg-os-600 text-white text-xs font-medium transition-all duration-200 disabled:opacity-50"
+                >
+                  {creatingKey
+                    ? t('createKey.creating')
+                    : keyError
+                      ? t('createKey.retry')
+                      : t('createKey.button')}
+                </button>
+                {keyError && <p className="text-xs text-red-400">{keyError}</p>}
+              </div>
+            )}
             {snippetLoading ? (
               <p className="text-xs text-gray-500">{tCommon('loading')}</p>
             ) : snippetError ? (
               <p className="text-xs text-red-400">{snippetError}</p>
-            ) : snippet ? (
+            ) : displayedSnippet ? (
               <div className="relative">
                 <pre className="p-3 rounded bg-gray-900 border border-gray-700 text-xs text-gray-300 font-mono overflow-x-auto whitespace-pre">
-                  {snippet}
+                  {displayedSnippet}
                 </pre>
                 <button
                   type="button"

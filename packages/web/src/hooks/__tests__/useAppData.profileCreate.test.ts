@@ -21,6 +21,28 @@ describe('useAppData.handleProfileCreate', () => {
     });
   });
 
+  it('persists a new MCP created with a preselected data configuration', async () => {
+    const fetchMock = vi.fn(
+      async (_url: string, _init?: RequestInit) => new Response('{}', { status: 200 }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const { result } = renderHook(() => useAppData(false));
+      act(() => result.current.handleProfileCreate('docs', 'Docs', ['kb']));
+      expect(result.current.profiles.find((p) => p.name === 'docs')?.configurations).toEqual([
+        'kb',
+      ]);
+      await act(async () => {});
+      const save = fetchMock.mock.calls.find(([url]) => String(url).includes('/api/profiles/save'));
+      expect(save).toBeTruthy();
+      expect(JSON.parse(String(save?.[1]?.body))).toMatchObject({
+        profiles: { docs: { configurations: ['kb'] } },
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('never overwrites an existing profile with the defaults', () => {
     const { result } = renderHook(() => useAppData(false));
     act(() =>

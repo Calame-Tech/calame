@@ -115,6 +115,7 @@ export default function McpDetailPage({
         config={configWithProfileOptions}
         initialActiveSection={view.activeSection}
         sectionRequestKey={view}
+        suggestConfiguration={view.suggestConfiguration}
         configurations={configurations}
         onProfilesChange={setProfiles}
         activeProfileIndex={activeProfileIndex}
@@ -197,6 +198,8 @@ interface McpDetailViewProps {
    * re-selected from `initialActiveSection`.
    */
   sectionRequestKey?: unknown;
+  /** Data configuration proposed for attachment (attached only on an explicit click). */
+  suggestConfiguration?: string;
 }
 
 function McpDetailView({
@@ -216,6 +219,7 @@ function McpDetailView({
   onNavigateToUser,
   initialActiveSection,
   sectionRequestKey,
+  suggestConfiguration,
 }: McpDetailViewProps) {
   const t = useTranslations('mcpDetail');
   const tCommon = useTranslations('common');
@@ -241,6 +245,9 @@ function McpDetailView({
   useEffect(() => {
     setActiveSection((initialActiveSection as typeof activeSection | undefined) ?? 'tables');
   }, [initialActiveSection, sectionRequestKey]);
+
+  const [suggestionDismissed, setSuggestionDismissed] = useState(false);
+  useEffect(() => setSuggestionDismissed(false), [suggestConfiguration, sectionRequestKey]);
 
   const [editingLabel, setEditingLabel] = useState(false);
   const [editLabel, setEditLabel] = useState('');
@@ -406,7 +413,9 @@ function McpDetailView({
     _tenant === 'default'
       ? (profileStatus?.endpoint ?? `/mcp/${profile.name}`)
       : buildMcpPath(profile.name, _tenant);
-  const endpoint = `${window.location.origin}${basePath}`;
+  // Effective MCP origin from the server (same source as the Connexion
+  // snippet); the browser origin is only a fallback before the first poll.
+  const endpoint = `${serveStatus.mcpOrigin ?? window.location.origin}${basePath}`;
 
   /** Save all profiles to backend before starting, so new profiles are known */
   const saveProfiles = async () => {
@@ -1372,6 +1381,39 @@ function McpDetailView({
       {/* Section content */}
       {activeSection === 'tables' && (
         <div className="space-y-4">
+          {(() => {
+            // Guided step from a data configuration: propose attaching it,
+            // through the same toggle as the chips below.
+            const suggested = configurations.find((c) => c.name === suggestConfiguration);
+            if (!suggested || suggestionDismissed) return null;
+            if (profileConfigurations.includes(suggested.name)) return null;
+            return (
+              <div
+                className="card-primary p-4 flex flex-wrap items-center justify-between gap-3 ring-1 ring-os-500/20"
+                data-testid="suggest-attach-configuration"
+              >
+                <p className="text-sm text-gray-300">
+                  {t('tables.suggestAttach', { label: suggested.label })}
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleToggleConfiguration(suggested.name)}
+                    className="px-3 py-1.5 rounded-lg bg-os-700 hover:bg-os-600 text-white text-sm font-medium"
+                  >
+                    {t('tables.suggestAttachButton')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSuggestionDismissed(true)}
+                    className="px-3 py-1.5 rounded-lg text-gray-400 hover:text-gray-200 text-sm"
+                  >
+                    {tCommon('cancel')}
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
           {/* Configurations selection */}
           <div className="card-primary p-4">
             <div className="flex items-center justify-between mb-3">

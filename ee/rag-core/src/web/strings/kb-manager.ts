@@ -30,6 +30,17 @@ const FR = {
   sourceUpdated: (name: string) => `Source "${name}" mise à jour.`,
   syncStarted: (name: string) => `Sync lancée pour "${name}".`,
   syncAlreadyRunningFor: (name: string) => `Sync déjà en cours pour "${name}".`,
+  sourceSavedSyncStarted: (name: string) =>
+    `Source "${name}" enregistrée. Synchronisation initiale lancée.`,
+  initialSyncFailed: (name: string, message: string) =>
+    `La source "${name}" est enregistrée, mais sa synchronisation initiale n'a pas pu démarrer : ${message}`,
+  retrySync: 'Relancer la synchronisation',
+  serverUnreachable: 'le serveur est injoignable.',
+  syncCouldNotStart: (name: string, reason: string) =>
+    `La synchronisation de "${name}" n'a pas pu démarrer : ${reason}`,
+  nextStepProfile: (name: string) =>
+    `Étape suivante : exposez "${name}" dans une configuration de données.`,
+  createProfileFromSource: 'Créer une configuration de données avec cette source',
   sourceTrashed: (name: string, days: number) =>
     `Source "${name}" déplacée vers la corbeille (récupérable ${days} jours).`,
   sourceRestored: (name: string) => `Source "${name}" restaurée.`,
@@ -124,6 +135,15 @@ const EN: typeof FR = {
   sourceUpdated: (name: string) => `Source "${name}" updated.`,
   syncStarted: (name: string) => `Sync started for "${name}".`,
   syncAlreadyRunningFor: (name: string) => `Sync already in progress for "${name}".`,
+  sourceSavedSyncStarted: (name: string) => `Source "${name}" saved. Initial sync started.`,
+  initialSyncFailed: (name: string, message: string) =>
+    `Source "${name}" is saved, but its initial sync could not start: ${message}`,
+  retrySync: 'Retry sync',
+  serverUnreachable: 'the server is unreachable.',
+  syncCouldNotStart: (name: string, reason: string) =>
+    `The sync of "${name}" could not start: ${reason}`,
+  nextStepProfile: (name: string) => `Next step: expose "${name}" in a data configuration.`,
+  createProfileFromSource: 'Create a data configuration with this source',
   sourceTrashed: (name: string, days: number) =>
     `Source "${name}" moved to the trash (recoverable for ${days} days).`,
   sourceRestored: (name: string) => `Source "${name}" restored.`,

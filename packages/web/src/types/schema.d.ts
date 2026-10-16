@@ -255,6 +255,7 @@ export interface PoolStats {
 export interface ServeStatus {
   active: boolean;
   port: number;
+  mcpOrigin?: string | null;
   profiles: string[];
   profileStatuses?: Record<
     string,

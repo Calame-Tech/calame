@@ -30,7 +30,12 @@ export interface SourcesPageProps {
    * Must be passed as a React.ComponentType so that SourcesPage never
    * directly imports @calame-ee/* (BUSL package).
    */
-  KnowledgeBaseManagerComponent: React.ComponentType<{ onSourcesChange?: (count: number) => void }>;
+  KnowledgeBaseManagerComponent: React.ComponentType<{
+    onSourcesChange?: (count: number) => void;
+    onCreateProfileFromSource?: (source: { id: string; name: string }) => void;
+  }>;
+  /** Guided next step: open the data-configuration creation with this source preselected. */
+  onCreateProfileFromSource?: (source: { id: string; name: string }) => void;
 }
 
 /** Fetch count of RAG sources so the KB tab badge stays accurate */
@@ -56,6 +61,7 @@ export default function SourcesPage({
   ragEnabled,
   ragDisabledReason,
   KnowledgeBaseManagerComponent,
+  onCreateProfileFromSource,
 }: SourcesPageProps) {
   const t = useTranslations('sources.sourcesPage');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -210,7 +216,10 @@ export default function SourcesPage({
                 </div>
               }
             >
-              <KnowledgeBaseManagerComponent onSourcesChange={handleRagSourcesChange} />
+              <KnowledgeBaseManagerComponent
+                onSourcesChange={handleRagSourcesChange}
+                onCreateProfileFromSource={onCreateProfileFromSource}
+              />
             </Suspense>
           ) : (
             /* Explanatory card when RAG is unavailable */

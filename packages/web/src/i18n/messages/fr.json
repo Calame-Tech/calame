@@ -236,7 +236,9 @@
       "effectiveHeading": "Tables effectives (fusionnées à partir de {count, plural, one {# configuration} other {# configurations}})",
       "noTablesSelected": "Aucune table sélectionnée dans les configurations.",
       "colsLabel": "{count} col.",
-      "toolTitle": "Outil : {tool}"
+      "toolTitle": "Outil : {tool}",
+      "suggestAttach": "Rattacher la configuration de données « {label} » à ce serveur ?",
+      "suggestAttachButton": "Rattacher"
     },
     "users": {
       "heading": "Utilisateurs ayant accès à {name}"
@@ -284,6 +286,12 @@
       "tableToolsHelp": "Configurez chaque table individuellement : outils exposés, limite de lignes, colonnes filtrables/groupables et masquage des données sensibles.",
       "filterPlaceholder": "Filtrer les tables...",
       "filterHelp": "Filtre les tables affichées par nom."
+    },
+    "nextStep": {
+      "description": "Étape suivante : exposez cette configuration de données via un serveur MCP.",
+      "createMcp": "Créer un serveur MCP avec cette configuration",
+      "attachLabel": "Serveur MCP existant",
+      "attachMcp": "Rattacher à ce serveur…"
     }
   },
   "configGraph": {
@@ -1216,6 +1224,16 @@
           "protocol": "erreur de protocole",
           "backend": "erreur serveur"
         }
+      },
+      "success": {
+        "pill": "Votre MCP fonctionne ✓",
+        "congrats": "Félicitations, votre serveur MCP fonctionne !",
+        "next": "Ce que vous pouvez faire ensuite :",
+        "openMcp": "Ouvrir le serveur MCP",
+        "auditLog": "Voir les appels dans le journal d’audit",
+        "addData": "Ajouter d’autres données",
+        "closeHint": "Une fois fermé, le guide ne réapparaîtra plus.",
+        "close": "Fermer le guide"
       }
     }
   },
@@ -1247,7 +1265,8 @@
       "maskedColumnsBadge": "{count, plural, one {# colonne masquée} other {# colonnes masquées}}",
       "mountedByPrefix": "Monté par",
       "stopped": "(arrêté)",
-      "notMounted": "Non monté par aucun serveur"
+      "notMounted": "Non monté par aucun serveur",
+      "includedSource": "Source incluse : {name} (entièrement accessible, modifiable ensuite dans l’onglet Bases de connaissances)"
     },
     "sourcesPage": {
       "kbDisabledDefault": "Les fonctionnalités de base de connaissances ne sont pas disponibles sur cette instance",
@@ -1462,7 +1481,8 @@
         "eyebrow": "SERVEURS MCP",
         "help": "Démarrer, arrêter et gérer vos serveurs MCP exposés aux clients IA",
         "activeSuffix": "· {count} actif(s)",
-        "servingOnPort": "en service sur le port {port}",
+        "servingAt": "en service sur {address}",
+        "servingAddressUnknown": "en service (adresse pas encore disponible)",
         "noServerRunning": "aucun serveur en cours d’exécution",
         "on": "ON",
         "off": "OFF",
@@ -2146,7 +2166,8 @@
           "responseMode": "Réponses naturelles : langage simple, sans noms de tables ni de colonnes.",
           "documentWrite": "Lecture seule : le MCP ne peut ni créer ni modifier de fichiers.",
           "changeLater": "Vous pourrez les modifier plus tard dans « Options avancées » sur la page du MCP."
-        }
+        },
+        "includedConfiguration": "Configuration de données incluse : {label}"
       },
       "newServerCard": "Nouveau serveur MCP",
       "deleteConfirm": {
@@ -2278,7 +2299,9 @@
         "connectFailed": "Échec de la connexion à Claude Desktop.",
         "connectNetworkError": "Erreur réseau lors de la connexion à Claude Desktop.",
         "snippetLoadFailed": "Échec du chargement de l’extrait de configuration manuelle.",
-        "snippetLoadNetworkError": "Erreur réseau lors du chargement de l’extrait de configuration manuelle."
+        "snippetLoadNetworkError": "Erreur réseau lors du chargement de l’extrait de configuration manuelle.",
+        "createKeyFailed": "Impossible de créer la clé API.",
+        "createKeyNetworkError": "La clé API n'a pas pu être créée : le serveur est injoignable."
       },
       "heading": "Connectez votre IA",
       "headingHelp": "Connectez ce serveur MCP à Claude Desktop, ou récupérez un extrait manuel pour d’autres clients MCP.",
@@ -2291,7 +2314,14 @@
       "connectingButton": "Connexion…",
       "notFound": "Claude Desktop est introuvable sur cette machine.",
       "manualToggle": "Autres clients / une autre machine",
-      "snippetHostPlaceholder": "Remplacez <code1>YOUR-CALAME-HOST</code1> et <code2>TOKEN</code2> par votre hôte Calame et une clé API."
+      "snippetTokenPlaceholder": "Remplacez <code>TOKEN</code> par une clé API.",
+      "createKey": {
+        "button": "Créer une clé API et l’insérer",
+        "creating": "Création de la clé…",
+        "retry": "Réessayer",
+        "keyLabel": "Extrait de connexion",
+        "revealedOnce": "Une nouvelle clé API a été insérée dans l’extrait ci-dessous. Elle n’est affichée qu’une seule fois : copiez l’extrait maintenant, elle ne sera plus visible ensuite. Vous pourrez la révoquer depuis l’onglet Clés API."
+      }
     }
   },
   "setupLogin": {

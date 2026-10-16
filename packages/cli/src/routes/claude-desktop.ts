@@ -17,7 +17,7 @@ import path from 'path';
 import { z } from 'zod';
 import type { AppState } from '../state.js';
 import { DEFAULT_TENANT_ID, getTenantId } from '../tenancy.js';
-import { buildMcpPath } from '../utils/mcp-url.js';
+import { buildMcpPath, resolveMcpOrigin } from '../utils/mcp-url.js';
 import { isServeProfileActive } from './serve/routing.js';
 import {
   resolveClaudeDesktopConfigDir,
@@ -191,7 +191,9 @@ export function registerClaudeDesktopRoute(app: Express, state: AppState): void 
 
       // Deliberately no token minted here — this snippet is meant to be
       // copy/pasted onto another machine or handed to another MCP client;
-      // <TOKEN> and <YOUR-CALAME-HOST> are placeholders the user fills in.
+      // <TOKEN> is a placeholder the user fills in. The address is the
+      // effective MCP origin (same source of truth as /api/serve/status).
+      const mcpOrigin = resolveMcpOrigin(req, state.config?.port) ?? 'http://<YOUR-CALAME-HOST>';
       const snippetConfig = {
         mcpServers: {
           [serverKey]: {
@@ -199,7 +201,7 @@ export function registerClaudeDesktopRoute(app: Express, state: AppState): void 
             args: [
               '-y',
               'mcp-remote',
-              `http://<YOUR-CALAME-HOST>${mcpPath}`,
+              `${mcpOrigin}${mcpPath}`,
               '--header',
               'Authorization: Bearer <TOKEN>',
             ],
@@ -207,7 +209,11 @@ export function registerClaudeDesktopRoute(app: Express, state: AppState): void 
         },
       };
 
-      res.json({ success: true, snippet: JSON.stringify(snippetConfig, null, 2) });
+      res.json({
+        success: true,
+        snippet: JSON.stringify(snippetConfig, null, 2),
+        mcpUrl: `${mcpOrigin}${mcpPath}`,
+      });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       state.logger?.error('Error', {

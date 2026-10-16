@@ -27,7 +27,13 @@ interface ServePanelProps {
   /** Called after start/stop actions so App-level poller can refresh immediately */
   onServeAction?: () => void;
   onSelectProfile: (name: string) => void;
-  onCreateProfile?: (name: string, label: string) => void;
+  /**
+   * `withPrefill` is true when the server is created with the preselected
+   * data configuration (`prefillConfigurationLabel`) still included.
+   */
+  onCreateProfile?: (name: string, label: string, withPrefill?: boolean) => void;
+  /** Opens the creation form with this data configuration preselected. */
+  prefillConfigurationLabel?: string;
   onDeleteProfile?: (index: number) => void;
   onPreviewProfile?: (name: string) => void;
   onOpenAiSettings?: () => void;
@@ -41,13 +47,17 @@ export default function ServePanel({
   onServeAction,
   onSelectProfile,
   onCreateProfile,
+  prefillConfigurationLabel,
   onDeleteProfile,
   onPreviewProfile,
   onOpenAiSettings,
 }: ServePanelProps) {
   const t = useTranslations('serveTunnel.servePanel');
   const tCommon = useTranslations('common');
-  const [showCreateForm, setShowCreateForm] = useState(false);
+  // Coming from a data configuration: the form is open with it preselected;
+  // the server is only created on an explicit "Create".
+  const [showCreateForm, setShowCreateForm] = useState(prefillConfigurationLabel !== undefined);
+  const [withPrefill, setWithPrefill] = useState(prefillConfigurationLabel !== undefined);
   const [newLabel, setNewLabel] = useState('');
   const [newName, setNewName] = useState('');
   const [createError, setCreateError] = useState<string | null>(null);
@@ -204,6 +214,11 @@ export default function ServePanel({
               />
               {newName && <p className="text-xs text-gray-500 font-mono">{newName}</p>}
               {createError && <p className="text-xs text-red-400">{createError}</p>}
+              {withPrefill && prefillConfigurationLabel && (
+                <p className="text-xs text-gray-400">
+                  {t('createForm.includedConfiguration', { label: prefillConfigurationLabel })}
+                </p>
+              )}
               <div data-testid="new-mcp-defaults" className="text-xs text-gray-500 space-y-1">
                 <p className="text-gray-400">{t('createForm.defaults.title')}</p>
                 <ul className="space-y-0.5 list-disc pl-4">
@@ -222,8 +237,10 @@ export default function ServePanel({
                     setCreateError(t('createForm.duplicateName', { name: newName }));
                     return;
                   }
-                  onCreateProfile(newName, newLabel);
+                  if (withPrefill) onCreateProfile(newName, newLabel, true);
+                  else onCreateProfile(newName, newLabel);
                   setShowCreateForm(false);
+                  setWithPrefill(false);
                   setNewLabel('');
                   setNewName('');
                   setCreateError(null);
@@ -236,6 +253,7 @@ export default function ServePanel({
               <button
                 onClick={() => {
                   setShowCreateForm(false);
+                  setWithPrefill(false);
                   setNewLabel('');
                   setNewName('');
                   setCreateError(null);

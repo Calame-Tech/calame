@@ -6,6 +6,7 @@
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { apiFetch } from '../lib/api.js';
+import { mcpPortFromOrigin } from '../lib/mcp-url.js';
 import {
   createDefaultProfile,
   createNewProfile,
@@ -41,6 +42,7 @@ function shallowServeStatusEqual(a: ServeStatus, b: ServeStatus): boolean {
   return (
     a.active === b.active &&
     a.port === b.port &&
+    a.mcpOrigin === b.mcpOrigin &&
     a.startedAt === b.startedAt &&
     a.totalRequests === b.totalRequests &&
     JSON.stringify(a.profiles) === JSON.stringify(b.profiles) &&
@@ -207,7 +209,8 @@ export function useAppData(isUserPage: boolean) {
       if (data.success !== false) {
         const next: ServeStatus = {
           active: data.serving ?? data.active ?? false,
-          port: data.port ?? 0,
+          port: data.port ?? mcpPortFromOrigin(data.mcpOrigin),
+          mcpOrigin: data.mcpOrigin ?? null,
           profiles: data.profiles ?? [],
           profileStatuses: data.profileStatuses,
           startedAt: data.startedAt,
@@ -419,12 +422,19 @@ export function useAppData(isUserPage: boolean) {
 
   // Profile CRUD
   const handleProfileCreate = useCallback(
-    (name: string, label: string) => {
+    (name: string, label: string, configurations?: string[]) => {
       // Never overwrite an existing profile's settings with the new-MCP defaults.
       if (profiles.some((p) => p.name === name)) return;
-      setProfiles((prev) =>
-        prev.some((p) => p.name === name) ? prev : [...prev, createNewProfile(name, label)],
-      );
+      const created = createNewProfile(name, label);
+      if (configurations?.length) {
+        // Created with a preselected data configuration: persist the
+        // attachment right away, as toggling it on the detail page does.
+        created.configurations = configurations;
+        persistProfiles(buildProfilesData([...profiles, created]))
+          .then(() => apiFetch('/api/serve/refresh', { method: 'POST' }))
+          .catch(() => {});
+      }
+      setProfiles((prev) => (prev.some((p) => p.name === name) ? prev : [...prev, created]));
       setActiveProfileIndex((prev) => prev + 1);
     },
     [profiles],

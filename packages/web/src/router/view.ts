@@ -17,10 +17,24 @@ export type View =
    * Kept for backwards-compat (existing navigation calls, deep links).
    */
   | { page: 'connections'; backTo?: View; editConnectionName?: string }
-  | { page: 'configurations' }
+  /**
+   * `prefillSource` (ephemeral, never serialized): opens the creation form
+   * with this knowledge source preselected — guided source → profile step.
+   */
+  | { page: 'configurations'; prefillSource?: { id: string; name: string } }
   | { page: 'config-detail'; configName: string; backTo?: View }
-  | { page: 'mcp-list' }
-  | { page: 'mcp-detail'; profileName: string; activeSection?: string }
+  /** `prefillConfiguration` (ephemeral): opens the creation form with it preselected. */
+  | { page: 'mcp-list'; prefillConfiguration?: string }
+  /**
+   * `suggestConfiguration` (ephemeral): proposes attaching this data
+   * configuration to the server — only an explicit click attaches it.
+   */
+  | {
+      page: 'mcp-detail';
+      profileName: string;
+      activeSection?: string;
+      suggestConfiguration?: string;
+    }
   | { page: 'users'; selectedUserId?: string; backTo?: View }
   | { page: 'settings'; backTo?: View; initialTab?: 'ai' | 'email' | 'sso' }
   | { page: 'metrics' }

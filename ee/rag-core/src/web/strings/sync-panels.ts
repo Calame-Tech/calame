@@ -47,6 +47,29 @@ const FR = {
   jobInProgress: 'Synchronisation en cours',
   documentsCount: (done: number, total: number) => `${done} / ${total} documents`,
   skippedEtag: (n: number) => `${n} skipped (etag)`,
+  // Per-file sync report (CALAME-5)
+  statusCompletedWithSkipped: (n: number) => `Terminé · ${n} ignoré${n > 1 ? 's' : ''}`,
+  syncReport: (indexed: number, unchanged: number, rejected: number) =>
+    `${indexed} indexé${indexed > 1 ? 's' : ''} · ${unchanged} inchangé${unchanged > 1 ? 's' : ''} · ${rejected} ignoré${rejected > 1 ? 's' : ''} / en erreur`,
+  currentDocument: (path: string, seconds: number | null) =>
+    seconds !== null && seconds >= 5
+      ? `En cours : ${path} (depuis ${seconds} s)`
+      : `En cours : ${path}`,
+  rejectedFilesToggle: (n: number) =>
+    `Voir les ${n} fichier${n > 1 ? 's' : ''} ignoré${n > 1 ? 's' : ''}`,
+  rejectedFilesTruncated: (shown: number, total: number) =>
+    `${shown} premiers fichiers affichés sur ${total} (liste complète dans le journal).`,
+  failureKindInfrastructure: "Échec global : stockage ou moteur d'embeddings indisponible",
+  failureKindCap: "Échec global : plafond mensuel d'embeddings atteint",
+  failureKindSource: 'Échec global : source inaccessible',
+  rejectionKind: {
+    parse_failed: 'Illisible ou corrompu',
+    parse_timeout: 'Analyse trop longue (délai dépassé)',
+    too_large: 'Trop volumineux',
+    locked: 'Verrouillé (ouvert dans un autre programme)',
+    unreadable: 'Accès impossible',
+    unsupported: 'Format non pris en charge',
+  } as Record<string, string>,
 
   // IngestionStatusCard
   ingestionLoading: 'Chargement des indexations…',
@@ -149,6 +172,27 @@ const EN: typeof FR = {
   jobInProgress: 'Job in progress',
   documentsCount: (done: number, total: number) => `${done} / ${total} documents`,
   skippedEtag: (n: number) => `${n} skipped (etag)`,
+  statusCompletedWithSkipped: (n: number) => `Completed · ${n} skipped`,
+  syncReport: (indexed: number, unchanged: number, rejected: number) =>
+    `${indexed} indexed · ${unchanged} unchanged · ${rejected} skipped / failed`,
+  currentDocument: (path: string, seconds: number | null) =>
+    seconds !== null && seconds >= 5
+      ? `Processing: ${path} (for ${seconds} s)`
+      : `Processing: ${path}`,
+  rejectedFilesToggle: (n: number) => `Show ${n} skipped file${n > 1 ? 's' : ''}`,
+  rejectedFilesTruncated: (shown: number, total: number) =>
+    `First ${shown} of ${total} files shown (full list in the log).`,
+  failureKindInfrastructure: 'Global failure: storage or embedding engine unavailable',
+  failureKindCap: 'Global failure: monthly embedding cap reached',
+  failureKindSource: 'Global failure: source unreachable',
+  rejectionKind: {
+    parse_failed: 'Unreadable or corrupt',
+    parse_timeout: 'Parsing took too long (timed out)',
+    too_large: 'Too large',
+    locked: 'Locked (open in another program)',
+    unreadable: 'Access denied',
+    unsupported: 'Unsupported format',
+  } as Record<string, string>,
 
   ingestionLoading: 'Loading indexing jobs…',
   ingestionNone: 'No indexing jobs in progress.',

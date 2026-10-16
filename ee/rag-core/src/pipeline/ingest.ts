@@ -101,6 +101,12 @@ export interface IngestDocumentInput {
    * fast-path documents (hash match) do NOT fire the hook.
    */
   onTokensEmbedded?: (count: number) => void;
+  /**
+   * Fired when the content hash matches the indexed copy and nothing is
+   * re-parsed or re-embedded (fast path). Lets the sync report count the
+   * file as "unchanged" rather than "indexed".
+   */
+  onUnchanged?: () => void;
 }
 
 interface DocumentRow {
@@ -236,6 +242,7 @@ export class IngestionPipeline {
           .run(nextEtag, existing.id);
         existing.etag = nextEtag;
       }
+      input.onUnchanged?.();
       return rowToDocument(existing);
     }
 

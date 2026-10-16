@@ -133,6 +133,7 @@ interface Harness {
 function makeHarness(
   files: Map<string, FakeFile>,
   parseDocument?: ConstructorParameters<typeof IngestionPipeline>[0]['parseDocument'],
+  embedder: EmbeddingClient = embeddingClient,
 ): Harness {
   const db = new Database(':memory:');
   runRagMigrations({ raw: db });
@@ -155,7 +156,7 @@ function makeHarness(
   const pipeline = new IngestionPipeline({
     db,
     vectorStore: makeSqlVectorStore(db),
-    embeddingClient,
+    embeddingClient: embedder,
     ...(parseDocument ? { parseDocument } : {}),
   });
   const connector = makeConnector(files);
@@ -277,11 +278,29 @@ describe('runSyncJob — per-file error isolation', () => {
     expect(h.connector.fetchDocument.mock.calls.filter((c) => c[2] === 'denied.txt')).toHaveLength(
       1,
     );
-    expect(String(job['error'])).toMatch(/^4\/7 failed/);
+    // Rejected files don't fail the job: it ran to the end.
+    expect(job['status']).toBe('completed');
+    expect(job['failure_kind']).toBeNull();
+    expect(job['current_document']).toBeNull();
+    // Report: 3 indexed + 0 unchanged + 4 rejected = 7 processed.
+    expect(job['indexed_documents']).toBe(3);
+    expect(job['unchanged_documents']).toBe(0);
+    expect(job['rejected_documents']).toBe(4);
+    const rejected = JSON.parse(String(job['rejected_files'])) as Array<Record<string, string>>;
+    expect(rejected.map((r) => [r['path'], r['kind']])).toEqual([
+      ['Rapport.docx', 'parse_failed'],
+      ['big.txt', 'too_large'],
+      ['locked.docx', 'locked'],
+      ['denied.txt', 'unreadable'],
+    ]);
+    for (const r of rejected) expect(r['reason']).not.toBe('');
+    expect(String(job['error'])).toMatch(/^4 doc\(s\) skipped; last: denied\.txt: Access denied/);
     const audit = (h.deps.onAudit as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0]);
     const terminal = audit[audit.length - 1];
+    expect(terminal.type).toBe('rag.sync.completed');
     expect(terminal.payload['reason']).toBeUndefined();
-    expect(terminal.payload['failures']).toBe(4);
+    expect(terminal.payload['failures']).toBe(0);
+    expect(terminal.payload['rejected']).toBe(4);
     assertConsistent(h.db);
   });
 
@@ -308,7 +327,9 @@ describe('runSyncJob — per-file error isolation', () => {
       const h = makeHarness(files, (m, b, f) => parser.parse(m, b, f));
       const job = await h.sync();
       expect(indexedPaths(h.db)).toEqual(['1.txt', '2.txt']);
-      expect(job['status']).toBe('failed');
+      expect(job['status']).toBe('completed');
+      expect(job['rejected_documents']).toBe(2);
+      expect(String(job['rejected_files'])).toContain('parse_timeout');
       expect(String(job['error'])).toContain('loop.txt');
       expect(String(job['error'])).toMatch(/stopped/);
       // The worker that spun forever is gone; the parser keeps working.
@@ -365,6 +386,118 @@ describe('runSyncJob — per-file error isolation', () => {
     await h.sync();
     expect(h.db.prepare(`SELECT COUNT(*) AS n FROM rag_documents`).get()).toEqual({ n: 0 });
     assertConsistent(h.db);
+  });
+});
+
+describe('runSyncJob — sync report and final status', () => {
+  const savedEnv = { ...process.env };
+  beforeEach(() => {
+    process.env['CALAME_RAG_LOCKED_RETRY_DELAY_MS'] = '1';
+    process.env['CALAME_RAG_MAX_DOC_BYTES'] = '1024';
+  });
+  afterEach(() => {
+    process.env = { ...savedEnv };
+  });
+
+  it('counts unchanged files (etag and content hash) separately from indexed ones', async () => {
+    const files = new Map<string, FakeFile>([
+      ['a.txt', { body: 'alpha', etag: 'a1' }],
+      ['b.txt', { body: 'bravo', etag: 'b1' }],
+      ['c.txt', { body: 'charlie', etag: 'c1' }],
+    ]);
+    const h = makeHarness(files);
+    const first = await h.sync();
+    expect([first['indexed_documents'], first['unchanged_documents']]).toEqual([3, 0]);
+
+    // b.txt: new etag, same bytes (e.g. touched) → hash match, unchanged.
+    // c.txt: real edit → re-indexed. a.txt: etag match → unchanged.
+    files.set('b.txt', { body: 'bravo', etag: 'b2' });
+    files.set('c.txt', { body: 'charlie v2', etag: 'c2' });
+    const second = await h.sync();
+    expect(second['status']).toBe('completed');
+    expect(second['error']).toBeNull();
+    expect(second['indexed_documents']).toBe(1);
+    expect(second['unchanged_documents']).toBe(2);
+    expect(second['skipped_by_etag']).toBe(1);
+    expect(second['rejected_documents']).toBe(0);
+    expect(second['processed_documents']).toBe(3);
+    assertConsistent(h.db);
+  });
+
+  it('reports an embedding engine outage as a global infrastructure failure', async () => {
+    const files = new Map<string, FakeFile>([
+      ['a.txt', { body: 'alpha', etag: 'a1' }],
+      ['b.txt', { body: 'bravo', etag: 'b1' }],
+      ['c.txt', { body: 'charlie', etag: 'c1' }],
+    ]);
+    const down: EmbeddingClient = {
+      ...embeddingClient,
+      embed: async () => {
+        throw new Error('ONNX session failed to load');
+      },
+    };
+    process.env['CALAME_RAG_SYNC_MAX_CONSECUTIVE_FAILURES'] = '2';
+    const h = makeHarness(files, undefined, down);
+    const job = await h.sync();
+    expect(job['status']).toBe('failed');
+    expect(job['failure_kind']).toBe('infrastructure');
+    // Not disguised as a batch of bad files.
+    expect(job['rejected_documents']).toBe(0);
+    expect(job['rejected_files']).toBeNull();
+    expect(String(job['error'])).toContain('ONNX session failed to load');
+    expect(h.db.prepare(`SELECT COUNT(*) AS n FROM rag_documents`).get()).toEqual({ n: 0 });
+    assertConsistent(h.db);
+  });
+
+  it('marks a job whose listing fails as a source failure', async () => {
+    const h = makeHarness(new Map());
+    h.connector.listDocuments = vi.fn(async () => {
+      throw new Error('EACCES: permission denied, scandir C:\\Partage');
+    });
+    const job = await h.sync();
+    expect(job['status']).toBe('failed');
+    expect(job['failure_kind']).toBe('source');
+  });
+
+  it('keeps progress visible while one file is running into its timeout', async () => {
+    let releaseSlow: () => void = () => undefined;
+    let signalStarted: () => void = () => undefined;
+    const slowStarted = new Promise<void>((resolve) => {
+      signalStarted = resolve;
+    });
+    const files = new Map<string, FakeFile>([
+      ['a.txt', { body: 'alpha', etag: 'a1' }],
+      ['slow.txt', { body: 'slow', etag: 's1' }],
+      ['z.txt', { body: 'zulu', etag: 'z1' }],
+    ]);
+    // Stands in for the IsolatedParser: the slow file only settles (with the
+    // timeout rejection) when the test says so.
+    const h = makeHarness(files, (_mime, buffer, filename) => {
+      if (filename !== 'slow.txt') return Promise.resolve({ text: buffer.toString('utf8') });
+      signalStarted();
+      return new Promise((_resolve, reject) => {
+        releaseSlow = () =>
+          reject(new DocumentRejectedError('parse_timeout', 'Parsing was stopped after 1 s.'));
+      });
+    });
+    const done = h.sync();
+    await slowStarted;
+    const running = h.db.prepare(`SELECT * FROM rag_jobs WHERE status = 'running'`).get() as Record<
+      string,
+      unknown
+    >;
+    // The first file is accounted for and the stuck one is named.
+    expect(running['processed_documents']).toBe(1);
+    expect(running['current_document']).toBe('slow.txt');
+    expect(typeof running['current_document_started_at']).toBe('string');
+    releaseSlow();
+    const job = await done;
+    expect(job['status']).toBe('completed');
+    expect(job['processed_documents']).toBe(3);
+    expect(job['indexed_documents']).toBe(2);
+    expect(job['rejected_documents']).toBe(1);
+    expect(job['current_document']).toBeNull();
+    expect(job['current_document_started_at']).toBeNull();
   });
 });
 

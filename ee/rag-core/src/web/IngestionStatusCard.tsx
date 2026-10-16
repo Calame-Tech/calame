@@ -156,6 +156,11 @@ export default function IngestionStatusCard({
                 <span>{S.documentsCount(job.processedDocuments, total)}</span>
                 <span>{percent}%</span>
               </div>
+              {job.currentDocument && isActive(job) && (
+                <p className="text-xs text-gray-500 truncate" title={job.currentDocument}>
+                  {S.currentDocument(job.currentDocument, null)}
+                </p>
+              )}
               {job.error && (
                 <p className="text-xs text-red-400 break-words">{translateJobError(job.error)}</p>
               )}

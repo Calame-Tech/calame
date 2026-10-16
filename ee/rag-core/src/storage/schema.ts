@@ -13,7 +13,7 @@ export interface RagMigrationDb {
   raw: BetterSqlite3Database;
 }
 
-const CURRENT_RAG_SCHEMA_VERSION = 10;
+const CURRENT_RAG_SCHEMA_VERSION = 11;
 
 /**
  * Default tenant id used by Phase A of the multi-tenancy rollout. The column is
@@ -451,6 +451,34 @@ export function runRagMigrations(db: RagMigrationDb): void {
       `CREATE INDEX IF NOT EXISTS idx_rag_reindex_jobs_tenant_started ON rag_reindex_jobs(tenant_id, started_at)`,
     );
     setRagSchemaVersion(raw, 10);
+  }
+
+  if (current < 11) {
+    // v11 — per-file sync report on `rag_jobs` (CALAME-5).
+    //
+    //  - `indexed_documents`   — files (re)indexed by this job.
+    //  - `unchanged_documents` — files skipped as unchanged (etag OR hash match).
+    //  - `rejected_documents`  — files ignored / in error for a reason of their
+    //    own (corrupt, parser timeout, too large, locked, unsupported, …).
+    //  - `rejected_files`      — JSON array of `{ path, kind, reason }` (capped,
+    //    see MAX_REJECTED_FILES_RECORDED in routes/rag-index.ts).
+    //  - `failure_kind`        — set only on a GLOBAL failure: `infrastructure`
+    //    (storage / embedding engine), `cap_exceeded` or `source`.
+    //  - `current_document` / `current_document_started_at` — the file being
+    //    processed right now, so the UI keeps showing activity while one slow
+    //    file runs into its timeout.
+    //
+    // Idempotent: `addColumnIfMissing` skips columns that already exist.
+    if (hasTable(raw, 'rag_jobs')) {
+      addColumnIfMissing(raw, 'rag_jobs', 'indexed_documents', 'INTEGER NOT NULL DEFAULT 0');
+      addColumnIfMissing(raw, 'rag_jobs', 'unchanged_documents', 'INTEGER NOT NULL DEFAULT 0');
+      addColumnIfMissing(raw, 'rag_jobs', 'rejected_documents', 'INTEGER NOT NULL DEFAULT 0');
+      addColumnIfMissing(raw, 'rag_jobs', 'rejected_files', 'TEXT');
+      addColumnIfMissing(raw, 'rag_jobs', 'failure_kind', 'TEXT');
+      addColumnIfMissing(raw, 'rag_jobs', 'current_document', 'TEXT');
+      addColumnIfMissing(raw, 'rag_jobs', 'current_document_started_at', 'TEXT');
+    }
+    setRagSchemaVersion(raw, 11);
   }
 
   // Future migrations slot here, each gated on `current < N`.

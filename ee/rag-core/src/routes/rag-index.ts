@@ -5,7 +5,15 @@
 import type { Express, Request, Response } from 'express';
 import type { Database as BetterSqlite3Database } from 'better-sqlite3';
 import { nanoid } from 'nanoid';
-import type { RagFolder, RagJob, RagJobStatus, RagSource, RagSourceType } from '../types.js';
+import type {
+  RagFolder,
+  RagJob,
+  RagJobFailureKind,
+  RagJobRejectedFile,
+  RagJobStatus,
+  RagSource,
+  RagSourceType,
+} from '../types.js';
 import { RAG_LISTING_SKIP_TOO_LARGE_PREFIX } from '../types.js';
 import type { ConnectorLike, RagRouteDeps } from './types.js';
 import { EmbeddingCapExceededError } from '../jobs/embedding-cap.js';
@@ -49,6 +57,13 @@ interface JobRow {
   skipped_by_etag: number;
   gc_deleted: number;
   tokens_embedded: number | null;
+  indexed_documents?: number | null;
+  unchanged_documents?: number | null;
+  rejected_documents?: number | null;
+  rejected_files?: string | null;
+  failure_kind?: string | null;
+  current_document?: string | null;
+  current_document_started_at?: string | null;
   error: string | null;
   tenant_id: string;
   started_at: string;
@@ -99,12 +114,39 @@ function rowToJob(row: JobRow): RagJob {
     gcDeleted: row.gc_deleted,
     // Defensive `?? 0` for fixtures or pre-v7 rows that bypass the migration.
     tokensEmbedded: row.tokens_embedded ?? 0,
+    // Defensive `?? 0` / `?? null` for pre-v11 rows and fixtures.
+    indexedDocuments: row.indexed_documents ?? 0,
+    unchangedDocuments: row.unchanged_documents ?? 0,
+    rejectedDocuments: row.rejected_documents ?? 0,
+    rejectedFiles: parseRejectedFiles(row.rejected_files ?? null),
+    failureKind: (row.failure_kind ?? null) as RagJobFailureKind | null,
+    currentDocument: row.current_document ?? null,
+    currentDocumentStartedAt: row.current_document_started_at ?? null,
     error: row.error,
     tenantId: row.tenant_id ?? 'default',
     startedAt: row.started_at,
     finishedAt: row.finished_at,
   };
 }
+
+/** Decode `rag_jobs.rejected_files` — tolerant of NULL / malformed JSON. */
+function parseRejectedFiles(raw: string | null): RagJobRejectedFile[] {
+  if (raw === null || raw === '') return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as RagJobRejectedFile[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Max rejected files kept (path + reason) on one job row. Beyond this the
+ * count in `rejected_documents` stays exact but the list is truncated, so a
+ * folder of 50 000 broken files cannot bloat the job row / the history
+ * response. The server log still has every rejected path.
+ */
+const MAX_REJECTED_FILES_RECORDED = 200;
 
 function sendError(res: Response, status: number, message: string): void {
   res.status(status).json({ error: message });
@@ -410,7 +452,9 @@ export async function runSyncJob(
       // Source vanished between enqueue and worker pick-up. Mark the job
       // failed and bail.
       deps.db
-        .prepare(`UPDATE rag_jobs SET status = 'failed', error = ?, finished_at = ? WHERE id = ?`)
+        .prepare(
+          `UPDATE rag_jobs SET status = 'failed', failure_kind = 'source', error = ?, finished_at = ? WHERE id = ?`,
+        )
         .run(`Source "${sourceId}" not found.`, new Date().toISOString(), jobId);
       deps.onAudit?.({
         type: 'rag.sync.failed',
@@ -425,7 +469,9 @@ export async function runSyncJob(
     // source (and this job row) once the retention window expires.
     if (row.deleted_at !== null) {
       deps.db
-        .prepare(`UPDATE rag_jobs SET status = 'failed', error = ?, finished_at = ? WHERE id = ?`)
+        .prepare(
+          `UPDATE rag_jobs SET status = 'failed', failure_kind = 'source', error = ?, finished_at = ? WHERE id = ?`,
+        )
         .run(
           `Source "${sourceId}" was deleted while the job was queued.`,
           new Date().toISOString(),
@@ -446,7 +492,9 @@ export async function runSyncJob(
         `Connector for source type "${source.type}" is not installed. ` +
         `Install @calame-ee/rag-connectors or wait until the connector lands.`;
       deps.db
-        .prepare(`UPDATE rag_jobs SET status = 'failed', error = ?, finished_at = ? WHERE id = ?`)
+        .prepare(
+          `UPDATE rag_jobs SET status = 'failed', failure_kind = 'source', error = ?, finished_at = ? WHERE id = ?`,
+        )
         .run(msg, new Date().toISOString(), jobId);
       deps.onAudit?.({
         type: 'rag.sync.failed',
@@ -462,7 +510,9 @@ export async function runSyncJob(
     } catch (err: unknown) {
       const m = err instanceof Error ? err.message : String(err);
       deps.db
-        .prepare(`UPDATE rag_jobs SET status = 'failed', error = ?, finished_at = ? WHERE id = ?`)
+        .prepare(
+          `UPDATE rag_jobs SET status = 'failed', failure_kind = 'source', error = ?, finished_at = ? WHERE id = ?`,
+        )
         .run(`Failed to decrypt source configuration: ${m}`, new Date().toISOString(), jobId);
       deps.onAudit?.({
         type: 'rag.sync.failed',
@@ -493,7 +543,9 @@ export async function runSyncJob(
     } catch (err: unknown) {
       const m = err instanceof Error ? err.message : String(err);
       deps.db
-        .prepare(`UPDATE rag_jobs SET status = 'failed', error = ?, finished_at = ? WHERE id = ?`)
+        .prepare(
+          `UPDATE rag_jobs SET status = 'failed', failure_kind = 'source', error = ?, finished_at = ? WHERE id = ?`,
+        )
         .run(m, new Date().toISOString(), jobId);
       deps.onAudit?.({
         type: 'rag.sync.failed',
@@ -522,11 +574,25 @@ export async function runSyncJob(
       .run(entries.length, jobId);
 
     let processed = 0;
+    // `failures` counts errors that are NOT a property of one file — storage
+    // or embedding engine errors, soft timeouts of the ingest step, unknown
+    // connector errors. Any of them makes the job `failed` (infrastructure).
+    // Per-file rejections are tracked separately in `rejectedFiles` and leave
+    // the job `completed` (with files ignored).
     let failures = 0;
     let skippedByEtag = 0;
     let skippedUnsupported = 0;
     let skippedTooLarge = 0;
     let gcDeleted = 0;
+    // Sync report: indexed = (re)embedded and written; unchanged = etag
+    // fast-path OR content-hash match; rejected = ignored / in error for a
+    // reason of their own. processed = indexed + unchanged + rejected +
+    // failures (the GC pass is reported separately).
+    let indexedDocs = 0;
+    let unchangedDocs = 0;
+    let rejectedDocs = 0;
+    const rejectedFiles: RagJobRejectedFile[] = [];
+    let lastRejection: string | null = null;
     // Accumulated sum of chunk.tokenCount across every document that was
     // actually embedded by this job. Fast-path (hash-match) docs do not
     // contribute — the pipeline's `onTokensEmbedded` hook only fires after
@@ -547,6 +613,49 @@ export async function runSyncJob(
     const maxConsecutiveFailures = readMaxConsecutiveFailures();
     let consecutiveFailures = 0;
     let circuitBroken = false;
+
+    const progressStmt = deps.db.prepare(
+      `UPDATE rag_jobs
+			 SET processed_documents = ?, progress = ?, skipped_by_etag = ?, indexed_documents = ?,
+			     unchanged_documents = ?, rejected_documents = ?, error = ?
+			 WHERE id = ?`,
+    );
+    /** Persist the counters after each document so the UI progresses steadily. */
+    const writeProgress = (): void => {
+      const errorSummary =
+        failures > 0
+          ? `${failures}/${processed} failed so far; last: ${truncateMessage(lastError, 200)}`
+          : rejectedDocs > 0
+            ? `${rejectedDocs} doc(s) skipped so far; last: ${truncateMessage(lastRejection, 200)}`
+            : null;
+      progressStmt.run(
+        processed,
+        entries.length === 0 ? 1 : processed / entries.length,
+        skippedByEtag,
+        indexedDocs,
+        unchangedDocs,
+        rejectedDocs,
+        errorSummary,
+        jobId,
+      );
+    };
+    const rejectedStmt = deps.db.prepare(`UPDATE rag_jobs SET rejected_files = ? WHERE id = ?`);
+    /** Record one file the sync ignores, with a readable reason for the history. */
+    const recordRejection = (path: string, kind: string, reason: string): void => {
+      rejectedDocs++;
+      lastRejection = `${path}: ${reason}`;
+      if (rejectedFiles.length < MAX_REJECTED_FILES_RECORDED) {
+        rejectedFiles.push({ path, kind, reason });
+        rejectedStmt.run(JSON.stringify(rejectedFiles), jobId);
+      }
+    };
+    // The file being worked on is written BEFORE its fetch/parse starts, so
+    // the history shows which file is running (and since when) even while a
+    // slow or stuck one runs into its timeout and the counters don't move.
+    const currentDocStmt = deps.db.prepare(
+      `UPDATE rag_jobs SET current_document = ?, current_document_started_at = ? WHERE id = ?`,
+    );
+
     let entryIndex = 0;
     for (const { doc, folder } of entries) {
       deps.logger?.info(
@@ -561,21 +670,13 @@ export async function runSyncJob(
         const listingError = doc.ingestError ?? null;
         if (listingError !== null && listingError.startsWith(RAG_LISTING_SKIP_TOO_LARGE_PREFIX)) {
           skippedTooLarge++;
+          recordRejection(doc.path, 'too_large', listingError);
           processed++;
           consecutiveFailures = 0; // a deliberate skip is not a failure
           deps.logger?.info(`[rag-sync] SKIPPED (too large) ${doc.path}: ${listingError}`, {
             component: `rag-sync/${source.id}`,
           });
-          deps.db
-            .prepare(
-              `UPDATE rag_jobs SET processed_documents = ?, progress = ?, skipped_by_etag = ? WHERE id = ?`,
-            )
-            .run(
-              processed,
-              entries.length === 0 ? 1 : processed / entries.length,
-              skippedByEtag,
-              jobId,
-            );
+          writeProgress();
           entryIndex++;
           continue;
         }
@@ -609,31 +710,19 @@ export async function runSyncJob(
             (existing.ingestError === null || isUnsupportedFormatIngestError(existing.ingestError))
           ) {
             skippedByEtag++;
+            unchangedDocs++;
             processed++;
             consecutiveFailures = 0; // etag-skip is not a failure
             deps.logger?.info(`[rag-sync] etag-skip ${doc.path}`, {
               component: `rag-sync/${source.id}`,
             });
-            const errorSummary =
-              failures > 0
-                ? `${failures}/${processed} failed so far; last: ${truncateMessage(lastError, 200)}`
-                : null;
-            deps.db
-              .prepare(
-                `UPDATE rag_jobs SET processed_documents = ?, progress = ?, skipped_by_etag = ?, error = ? WHERE id = ?`,
-              )
-              .run(
-                processed,
-                entries.length === 0 ? 1 : processed / entries.length,
-                skippedByEtag,
-                errorSummary,
-                jobId,
-              );
+            writeProgress();
             entryIndex++;
             continue;
           }
         }
 
+        currentDocStmt.run(doc.path, new Date().toISOString(), jobId);
         const docTimeoutMs = readDocTimeoutMs();
         deps.logger?.info(`[rag-sync] fetch ${doc.path}`, {
           component: `rag-sync/${source.id}`,
@@ -644,6 +733,7 @@ export async function runSyncJob(
           `[rag-sync] ingest ${doc.path} (${buffer.byteLength} bytes, ${fetched.mimeType})`,
           { component: `rag-sync/${source.id}` },
         );
+        let unchanged = false;
         try {
           await withTimeout(
             deps.pipeline.ingestDocument({
@@ -658,6 +748,9 @@ export async function runSyncJob(
               // the hook on actual re-embeds (skipped fast-path → no fire).
               onTokensEmbedded: (count: number) => {
                 tokensEmbeddedThisJob += count;
+              },
+              onUnchanged: () => {
+                unchanged = true;
               },
             }),
             docTimeoutMs,
@@ -683,11 +776,14 @@ export async function runSyncJob(
           }
           throw ingestErr;
         }
+        if (unchanged) unchangedDocs++;
+        else indexedDocs++;
         deps.logger?.info(`[rag-sync] OK ${doc.path}`, { component: `rag-sync/${source.id}` });
         consecutiveFailures = 0;
       } catch (err: unknown) {
         if (err instanceof UnsupportedMimeTypeError) {
           skippedUnsupported++;
+          recordRejection(doc.path, 'unsupported', err.message);
           consecutiveFailures = 0; // reset — this isn't a failure of the embedding pipeline
           deps.logger?.info(`[rag-sync] SKIPPED (unsupported MIME) ${doc.path}: ${err.message}`, {
             component: `rag-sync/${source.id}`,
@@ -696,10 +792,10 @@ export async function runSyncJob(
           // Per-file rejection (corrupt, parser timeout, too large, locked,
           // unreadable): record it with the file path and move on. It says
           // nothing about the storage / embedding infrastructure, so it
-          // neither trips nor resets the consecutive-failure breaker. The
-          // previously indexed version, if any, is left untouched.
-          failures++;
-          lastError = `${doc.path}: ${err.message}`;
+          // neither trips nor resets the consecutive-failure breaker, and it
+          // does not make the job `failed`. The previously indexed version,
+          // if any, is left untouched.
+          recordRejection(doc.path, err.kind, err.message);
           deps.logger?.warn(`[rag-sync] REJECTED (${err.kind}) ${doc.path}: ${err.message}`, {
             component: `rag-sync/${source.id}`,
           });
@@ -718,18 +814,7 @@ export async function runSyncJob(
             // report `reason: 'cap_exceeded'`.
             capExceeded = true;
             processed++;
-            const errorSummary = `${failures}/${processed} failed so far; last: ${truncateMessage(lastError, 200)}`;
-            deps.db
-              .prepare(
-                `UPDATE rag_jobs SET processed_documents = ?, progress = ?, skipped_by_etag = ?, error = ? WHERE id = ?`,
-              )
-              .run(
-                processed,
-                entries.length === 0 ? 1 : processed / entries.length,
-                skippedByEtag,
-                errorSummary,
-                jobId,
-              );
+            writeProgress();
             break;
           }
           consecutiveFailures++;
@@ -737,42 +822,13 @@ export async function runSyncJob(
             circuitBroken = true;
             lastError = `Aborted after ${maxConsecutiveFailures} consecutive failures. Last error: ${lastError}`;
             processed++;
-            const errorSummary = `${failures}/${processed} failed so far; last: ${truncateMessage(lastError, 200)}`;
-            deps.db
-              .prepare(
-                `UPDATE rag_jobs SET processed_documents = ?, progress = ?, skipped_by_etag = ?, error = ? WHERE id = ?`,
-              )
-              .run(
-                processed,
-                entries.length === 0 ? 1 : processed / entries.length,
-                skippedByEtag,
-                errorSummary,
-                jobId,
-              );
+            writeProgress();
             break;
           }
         }
       }
       processed++;
-      const errorSummary =
-        failures > 0
-          ? `${failures}/${processed} failed so far; last: ${truncateMessage(lastError, 200)}`
-          : skippedUnsupported > 0
-            ? `${skippedUnsupported} doc(s) skipped (unsupported format)`
-            : skippedTooLarge > 0
-              ? `${skippedTooLarge} doc(s) skipped (too large)`
-              : null;
-      deps.db
-        .prepare(
-          `UPDATE rag_jobs SET processed_documents = ?, progress = ?, skipped_by_etag = ?, error = ? WHERE id = ?`,
-        )
-        .run(
-          processed,
-          entries.length === 0 ? 1 : processed / entries.length,
-          skippedByEtag,
-          errorSummary,
-          jobId,
-        );
+      writeProgress();
       entryIndex++;
     }
 
@@ -815,13 +871,27 @@ export async function runSyncJob(
       }
     }
 
-    const finalStatus: RagJobStatus = failures === 0 ? 'completed' : 'failed';
+    // Final status. A job that walked every file is `completed` even when
+    // some files were ignored (their list is on the row); only a GLOBAL
+    // problem — storage / embedding engine errors, the circuit-breaker, the
+    // monthly cap — makes it `failed`, tagged with `failure_kind` so the UI
+    // never presents an infrastructure outage as a batch of corrupt files.
+    const finalStatus: RagJobStatus = failures === 0 && !capExceeded ? 'completed' : 'failed';
+    const failureKind: RagJobFailureKind | null = capExceeded
+      ? 'cap_exceeded'
+      : failures > 0
+        ? 'infrastructure'
+        : null;
+    const fileRejections = rejectedDocs - skippedUnsupported - skippedTooLarge;
     const finishedAt = new Date().toISOString();
     deps.db
       .prepare(
         `UPDATE rag_jobs
 				 SET status = ?, finished_at = ?, error = ?, progress = 1,
-				     skipped_by_etag = ?, gc_deleted = ?, tokens_embedded = ?
+				     skipped_by_etag = ?, gc_deleted = ?, tokens_embedded = ?,
+				     indexed_documents = ?, unchanged_documents = ?, rejected_documents = ?,
+				     rejected_files = ?, failure_kind = ?,
+				     current_document = NULL, current_document_started_at = NULL
 				 WHERE id = ?`,
       )
       .run(
@@ -829,14 +899,21 @@ export async function runSyncJob(
         finishedAt,
         failures > 0
           ? `${failures}/${entries.length} failed; last: ${lastError}`
-          : skippedUnsupported > 0
-            ? `${skippedUnsupported} doc(s) skipped — unsupported format. Convert to PDF/DOCX/MD/TXT or wait for native support.`
-            : skippedTooLarge > 0
-              ? `${skippedTooLarge} doc(s) skipped — larger than the source's max file size. Raise the limit or split the file.`
-              : null,
+          : fileRejections > 0
+            ? `${rejectedDocs} doc(s) skipped; last: ${lastRejection}`
+            : skippedUnsupported > 0
+              ? `${skippedUnsupported} doc(s) skipped — unsupported format. Convert to PDF/DOCX/MD/TXT or wait for native support.`
+              : skippedTooLarge > 0
+                ? `${skippedTooLarge} doc(s) skipped — larger than the source's max file size. Raise the limit or split the file.`
+                : null,
         skippedByEtag,
         gcDeleted,
         tokensEmbeddedThisJob,
+        indexedDocs,
+        unchangedDocs,
+        rejectedDocs,
+        rejectedFiles.length > 0 ? JSON.stringify(rejectedFiles) : null,
+        failureKind,
         jobId,
       );
     deps.db
@@ -863,6 +940,9 @@ export async function runSyncJob(
       skippedTooLarge,
       gcDeleted,
       failures,
+      indexed: indexedDocs,
+      unchanged: unchangedDocs,
+      rejected: rejectedDocs,
       tokensEmbedded: tokensEmbeddedThisJob,
     };
     if (capExceeded) terminalPayload['reason'] = 'cap_exceeded';
@@ -875,7 +955,9 @@ export async function runSyncJob(
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     deps.db
-      .prepare(`UPDATE rag_jobs SET status = 'failed', error = ?, finished_at = ? WHERE id = ?`)
+      .prepare(
+        `UPDATE rag_jobs SET status = 'failed', failure_kind = 'infrastructure', current_document = NULL, error = ?, finished_at = ? WHERE id = ?`,
+      )
       .run(message, new Date().toISOString(), jobId);
     deps.onAudit?.({
       type: 'rag.sync.failed',

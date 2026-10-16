@@ -50,6 +50,45 @@ function statusBadgeClasses(status: RagJobStatus): string {
   }
 }
 
+/** True for a job that ran to the end but ignored some files. */
+function completedWithSkipped(job: RagJob): boolean {
+  return job.status === 'completed' && (job.rejectedDocuments ?? 0) > 0;
+}
+
+/** Status label, distinguishing "completed with ignored files" from a clean run. */
+function jobStatusLabel(job: RagJob): string {
+  return completedWithSkipped(job)
+    ? S.statusCompletedWithSkipped(job.rejectedDocuments)
+    : statusLabel(job.status);
+}
+
+function jobBadgeClasses(job: RagJob): string {
+  return completedWithSkipped(job)
+    ? 'bg-amber-950/40 text-amber-400 border border-amber-800/50'
+    : statusBadgeClasses(job.status);
+}
+
+/** Label for a GLOBAL failure (never caused by individual files), or null. */
+function failureKindLabel(job: RagJob): string | null {
+  switch (job.failureKind) {
+    case 'infrastructure':
+      return S.failureKindInfrastructure;
+    case 'cap_exceeded':
+      return S.failureKindCap;
+    case 'source':
+      return S.failureKindSource;
+    default:
+      return null;
+  }
+}
+
+/** Seconds the current file has been running for, as of the last poll. */
+function currentDocumentSeconds(job: RagJob): number | null {
+  if (!job.currentDocumentStartedAt) return null;
+  const ms = Date.now() - new Date(job.currentDocumentStartedAt).getTime();
+  return Number.isFinite(ms) && ms >= 0 ? Math.floor(ms / 1000) : null;
+}
+
 /**
  * Format a duration in milliseconds as a compact French string.
  * Examples: "850 ms", "12 s", "3 min 42 s", "1 h 02 min".
@@ -332,9 +371,9 @@ export default function SyncHistoryPanel({ sources, onClose }: SyncHistoryPanelP
                       </td>
                       <td className="px-3 py-2 whitespace-nowrap">
                         <span
-                          className={`text-xs px-2 py-0.5 rounded-full ${statusBadgeClasses(job.status)}`}
+                          className={`text-xs px-2 py-0.5 rounded-full ${jobBadgeClasses(job)}`}
                         >
-                          {statusLabel(job.status)}
+                          {jobStatusLabel(job)}
                         </span>
                       </td>
                       <td className="px-3 py-2 min-w-[180px]">
@@ -350,6 +389,17 @@ export default function SyncHistoryPanel({ sources, onClose }: SyncHistoryPanelP
                               <div className="text-xs text-gray-500">
                                 {job.processedDocuments} / {job.totalDocuments || '?'} · {percent}%
                               </div>
+                              {job.currentDocument && (
+                                <div
+                                  className="text-xs text-gray-500 truncate max-w-[260px]"
+                                  title={job.currentDocument}
+                                >
+                                  {S.currentDocument(
+                                    job.currentDocument,
+                                    currentDocumentSeconds(job),
+                                  )}
+                                </div>
+                              )}
                             </>
                           ) : (
                             <div className="text-xs text-gray-400">
@@ -363,17 +413,59 @@ export default function SyncHistoryPanel({ sources, onClose }: SyncHistoryPanelP
                               {job.gcDeleted > 0 && (
                                 <span className="text-gray-500"> · {job.gcDeleted} GC</span>
                               )}
+                              {job.indexedDocuments +
+                                job.unchangedDocuments +
+                                job.rejectedDocuments >
+                                0 && (
+                                <div className="text-gray-500">
+                                  {S.syncReport(
+                                    job.indexedDocuments,
+                                    job.unchangedDocuments,
+                                    job.rejectedDocuments,
+                                  )}
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>
                       </td>
-                      <td className="px-3 py-2 text-xs text-red-400 max-w-[260px]">
+                      <td
+                        className={`px-3 py-2 text-xs max-w-[260px] ${
+                          completedWithSkipped(job) ? 'text-amber-400' : 'text-red-400'
+                        }`}
+                      >
+                        {failureKindLabel(job) && (
+                          <span className="block font-medium">{failureKindLabel(job)}</span>
+                        )}
                         {job.error ? (
                           <span className="block truncate" title={translateJobError(job.error)}>
                             {translateJobError(job.error)}
                           </span>
                         ) : (
-                          <span className="text-gray-600">—</span>
+                          !failureKindLabel(job) && <span className="text-gray-600">—</span>
+                        )}
+                        {job.rejectedFiles.length > 0 && (
+                          <details className="mt-1 text-gray-400">
+                            <summary className="cursor-pointer">
+                              {S.rejectedFilesToggle(job.rejectedDocuments)}
+                            </summary>
+                            <ul className="mt-1 space-y-0.5">
+                              {job.rejectedFiles.map((f) => (
+                                <li key={f.path} className="break-all" title={f.reason}>
+                                  <span className="text-gray-300">{f.path}</span> —{' '}
+                                  {S.rejectionKind[f.kind] ?? f.reason}
+                                </li>
+                              ))}
+                            </ul>
+                            {job.rejectedDocuments > job.rejectedFiles.length && (
+                              <p className="mt-1 text-gray-500">
+                                {S.rejectedFilesTruncated(
+                                  job.rejectedFiles.length,
+                                  job.rejectedDocuments,
+                                )}
+                              </p>
+                            )}
+                          </details>
                         )}
                       </td>
                     </tr>

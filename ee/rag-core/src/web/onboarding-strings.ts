@@ -111,6 +111,8 @@ const FR = {
     `${count} document(s) ignoré(s) — format non pris en charge. Convertissez-les en PDF/DOCX/MD/TXT.`,
   jobTooLarge: (count: string) =>
     `${count} document(s) ignoré(s) — plus gros que la taille maximale de la source. Augmentez la limite ou découpez le fichier.`,
+  jobSkipped: (count: string, last: string) =>
+    `${count} fichier(s) ignoré(s) (illisible, corrompu, trop gros ou verrouillé) ; dernier : ${last}`,
   connectorValidationFailed: (detail: string) =>
     `La vérification de la source a échoué : ${detail}`,
   localRootMissing: (root: string) =>
@@ -250,6 +252,8 @@ const EN: typeof FR = {
     `${count} document(s) skipped — unsupported format. Convert them to PDF/DOCX/MD/TXT.`,
   jobTooLarge: (count: string) =>
     `${count} document(s) skipped — larger than the source's max file size. Raise the limit or split the file.`,
+  jobSkipped: (count: string, last: string) =>
+    `${count} file(s) skipped (unreadable, corrupt, too large or locked); last: ${last}`,
   connectorValidationFailed: (detail: string) => `Source check failed: ${detail}`,
   localRootMissing: (root: string) =>
     `Folder "${root}" was not found. Check the path (drive letter, network share) and that the ` +
@@ -339,5 +343,7 @@ export function translateJobError(error: string): string {
   if (unsupported) return RAG_STRINGS.jobUnsupported(unsupported[1]);
   const tooLarge = /^(\d+) doc\(s\) skipped — larger than the source's max file size\./.exec(error);
   if (tooLarge) return RAG_STRINGS.jobTooLarge(tooLarge[1]);
+  const skipped = /^(\d+) doc\(s\) skipped(?: so far)?; last: ([\s\S]*)$/.exec(error);
+  if (skipped) return RAG_STRINGS.jobSkipped(skipped[1], skipped[2]);
   return error;
 }

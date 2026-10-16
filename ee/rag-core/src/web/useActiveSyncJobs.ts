@@ -20,6 +20,17 @@ export interface SourceJobInfo {
   lastTerminalJobId: string | null;
 }
 
+/** Per-file report fields of a job that has not processed anything yet. */
+export const EMPTY_JOB_REPORT = {
+  indexedDocuments: 0,
+  unchangedDocuments: 0,
+  rejectedDocuments: 0,
+  rejectedFiles: [],
+  failureKind: null,
+  currentDocument: null,
+  currentDocumentStartedAt: null,
+} satisfies Partial<RagJob>;
+
 export interface UseActiveSyncJobsResult {
   jobMap: Map<string, SourceJobInfo>;
   /**

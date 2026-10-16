@@ -2289,7 +2289,9 @@
         "connectFailed": "Échec de la connexion à Claude Desktop.",
         "connectNetworkError": "Erreur réseau lors de la connexion à Claude Desktop.",
         "snippetLoadFailed": "Échec du chargement de l’extrait de configuration manuelle.",
-        "snippetLoadNetworkError": "Erreur réseau lors du chargement de l’extrait de configuration manuelle."
+        "snippetLoadNetworkError": "Erreur réseau lors du chargement de l’extrait de configuration manuelle.",
+        "createKeyFailed": "Impossible de créer la clé API.",
+        "createKeyNetworkError": "Erreur réseau lors de la création de la clé API."
       },
       "heading": "Connectez votre IA",
       "headingHelp": "Connectez ce serveur MCP à Claude Desktop, ou récupérez un extrait manuel pour d’autres clients MCP.",
@@ -2302,7 +2304,14 @@
       "connectingButton": "Connexion…",
       "notFound": "Claude Desktop est introuvable sur cette machine.",
       "manualToggle": "Autres clients / une autre machine",
-      "snippetTokenPlaceholder": "Remplacez <code>TOKEN</code> par une clé API."
+      "snippetTokenPlaceholder": "Remplacez <code>TOKEN</code> par une clé API.",
+      "createKey": {
+        "button": "Créer une clé API et l’insérer",
+        "creating": "Création de la clé…",
+        "retry": "Réessayer",
+        "keyLabel": "Extrait de connexion",
+        "revealedOnce": "Une nouvelle clé API a été insérée dans l’extrait ci-dessous. Elle n’est affichée qu’une seule fois : copiez l’extrait maintenant, elle ne sera plus visible ensuite. Vous pourrez la révoquer depuis l’onglet Clés API."
+      }
     }
   },
   "setupLogin": {

@@ -2289,7 +2289,9 @@
         "connectFailed": "Failed to connect to Claude Desktop.",
         "connectNetworkError": "Network error connecting to Claude Desktop.",
         "snippetLoadFailed": "Failed to load the manual configuration snippet.",
-        "snippetLoadNetworkError": "Network error loading the manual configuration snippet."
+        "snippetLoadNetworkError": "Network error loading the manual configuration snippet.",
+        "createKeyFailed": "Couldn't create the API key.",
+        "createKeyNetworkError": "Network error while creating the API key."
       },
       "heading": "Connect your AI",
       "headingHelp": "Wire this MCP server into Claude Desktop, or grab a manual snippet for other MCP clients.",
@@ -2302,7 +2304,14 @@
       "connectingButton": "Connecting…",
       "notFound": "Claude Desktop wasn't found on this machine.",
       "manualToggle": "Other clients / another machine",
-      "snippetTokenPlaceholder": "Replace <code>TOKEN</code> with an API key."
+      "snippetTokenPlaceholder": "Replace <code>TOKEN</code> with an API key.",
+      "createKey": {
+        "button": "Create an API key and insert it",
+        "creating": "Creating key…",
+        "retry": "Try again",
+        "keyLabel": "Connection snippet",
+        "revealedOnce": "A new API key has been inserted into the snippet below. It is shown only once: copy the snippet now — it will not be displayed again. You can revoke it from the API keys tab."
+      }
     }
   },
   "setupLogin": {

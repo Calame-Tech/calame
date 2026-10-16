@@ -9,6 +9,7 @@ import { render as rtlRender, screen, fireEvent, waitFor } from '@testing-librar
 import type { ReactElement } from 'react';
 import type { RenderOptions } from '@testing-library/react';
 import ServePanel from '../ServePanel.js';
+import { resetMcpProbes } from '../McpProbe.js';
 import { I18nProvider } from '../../i18n/I18nProvider.js';
 import type { Config, Profile, ServeStatus } from '../../types/schema.js';
 
@@ -119,6 +120,7 @@ describe('ServePanel', () => {
 
     afterEach(() => {
       vi.unstubAllGlobals();
+      resetMcpProbes();
     });
 
     it('stays available on a stopped server and reports it with what to do', async () => {

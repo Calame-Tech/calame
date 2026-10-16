@@ -3,6 +3,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { screen, fireEvent, act } from '@testing-library/react';
 import McpDetailPage from '../McpDetailPage.js';
+import ServePanel from '../../components/ServePanel.js';
+import { resetMcpProbes } from '../../components/McpProbe.js';
+import { SETUP_REFRESH_EVENT } from '../../components/SetupChecklist.js';
 import { useNavigation } from '../../router/useNavigation.js';
 import type { View } from '../../router/view.js';
 import { createNewProfile } from '../../lib/profiles.js';
@@ -23,14 +26,18 @@ vi.mock('@calame-ee/sso/web', () => ({
   OidcSettings: () => <div>OIDC settings (mock)</div>,
 }));
 
-function renderPage({ profileName = 'default', setView = vi.fn() } = {}) {
-  render(
+function renderPage({
+  profileName = 'default',
+  setView = vi.fn(),
+  serveStatus = makeServeStatus(),
+} = {}) {
+  return render(
     <McpDetailPage
       view={{ page: 'mcp-detail', profileName }}
       setView={setView}
       profiles={[makeProfile()]}
       setProfiles={vi.fn()}
-      serveStatus={makeServeStatus()}
+      serveStatus={serveStatus}
       configWithProfileOptions={makeConfig()}
       configurations={[]}
       setConfigurations={vi.fn()}
@@ -40,7 +47,6 @@ function renderPage({ profileName = 'default', setView = vi.fn() } = {}) {
       handleConfigurationSave={vi.fn(async () => true)}
     />,
   );
-  return setView;
 }
 
 describe('McpDetailPage', () => {
@@ -137,7 +143,8 @@ describe('McpDetailPage', () => {
   });
 
   it('navigates back to the MCP list via the breadcrumb', async () => {
-    const setView = renderPage();
+    const setView = vi.fn();
+    renderPage({ setView });
     fireEvent.click(screen.getByText('MCP Servers'));
     expect(setView).toHaveBeenCalledWith({ page: 'mcp-list' });
     await flushEffects();
@@ -291,6 +298,172 @@ describe('McpDetailPage', () => {
         screen.getByRole('button', { name: 'Advanced options' }).getAttribute('aria-expanded'),
       ).toBe('false');
       expect(screen.getByText(/accessible without any authentication/)).toBeTruthy();
+    });
+  });
+
+  describe('Test MCP button', () => {
+    const activeStatus = makeServeStatus({
+      active: true,
+      profiles: ['default'],
+      profileStatuses: { default: { active: true, endpoint: '/mcp/default' } },
+    });
+
+    /** Answers the probe with `body`; every other endpoint keeps the default stub. */
+    function installProbe(body: unknown, status = 200) {
+      const base = installFetchMock();
+      const fallback = base.getMockImplementation()!;
+      const mock = vi.fn(async (input: string | URL | Request, _init?: RequestInit) => {
+        if (String(input) === '/api/serve/mcp-probe') {
+          return new Response(JSON.stringify(body), {
+            status,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        return fallback(input);
+      });
+      vi.stubGlobal('fetch', mock);
+      return mock;
+    }
+
+    function renderCard(serveStatus = activeStatus) {
+      return render(
+        <ServePanel
+          config={makeConfig()}
+          selectedTables={{}}
+          profiles={[makeProfile()]}
+          serveStatus={serveStatus}
+          onSelectProfile={vi.fn()}
+        />,
+      );
+    }
+
+    const success = {
+      success: true,
+      profileName: 'default',
+      tools: [
+        { name: 'query', description: '' },
+        { name: 'list_tables', description: '' },
+      ],
+    };
+
+    afterEach(() => {
+      resetMcpProbes();
+    });
+
+    it('sits next to Start/Stop and lists the discovered tools without any AI call', async () => {
+      const fetchMock = installProbe(success);
+      const refreshed = vi.fn();
+      window.addEventListener(SETUP_REFRESH_EVENT, refreshed);
+      try {
+        renderPage({ serveStatus: activeStatus });
+        await flushEffects();
+        const button = screen.getByRole('button', { name: 'Test MCP' });
+        expect(button.parentElement).toBe(screen.getByText('Stop').parentElement);
+
+        fireEvent.click(button);
+        const result = await screen.findByTestId('mcp-probe-result');
+        expect(result.textContent).toContain('2 tools discovered');
+        expect(result.textContent).toContain('query, list_tables');
+        expect(result.textContent).toContain('does not run the tools or validate the data sources');
+
+        const probeCall = fetchMock.mock.calls.find((c) => String(c[0]) === '/api/serve/mcp-probe');
+        expect(JSON.parse(String((probeCall?.[1] as RequestInit).body))).toEqual({
+          profileName: 'default',
+        });
+        const posts = fetchMock.mock.calls
+          .filter((c) => (c[1] as RequestInit | undefined)?.method === 'POST')
+          .map((c) => String(c[0]));
+        expect(posts).toEqual(['/api/serve/mcp-probe']);
+        // The setup guide re-reads the kept outcome (step 4).
+        expect(refreshed).toHaveBeenCalled();
+      } finally {
+        window.removeEventListener(SETUP_REFRESH_EVENT, refreshed);
+      }
+    });
+
+    it('shows a classified error with its reason, action and technical detail', async () => {
+      installProbe(
+        {
+          success: false,
+          error: {
+            category: 'auth',
+            stage: 'initialize',
+            message: 'The MCP endpoint refused the credentials (HTTP 401).',
+            action: 'Check the profile authentication mode.',
+            httpStatus: 401,
+          },
+        },
+        502,
+      );
+      renderPage({ serveStatus: activeStatus });
+      await flushEffects();
+      fireEvent.click(screen.getByRole('button', { name: 'Test MCP' }));
+      const alert = await screen.findByRole('alert');
+      expect(alert.textContent).toContain('MCP test failed: authentication refused');
+      expect(alert.textContent).toContain('refused the credentials (HTTP 401)');
+      expect(alert.textContent).toContain('What to do: Check the profile authentication mode.');
+      expect(alert.textContent).toContain('stage=initialize');
+    });
+
+    it('is available on a stopped server and reports it with what to do', async () => {
+      installProbe(
+        {
+          success: false,
+          error: {
+            category: 'unreachable',
+            stage: 'preflight',
+            code: 'server_stopped',
+            message: 'The MCP server "default" is stopped.',
+            action: 'Click Start on the MCP server, then run the test again.',
+          },
+        },
+        409,
+      );
+      renderPage();
+      await flushEffects();
+      fireEvent.click(screen.getByRole('button', { name: 'Test MCP' }));
+      const alert = await screen.findByRole('alert');
+      expect(alert.textContent).toContain('The MCP server is stopped.');
+      expect(alert.textContent).toContain('What to do: Click Start, then run the test again.');
+    });
+
+    it('shares its result with the MCP list card, both ways', async () => {
+      installProbe(success);
+      const page = renderPage({ serveStatus: activeStatus });
+      await flushEffects();
+      fireEvent.click(screen.getByRole('button', { name: 'Test MCP' }));
+      await screen.findByTestId('mcp-probe-result');
+      page.unmount();
+
+      // The card shows the test run from the page…
+      const card = renderCard();
+      expect(screen.getByTestId('mcp-probe-result').textContent).toContain('2 tools discovered');
+
+      // …and a test run from the card replaces it on the page.
+      installProbe({ success: false, error: { category: 'timeout', message: 'No answer.' } }, 504);
+      fireEvent.click(screen.getByText('Test MCP'));
+      await screen.findByRole('alert');
+      card.unmount();
+
+      renderPage({ serveStatus: activeStatus });
+      await flushEffects();
+      expect(screen.getByRole('alert').textContent).toContain('MCP test failed: timeout');
+      expect(screen.queryByText('2 tools discovered', { exact: false })).toBeNull();
+    });
+
+    it('drops a result once the server is started or stopped', async () => {
+      installProbe(success);
+      const page = renderPage({ serveStatus: activeStatus });
+      await flushEffects();
+      fireEvent.click(screen.getByRole('button', { name: 'Test MCP' }));
+      await screen.findByTestId('mcp-probe-result');
+      page.unmount();
+
+      // Stopped meanwhile: neither the card nor the page show the stale result.
+      renderCard(makeServeStatus()).unmount();
+      renderPage();
+      await flushEffects();
+      expect(screen.queryByTestId('mcp-probe-result')).toBeNull();
     });
   });
 });

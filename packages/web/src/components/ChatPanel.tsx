@@ -22,6 +22,7 @@ interface AiStatus {
   configured: boolean;
   /** Label of the setting actually used for chat (as named in AI settings). */
   label?: string;
+  provider?: string;
   model?: string;
 }
 
@@ -47,6 +48,27 @@ export function findChatSetting(settings: AiSettingMeta[]): AiSettingMeta | unde
   );
 }
 
+/**
+ * Text shown after "Using": the label of the setting the server will use,
+ * with its real provider and model. Never defaults to a provider name — a
+ * provider we cannot identify is simply not shown.
+ */
+export function describeChatSetting(
+  setting: { label: string; provider?: string; model?: string },
+  customLabel: string,
+): string {
+  const providerName =
+    setting.provider === 'anthropic'
+      ? 'Anthropic'
+      : setting.provider === 'openrouter'
+        ? 'OpenRouter'
+        : setting.provider === 'custom'
+          ? customLabel
+          : undefined;
+  const details = [providerName, setting.model].filter(Boolean).join(' / ');
+  return details && details !== setting.label ? `${setting.label} (${details})` : setting.label;
+}
+
 export default function ChatPanel({ selectedTables, activeProfiles }: ChatPanelProps) {
   const t = useTranslations('chat');
   const [chatInput, setChatInput] = useState('');
@@ -61,7 +83,7 @@ export default function ChatPanel({ selectedTables, activeProfiles }: ChatPanelP
   const [selectedAi, setSelectedAi] = useState<string | undefined>(undefined);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
 
-  const { isStreaming, currentText, toolStatus, error: streamError, send, abort } = useChatStream();
+  const { isStreaming, currentText, toolStatus, send, abort } = useChatStream();
 
   // Load AI config status + the full list of AI settings (for the per-MCP picker)
   useEffect(() => {
@@ -74,7 +96,12 @@ export default function ChatPanel({ selectedTables, activeProfiles }: ChatPanelP
           setAllAiSettings(settings);
           const chatSetting = findChatSetting(settings);
           if (chatSetting) {
-            setAiStatus({ configured: true, label: chatSetting.label, model: chatSetting.model });
+            setAiStatus({
+              configured: true,
+              label: chatSetting.label,
+              provider: chatSetting.provider,
+              model: chatSetting.model,
+            });
           }
         }
       } catch {
@@ -141,6 +168,12 @@ export default function ChatPanel({ selectedTables, activeProfiles }: ChatPanelP
 
   const canChat = aiStatus.configured && activeProfiles.length > 0;
 
+  // The setting the server will use: the one picked for this MCP, else the
+  // global chat fallback (same order as resolveAiSetting on the server).
+  const usedSettingName = selectedAi ?? profileAiSettings?.[0]?.name;
+  const usedSetting =
+    (usedSettingName && allAiSettings.find((s) => s.name === usedSettingName)) || aiStatus;
+
   const handleChatSend = async () => {
     if (!chatInput.trim() || isStreaming || !canChat) return;
 
@@ -175,12 +208,12 @@ export default function ChatPanel({ selectedTables, activeProfiles }: ChatPanelP
           return copy;
         });
       },
-      (finalText, usageInfo) => {
+      (finalText, usageInfo, error) => {
         setChatMessages((prev) => {
           const copy = [...prev];
           copy[copy.length - 1] = {
             role: 'assistant',
-            content: finalText || `Error: ${streamError ?? 'could not reach the server.'}`,
+            content: finalText || t('panel.chatError', { message: error ?? t('panel.noResponse') }),
             streaming: false,
             usage: usageInfo ?? undefined,
           };
@@ -193,7 +226,8 @@ export default function ChatPanel({ selectedTables, activeProfiles }: ChatPanelP
   return (
     <div>
       <h2 className="heading-md mb-2">{t('panel.heading')}</h2>
-      <p className="text-sm text-gray-400 mb-4">{t('panel.description')}</p>
+      <p className="text-sm text-gray-400 mb-2">{t('panel.description')}</p>
+      <p className="text-xs text-gray-500 mb-4">{t('panel.llmNotice')}</p>
 
       {/* MCP profile selector */}
       {statusLoading ? (
@@ -247,11 +281,11 @@ export default function ChatPanel({ selectedTables, activeProfiles }: ChatPanelP
               <span className="text-gray-400">
                 {t('panel.usingLabel')}{' '}
                 <span className="text-gray-200 font-medium">
-                  {profileAiSettings?.[0]?.label ?? aiStatus.label}
+                  {describeChatSetting(
+                    { label: aiStatus.label ?? '', ...usedSetting },
+                    t('panel.provider.custom'),
+                  )}
                 </span>
-                {aiStatus.model && !profileAiSettings?.[0] && (
-                  <span className="text-gray-500"> / {aiStatus.model}</span>
-                )}
               </span>
               <span className="text-gray-600 ml-auto text-xs">
                 {allAiSettings.length > 1 ? t('panel.assignMore') : t('panel.configureAiSettings')}

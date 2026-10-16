@@ -477,4 +477,48 @@ describe('POST /api/chat/stream', () => {
     expect(res.text).toContain('event: text_delta');
     expect(res.text).toContain('event: done');
   });
+
+  it('refuses with a 503 saying what to configure when the AI setting has no API key — before any LLM call', async () => {
+    seedProfiles(state, [makeProfile('demo')]);
+    const keyless = { name: 'claude', label: 'Claude', provider: 'anthropic', apiKey: '' };
+    state.aiSettingsManager = {
+      listSettings: vi.fn().mockReturnValue([keyless]),
+      getSetting: vi.fn().mockReturnValue(keyless),
+    } as unknown as typeof state.aiSettingsManager;
+
+    const res = await request(app)
+      .post('/api/chat/stream')
+      .send({ message: 'hello', profileName: 'demo' })
+      .expect(503);
+
+    expect(res.body.message).toBe(
+      'AI setting "Claude" (Anthropic) has no API key. Go to Settings → AI, edit "Claude" and enter its API key.',
+    );
+    expect(streamChatTurn).not.toHaveBeenCalled();
+    expect(createMcpChatTools).not.toHaveBeenCalled();
+  });
+
+  it('forwards a provider error to the client as an SSE error event', async () => {
+    seedProfiles(state, [makeProfile('demo')]);
+    mockAiConfig(state);
+    mockValidAdminSession(state.userManager!);
+    vi.mocked(createMcpChatTools).mockResolvedValue({
+      tools: [],
+      close: vi.fn().mockResolvedValue(undefined),
+    });
+    // eslint-disable-next-line require-yield
+    async function* failingStream(): AsyncGenerator<never> {
+      throw new Error('401 invalid x-api-key');
+    }
+    vi.mocked(streamChatTurn).mockReturnValue(failingStream());
+
+    const res = await request(app)
+      .post('/api/chat/stream')
+      .set('Cookie', ADMIN_SESSION_COOKIE)
+      .send({ message: 'hello', profileName: 'demo' })
+      .expect(200);
+
+    expect(res.text).toContain('event: error');
+    expect(res.text).toContain('401 invalid x-api-key');
+  });
 });

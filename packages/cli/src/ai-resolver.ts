@@ -1,6 +1,6 @@
 import type { AppState } from './state.js';
 import type { AiSetting } from './ai-config.js';
-import { settingSupports } from './ai-config.js';
+import { isSettingConfigured, settingSupports } from './ai-config.js';
 
 /** An AiSetting known to support chat — see {@link isChatCapable}. */
 export type ChatCapableAiSetting = AiSetting & { provider: 'anthropic' | 'openrouter' | 'custom' };
@@ -37,6 +37,11 @@ export function isChatCapable(setting: AiSetting): setting is ChatCapableAiSetti
  *   2. Otherwise use the first entry of `profile.aiSettingNames` that supports chat.
  *   3. Otherwise fall back to the first globally configured chat-capable setting
  *      (legacy / single-config).
+ *
+ * In steps 2 and 3 a setting with its credentials filled in wins over one
+ * without. A setting that would be used but lacks its API key (or base URL for
+ * `custom`) yields a 503 telling what to fill in, instead of letting the
+ * provider call fail with an opaque authentication error.
  */
 export function resolveAiSetting(
   state: AppState,
@@ -70,20 +75,42 @@ export function resolveAiSetting(
         message: `AI setting "${requestedName}" does not support chat.`,
       };
     }
-    return { ok: true, setting };
+    return checkCredentials(setting);
   }
 
-  for (const name of allowed) {
-    const setting = mgr.getSetting(name);
-    if (setting && isChatCapable(setting)) return { ok: true, setting };
-  }
+  const allowedChat = allowed
+    .map((name) => mgr.getSetting(name))
+    .filter((s): s is AiSetting => s !== null)
+    .filter(isChatCapable);
+  const profileChoice = allowedChat.find(isSettingConfigured) ?? allowedChat[0];
+  if (profileChoice) return checkCredentials(profileChoice);
 
-  const fallback = mgr.listSettings().find(isChatCapable);
-  if (fallback) return { ok: true, setting: fallback };
+  const globalChat = mgr.listSettings().filter(isChatCapable);
+  const fallback = globalChat.find(isSettingConfigured) ?? globalChat[0];
+  if (fallback) return checkCredentials(fallback);
 
   return {
     ok: false,
     status: 503,
     message: 'AI chat is not configured. Go to AI Settings to set up a provider.',
+  };
+}
+
+const PROVIDER_NAMES: Record<ChatCapableAiSetting['provider'], string> = {
+  anthropic: 'Anthropic',
+  openrouter: 'OpenRouter',
+  custom: 'custom endpoint',
+};
+
+/** Reject a chat setting whose credentials are missing, saying what to fill in and where. */
+function checkCredentials(setting: ChatCapableAiSetting): AiResolution {
+  if (isSettingConfigured(setting)) return { ok: true, setting };
+  const missing = setting.provider === 'custom' ? 'base URL' : 'API key';
+  return {
+    ok: false,
+    status: 503,
+    message:
+      `AI setting "${setting.label}" (${PROVIDER_NAMES[setting.provider]}) has no ${missing}. ` +
+      `Go to Settings → AI, edit "${setting.label}" and enter its ${missing}.`,
   };
 }

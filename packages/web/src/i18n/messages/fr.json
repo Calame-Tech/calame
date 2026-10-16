@@ -983,6 +983,9 @@
       "aiNotConfigured": "Aucun fournisseur d’IA pour le chat n’est configuré : ce test ne peut pas s’exécuter. Ouvrez <b>Paramètres → IA</b> et ajoutez un fournisseur (Anthropic, OpenRouter ou un point d’accès compatible) avec sa clé API. Le modèle local intégré sert uniquement à indexer les documents et ne peut pas répondre.",
       "placeholderNoServer": "Démarrez d’abord un serveur MCP",
       "placeholderAiNotConfigured": "Configurez d’abord l’IA dans les paramètres",
+      "llmNotice": "Ce test conversationnel envoie votre question au fournisseur d’IA ci-dessous (un LLM, avec sa clé API), qui appelle ensuite les outils MCP. Pour vérifier le serveur MCP seul, sans IA, utilisez « Tester le MCP » à côté du serveur lancé.",
+      "chatError": "Erreur : {message}",
+      "noResponse": "aucune réponse du fournisseur d’IA.",
       "provider": {
         "custom": "Personnalisé"
       }

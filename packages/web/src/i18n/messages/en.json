@@ -983,6 +983,9 @@
       "aiNotConfigured": "No AI provider for chat is configured, so this test cannot run. Go to <b>Settings → AI</b> and add a provider (Anthropic, OpenRouter or a compatible endpoint) with its API key. The built-in local model only indexes documents and cannot answer.",
       "placeholderNoServer": "Start an MCP server first",
       "placeholderAiNotConfigured": "Configure AI in Settings first",
+      "llmNotice": "This conversational test sends your question to the AI provider below (an LLM, using its API key), which then calls the MCP tools. To check the MCP server alone, without any AI, use “Test MCP” next to the running server.",
+      "chatError": "Error: {message}",
+      "noResponse": "no response from the AI provider.",
       "provider": {
         "custom": "Custom"
       }

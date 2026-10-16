@@ -25,7 +25,9 @@ export function useChatStream(opts?: ChatStreamOptions) {
     async (
       body: Record<string, unknown>,
       onDelta?: (text: string) => void,
-      onDone?: (finalText: string, usage: UsageInfo | null) => void,
+      /** On failure, `error` carries the message: the hook's `error` state is
+       *  not yet visible to the caller's closure when onDone runs. */
+      onDone?: (finalText: string, usage: UsageInfo | null, error?: string) => void,
     ) => {
       abortRef.current?.abort();
       const controller = new AbortController();
@@ -111,7 +113,7 @@ export function useChatStream(opts?: ChatStreamOptions) {
         if (err instanceof Error && err.name === 'AbortError') return;
         const msg = err instanceof Error ? err.message : 'Unknown error';
         setError(msg);
-        onDone?.('', null);
+        onDone?.('', null, msg);
       } finally {
         setIsStreaming(false);
         setToolStatus(null);

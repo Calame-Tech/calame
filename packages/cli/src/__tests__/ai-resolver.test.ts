@@ -104,4 +104,58 @@ describe('resolveAiSetting', () => {
       expect(result.setting.name).toBe('my-chat-setting');
     }
   });
+
+  // Tester feedback (point 13): a chat-capable setting without its API key
+  // used to be picked anyway, and the provider call then failed with an
+  // opaque authentication error. It must be refused up front, saying what to
+  // fill in and where — and a setting that has its key must be preferred.
+  describe('missing credentials', () => {
+    function createKeylessSetting(name: string, provider: 'anthropic' | 'custom'): void {
+      manager.createSetting({ name, label: name, provider, apiKey: '', capabilities: ['chat'] });
+    }
+
+    it('returns 503 naming the setting, the provider and the missing API key', () => {
+      createKeylessSetting('Claude', 'anthropic');
+      const result = resolveAiSetting(state, undefined);
+      expect(result).toEqual({
+        ok: false,
+        status: 503,
+        message:
+          'AI setting "Claude" (Anthropic) has no API key. Go to Settings → AI, edit "Claude" and enter its API key.',
+      });
+    });
+
+    it('asks for the base URL of a custom endpoint', () => {
+      createKeylessSetting('ollama', 'custom');
+      const result = resolveAiSetting(state, undefined, 'ollama');
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.status).toBe(503);
+        expect(result.message).toContain('(custom endpoint) has no base URL');
+      }
+    });
+
+    it('prefers a setting with its key over an earlier keyless one', () => {
+      createKeylessSetting('a-keyless', 'anthropic');
+      createChatSetting('b-with-key');
+      expect(resolveAiSetting(state, undefined)).toMatchObject({
+        ok: true,
+        setting: { name: 'b-with-key' },
+      });
+
+      state.serveProfiles = {
+        demo: { name: 'demo', label: 'Demo', aiSettingNames: ['a-keyless', 'b-with-key'] },
+      };
+      expect(resolveAiSetting(state, 'demo')).toMatchObject({
+        ok: true,
+        setting: { name: 'b-with-key' },
+      });
+    });
+
+    it('never leaks the API key of another setting in the message', () => {
+      createKeylessSetting('Claude', 'anthropic');
+      const result = resolveAiSetting(state, undefined, 'Claude');
+      expect(JSON.stringify(result)).not.toContain('sk-');
+    });
+  });
 });

@@ -251,6 +251,11 @@
     "notFound": "Configuration « {name} » introuvable.",
     "ragUnavailable": "Les fonctionnalités RAG ne sont pas disponibles sur cette instance.",
     "unsavedChangesConfirm": "Vous avez des modifications non enregistrées. Quitter sans enregistrer ?",
+    "unsavedChanges": {
+      "message": "Modifications non enregistrées — elles sont conservées si vous changez de page, jusqu'à l'enregistrement ou l'abandon.",
+      "save": "Enregistrer",
+      "discard": "Abandonner les modifications"
+    },
     "breadcrumb": {
       "mcpServers": "Serveurs MCP",
       "server": "Serveur",

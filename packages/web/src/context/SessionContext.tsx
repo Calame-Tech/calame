@@ -7,6 +7,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import type { Dispatch, ReactNode, SetStateAction } from 'react';
 import { apiFetch } from '../lib/api.js';
+import { clearConfigurationDrafts } from '../lib/configuration-draft.js';
 import { clearMcpDrafts } from '../lib/mcp-draft.js';
 import { clearKnownRagSources } from '../lib/known-rag-sources.js';
 import { resolveLocationRoutes } from '../router/index.js';
@@ -145,10 +146,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const retryAuthCheck = useCallback(() => setAuthCheckAttempt((n) => n + 1), []);
 
-  // In-progress MCP creation drafts never outlive the admin session (logout,
-  // expired or revoked session), so they cannot leak to the next account.
+  // In-progress MCP creation and unsaved configuration drafts never outlive
+  // the admin session (logout, expired or revoked session), so they cannot
+  // leak to the next account.
   useEffect(() => {
-    if (!authenticated) clearMcpDrafts();
+    if (!authenticated) {
+      clearMcpDrafts();
+      clearConfigurationDrafts();
+    }
   }, [authenticated]);
 
   // The last known knowledge-base lists are purged whenever the session ends

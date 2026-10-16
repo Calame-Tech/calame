@@ -11,13 +11,14 @@ import HelpTip from '../components/HelpTip.js';
 import SchemaExplorer from '../components/SchemaExplorer.js';
 import ConfigPanel from '../components/ConfigPanel.js';
 import McpNextStepCard from '../components/McpNextStepCard.js';
-import { setsToArrays, arraysToSets } from '../lib/profiles.js';
+import { arraysToSets } from '../lib/profiles.js';
 import {
   getConfigurationSelectedTables,
   getConfigurationTableOptions,
   getConfigurationColumnMasking,
 } from '../lib/configuration-accessors.js';
 import { isConfigurationDirty } from '../lib/configuration-dirty.js';
+import { buildConfigurationToSave } from '../lib/configuration-save.js';
 import { guardedNavigate } from '../lib/guarded-navigate.js';
 import type {
   DatabaseSchema,
@@ -33,6 +34,13 @@ import type {
 import type { View } from '../router/index.js';
 import { useSession } from '../context/SessionContext.js';
 import { useKnownRagSourcesCache, type KnownListCache } from '../lib/known-rag-sources.js';
+import {
+  getConfigurationDraft,
+  setConfigurationDraft,
+  useConfigurationDraftKey,
+  useConfigurationDraftSync,
+} from '../lib/configuration-draft.js';
+import UnsavedChangesBar from '../components/UnsavedChangesBar.js';
 
 /**
  * Lazy-loaded RagAccessSelector from the ee package. Only loaded when the user
@@ -97,6 +105,9 @@ export default function ConfigurationDetailPage({
   // Reported up from ConfigurationDetailView (Lot D3) so the breadcrumb and
   // "manage connections" links can warn before discarding unsaved edits.
   const [isDirty, setIsDirty] = useState(false);
+  // Unsaved edits survive a detour through another page (draft, see
+  // configuration-draft.ts); "Discard" remounts the view from the saved config.
+  const draft = useConfigurationDraftKey(currentUser?.email ?? '', view.configName);
   const guardedNav = (fn: () => void) => guardedNavigate(isDirty, fn, t('unsavedChangesConfirm'));
   const config = configurations.find((c) => c.name === view.configName);
   // Guided next step: a configuration with sources that no server mounts yet.
@@ -154,6 +165,9 @@ export default function ConfigurationDetailPage({
         />
       )}
       <ConfigurationDetailView
+        key={draft.viewKey}
+        draftKey={draft.draftKey}
+        onDiscard={draft.discard}
         configName={view.configName}
         configurations={configurations}
         connections={connections}
@@ -188,6 +202,10 @@ export default function ConfigurationDetailPage({
 
 interface ConfigurationDetailViewProps {
   configName: string;
+  /** Key of the in-memory draft holding this configuration's unsaved edits. */
+  draftKey: string;
+  /** Discards the unsaved edits (clears the draft and reloads the saved configuration). */
+  onDiscard: () => void;
   configurations: Configuration[];
   connections: NamedConnection[];
   connectionSchemas: Record<string, DatabaseSchema>;
@@ -213,6 +231,8 @@ interface ConfigurationDetailViewProps {
 
 function ConfigurationDetailView({
   configName,
+  draftKey,
+  onDiscard,
   configurations,
   connections,
   connectionSchemas,
@@ -235,19 +255,24 @@ function ConfigurationDetailView({
   const t = useTranslations('configurationDetail');
   const tCommon = useTranslations('common');
   const config = configurations.find((c) => c.name === configName);
+  // Unsaved edits left by a previous visit (only restored for this account,
+  // workspace and configuration — the draft key carries all three).
+  const [draft] = useState(() => (config ? getConfigurationDraft(draftKey) : undefined));
 
   // Local editing state
-  const [label, setLabel] = useState(config?.label ?? configName);
-  const [selectedConns, setSelectedConns] = useState<Set<string>>(new Set(config?.sources ?? []));
+  const [label, setLabel] = useState(draft?.label ?? config?.label ?? configName);
+  const [selectedConns, setSelectedConns] = useState<Set<string>>(
+    draft?.selectedConns ?? new Set(config?.sources ?? []),
+  );
   const [localSelectedTables, setLocalSelectedTables] = useState<Record<string, Set<string>>>(
-    config ? arraysToSets(getConfigurationSelectedTables(config)) : {},
+    draft?.selectedTables ?? (config ? arraysToSets(getConfigurationSelectedTables(config)) : {}),
   );
   const [localTableOptions, setLocalTableOptions] = useState<
     Record<string, import('../types/schema.js').TableToolOptions>
-  >(config ? getConfigurationTableOptions(config) : {});
+  >(draft?.tableOptions ?? (config ? getConfigurationTableOptions(config) : {}));
   const [localColumnMasking, setLocalColumnMasking] = useState<
     Record<string, Record<string, ColumnMasking>>
-  >(config ? getConfigurationColumnMasking(config) : {});
+  >(draft?.columnMasking ?? (config ? getConfigurationColumnMasking(config) : {}));
   const [editingLabel, setEditingLabel] = useState(false);
   const [loadingSchemas, setLoadingSchemas] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -255,7 +280,9 @@ function ConfigurationDetailView({
   const [deleting, setDeleting] = useState(false);
 
   // Tab switcher: 'databases' mirrors the existing UI, 'knowledge' mounts RagAccessSelector.
-  const [activeConfigTab, setActiveConfigTab] = useState<'databases' | 'knowledge'>('databases');
+  const [activeConfigTab, setActiveConfigTab] = useState<'databases' | 'knowledge'>(
+    draft?.activeTab ?? 'databases',
+  );
   // Once opened, the Knowledge tab stays mounted (hidden) so its unsaved
   // selection survives tab switches and is what the single Save persists.
   const [knowledgeMounted, setKnowledgeMounted] = useState(false);
@@ -265,7 +292,10 @@ function ConfigurationDetailView({
   const [pendingDocSelection, setPendingDocSelection] = useState<{
     sources: string[];
     scopes: Record<string, ScopeSelection>;
-  } | null>(null);
+  } | null>(draft?.docSelection ?? null);
+  // Knowledge selection restored from the draft: seeds the selector instead
+  // of the saved one until the next successful save.
+  const [restoredDocSelection, setRestoredDocSelection] = useState(draft?.docSelection ?? null);
 
   // Dirty-state tracking (Lot D3) — compares the local edit state above
   // against the last-saved `config` prop so navigation away can warn before
@@ -295,6 +325,22 @@ function ConfigurationDetailView({
   useEffect(() => {
     onDirtyChange?.(isDirty);
   }, [isDirty, onDirtyChange]);
+
+  useConfigurationDraftSync(
+    draftKey,
+    config !== undefined,
+    isDirty
+      ? {
+          label,
+          selectedConns,
+          selectedTables: localSelectedTables,
+          tableOptions: localTableOptions,
+          columnMasking: localColumnMasking,
+          docSelection: pendingDocSelection,
+          activeTab: activeConfigTab,
+        }
+      : null,
+  );
 
   // Warn on tab close / refresh while there are unsaved changes.
   useEffect(() => {
@@ -399,74 +445,31 @@ function ConfigurationDetailView({
   const handleSave = async () => {
     setSaveError(null);
 
-    // Only keep tables that belong to currently selected connections
-    // and that have at least one column selected
-    const validTableNames = new Set(configSchema.tables.map((t) => t.name));
-    const cleanedTables: Record<string, string[]> = {};
-    for (const [tableName, cols] of Object.entries(setsToArrays(localSelectedTables))) {
-      if (validTableNames.has(tableName) && cols.length > 0) {
-        cleanedTables[tableName] = cols;
-      }
-    }
-
-    // Also clean tableOptions and columnMasking to remove orphaned tables
-    const cleanedTableOptions: Record<string, import('../types/schema.js').TableToolOptions> = {};
-    for (const [tableName, opts] of Object.entries(localTableOptions)) {
-      if (cleanedTables[tableName]) {
-        cleanedTableOptions[tableName] = opts;
-      }
-    }
-    const cleanedColumnMasking: Record<string, Record<string, ColumnMasking>> = {};
-    for (const [tableName, masking] of Object.entries(localColumnMasking)) {
-      if (cleanedTables[tableName]) {
-        cleanedColumnMasking[tableName] = masking;
-      }
-    }
-
-    // Build the Phase 5 unified shape. Each selected connection becomes a
-    // relational scope carrying the cleaned tables/options/masking. When
-    // multiple connections are selected they all share the same selection for
-    // now (per-source differentiation can be added later via RagAccessSelector).
-    //
-    // Critical: PRESERVE any document-kind sources/scopes already on the
-    // config. This save runs from the Databases tab but the top-level Save
-    // button is visible on the Knowledge tab too — without the merge below
-    // a click here would discard every RAG selection configured via
-    // RagAccessSelector.
-    //
-    // Also critical: `selectedConns` is seeded from `config.sources` which can
-    // contain non-DB source ids (e.g. a RAG nanoid that found its way in via
-    // an earlier save). Filtering to actual DB connection names is what stops
-    // the relational loop from overwriting `scopes[ragSourceId]` with
-    // `kind: 'relational'` — which would clobber the document scope we just
-    // spread above.
-    const validConnNames = new Set(connections.map((c) => c.name));
-    const relationalSources = [...selectedConns].filter((id) => validConnNames.has(id));
-
-    // Knowledge-base selection: the one displayed in the Knowledge tab if it
-    // was edited, otherwise the saved one.
-    const documentSources = pendingDocSelection?.sources ?? configDocumentSources;
-    const sourcesArray = [...relationalSources, ...documentSources];
-    const scopes: Record<string, import('../types/schema.js').ScopeSelection> = {
-      ...(pendingDocSelection?.scopes ?? configDocumentScopes),
-    };
-    for (const sourceId of relationalSources) {
-      scopes[sourceId] = {
-        kind: 'relational',
-        selectedTables: cleanedTables,
-        tableOptions: cleanedTableOptions,
-        columnMasking: cleanedColumnMasking,
-      };
-    }
-    const configToSave: Configuration = {
-      name: configName,
-      label,
-      sources: sourcesArray,
-      scopes,
-    };
+    const { configToSave, cleanedTables, cleanedTableOptions, cleanedColumnMasking } =
+      buildConfigurationToSave({
+        configName,
+        label,
+        selectedConns,
+        selectedTables: localSelectedTables,
+        tableOptions: localTableOptions,
+        columnMasking: localColumnMasking,
+        tableNames: configSchema.tables.map((t) => t.name),
+        connectionNames: connections.map((c) => c.name),
+        // Knowledge-base selection: the one displayed in the Knowledge tab if
+        // it was edited, otherwise the saved one.
+        documentSources: pendingDocSelection?.sources ?? configDocumentSources,
+        documentScopes: pendingDocSelection?.scopes ?? configDocumentScopes,
+      });
     const success = await onSave(configToSave);
     if (success) {
+      // Mirror exactly what was saved: no unsaved changes, so no draft.
+      setSelectedConns(new Set(configToSave.sources));
+      setLocalSelectedTables(arraysToSets(cleanedTables));
+      setLocalTableOptions(cleanedTableOptions);
+      setLocalColumnMasking(cleanedColumnMasking);
       setPendingDocSelection(null);
+      setRestoredDocSelection(null);
+      setConfigurationDraft(draftKey, null);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } else {
@@ -513,6 +516,7 @@ function ConfigurationDetailView({
       });
       const data = await res.json();
       if (data.success) {
+        setConfigurationDraft(draftKey, null);
         onDelete(configName);
         onAfterDelete();
       }
@@ -654,6 +658,8 @@ function ConfigurationDetailView({
           </div>
         </div>
       </div>
+
+      {isDirty && <UnsavedChangesBar onSave={handleSave} onDiscard={onDiscard} />}
 
       {/* Tab switcher — Databases / Knowledge */}
       <div className="border-b border-gray-700">
@@ -877,8 +883,8 @@ function ConfigurationDetailView({
             <RagAccessSelector
               key={ragSourcesCache?.scope}
               profileName={configName}
-              initialScopes={configDocumentScopes}
-              initialSources={configDocumentSources}
+              initialScopes={restoredDocSelection?.scopes ?? configDocumentScopes}
+              initialSources={restoredDocSelection?.sources ?? configDocumentSources}
               // Single save action: the header Save persists this selection
               // together with the Databases tab (no second, diverging Save).
               onSelectionChange={setPendingDocSelection}

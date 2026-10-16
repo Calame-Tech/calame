@@ -11,7 +11,7 @@ import {
   type RagSourcePublic,
   type RagSourceWithCounts,
 } from './api.js';
-import SourceForm, { type AiSettingOption } from './SourceForm.js';
+import SourceForm, { type AiSettingOption, type AiSettingsStatus } from './SourceForm.js';
 import FolderTreeView from './FolderTreeView.js';
 import DocumentUploader from './DocumentUploader.js';
 import IngestionStatusCard from './IngestionStatusCard.js';
@@ -229,6 +229,9 @@ export default function KnowledgeBaseManager({
   sourcesCache,
 }: KnowledgeBaseManagerProps) {
   const [aiSettings, setAiSettings] = useState<AiSettingOption[]>([]);
+  // Whether the AI capabilities above are actually known: an empty list after
+  // a failed load (offline) must not read as "no provider available".
+  const [aiSettingsStatus, setAiSettingsStatus] = useState<AiSettingsStatus>('loading');
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
   // Source currently open in the edit form (null = not editing). SourceForm
@@ -288,6 +291,7 @@ export default function KnowledgeBaseManager({
   }, [view]);
 
   const refreshAiSettings = useCallback(async (): Promise<void> => {
+    setAiSettingsStatus((s) => (s === 'loaded' ? s : 'loading'));
     try {
       const data = await apiGet<{ success?: boolean; settings?: AiSettingOption[] }>(
         '/api/ai-settings',
@@ -295,9 +299,14 @@ export default function KnowledgeBaseManager({
       );
       if (data.success && Array.isArray(data.settings)) {
         setAiSettings(data.settings);
+        setAiSettingsStatus('loaded');
+      } else {
+        setAiSettingsStatus((s) => (s === 'loaded' ? s : 'error'));
       }
     } catch {
-      // Soft fail — the SourceForm will show an explanatory message.
+      // Keep the last known capabilities; without any, SourceForm shows a
+      // load error with "Retry" instead of concluding "unavailable".
+      setAiSettingsStatus((s) => (s === 'loaded' ? s : 'error'));
     }
   }, []);
 
@@ -310,6 +319,19 @@ export default function KnowledgeBaseManager({
   useEffect(() => {
     void loadAll();
   }, [loadAll]);
+
+  // AI capabilities are reloaded each time a source form opens and when the
+  // network comes back, so a load that failed while offline does not stick
+  // until the user leaves the page.
+  const formOpenKey = editingSource ? `edit:${editingSource.id}` : showCreateForm ? 'create' : null;
+  useEffect(() => {
+    if (formOpenKey !== null) void refreshAiSettings();
+  }, [formOpenKey, refreshAiSettings]);
+  useEffect(() => {
+    const onOnline = () => void refreshAiSettings();
+    window.addEventListener('online', onOnline);
+    return () => window.removeEventListener('online', onOnline);
+  }, [refreshAiSettings]);
 
   // Stable list of source IDs passed to the polling hook.
   const sourceIds = useMemo(() => sources.map((s) => s.id), [sources]);
@@ -651,6 +673,8 @@ export default function KnowledgeBaseManager({
       {showCreateForm && !editingSource && (
         <SourceForm
           aiSettings={aiSettings}
+          aiSettingsStatus={aiSettingsStatus}
+          onRetryAiSettings={() => void refreshAiSettings()}
           onSave={handleCreated}
           onCancel={() => setShowCreateForm(false)}
         />
@@ -664,6 +688,8 @@ export default function KnowledgeBaseManager({
           key={editingSource.id}
           initial={editingSource}
           aiSettings={aiSettings}
+          aiSettingsStatus={aiSettingsStatus}
+          onRetryAiSettings={() => void refreshAiSettings()}
           onSave={handleUpdated}
           onCancel={() => setEditingSource(null)}
         />

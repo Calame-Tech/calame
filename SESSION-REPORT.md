@@ -143,6 +143,76 @@ préféré est pris (port éphémère : le cookie ne dépend pas du port, mais c
 migration 18 sur une base 0.8.3/0.8.4 existante, et le message « Serveur injoignable » pendant le
 démarrage lent du sidecar.
 
+### Retour du capitaine après le test Smeagol : deux corrections
+
+Les points validés n'ont pas été modifiés : brouillon MCP, liste qui ne se vide plus pendant
+un resync, « Dernière liste connue affichée ».
+
+1. **Brouillon d'une configuration existante (Data config)**. Cause établie : toutes les
+   modifications non enregistrées vivaient dans l'état du composant `ConfigurationDetailView`.
+   Elles étaient détruites dès qu'on quittait la page par la barre latérale, qui n'a pas de
+   garde. Les « garde-fous » existants ne couvraient que le fil d'Ariane et la fermeture de
+   l'onglet.
+   Correctif : nouveau `lib/configuration-draft.ts`, qui suit les mêmes règles que `mcp-draft.ts`.
+   Le brouillon reste en mémoire, uniquement pendant la vie de la fenêtre. Il est séparé par
+   compte, workspace et configuration. Il contient le libellé, les bases de données, les tables,
+   les options, le masquage, la sélection des bases de connaissances (avec
+   `directFetchDisabled`) et l'onglet actif. Il est effacé après un enregistrement réussi, après
+   « Abandonner les modifications », à la suppression de la configuration et à la fin de session
+   (`SessionProvider`).
+   Au retour sur la page, le sélecteur des bases de connaissances repart de la sélection du
+   brouillon. Un bandeau `UnsavedChangesBar` affiche « Modifications non enregistrées » avec les
+   boutons « Enregistrer » et « Abandonner les modifications ».
+   Aucun enregistrement n'a lieu avant le clic explicite. Pour respecter `max-lines`, la
+   construction de la charge utile d'enregistrement a été déplacée telle quelle dans
+   `lib/configuration-save.ts`.
+2. **Capacités IA après coupure réseau (édition d'une source)**. Cause établie :
+   `KnowledgeBaseManager` ne chargeait `/api/ai-settings` qu'au montage de la page Sources, et
+   ignorait les échecs. Après un chargement raté hors ligne, la liste restait vide jusqu'à la
+   sortie de Sources. `SourceForm` interprétait alors cette liste vide comme « fournisseur local
+   indisponible », et la validation répondait « ne supporte pas les embeddings ».
+   Correctif : un statut `loading` / `loaded` / `error` accompagne désormais la liste.
+   - Les capacités sont rechargées à chaque ouverture du formulaire (création ou édition) et à
+     l'événement `online`.
+   - Les dernières capacités connues sont conservées en cas d'échec.
+   - `SourceForm` affiche « Chargement des paramètres IA… », ou une erreur de chargement avec
+     « Réessayer », sans jamais conclure « indisponible ». L'enregistrement est bloqué avec ce
+     même message tant que les capacités sont inconnues.
+   - Une nouvelle source reçoit le fournisseur local par défaut quand les capacités arrivent
+     après l'ouverture du formulaire.
+
+Tests ajoutés :
+- `configuration-draft-navigation.test.tsx` : sélection et paramètre conservés après démontage
+  puis retour, enregistrement et abandon, isolation entre configurations, comptes et
+  workspaces, fin de session ;
+- `source-form-ai-settings-reload.test.tsx` : erreur avec « Réessayer » au lieu de
+  « indisponible », rechargement à l'ouverture du formulaire, reprise sur `online`.
+
+`ConfigurationDetailPage.test.tsx` vide maintenant les brouillons entre deux tests.
+
+Vérifications :
+- `format` puis `format:check` : OK ;
+- `lint` : 0 erreur, 4 warnings préexistants ;
+- `build` et `typecheck` : OK ;
+- `test` : 203 fichiers passés, 3 ignorés ; 2944 tests passés, 19 ignorés.
+
+Lors d'une première exécution complète, `rag-access-selector-strings.test.tsx` a échoué une
+fois. Il passe seul (deux fois) et dans l'exécution complète suivante : instabilité sous
+charge, ce fichier n'a pas été modifié.
+
+Protocole Windows complémentaire :
+- Data config → configuration existante → Bases de connaissances : cocher une source et
+  activer « Désactiver la lecture directe des documents » sans enregistrer. Aller sur Sources
+  puis revenir : la case et le paramètre sont conservés et le bandeau est visible.
+  « Abandonner les modifications » rétablit l'état enregistré. « Enregistrer » fait disparaître
+  le bandeau, y compris après un nouvel aller-retour.
+- Sources : couper le réseau, provoquer une erreur de rafraîchissement, rétablir le réseau,
+  puis ouvrir l'édition d'une source sans quitter la page. Le menu des embeddings s'affiche et
+  l'enregistrement fonctionne. Si le formulaire est ouvert hors ligne, il affiche l'erreur de
+  chargement avec « Réessayer », et non « indisponible ».
+
+Ces deux scénarios n'ont **pas été validés sous Windows**.
+
 ---
 
 ## 2026-10-15 — CALAME-1 : corrections du troisième test réel (compteurs de la fiche source, restes de traduction)

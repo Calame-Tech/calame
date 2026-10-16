@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Calame Tech inc. Licensed under the Business Source License 1.1.
 // See ee/LICENSE.BUSL at the root of the ee/ directory for terms.
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { RagSourceType } from '../types.js';
 import type { RagSourcePublic } from '../routes/api-types.js';
 import { apiPost, apiPatch, ApiError, ApiTimeoutError, type RagSourceResponse } from './api.js';
@@ -34,7 +34,17 @@ interface SourceFormProps {
   onSave: (source: RagSourcePublic) => void;
   onCancel: () => void;
   aiSettings: AiSettingOption[];
+  /**
+   * Whether `aiSettings` is known. While it is loading or failed to load, an
+   * empty list says nothing about the providers: the form shows the loading
+   * state or a load error with "Retry" rather than "unavailable".
+   * Defaults to 'loaded'.
+   */
+  aiSettingsStatus?: AiSettingsStatus;
+  onRetryAiSettings?: () => void;
 }
+
+export type AiSettingsStatus = 'loading' | 'loaded' | 'error';
 
 interface SourceTypeMeta {
   value: RagSourceType;
@@ -301,8 +311,18 @@ function HelperText({ children }: HelperTextProps) {
 // Main component
 // ---------------------------------------------------------------------------
 
-export default function SourceForm({ initial, onSave, onCancel, aiSettings }: SourceFormProps) {
+export default function SourceForm({
+  initial,
+  onSave,
+  onCancel,
+  aiSettings,
+  aiSettingsStatus = 'loaded',
+  onRetryAiSettings,
+}: SourceFormProps) {
   const isEditing = Boolean(initial?.id);
+  // No capabilities known yet (loading, or the load failed): nothing can be
+  // concluded about providers or embeddings support.
+  const aiSettingsUnknown = aiSettings.length === 0 && aiSettingsStatus !== 'loaded';
 
   // ---- shared fields ----
   const [name, setName] = useState(initial?.name ?? '');
@@ -319,6 +339,15 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
   // Polling interval — null means "manual sync only". Pre-fill from the
   // existing source on edit so the dropdown shows the saved cadence rather
   // than defaulting back to "off".
+  // Settings that arrive after the form opened (reload after a failed load)
+  // still give a NEW source its local default.
+  const hadAiSettings = useRef(aiSettings.length > 0);
+  useEffect(() => {
+    if (hadAiSettings.current || aiSettings.length === 0) return;
+    hadAiSettings.current = true;
+    const local = aiSettings.find((s) => s.provider === 'local');
+    if (!isEditing && local) setEmbeddingSettingName((name) => name || local.name);
+  }, [aiSettings, isEditing]);
   const [pollingIntervalSeconds, setPollingIntervalSeconds] = useState<number | null>(
     initial?.pollingIntervalSeconds ?? null,
   );
@@ -594,6 +623,9 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
       if (!spSiteUrl.trim()) return SF.siteUrlRequired;
     }
 
+    if (aiSettingsUnknown) {
+      return aiSettingsStatus === 'error' ? SF.aiSettingsLoadError : SF.aiSettingsLoading;
+    }
     if (!embeddingSettingName) {
       return RAG_STRINGS.embeddingRequired;
     }
@@ -2152,7 +2184,26 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
         >
           {RAG_STRINGS.embeddingLabel}
         </FieldLabel>
-        {aiSettings.length === 0 ? (
+        {aiSettingsUnknown ? (
+          aiSettingsStatus === 'error' ? (
+            <div role="alert" className="flex items-center gap-2 mt-1">
+              <p className="text-xs text-amber-400">{SF.aiSettingsLoadError}</p>
+              {onRetryAiSettings && (
+                <button
+                  type="button"
+                  onClick={onRetryAiSettings}
+                  className="text-xs text-os-400 hover:text-os-300 underline shrink-0"
+                >
+                  {SF.aiSettingsRetry}
+                </button>
+              )}
+            </div>
+          ) : (
+            <p role="status" className="text-xs text-gray-500 italic mt-1">
+              {SF.aiSettingsLoading}
+            </p>
+          )
+        ) : aiSettings.length === 0 ? (
           <p className="text-xs text-amber-400 mt-1">{SF.localProviderUnavailable}</p>
         ) : (
           <select

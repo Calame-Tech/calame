@@ -524,19 +524,74 @@ describe('SetupChecklist', () => {
     expect(screen.queryByRole('button', { name: 'Add data' })).toBeNull();
   });
 
-  it('reserves room at the bottom of the page for the floating card', async () => {
+  it('reserves room at the bottom of the page for the floating pill', async () => {
+    localStorage.setItem(SETUP_CHECKLIST_COLLAPSED_KEY, '1');
     const rect = vi
       .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
       .mockReturnValue({ height: 40 } as DOMRect);
     try {
       installServer({});
       render(<SetupChecklist sourceCount={0} onNavigate={vi.fn()} />);
-      await screen.findAllByText('1. Connect data');
+      await screen.findByRole('button', { name: 'Reopen the getting-started guide' });
       const spacer = screen.getByTestId('setup-checklist-spacer');
       expect(spacer.style.height).toBe('64px');
       expect(spacer.getAttribute('aria-hidden')).toBe('true');
     } finally {
       rect.mockRestore();
     }
+  });
+
+  it('docks the expanded guide beside the page on a wide window and asks it to reserve the width', async () => {
+    installServer({});
+    const onDockedChange = vi.fn();
+    render(<SetupChecklist sourceCount={0} onNavigate={vi.fn()} onDockedChange={onDockedChange} />);
+    await screen.findAllByText('1. Connect data');
+    const panel = screen.getByTestId('setup-checklist-panel');
+    expect(panel.getAttribute('data-layout')).toBe('docked');
+    // No bottom spacer: the page keeps the panel's width free instead.
+    expect(screen.queryByTestId('setup-checklist-spacer')).toBeNull();
+    expect(onDockedChange).toHaveBeenLastCalledWith(true);
+
+    // Folding to the pill gives the width back to the page.
+    fireEvent.click(screen.getByRole('button', { name: 'Fold the getting-started guide' }));
+    expect(onDockedChange).toHaveBeenLastCalledWith(false);
+    expect(screen.getByTestId('setup-checklist-spacer')).toBeTruthy();
+  });
+
+  it('opens as a bounded bottom sheet on a narrow window, never docked', async () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn((query: string) => ({
+        matches: query === '(max-width: 1023px)',
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    );
+    installServer({});
+    const onDockedChange = vi.fn();
+    render(<SetupChecklist sourceCount={0} onNavigate={vi.fn()} onDockedChange={onDockedChange} />);
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Reopen the getting-started guide' }),
+    );
+    const panel = screen.getByTestId('setup-checklist-panel');
+    expect(panel.getAttribute('data-layout')).toBe('sheet');
+    expect(panel.className).toContain('max-h-[50vh]');
+    expect(screen.getByTestId('setup-checklist-spacer')).toBeTruthy();
+    expect(onDockedChange).not.toHaveBeenCalledWith(true);
+  });
+
+  it('releases the reserved width when the guide is closed after success', async () => {
+    installServer({
+      configurations: [salesData],
+      profiles: salesMcp,
+      entries: [{ profileName: 'sales', result: 'success' }],
+    });
+    const onDockedChange = vi.fn();
+    render(<SetupChecklist sourceCount={1} onNavigate={vi.fn()} onDockedChange={onDockedChange} />);
+    await screen.findByTestId('setup-success');
+    expect(onDockedChange).toHaveBeenLastCalledWith(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Close the guide' }));
+    expect(onDockedChange).toHaveBeenLastCalledWith(false);
   });
 });

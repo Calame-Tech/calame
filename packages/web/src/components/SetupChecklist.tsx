@@ -1,7 +1,8 @@
 // Guided first-run path in four steps: 1. connect data, 2. create a data
 // profile that contains it, 3. create an MCP attached to that profile,
-// 4. connect / test the MCP from a client. Shown as a floating card on every
-// page; once a client has used the first MCP it shows a success state until
+// 4. connect / test the MCP from a client. Shown on every page, as a panel
+// docked on the right of a wide window (the page reserves its width), or as a
+// pill / bottom sheet on a narrow one; once a client has used the first MCP it shows a success state until
 // the user closes it. Each step reflects server-side resources
 // (see lib/setup-progress.ts) and links to the existing screen that performs
 // it — this component never creates anything itself.
@@ -89,7 +90,16 @@ interface SetupChecklistProps {
   onNavigate: (view: View) => void;
   /** Any change (by identity) forces a reload, e.g. a navigation or a save. */
   refreshKey?: unknown;
+  /**
+   * Called with true while the expanded guide is docked on the right of a
+   * wide window: the page must then reserve SETUP_PANEL_WIDTH_CLASS on its
+   * right so the panel covers none of its commands.
+   */
+  onDockedChange?: (docked: boolean) => void;
 }
+
+/** Right margin the page keeps free for the docked panel (same width, lg and up). */
+export const SETUP_PANEL_WIDTH_CLASS = 'lg:mr-[22rem]';
 
 /** Last "Test MCP" outcome of a profile, as kept by the server (GET /api/serve/mcp-probe/last). */
 export type LastMcpProbe =
@@ -176,6 +186,7 @@ export default function SetupChecklist({
   ragEnabled = false,
   onNavigate,
   refreshKey = 0,
+  onDockedChange,
 }: SetupChecklistProps) {
   const t = useTranslations('onboarding.checklist');
   const [hidden, setHidden] = useState(() => readFlag(SETUP_CHECKLIST_DISMISSED_KEY));
@@ -309,6 +320,14 @@ export default function SetupChecklist({
     if (narrow) setCollapsed(true);
     onNavigate(view);
   };
+
+  // Wide window, expanded: a panel docked on the right whose width the page
+  // reserves (instead of a card floating over its commands).
+  const docked = !hidden && state.status !== 'idle' && !collapsed && !narrow;
+  useEffect(() => {
+    onDockedChange?.(docked);
+  }, [docked, onDockedChange]);
+  useEffect(() => () => onDockedChange?.(false), [onDockedChange]);
 
   // Nothing is shown before the first answer, so an installation that already
   // has a used MCP never flashes the guide.
@@ -459,10 +478,20 @@ export default function SetupChecklist({
 
   return (
     <>
-      {spacer}
+      {!docked && spacer}
       <section
-        ref={floatingRef}
-        className="fixed bottom-4 right-4 z-40 w-[22rem] max-w-[calc(100vw-2rem)] max-h-[calc(100vh-2rem)] overflow-y-auto card-primary p-4 shadow-2xl"
+        ref={docked ? undefined : floatingRef}
+        data-testid="setup-checklist-panel"
+        data-layout={docked ? 'docked' : 'sheet'}
+        className={
+          docked
+            ? // Full height on the right, beside the page (which keeps this width free).
+              'fixed top-0 right-0 bottom-0 z-30 w-[22rem] overflow-y-auto bg-gray-950 border-l border-gray-800 p-4'
+            : // Narrow window: a bottom sheet capped at half the height, so the
+              // top of the page stays visible and the spacer lets every command
+              // be scrolled above it.
+              'fixed bottom-4 inset-x-4 z-40 max-h-[50vh] overflow-y-auto card-primary p-4 shadow-2xl'
+        }
         aria-labelledby="setup-checklist-title"
       >
         <div className="flex items-start justify-between gap-3">

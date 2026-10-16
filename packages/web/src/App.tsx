@@ -8,7 +8,7 @@ import UserDashboard from './components/UserDashboard.js';
 import WelcomePage from './components/WelcomePage.js';
 import ChatEntryPage from './components/ChatEntryPage.js';
 import ProfilePreview from './components/ProfilePreview.js';
-import SetupChecklist from './components/SetupChecklist.js';
+import SetupChecklist, { SETUP_PANEL_WIDTH_CLASS } from './components/SetupChecklist.js';
 import { Redirect, useNavigation, resolveLocationRoutes } from './router/index.js';
 import type { View } from './router/index.js';
 import { useSession } from './context/SessionContext.js';
@@ -99,6 +99,8 @@ export default function App() {
   // The floating getting-started guide re-checks the server whenever the
   // user navigates or saves a data profile / MCP.
   const setupRefreshKey = useMemo(() => ({}), [view, configurations, profiles]);
+  // While the expanded guide is docked on the right, the page keeps its width free.
+  const [setupGuideDocked, setSetupGuideDocked] = useState(false);
 
   // Profile preview modal state
   const [previewProfile, setPreviewProfile] = useState<string | null>(null);
@@ -221,7 +223,9 @@ export default function App() {
       />
 
       {/* Main content column */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div
+        className={`flex-1 flex flex-col min-w-0 ${setupGuideDocked ? SETUP_PANEL_WIDTH_CLASS : ''}`}
+      >
         {/* Page content */}
         <main
           className="flex-1 p-6 md:p-8 pt-16 md:pt-8 animate-fade-in-up overflow-x-hidden"
@@ -382,6 +386,7 @@ export default function App() {
           ragEnabled={ragEnabled}
           onNavigate={setView}
           refreshKey={setupRefreshKey}
+          onDockedChange={setSetupGuideDocked}
         />
 
         {/* Profile preview modal */}

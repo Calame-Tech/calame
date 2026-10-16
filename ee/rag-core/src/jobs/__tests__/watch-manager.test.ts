@@ -251,6 +251,48 @@ describe('WatchManager', () => {
     manager.stop();
   });
 
+  it('a flush skipped during an active sync retries once later — never overlaps', () => {
+    const db = makeDb();
+    const connector = makeFakeConnector();
+    // Sync active for the first two attempts, then the queue accepts.
+    const triggerSync = vi
+      .fn<() => string | null>()
+      .mockReturnValueOnce(null)
+      .mockReturnValueOnce(null)
+      .mockReturnValue('job-2');
+    const audits: WatchAuditEntry[] = [];
+    const manager = new WatchManager({
+      db,
+      resolveConnector: () => connector,
+      decryptConfig: (s) => s,
+      triggerSync,
+      debounceMs: 5000,
+      onAudit: (e) => audits.push(e),
+    });
+
+    manager.upsert({
+      id: 's1',
+      type: 'local',
+      configEncrypted: JSON.stringify({ rootPath: '/tmp/x' }),
+    });
+    connector.emit('s1', 'updated', 'doc-1');
+    vi.advanceTimersByTime(5_000);
+    expect(triggerSync).toHaveBeenCalledTimes(1);
+    // A burst during the active sync still collapses into the single retry slot.
+    connector.emit('s1', 'updated', 'doc-2');
+    connector.emit('s1', 'updated', 'doc-3');
+    vi.advanceTimersByTime(5_000);
+    expect(triggerSync).toHaveBeenCalledTimes(2);
+    vi.advanceTimersByTime(5_000);
+    expect(triggerSync).toHaveBeenCalledTimes(3);
+    expect(audits.filter((a) => a.type === 'rag.sync.watch.triggered')).toHaveLength(1);
+
+    // Accepted → no further retries.
+    vi.advanceTimersByTime(60_000);
+    expect(triggerSync).toHaveBeenCalledTimes(3);
+    manager.stop();
+  });
+
   it('remove() cancels the pending debounce timer — no sync triggers', () => {
     const db = makeDb();
     const connector = makeFakeConnector();

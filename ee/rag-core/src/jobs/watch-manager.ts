@@ -323,6 +323,12 @@ export class WatchManager {
           payload: { sourceId, reason: 'sync-already-active' },
           timestamp,
         });
+        // Never start a second sync on top of the active one — but the
+        // changes that fired this flush may postdate its directory walk, so
+        // try again one debounce later. One pending timer per source (the
+        // same slot as the debounce), so this stays a single trailing sync
+        // rather than a queue; it stops as soon as a sync is accepted.
+        if (this.#unsubscribers.has(sourceId)) this.#scheduleFlush(sourceId);
         return;
       }
       this.#deps.onAudit?.({

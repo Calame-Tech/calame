@@ -13,6 +13,7 @@ import { Readable } from 'node:stream';
 
 import { runRagMigrations } from '../../storage/schema.js';
 import { runSyncJob } from '../rag-index.js';
+import { resetRememberedRejectionsForTests } from '../../pipeline/rejection-memory.js';
 import { IngestionPipeline } from '../../pipeline/ingest.js';
 import { IsolatedParser } from '../../parsers/isolated-parser.js';
 import {
@@ -239,6 +240,7 @@ describe('runSyncJob — per-file error isolation', () => {
   beforeEach(() => {
     process.env['CALAME_RAG_LOCKED_RETRY_DELAY_MS'] = '1';
     process.env['CALAME_RAG_MAX_DOC_BYTES'] = '1024';
+    resetRememberedRejectionsForTests();
   });
   afterEach(() => {
     process.env = { ...savedEnv };
@@ -394,6 +396,7 @@ describe('runSyncJob — sync report and final status', () => {
   beforeEach(() => {
     process.env['CALAME_RAG_LOCKED_RETRY_DELAY_MS'] = '1';
     process.env['CALAME_RAG_MAX_DOC_BYTES'] = '1024';
+    resetRememberedRejectionsForTests();
   });
   afterEach(() => {
     process.env = { ...savedEnv };
@@ -515,6 +518,171 @@ describe('runSyncJob — sync report and final status', () => {
     expect(job['rejected_documents']).toBe(1);
     expect(job['current_document']).toBeNull();
     expect(job['current_document_started_at']).toBeNull();
+  });
+});
+
+describe('runSyncJob — incremental resync', () => {
+  const savedEnv = { ...process.env };
+  beforeEach(() => {
+    process.env['CALAME_RAG_LOCKED_RETRY_DELAY_MS'] = '1';
+    process.env['CALAME_RAG_MAX_DOC_BYTES'] = '1024';
+    resetRememberedRejectionsForTests();
+  });
+  afterEach(() => {
+    process.env = { ...savedEnv };
+  });
+
+  /** Harness whose parser and embedder count what they are asked to do. */
+  function countingHarness(files: Map<string, FakeFile>) {
+    const parsed: string[] = [];
+    const embedded: string[] = [];
+    const embedder: EmbeddingClient = {
+      ...embeddingClient,
+      embed: async (texts: string[]) => {
+        embedded.push(...texts);
+        return texts.map(() => [0.1, 0.2, 0.3, 0.4]);
+      },
+    };
+    const h = makeHarness(
+      files,
+      async (_mime, buffer, filename) => {
+        parsed.push(filename);
+        if (buffer.includes('CORRUPT')) throw new Error('invalid zip');
+        return { text: buffer.toString('utf8') };
+      },
+      embedder,
+    );
+    return { h, parsed, embedded };
+  }
+
+  it('an unchanged resync parses and embeds nothing; an edit re-indexes only that file', async () => {
+    const files = new Map<string, FakeFile>(
+      Array.from({ length: 20 }, (_, i) => [
+        `dir/doc-${i}.txt`,
+        { body: `document ${i}`, etag: 'v1' },
+      ]),
+    );
+    const { h, parsed, embedded } = countingHarness(files);
+    await h.sync();
+    expect(parsed).toHaveLength(20);
+    const chunksAfterInitial = h.db.prepare(`SELECT COUNT(*) AS n FROM rag_chunks`).get();
+
+    parsed.length = 0;
+    embedded.length = 0;
+    const fetchesBefore = h.connector.fetchDocument.mock.calls.length;
+    const unchanged = await h.sync();
+    expect(unchanged['unchanged_documents']).toBe(20);
+    expect(unchanged['indexed_documents']).toBe(0);
+    expect(parsed).toEqual([]);
+    expect(embedded).toEqual([]);
+    expect(h.connector.fetchDocument.mock.calls.length).toBe(fetchesBefore);
+    expect(h.db.prepare(`SELECT COUNT(*) AS n FROM rag_chunks`).get()).toEqual(chunksAfterInitial);
+
+    files.set('dir/doc-3.txt', { body: 'document 3, edited', etag: 'v2' });
+    files.set('dir/doc-7.txt', { body: 'document 7', etag: 'v2' }); // touched only
+    const partial = await h.sync();
+    expect(partial['indexed_documents']).toBe(1);
+    expect(partial['unchanged_documents']).toBe(19);
+    // doc-7 is re-read and hashed (new etag) but neither parsed nor embedded.
+    expect(parsed).toEqual(['dir/doc-3.txt']);
+    expect(embedded.join(' ')).toContain('edited');
+    expect(chunkTexts(h.db, 'dir/doc-3.txt').join(' ')).toContain('edited');
+    expect(h.db.prepare(`SELECT COUNT(*) AS n FROM rag_chunks`).get()).toEqual(chunksAfterInitial);
+    assertConsistent(h.db);
+  });
+
+  it('does not re-parse an unchanged corrupt file, but retries it once it changes', async () => {
+    const files = new Map<string, FakeFile>([
+      ['ok.txt', { body: 'fine', etag: 'o1' }],
+      ['Rapport.docx', { body: 'CORRUPT', etag: 'r1' }],
+    ]);
+    const { h, parsed } = countingHarness(files);
+    const first = await h.sync();
+    expect(first['rejected_documents']).toBe(1);
+    expect(parsed).toEqual(['ok.txt', 'Rapport.docx']);
+
+    parsed.length = 0;
+    const second = await h.sync();
+    // Still reported (same reason) so the history stays complete…
+    expect(second['status']).toBe('completed');
+    expect(second['rejected_documents']).toBe(1);
+    expect(second['unchanged_documents']).toBe(1);
+    expect(JSON.parse(String(second['rejected_files']))).toEqual(
+      JSON.parse(String(first['rejected_files'])),
+    );
+    // …but neither re-read nor re-parsed.
+    expect(parsed).toEqual([]);
+    expect(
+      h.connector.fetchDocument.mock.calls.filter((c) => c[2] === 'Rapport.docx'),
+    ).toHaveLength(1);
+
+    files.set('Rapport.docx', { body: 'repaired report', etag: 'r2' });
+    const third = await h.sync();
+    expect(parsed).toEqual(['Rapport.docx']);
+    expect(third['indexed_documents']).toBe(1);
+    expect(third['rejected_documents']).toBe(0);
+    expect(indexedPaths(h.db)).toEqual(['Rapport.docx', 'ok.txt']);
+    assertConsistent(h.db);
+  });
+
+  it('retries a locked file on every sync (a lock is not remembered)', async () => {
+    const files = new Map<string, FakeFile>([
+      ['locked.docx', { body: errnoStream('EBUSY'), mimeType: DOCX_MIME, etag: 'l1' }],
+    ]);
+    process.env['CALAME_RAG_LOCKED_RETRIES'] = '0';
+    const h = makeHarness(files);
+    await h.sync();
+    await h.sync();
+    expect(h.connector.fetchDocument.mock.calls).toHaveLength(2);
+
+    // Word closed the file: indexed on the next sync.
+    files.set('locked.docx', { body: 'now readable', etag: 'l1' });
+    const job = await h.sync();
+    expect(job['indexed_documents']).toBe(1);
+    expect(job['rejected_documents']).toBe(0);
+  });
+
+  it('moves progress inside a long document and only times out a stalled one', async () => {
+    process.env['CALAME_RAG_DOC_TIMEOUT_MS'] = '200';
+    const progressSeen: number[] = [];
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    // Five batches of 120 ms: 600 ms in total, more than the 200 ms budget,
+    // but never 200 ms without progress.
+    const batched: EmbeddingClient = {
+      ...embeddingClient,
+      embed: async (texts, options) => {
+        if (texts.join(' ').includes('stalled')) {
+          await sleep(400);
+        } else {
+          for (let i = 1; i <= 5; i++) {
+            await sleep(120);
+            options?.onProgress?.(i, 5);
+            const row = h.db
+              .prepare(`SELECT progress FROM rag_jobs WHERE status = 'running'`)
+              .get() as {
+              progress: number;
+            };
+            progressSeen.push(row.progress);
+          }
+        }
+        return texts.map(() => [0.1, 0.2, 0.3, 0.4]);
+      },
+    };
+    const files = new Map<string, FakeFile>([
+      ['long.txt', { body: 'long document', etag: 'l1' }],
+      ['stalled.txt', { body: 'stalled document', etag: 's1' }],
+    ]);
+    const h: Harness = makeHarness(files, undefined, batched);
+    const job = await h.sync();
+    expect(indexedPaths(h.db)).toEqual(['long.txt']);
+    // Progress advanced between 0 and 1/2 while long.txt (1st of 2) was embedded.
+    expect(progressSeen.some((p) => p > 0 && p < 0.5)).toBe(true);
+    // The stalled embed is an engine problem, reported as such.
+    expect(job['status']).toBe('failed');
+    expect(job['failure_kind']).toBe('infrastructure');
+    expect(String(job['error'])).toMatch(/stalled\.txt.*timed out/);
+    await sleep(250); // let the abandoned embed settle before the DB closes
+    assertConsistent(h.db);
   });
 });
 

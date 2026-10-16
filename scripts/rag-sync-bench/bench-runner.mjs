@@ -25,7 +25,11 @@ import {
   IsolatedParser,
   readParseTimeoutMs,
 } from '../../ee/rag-core/src/parsers/isolated-parser.ts';
-import { LocalOnnxEmbeddingClient } from '../../ee/rag-core/src/embeddings/local-onnx-client.ts';
+import {
+  DEFAULT_LOCAL_EMBEDDING_BATCH_SIZE,
+  LocalOnnxEmbeddingClient,
+  readLocalEmbeddingThreads,
+} from '../../ee/rag-core/src/embeddings/local-onnx-client.ts';
 import { runSyncJob } from '../../ee/rag-core/src/routes/rag-index.ts';
 import { WatchManager } from '../../ee/rag-core/src/jobs/watch-manager.ts';
 import { LocalFolderConnector } from '../../ee/rag-connectors/src/local-folder.ts';
@@ -156,7 +160,7 @@ function startProbes(jobId) {
   let peakHeap = process.memoryUsage().heapUsed;
   let peakLoad = os.loadavg()[0];
   const pollLatencies = [];
-  let lastProcessed = -1;
+  let lastProcessed = null;
   let lastProgressAt = t0;
   let maxStallMs = 0;
   let expected = performance.now() + PROBE_MS;
@@ -174,8 +178,11 @@ function startProbes(jobId) {
     pollLatencies.push(Math.max(0, start - expected) + (end - start));
     expected = end + PROBE_MS;
     const job = rows.find((r) => r.id === jobId);
-    if (job && job.processed_documents !== lastProcessed) {
-      lastProcessed = job.processed_documents;
+    // Any visible advance counts: the document counter or the progress
+    // fraction (which also moves while one long document is embedded).
+    const seen = job ? `${job.processed_documents}:${job.progress}` : null;
+    if (job && seen !== lastProcessed) {
+      lastProcessed = seen;
       lastProgressAt = end;
     } else if (job && job.status === 'running') {
       maxStallMs = Math.max(maxStallMs, end - lastProgressAt);
@@ -350,6 +357,11 @@ if (opts.embedder === 'onnx') {
   const t = performance.now();
   await baseEmbedder.warmup();
   results.onnxWarmupMs = round(performance.now() - t);
+  // Production defaults of LocalOnnxEmbeddingClient (0 threads = onnxruntime default).
+  results.onnx = {
+    batchSize: DEFAULT_LOCAL_EMBEDDING_BATCH_SIZE,
+    intraOpNumThreads: readLocalEmbeddingThreads(),
+  };
 }
 results.scenarios.push(await runScenario('initial'));
 results.scenarios.push(await runScenario('unchanged'));

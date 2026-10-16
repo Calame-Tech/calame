@@ -114,6 +114,12 @@ export interface IngestDocumentInput {
    * file as "unchanged" rather than "indexed".
    */
   onUnchanged?: () => void;
+  /**
+   * Fired while the document's chunks are being embedded (texts embedded so
+   * far / total), for clients that embed in several batches. Lets the sync
+   * keep its progress moving inside one long document.
+   */
+  onEmbedProgress?: (done: number, total: number) => void;
 }
 
 interface DocumentRow {
@@ -339,7 +345,10 @@ export class IngestionPipeline {
     const embeddings: number[][] =
       chunks.length > 0
         ? await timePhase(this.onPhaseTiming, 'embed', () =>
-            client.embed(chunks.map((c) => c.text)),
+            client.embed(
+              chunks.map((c) => c.text),
+              input.onEmbedProgress ? { onProgress: input.onEmbedProgress } : undefined,
+            ),
           )
         : [];
 

@@ -12,7 +12,7 @@ import path from 'node:path';
 const tokenizerMock = vi.fn();
 const modelMock = vi.fn();
 const fromPretrainedTokenizer = vi.fn(async () => tokenizerMock);
-const fromPretrainedModel = vi.fn(async () => modelMock);
+const fromPretrainedModel = vi.fn(async (..._args: unknown[]) => modelMock);
 
 vi.mock('@huggingface/transformers', () => ({
   env: { allowRemoteModels: true, allowLocalModels: false, localModelPath: '' },
@@ -22,8 +22,13 @@ vi.mock('@huggingface/transformers', () => ({
 
 // vi.mock() calls above are hoisted above this import by vitest, so the
 // mocked module is what local-onnx-client.ts's dynamic `import(...)` resolves to.
-const { LocalOnnxEmbeddingClient, LocalEmbeddingUnavailableError, EMBEDDING_GEMMA_PREFIXES } =
-  await import('../local-onnx-client.js');
+const {
+  LocalOnnxEmbeddingClient,
+  LocalEmbeddingUnavailableError,
+  EMBEDDING_GEMMA_PREFIXES,
+  DEFAULT_LOCAL_EMBEDDING_BATCH_SIZE,
+  readLocalEmbeddingThreads,
+} = await import('../local-onnx-client.js');
 
 const DIMS = 4; // small, arbitrary — irrelevant to what's being tested here
 
@@ -115,6 +120,68 @@ describe('LocalOnnxEmbeddingClient', () => {
     expect((tokenizerMock.mock.calls[0]?.[0] as string[]).length).toBe(2);
     expect((tokenizerMock.mock.calls[1]?.[0] as string[]).length).toBe(2);
     expect((tokenizerMock.mock.calls[2]?.[0] as string[]).length).toBe(1);
+  });
+
+  it('reports progress after each batch and yields the event loop between batches', async () => {
+    stageValidModelDir();
+    const client = makeClient(); // batchSize: 2
+    await client.embed(['warm']); // model loaded: batches below are microtask-only mocks
+    const events: string[] = [];
+    // A macrotask queued before embed() can only run if embed() yields
+    // between two (synchronous, in production) inference batches.
+    setImmediate(() => events.push('io'));
+    await client.embed(['a', 'b', 'c', 'd', 'e'], {
+      onProgress: (done, total) => events.push(`${done}/${total}`),
+    });
+    expect(events).toEqual(['2/5', 'io', '4/5', '5/5']);
+  });
+
+  it('bounds onnxruntime threads (session_options) and defaults to small batches', async () => {
+    stageValidModelDir();
+    const client = new LocalOnnxEmbeddingClient({
+      modelsRootDir: tmpModelsRoot,
+      modelFolderName: MODEL_FOLDER,
+      dtype: 'q4',
+      dimensions: DIMS,
+      maxTokens: 2048,
+      modelName: 'embeddinggemma-300m-q4',
+      intraOpNumThreads: 3,
+    });
+    await client.embed(['a', 'b', 'c', 'd', 'e', 'f']);
+    expect(fromPretrainedModel).toHaveBeenCalledWith(
+      MODEL_FOLDER,
+      expect.objectContaining({
+        session_options: { intraOpNumThreads: 3, interOpNumThreads: 1 },
+      }),
+    );
+    expect(DEFAULT_LOCAL_EMBEDDING_BATCH_SIZE).toBe(4);
+    expect(tokenizerMock).toHaveBeenCalledTimes(2); // 6 texts / 4
+  });
+
+  it('intraOpNumThreads 0 keeps the onnxruntime default (no session_options)', async () => {
+    stageValidModelDir();
+    const client = new LocalOnnxEmbeddingClient({
+      modelsRootDir: tmpModelsRoot,
+      modelFolderName: MODEL_FOLDER,
+      dtype: 'q4',
+      dimensions: DIMS,
+      maxTokens: 2048,
+      modelName: 'embeddinggemma-300m-q4',
+      intraOpNumThreads: 0,
+    });
+    await client.embed(['a']);
+    const opts = (fromPretrainedModel.mock.calls[0] as unknown[])[1] as Record<string, unknown>;
+    expect(opts['session_options']).toBeUndefined();
+  });
+
+  it('readLocalEmbeddingThreads: half the CPUs, between 1 and 4, overridable', () => {
+    expect(readLocalEmbeddingThreads({}, 10)).toBe(4);
+    expect(readLocalEmbeddingThreads({}, 16)).toBe(4);
+    expect(readLocalEmbeddingThreads({}, 4)).toBe(2);
+    expect(readLocalEmbeddingThreads({}, 1)).toBe(1);
+    expect(readLocalEmbeddingThreads({ CALAME_LOCAL_EMBEDDING_THREADS: '6' }, 4)).toBe(6);
+    expect(readLocalEmbeddingThreads({ CALAME_LOCAL_EMBEDDING_THREADS: '0' }, 4)).toBe(0);
+    expect(readLocalEmbeddingThreads({ CALAME_LOCAL_EMBEDDING_THREADS: 'abc' }, 4)).toBe(2);
   });
 
   it('loads the model exactly once across many embed()/embedQuery() calls', async () => {

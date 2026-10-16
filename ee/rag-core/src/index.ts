@@ -5,6 +5,7 @@
 // ---------- Types ----------
 export type {
   EmbeddingClient,
+  EmbedOptions,
   ProfileRagAccess,
   RagChunk,
   RagDocument,
@@ -66,6 +67,8 @@ export {
   LocalOnnxEmbeddingClient,
   LocalEmbeddingUnavailableError,
   EMBEDDING_GEMMA_PREFIXES,
+  DEFAULT_LOCAL_EMBEDDING_BATCH_SIZE,
+  readLocalEmbeddingThreads,
 } from './embeddings/local-onnx-client.js';
 export type { LocalOnnxEmbeddingClientOptions } from './embeddings/local-onnx-client.js';
 

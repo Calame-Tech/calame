@@ -248,6 +248,16 @@ export interface VectorStore {
  * Embedding client abstraction. Implementations wrap an `AiSetting` from
  * `packages/cli/src/ai-config.ts` whose `capabilities` includes `embeddings`.
  */
+/** Optional per-call settings for {@link EmbeddingClient.embed}. */
+export interface EmbedOptions {
+  /**
+   * Fired after each internal batch with the number of texts embedded so
+   * far, so a long document reports progress while it is being embedded.
+   * Clients that embed in one call may never fire it.
+   */
+  onProgress?: (done: number, total: number) => void;
+}
+
 export interface EmbeddingClient {
   /** Number of dimensions produced by the underlying model. */
   dimensions: number;
@@ -256,7 +266,7 @@ export interface EmbeddingClient {
   /** Embed DOCUMENT / passage text. This IS the document path — models with
    * asymmetric query/document prompts (e.g. EmbeddingGemma) apply their
    * document prefix here. */
-  embed(texts: string[]): Promise<number[][]>;
+  embed(texts: string[], options?: EmbedOptions): Promise<number[][]>;
   /**
    * Embed SEARCH QUERIES. Optional — only implemented by clients whose
    * underlying model needs an asymmetric query prefix. Every OpenAI-

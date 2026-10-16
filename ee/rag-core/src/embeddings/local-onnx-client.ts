@@ -3,8 +3,9 @@
 // See ee/LICENSE.BUSL at the root of the ee/ directory for terms.
 
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
-import type { EmbeddingClient } from '../types.js';
+import type { EmbeddingClient, EmbedOptions } from '../types.js';
 
 /**
  * EmbeddingGemma's task-specific prompt prefixes. The model was trained with
@@ -36,6 +37,35 @@ export class LocalEmbeddingUnavailableError extends Error {
   }
 }
 
+/** Upper bound of the default ONNX intra-op thread count (see {@link readLocalEmbeddingThreads}). */
+export const DEFAULT_MAX_LOCAL_EMBEDDING_THREADS = 4;
+
+/**
+ * Number of CPU threads onnxruntime may use for one inference
+ * (`intraOpNumThreads`). onnxruntime's own default is one thread per physical
+ * core, which saturates the whole machine during a large sync — the "PC
+ * becomes slow" report. Default: half the logical CPUs, between 1 and
+ * {@link DEFAULT_MAX_LOCAL_EMBEDDING_THREADS} (10 CPUs → 4, 4 CPUs → 2).
+ * Measured on an M1 Max (10 cores, step 4 micro-benchmark): 4 threads use
+ * ≈ 3.9 cores instead of ≈ 4.9 for ≈ 10 % less throughput; 2 threads use
+ * ≈ 2 cores for ≈ 45 % less. Override with `CALAME_LOCAL_EMBEDDING_THREADS`
+ * (positive integer; `0` keeps onnxruntime's default).
+ */
+export function readLocalEmbeddingThreads(
+  env: NodeJS.ProcessEnv = process.env,
+  cpus: number = os.availableParallelism(),
+): number {
+  const raw = env.CALAME_LOCAL_EMBEDDING_THREADS;
+  if (raw !== undefined && raw.trim() !== '') {
+    const n = Number(raw);
+    if (Number.isInteger(n) && n >= 0) return n;
+  }
+  return Math.max(1, Math.min(DEFAULT_MAX_LOCAL_EMBEDDING_THREADS, Math.floor(cpus / 2)));
+}
+
+/** Default number of texts per `model()` call — see `batchSize` below. */
+export const DEFAULT_LOCAL_EMBEDDING_BATCH_SIZE = 4;
+
 export interface LocalOnnxEmbeddingClientOptions {
   /** Root directory containing `<modelFolderName>/config.json` etc. — becomes `env.localModelPath`. */
   modelsRootDir: string;
@@ -51,9 +81,18 @@ export interface LocalOnnxEmbeddingClientOptions {
    * bound (unlike OpenAiCompatibleEmbeddingClient's 96) — throughput measured
    * flat at ~18-26 chunks/s across batch sizes 1-32 in testing, so this
    * mainly bounds padding waste, peak RSS, and progress-reporting
-   * granularity rather than buying real speed. Defaults to 8.
+   * granularity rather than buying real speed. It ALSO bounds how long the
+   * event loop is blocked: onnxruntime-node runs inference synchronously on
+   * the main thread, so one batch is one uninterrupted stall of the server
+   * (≈ 1.2 s for 8 texts, ≈ 0.6 s for 4 at 4 threads, same throughput).
+   * Defaults to {@link DEFAULT_LOCAL_EMBEDDING_BATCH_SIZE}.
    */
   batchSize?: number;
+  /**
+   * onnxruntime `intraOpNumThreads`. Defaults to
+   * {@link readLocalEmbeddingThreads}; `0` keeps onnxruntime's default.
+   */
+  intraOpNumThreads?: number;
   /**
    * Called at most once per process when a batch is truncated to `maxTokens`.
    * No default logging inside rag-core (see the rest of this package — no
@@ -122,6 +161,7 @@ export class LocalOnnxEmbeddingClient implements EmbeddingClient {
   private readonly dtype: 'q4' | 'q8' | 'fp32';
   private readonly maxTokens: number;
   private readonly batchSize: number;
+  private readonly intraOpNumThreads: number;
   private readonly onTruncation: (() => void) | undefined;
   private warnedTruncation = false;
 
@@ -142,12 +182,13 @@ export class LocalOnnxEmbeddingClient implements EmbeddingClient {
     this.dimensions = opts.dimensions;
     this.maxTokens = opts.maxTokens;
     this.modelName = opts.modelName;
-    this.batchSize = opts.batchSize ?? 8;
+    this.batchSize = opts.batchSize ?? DEFAULT_LOCAL_EMBEDDING_BATCH_SIZE;
+    this.intraOpNumThreads = opts.intraOpNumThreads ?? readLocalEmbeddingThreads();
     this.onTruncation = opts.onTruncation;
   }
 
-  async embed(texts: string[]): Promise<number[][]> {
-    return this.embedWithPrefix(texts, EMBEDDING_GEMMA_PREFIXES.document);
+  async embed(texts: string[], options?: EmbedOptions): Promise<number[][]> {
+    return this.embedWithPrefix(texts, EMBEDDING_GEMMA_PREFIXES.document, options);
   }
 
   async embedQuery(texts: string[]): Promise<number[][]> {
@@ -160,13 +201,21 @@ export class LocalOnnxEmbeddingClient implements EmbeddingClient {
     await this.embed(['warmup']);
   }
 
-  private async embedWithPrefix(texts: string[], prefix: string): Promise<number[][]> {
+  private async embedWithPrefix(
+    texts: string[],
+    prefix: string,
+    options?: EmbedOptions,
+  ): Promise<number[][]> {
     if (texts.length === 0) return [];
     const out: number[][] = [];
     for (let i = 0; i < texts.length; i += this.batchSize) {
       const batch = texts.slice(i, i + this.batchSize);
       const vectors = await this.enqueue(() => this.embedBatch(batch, prefix));
       out.push(...vectors);
+      options?.onProgress?.(out.length, texts.length);
+      // Each batch blocks the event loop (synchronous inference): let pending
+      // I/O — HTTP requests from the UI, search queries — run between two.
+      if (out.length < texts.length) await new Promise<void>((r) => setImmediate(r));
     }
     return out;
   }
@@ -280,6 +329,16 @@ export class LocalOnnxEmbeddingClient implements EmbeddingClient {
     const model = await AutoModel.from_pretrained(this.modelFolderName, {
       dtype: this.dtype,
       device: 'cpu',
+      // Bounded CPU use (see readLocalEmbeddingThreads). One inference runs at
+      // a time (`enqueue`), so inter-op parallelism is pinned to 1 as well.
+      ...(this.intraOpNumThreads > 0
+        ? {
+            session_options: {
+              intraOpNumThreads: this.intraOpNumThreads,
+              interOpNumThreads: 1,
+            },
+          }
+        : {}),
     });
 
     return {

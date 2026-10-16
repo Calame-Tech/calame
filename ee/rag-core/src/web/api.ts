@@ -5,6 +5,7 @@
 import type { RagFolder, RagDocument, RagJob, RagSearchResult } from '../types.js';
 import type { RagSourcePublic, RagReindexJobPublic } from '../routes/api-types.js';
 import type { RagUsageResponse } from '../routes/rag-usage.js';
+import { RAG_STRINGS } from './onboarding-strings.js';
 
 /**
  * Tenant header injection. Duplicated from `packages/web/src/lib/api.ts` to
@@ -91,33 +92,74 @@ async function parseJson<T>(res: Response): Promise<T> {
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' } as const;
 
-export async function apiGet<T>(url: string): Promise<T> {
-  const res = await fetch(url, withTenantHeader({ method: 'GET' }));
-  return parseJson<T>(res);
+/** Thrown when `timeoutMs` elapses before the server answers. */
+export class ApiTimeoutError extends Error {
+  readonly timeoutMs: number;
+
+  constructor(timeoutMs: number) {
+    super(RAG_STRINGS.timeout(Math.round(timeoutMs / 1000)));
+    this.name = 'ApiTimeoutError';
+    this.timeoutMs = timeoutMs;
+  }
 }
 
-export async function apiPost<T>(url: string, body?: unknown): Promise<T> {
-  const res = await fetch(
+/** Options accepted by the JSON helpers below. */
+export interface ApiRequestOptions {
+  /**
+   * Aborts the request so a hung server surfaces as an `ApiTimeoutError`
+   * instead of an endless loading state. Omit it to wait indefinitely.
+   */
+  timeoutMs?: number;
+}
+
+async function request<T>(url: string, init: RequestInit, timeoutMs?: number): Promise<T> {
+  if (timeoutMs === undefined) {
+    const res = await fetch(url, withTenantHeader(init));
+    return parseJson<T>(res);
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, withTenantHeader({ ...init, signal: controller.signal }));
+    return await parseJson<T>(res);
+  } catch (err) {
+    if (controller.signal.aborted) throw new ApiTimeoutError(timeoutMs);
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function apiGet<T>(url: string, options: ApiRequestOptions = {}): Promise<T> {
+  return request<T>(url, { method: 'GET' }, options.timeoutMs);
+}
+
+export async function apiPost<T>(
+  url: string,
+  body?: unknown,
+  options: ApiRequestOptions = {},
+): Promise<T> {
+  return request<T>(
     url,
-    withTenantHeader({
+    {
       method: 'POST',
       headers: body === undefined ? undefined : JSON_HEADERS,
       body: body === undefined ? undefined : JSON.stringify(body),
-    }),
+    },
+    options.timeoutMs,
   );
-  return parseJson<T>(res);
 }
 
-export async function apiPatch<T>(url: string, body: unknown): Promise<T> {
-  const res = await fetch(
+export async function apiPatch<T>(
+  url: string,
+  body: unknown,
+  options: ApiRequestOptions = {},
+): Promise<T> {
+  return request<T>(
     url,
-    withTenantHeader({
-      method: 'PATCH',
-      headers: JSON_HEADERS,
-      body: JSON.stringify(body),
-    }),
+    { method: 'PATCH', headers: JSON_HEADERS, body: JSON.stringify(body) },
+    options.timeoutMs,
   );
-  return parseJson<T>(res);
 }
 
 export async function apiDelete<T>(url: string): Promise<T> {
@@ -161,6 +203,11 @@ export type { RagSourcePublic };
 
 export interface RagSourceListResponse {
   sources: RagSourceWithCounts[];
+}
+
+/** Body of POST /api/rag/sources and PATCH /api/rag/sources/:id. */
+export interface RagSourceResponse {
+  source: RagSourcePublic | null;
 }
 
 export interface RagFolderListResponse {

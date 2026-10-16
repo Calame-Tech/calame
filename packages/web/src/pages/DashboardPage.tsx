@@ -4,7 +4,6 @@
 // the servers table. Chart data is aggregated client-side from the
 // recent-activity feed (no daily-series endpoint exists).
 
-import { useEffect, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { useTranslations } from 'use-intl/react';
 import { Button, PageHeader } from '../components/ui/index.js';
@@ -14,7 +13,7 @@ import ServersTable from '../components/dashboard/ServersTable.js';
 import { timeAgo } from '../components/dashboard/activity-stats.js';
 import { useLocale } from '../i18n/I18nProvider.js';
 import { getConfigurationColumnMasking } from '../lib/configuration-accessors.js';
-import { apiFetch } from '../lib/api.js';
+import { useRagReadiness } from '../lib/rag-source-readiness.js';
 import type {
   DatabaseSchema,
   Configuration,
@@ -74,29 +73,14 @@ export default function DashboardPage({
   const t = useTranslations('dashboard');
   const tCommon = useTranslations('common');
   const { locale } = useLocale();
-  const { setShowOnboarding, ragEnabled } = useSession();
+  const { setShowOnboarding, ragEnabled, dataVersion } = useSession();
 
-  // Knowledge-base sources count — SQL connections arrive via props, RAG
-  // sources only exist behind /api/rag/sources (EE capability). Fetched here
-  // so the "Sources" pipeline stage counts both kinds.
-  const [ragSourceCount, setRagSourceCount] = useState(0);
-  useEffect(() => {
-    if (!ragEnabled) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await apiFetch('/api/rag/sources', { credentials: 'include' });
-        if (!res.ok) return;
-        const data = (await res.json()) as { sources?: unknown[] };
-        if (!cancelled) setRagSourceCount(data.sources?.length ?? 0);
-      } catch {
-        // capability probe only — ignore
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [ragEnabled]);
+  // Knowledge-base sources with their sync state — SQL connections arrive via
+  // props, RAG sources only exist behind /api/rag/sources (EE capability).
+  // Fetched here so the "Sources" stage counts both kinds and a failed sync
+  // shows up under "Needs attention".
+  const ragSources = useRagReadiness(ragEnabled, dataVersion);
+  const failedRagSources = ragSources.filter((s) => s.state === 'failed');
 
   // PII protection numbers — no masked-fields runtime metric exists, so show
   // what the configurations actually declare: masked columns across configs.
@@ -110,7 +94,7 @@ export default function DashboardPage({
   const configsWithMasking = maskedColumnsPerConfig.filter((n) => n > 0).length;
   const maskingShare = configurations.length > 0 ? configsWithMasking / configurations.length : 0;
 
-  const attentionCount = pendingWriteCount > 0 ? 1 : 0;
+  const attentionCount = (pendingWriteCount > 0 ? 1 : 0) + failedRagSources.length;
 
   return (
     <div className="space-y-4">
@@ -138,7 +122,7 @@ export default function DashboardPage({
         profiles={profiles}
         serveStatus={serveStatus}
         connectedCount={connectedCount}
-        ragSourceCount={ragSourceCount}
+        ragSources={ragSources}
         activeMcpCount={activeMcpCount}
         totalMcpCount={totalMcpCount}
       />
@@ -169,6 +153,33 @@ export default function DashboardPage({
             <p className="font-mono-plex text-[11px] text-gray-500 mb-2">
               {t('attention.itemCount', { count: attentionCount })}
             </p>
+            {failedRagSources.map((source) => (
+              <div key={source.id} className="flex items-start gap-2.5 py-1 text-sm" role="alert">
+                <span
+                  className="flex-none w-[18px] h-[18px] rounded-md bg-rose-400/10 flex items-center justify-center mt-0.5"
+                  aria-hidden="true"
+                >
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                    <path
+                      d="M5 1v5M5 8.6v.4"
+                      stroke="rgb(251 113 133)"
+                      strokeWidth="1.6"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                </span>
+                <p className="text-rose-300 leading-snug">
+                  {t('attention.sourceSyncFailed', { name: source.name })}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setView({ page: 'sources', tab: 'knowledge' })}
+                  className="ml-auto flex-none font-semibold text-[11px] text-os-300 bg-os-500/10 hover:bg-os-500/20 rounded-md px-2.5 py-1 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-os-500/40"
+                >
+                  {t('attention.openSource')}
+                </button>
+              </div>
+            ))}
             {pendingWriteCount > 0 ? (
               <div className="flex items-start gap-2.5 py-1 text-sm">
                 <span
@@ -195,7 +206,7 @@ export default function DashboardPage({
                   {t('attention.review')}
                 </button>
               </div>
-            ) : (
+            ) : attentionCount > 0 ? null : (
               <div className="flex items-center gap-2 py-1 text-sm text-gray-500">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" aria-hidden="true" />
                 {t('attention.allClear')}

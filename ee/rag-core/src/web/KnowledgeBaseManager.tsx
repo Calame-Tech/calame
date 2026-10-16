@@ -16,6 +16,8 @@ import SourceForm, { type AiSettingOption } from './SourceForm.js';
 import FolderTreeView from './FolderTreeView.js';
 import DocumentUploader from './DocumentUploader.js';
 import IngestionStatusCard from './IngestionStatusCard.js';
+import { RAG_STRINGS, ragLocale, translateJobError } from './onboarding-strings.js';
+import { KB_MANAGER_STRINGS as T } from './strings/kb-manager.js';
 import SyncHistoryPanel from './SyncHistoryPanel.js';
 import EmbeddingUsageCard from './EmbeddingUsageCard.js';
 import {
@@ -27,12 +29,18 @@ import {
 
 interface KnowledgeBaseManagerProps {
   onClose?: () => void;
+  /**
+   * Called with the number of sources after every successful list refresh
+   * (initial load, creation, deletion) so the host page can update the
+   * guided-setup checklist and tab badge without re-fetching.
+   */
+  onSourcesChange?: (count: number) => void;
 }
 
 function formatDate(value?: string): string {
-  if (!value) return 'Jamais';
+  if (!value) return T.never;
   try {
-    return new Date(value).toLocaleString('fr-CA', {
+    return new Date(value).toLocaleString(ragLocale() === 'fr' ? 'fr-CA' : 'en-US', {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
@@ -46,7 +54,7 @@ function formatDate(value?: string): string {
 
 /**
  * Returns a human-readable label for the auto-sync mode of a source.
- * Examples: "Watch live", "Watch + polling 5 min", "Polling 60 min", "Manuel uniquement"
+ * Examples (EN): "Live watch", "Watch + polling 5 min", "Polling 60 min", "Manual only"
  */
 function syncModeLabel(source: RagSourcePublic): string {
   const isLocal = source.type === 'local';
@@ -54,16 +62,16 @@ function syncModeLabel(source: RagSourcePublic): string {
 
   if (isLocal && polling) {
     const minutes = Math.round(polling / 60);
-    return `Watch + polling ${minutes} min`;
+    return RAG_STRINGS.watchPlusPolling(minutes);
   }
   if (isLocal) {
-    return 'Watch live';
+    return RAG_STRINGS.watchLive;
   }
   if (polling) {
     const minutes = Math.round(polling / 60);
-    return `Polling ${minutes} min`;
+    return RAG_STRINGS.pollingEvery(minutes);
   }
-  return 'Manuel uniquement';
+  return RAG_STRINGS.manualOnly;
 }
 
 interface SyncStatusBadgeProps {
@@ -84,24 +92,30 @@ function SyncStatusBadge({ source, jobInfo }: SyncStatusBadgeProps) {
     return (
       <span
         className="inline-flex items-center gap-1.5 text-xs text-blue-400"
-        aria-label="Synchronisation en cours"
+        aria-label={RAG_STRINGS.syncing}
       >
         <span className="inline-block w-2 h-2 rounded-full bg-blue-400 animate-pulse flex-shrink-0" />
-        Synchronisation en cours…
+        {RAG_STRINGS.syncing}…
+        {/* Real counters from the job row — no estimate when the total is unknown. */}
+        {activeJob.totalDocuments > 0 &&
+          RAG_STRINGS.syncProgress(activeJob.processedDocuments, activeJob.totalDocuments)}
       </span>
     );
   }
 
   // Last job failed (and no active job)
   if (lastFailedJob) {
+    const lastFailedError = lastFailedJob.error
+      ? translateJobError(lastFailedJob.error)
+      : RAG_STRINGS.unknownError;
     return (
       <span
         className="inline-flex items-center gap-1.5 text-xs text-red-400"
-        title={lastFailedJob.error ?? 'Erreur inconnue'}
-        aria-label={`Échec de la dernière sync : ${lastFailedJob.error ?? 'Erreur inconnue'}`}
+        title={lastFailedError}
+        aria-label={RAG_STRINGS.lastSyncFailedAria(lastFailedError)}
       >
         <span className="inline-block w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />
-        Échec de la dernière sync
+        {RAG_STRINGS.lastSyncFailed}
       </span>
     );
   }
@@ -111,10 +125,10 @@ function SyncStatusBadge({ source, jobInfo }: SyncStatusBadgeProps) {
     return (
       <span
         className="inline-flex items-center gap-1.5 text-xs text-gray-500"
-        aria-label="Jamais synchronisé"
+        aria-label={RAG_STRINGS.neverSynced}
       >
         <span className="inline-block w-2 h-2 rounded-full bg-gray-600 flex-shrink-0" />
-        Jamais synchronisé
+        {RAG_STRINGS.neverSynced}
       </span>
     );
   }
@@ -127,10 +141,10 @@ function SyncStatusBadge({ source, jobInfo }: SyncStatusBadgeProps) {
     return (
       <span
         className="inline-flex items-center gap-1.5 text-xs text-yellow-500"
-        aria-label={`Synchronisé ${relative ?? ''}`}
+        aria-label={T.syncedRelative(relative ?? '')}
       >
         <span className="inline-block w-2 h-2 rounded-full bg-yellow-500 flex-shrink-0" />
-        Synchronisé {relative}
+        {T.syncedRelative(relative ?? '')}
       </span>
     );
   }
@@ -138,10 +152,10 @@ function SyncStatusBadge({ source, jobInfo }: SyncStatusBadgeProps) {
   return (
     <span
       className="inline-flex items-center gap-1.5 text-xs text-green-500"
-      aria-label={`Synchronisé ${relative ?? ''}`}
+      aria-label={T.syncedRelative(relative ?? '')}
     >
       <span className="inline-block w-2 h-2 rounded-full bg-green-500 flex-shrink-0" />
-      Synchronisé {relative}
+      {T.syncedRelative(relative ?? '')}
     </span>
   );
 }
@@ -176,6 +190,13 @@ function RefreshIcon({ spinning }: { spinning: boolean }) {
 const RETENTION_DAYS = 7;
 
 /**
+ * Upper bound for the initial list requests. `fetch` has no timeout of its
+ * own, so a server that never answers would otherwise leave the view on
+ * "Chargement des sources…" forever with no way out.
+ */
+export const LOAD_TIMEOUT_MS = 20_000;
+
+/**
  * Compute how many days remain before the source is hard-deleted by the
  * cleanup cron. Negative values mean the source is past retention and will be
  * collected on the next server boot (or already has been — the UI just hasn't
@@ -190,7 +211,10 @@ function daysUntilHardDelete(deletedAt: string | null): number | null {
   return Math.max(0, Math.ceil(RETENTION_DAYS - elapsedDays));
 }
 
-export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerProps) {
+export default function KnowledgeBaseManager({
+  onClose,
+  onSourcesChange,
+}: KnowledgeBaseManagerProps) {
   const [sources, setSources] = useState<RagSourceWithCounts[]>([]);
   const [aiSettings, setAiSettings] = useState<AiSettingOption[]>([]);
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
@@ -208,6 +232,9 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
   const [view, setView] = useState<'sources' | 'deleted'>('sources');
   const [deletedSources, setDeletedSources] = useState<RagSourcePublic[]>([]);
   const [loading, setLoading] = useState(true);
+  // False until the source list has been fetched once — an empty `sources`
+  // array must not be presented as "no source" when the fetch failed.
+  const [sourcesLoaded, setSourcesLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   // Track per-source "requesting sync" state independently from active jobs.
@@ -221,18 +248,23 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
   // counters across.
   const [folderRefreshTicks, setFolderRefreshTicks] = useState<Record<string, number>>({});
 
+  // Ref so a new callback identity does not re-create refreshSources (which
+  // would re-run the initial load effect).
+  const onSourcesChangeRef = useRef(onSourcesChange);
+  onSourcesChangeRef.current = onSourcesChange;
+
   const refreshSources = useCallback(async (): Promise<void> => {
     try {
-      const data = await apiGet<RagSourceListResponse>('/api/rag/sources');
+      const data = await apiGet<RagSourceListResponse>('/api/rag/sources', {
+        timeoutMs: LOAD_TIMEOUT_MS,
+      });
       setSources(data.sources ?? []);
+      setSourcesLoaded(true);
+      onSourcesChangeRef.current?.(data.sources?.length ?? 0);
       setError(null);
     } catch (err) {
       const message =
-        err instanceof ApiError
-          ? err.message
-          : err instanceof Error
-            ? err.message
-            : 'Erreur de chargement.';
+        err instanceof ApiError ? err.message : err instanceof Error ? err.message : T.loadError;
       setError(message);
     }
   }, []);
@@ -245,18 +277,16 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
    */
   const refreshDeletedSources = useCallback(async (): Promise<void> => {
     try {
-      const data = await apiGet<{ sources: RagSourcePublic[] }>('/api/rag/sources?filter=deleted');
+      const data = await apiGet<{ sources: RagSourcePublic[] }>('/api/rag/sources?filter=deleted', {
+        timeoutMs: LOAD_TIMEOUT_MS,
+      });
       setDeletedSources(data.sources ?? []);
     } catch (err) {
       // Failure here is not fatal — the count badge just stays at the
       // last known value. The "Recently deleted" view surfaces the
       // error through its own state when the user navigates to it.
       const message =
-        err instanceof ApiError
-          ? err.message
-          : err instanceof Error
-            ? err.message
-            : 'Erreur de chargement.';
+        err instanceof ApiError ? err.message : err instanceof Error ? err.message : T.loadError;
       if (view === 'deleted') {
         setError(message);
       }
@@ -267,6 +297,7 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
     try {
       const data = await apiGet<{ success?: boolean; settings?: AiSettingOption[] }>(
         '/api/ai-settings',
+        { timeoutMs: LOAD_TIMEOUT_MS },
       );
       if (data.success && Array.isArray(data.settings)) {
         setAiSettings(data.settings);
@@ -276,13 +307,15 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
     }
   }, []);
 
-  useEffect(() => {
-    void (async () => {
-      setLoading(true);
-      await Promise.all([refreshSources(), refreshAiSettings(), refreshDeletedSources()]);
-      setLoading(false);
-    })();
+  const loadAll = useCallback(async (): Promise<void> => {
+    setLoading(true);
+    await Promise.all([refreshSources(), refreshAiSettings(), refreshDeletedSources()]);
+    setLoading(false);
   }, [refreshSources, refreshAiSettings, refreshDeletedSources]);
+
+  useEffect(() => {
+    void loadAll();
+  }, [loadAll]);
 
   // Stable list of source IDs passed to the polling hook.
   const sourceIds = useMemo(() => sources.map((s) => s.id), [sources]);
@@ -296,13 +329,29 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
   // lastSyncAt — e.g. "Jamais synchronisé" right after a successful first
   // sync — until the page was manually reloaded. Detect the active → done
   // transition here and refresh the source list once it happens.
+  // A job can also start AND finish between two polls (empty or missing
+  // folder), so a new terminal job id counts as "just finished" too.
   const previouslyActiveIdsRef = useRef<Set<string>>(new Set());
+  const previousTerminalIdsRef = useRef<Map<string, string | null> | null>(null);
   useEffect(() => {
     const currentlyActive = new Set(
       [...jobMap.entries()].filter(([, info]) => info.activeJob !== null).map(([id]) => id),
     );
-    const justFinished = [...previouslyActiveIdsRef.current].some((id) => !currentlyActive.has(id));
+    const previousTerminal = previousTerminalIdsRef.current;
+    const newTerminal =
+      previousTerminal !== null &&
+      [...jobMap.entries()].some(
+        ([id, info]) =>
+          previousTerminal.has(id) && previousTerminal.get(id) !== info.lastTerminalJobId,
+      );
+    const justFinished =
+      newTerminal || [...previouslyActiveIdsRef.current].some((id) => !currentlyActive.has(id));
     previouslyActiveIdsRef.current = currentlyActive;
+    if (jobMap.size > 0) {
+      previousTerminalIdsRef.current = new Map(
+        [...jobMap.entries()].map(([id, info]) => [id, info.lastTerminalJobId]),
+      );
+    }
     if (justFinished) {
       void refreshSources();
     }
@@ -313,7 +362,7 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
   const handleCreated = (source: RagSourcePublic) => {
     setShowCreateForm(false);
     setSelectedSourceId(source.id);
-    setActionMessage(`Source "${source.name}" enregistrée.`);
+    setActionMessage(T.sourceSaved(source.name));
     setTimeout(() => setActionMessage(null), 3000);
     void refreshSources();
   };
@@ -321,7 +370,7 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
   const handleUpdated = (source: RagSourcePublic) => {
     setEditingSource(null);
     setSelectedSourceId(source.id);
-    setActionMessage(`Source "${source.name}" mise à jour.`);
+    setActionMessage(T.sourceUpdated(source.name));
     setTimeout(() => setActionMessage(null), 3000);
     void refreshSources();
   };
@@ -346,7 +395,7 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
       setError(null);
       try {
         await apiPost(`/api/rag/sources/${encodeURIComponent(source.id)}/sync`);
-        showAction(`Sync lancée pour "${source.name}".`);
+        showAction(T.syncStarted(source.name));
         // Restart the poll loop right away so the badge picks up the new
         // `pending`/`running` row without waiting for the next scheduled
         // tick (the loop self-suspends when nothing is active).
@@ -354,14 +403,14 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
       } catch (err) {
         if (err instanceof ApiError && err.status === 409) {
           // Already queued — the badge will reflect this from the poll.
-          showAction(`Sync déjà en cours pour "${source.name}".`);
+          showAction(T.syncAlreadyRunningFor(source.name));
         } else {
           const message =
             err instanceof ApiError
               ? err.message
               : err instanceof Error
                 ? err.message
-                : 'Échec de la synchronisation.';
+                : T.syncFailed;
           setError(message);
           // Revert optimistic state on real failure.
           setOptimisticActiveIds((prev) => {
@@ -382,28 +431,17 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
   );
 
   const handleDelete = async (source: RagSourcePublic) => {
-    if (
-      !window.confirm(
-        `Supprimer la source "${source.name}" ? ` +
-          `Elle sera déplacée vers la corbeille et conservée ${RETENTION_DAYS} jours avant suppression définitive.`,
-      )
-    ) {
+    if (!window.confirm(T.confirmDelete(source.name, RETENTION_DAYS))) {
       return;
     }
     try {
       await apiDelete(`/api/rag/sources/${encodeURIComponent(source.id)}`);
       if (selectedSourceId === source.id) setSelectedSourceId(null);
-      showAction(
-        `Source "${source.name}" déplacée vers la corbeille (récupérable ${RETENTION_DAYS} jours).`,
-      );
+      showAction(T.sourceTrashed(source.name, RETENTION_DAYS));
       await Promise.all([refreshSources(), refreshDeletedSources()]);
     } catch (err) {
       const message =
-        err instanceof ApiError
-          ? err.message
-          : err instanceof Error
-            ? err.message
-            : 'Échec de la suppression.';
+        err instanceof ApiError ? err.message : err instanceof Error ? err.message : T.deleteFailed;
       setError(message);
     }
   };
@@ -417,7 +455,7 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
     setError(null);
     try {
       await apiPost(`/api/rag/sources/${encodeURIComponent(source.id)}/restore`);
-      showAction(`Source "${source.name}" restaurée.`);
+      showAction(T.sourceRestored(source.name));
       await Promise.all([refreshSources(), refreshDeletedSources()]);
     } catch (err) {
       const message =
@@ -425,7 +463,7 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
           ? err.message
           : err instanceof Error
             ? err.message
-            : 'Échec de la restauration.';
+            : T.restoreFailed;
       setError(message);
     }
   };
@@ -436,18 +474,13 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
    * confirmation because the action is irreversible.
    */
   const handlePermanentDelete = async (source: RagSourcePublic) => {
-    if (
-      !window.confirm(
-        `Supprimer DÉFINITIVEMENT la source "${source.name}" ? ` +
-          `Cette action est IRRÉVERSIBLE — tous les documents, dossiers, chunks et historiques de sync seront perdus.`,
-      )
-    ) {
+    if (!window.confirm(T.confirmPurge(source.name))) {
       return;
     }
     setError(null);
     try {
       await apiDelete(`/api/rag/sources/${encodeURIComponent(source.id)}/permanent`);
-      showAction(`Source "${source.name}" supprimée définitivement.`);
+      showAction(T.sourcePurged(source.name));
       await Promise.all([refreshSources(), refreshDeletedSources()]);
     } catch (err) {
       const message =
@@ -455,7 +488,7 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
           ? err.message
           : err instanceof Error
             ? err.message
-            : 'Échec de la suppression définitive.';
+            : RAG_STRINGS.purgeFailed;
       setError(message);
     }
   };
@@ -476,11 +509,8 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="heading-md">Corbeille</h2>
-            <p className="text-sm text-gray-500 mt-1">
-              Sources supprimées au cours des {RETENTION_DAYS} derniers jours. Au-delà, elles sont
-              définitivement effacées par le cron au prochain démarrage du serveur.
-            </p>
+            <h2 className="heading-md">{RAG_STRINGS.trash}</h2>
+            <p className="text-sm text-gray-500 mt-1">{T.trashDescription(RETENTION_DAYS)}</p>
           </div>
           <button
             type="button"
@@ -490,24 +520,30 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
             }}
             className="px-3 py-1.5 rounded-lg text-sm text-gray-400 hover:text-gray-200 transition-colors"
           >
-            ← Retour
+            {T.back}
           </button>
         </div>
 
         {actionMessage && (
-          <div className="p-2.5 rounded-lg text-sm bg-green-950/30 border border-green-800/50 text-green-400">
+          <div
+            role="status"
+            className="p-2.5 rounded-lg text-sm bg-green-950/30 border border-green-800/50 text-green-400"
+          >
             {actionMessage}
           </div>
         )}
         {error && (
-          <div className="p-2.5 rounded-lg text-sm bg-red-950/30 border border-red-800/50 text-red-400">
+          <div
+            role="alert"
+            className="p-2.5 rounded-lg text-sm bg-red-950/30 border border-red-800/50 text-red-400"
+          >
             {error}
           </div>
         )}
 
         {deletedSources.length === 0 ? (
           <div className="text-sm text-gray-500 italic px-3 py-6 text-center border border-dashed border-white/5 rounded-lg">
-            Aucune source dans la corbeille.
+            {T.trashEmpty}
           </div>
         ) : (
           <div className="space-y-2">
@@ -517,8 +553,8 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
                 remaining === null
                   ? '—'
                   : remaining <= 0
-                    ? 'expire à la prochaine maintenance'
-                    : `${remaining} jour${remaining > 1 ? 's' : ''} restant${remaining > 1 ? 's' : ''}`;
+                    ? T.expiresNextMaintenance
+                    : T.daysRemaining(remaining);
               const urgent = remaining !== null && remaining <= 1;
               return (
                 <div
@@ -535,7 +571,7 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
                         <span className="text-xs text-gray-500">{source.type}</span>
                       </div>
                       <div className="text-xs text-gray-500 mt-0.5">
-                        Supprimée {formatDate(source.deletedAt ?? undefined)}
+                        {T.deletedOn(formatDate(source.deletedAt ?? undefined))}
                       </div>
                       <div
                         className={`text-xs mt-0.5 ${urgent ? 'text-yellow-500' : 'text-gray-500'}`}
@@ -550,14 +586,14 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
                       onClick={() => void handleRestore(source)}
                       className="px-2 py-1 rounded text-xs bg-os-700 hover:bg-os-600 text-white"
                     >
-                      Restaurer
+                      {T.restore}
                     </button>
                     <button
                       type="button"
                       onClick={() => void handlePermanentDelete(source)}
                       className="px-2 py-1 rounded text-xs text-red-400 hover:bg-red-950/40 ml-auto"
                     >
-                      Supprimer définitivement
+                      {T.deletePermanently}
                     </button>
                   </div>
                 </div>
@@ -574,10 +610,8 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="heading-md">Bases de connaissance</h2>
-          <p className="text-sm text-gray-500 mt-1">
-            Configurez les sources documentaires qui alimentent le RAG.
-          </p>
+          <h2 className="heading-md">{RAG_STRINGS.kbTitle}</h2>
+          <p className="text-sm text-gray-500 mt-1">{RAG_STRINGS.kbDescription}</p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -589,17 +623,17 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
             }}
             disabled={deletedSources.length === 0}
             className="px-3 py-1.5 rounded-lg text-sm bg-gray-700/40 hover:bg-gray-700/60 text-gray-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            title={`${deletedSources.length} source(s) dans la corbeille — restaurables pendant ${RETENTION_DAYS} jours`}
+            title={T.trashButtonTitle(deletedSources.length, RETENTION_DAYS)}
           >
-            Corbeille ({deletedSources.length})
+            {RAG_STRINGS.trashCount(deletedSources.length)}
           </button>
           <button
             type="button"
             onClick={() => setShowHistory(true)}
             className="px-3 py-1.5 rounded-lg text-sm bg-gray-700/40 hover:bg-gray-700/60 text-gray-200 transition-colors"
-            title="Voir l'historique complet des synchronisations"
+            title={T.syncHistoryTitle}
           >
-            Historique de sync
+            {T.syncHistory}
           </button>
           <button
             type="button"
@@ -615,7 +649,7 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
                 : 'bg-os-700 hover:bg-os-600 text-white'
             }`}
           >
-            {showCreateForm ? 'Annuler' : '+ Nouvelle source'}
+            {showCreateForm ? RAG_STRINGS.cancel : T.newSourceButton}
           </button>
           {onClose && (
             <button
@@ -623,19 +657,25 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
               onClick={onClose}
               className="px-3 py-1.5 rounded-lg text-sm text-gray-400 hover:text-gray-200 transition-colors"
             >
-              Fermer
+              {RAG_STRINGS.close}
             </button>
           )}
         </div>
       </div>
 
       {actionMessage && (
-        <div className="p-2.5 rounded-lg text-sm bg-green-950/30 border border-green-800/50 text-green-400">
+        <div
+          role="status"
+          className="p-2.5 rounded-lg text-sm bg-green-950/30 border border-green-800/50 text-green-400"
+        >
           {actionMessage}
         </div>
       )}
       {error && (
-        <div className="p-2.5 rounded-lg text-sm bg-red-950/30 border border-red-800/50 text-red-400">
+        <div
+          role="alert"
+          className="p-2.5 rounded-lg text-sm bg-red-950/30 border border-red-800/50 text-red-400"
+        >
           {error}
         </div>
       )}
@@ -671,11 +711,28 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] gap-4 items-start">
         {/* Source list */}
         <div className="space-y-2">
-          {loading && <p className="text-sm text-gray-500 italic">Chargement des sources…</p>}
-          {!loading && sources.length === 0 && !showCreateForm && (
+          {loading && (
+            <p role="status" className="text-sm text-gray-500 italic">
+              {RAG_STRINGS.sourcesLoading}
+            </p>
+          )}
+          {!loading && !sourcesLoaded && (
+            <div className="px-3 py-6 text-center border border-dashed border-red-800/40 rounded-lg space-y-3">
+              <p className="text-sm text-red-400">{RAG_STRINGS.sourcesLoadError}</p>
+              <button
+                type="button"
+                onClick={() => void loadAll()}
+                className="px-3 py-1.5 rounded-lg text-sm bg-os-700 hover:bg-os-600 text-white"
+              >
+                {RAG_STRINGS.retry}
+              </button>
+            </div>
+          )}
+          {!loading && sourcesLoaded && sources.length === 0 && !showCreateForm && (
             <div className="text-sm text-gray-500 italic px-3 py-6 text-center border border-dashed border-white/5 rounded-lg">
-              Aucune source. Cliquez sur <span className="text-os-400">+ Nouvelle source</span> pour
-              en créer une.
+              {T.noSourcePrefix}
+              <span className="text-os-400">{T.newSourceButton}</span>
+              {T.noSourceSuffix}
             </div>
           )}
           {sources.map((source) => {
@@ -711,6 +768,7 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
                         } satisfies import('../types.js').RagJob)
                       : null,
                     lastFailedJob: null,
+                    lastTerminalJobId: null,
                   };
             const isResyncing = resyncingIds.has(source.id);
             const isSyncDisabled = isResyncing || mergedJobInfo.activeJob !== null;
@@ -745,7 +803,7 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
                           className="text-xs bg-red-900/40 text-red-400 px-1.5 py-0.5 rounded border border-red-800/40"
                           title={source.configError}
                         >
-                          Configuration illisible
+                          {T.configUnreadable}
                         </span>
                       )}
                     </div>
@@ -754,17 +812,19 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
                     {source.type === 'local' && source.config && !source.configError && (
                       <div className="text-xs text-gray-600 mt-0.5 font-mono-plex truncate">
                         {typeof source.config.rootPath === 'string'
-                          ? `Dossier : ${source.config.rootPath}`
+                          ? T.folderPath(source.config.rootPath)
                           : null}
                       </div>
                     )}
 
-                    {/* Document / folder counts */}
-                    <div className="text-xs text-gray-500 mt-0.5">
-                      {source.documentCount} document
-                      {source.documentCount > 1 ? 's' : ''} · {source.folderCount} dossier
-                      {source.folderCount > 1 ? 's' : ''}
-                    </div>
+                    {/* Document / folder counts — omitted rather than "undefined"
+                        if the server did not send them. */}
+                    {typeof source.documentCount === 'number' &&
+                      typeof source.folderCount === 'number' && (
+                        <div className="text-xs text-gray-500 mt-0.5">
+                          {T.counts(source.documentCount, source.folderCount)}
+                        </div>
+                      )}
                   </div>
                 </div>
 
@@ -773,7 +833,7 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
                   <SyncStatusBadge source={source} jobInfo={mergedJobInfo} />
                   <span
                     className="text-xs text-gray-600 border border-white/5 bg-gray-800/40 px-1.5 py-0.5 rounded"
-                    title="Mode de synchronisation automatique"
+                    title={T.syncModeTitle}
                   >
                     {syncModeLabel(source)}
                   </span>
@@ -789,7 +849,7 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
                     }}
                     className="px-2 py-1 rounded text-xs text-gray-300 hover:bg-gray-700/40"
                   >
-                    Ouvrir
+                    {T.open}
                   </button>
 
                   <button
@@ -799,11 +859,11 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
                       setShowCreateForm(false);
                       setEditingSource(source);
                     }}
-                    aria-label={`Modifier la source ${source.name}`}
-                    title="Modifier la configuration de cette source"
+                    aria-label={RAG_STRINGS.editSourceAria(source.name)}
+                    title={T.editSourceTitle}
                     className="px-2 py-1 rounded text-xs text-gray-300 hover:bg-gray-700/40"
                   >
-                    Modifier
+                    {T.edit}
                   </button>
 
                   {/* Re-sync button */}
@@ -814,16 +874,16 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
                       void handleResync(source);
                     }}
                     disabled={isSyncDisabled}
-                    aria-label={`Re-synchroniser la source ${source.name}`}
+                    aria-label={T.resyncAria(source.name)}
                     title={
                       mergedJobInfo.activeJob
-                        ? 'Synchronisation déjà en cours'
-                        : 'Lancer une synchronisation manuelle'
+                        ? RAG_STRINGS.syncAlreadyRunning
+                        : RAG_STRINGS.startManualSync
                     }
                     className="inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs text-os-300 hover:bg-os-700/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                   >
                     <RefreshIcon spinning={isResyncing} />
-                    Re-sync
+                    {T.resync}
                   </button>
 
                   <button
@@ -834,7 +894,7 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
                     }}
                     className="px-2 py-1 rounded text-xs text-red-400 hover:bg-red-950/40 ml-auto"
                   >
-                    Supprimer
+                    {T.delete}
                   </button>
                 </div>
               </div>
@@ -851,12 +911,30 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
                 <div>
                   <h3 className="text-sm font-semibold text-gray-200">{selectedSource.name}</h3>
                   <p className="text-xs text-gray-500 mt-0.5">
-                    {syncModeLabel(selectedSource)} · Dernière sync :{' '}
+                    {syncModeLabel(selectedSource)} · {T.lastSync}{' '}
                     {formatDate(selectedSource.lastSyncAt)}
                   </p>
                 </div>
                 <SyncStatusBadge source={selectedSource} jobInfo={jobMap.get(selectedSource.id)} />
               </div>
+              {(() => {
+                // The badge only carries the error in its tooltip — spell it
+                // out on the detail card so a failed sync is never silent.
+                const failed = jobMap.get(selectedSource.id);
+                if (!failed?.lastFailedJob || failed.activeJob) return null;
+                return (
+                  <p
+                    role="alert"
+                    className="text-xs text-red-400 break-words border border-red-900/50 bg-red-950/30 rounded px-3 py-2"
+                  >
+                    {RAG_STRINGS.lastSyncFailedAria(
+                      failed.lastFailedJob.error
+                        ? translateJobError(failed.lastFailedJob.error)
+                        : RAG_STRINGS.unknownError,
+                    )}
+                  </p>
+                );
+              })()}
 
               <FolderTreeView
                 source={selectedSource}
@@ -864,7 +942,7 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
               />
               {selectedSource.type === 'local' && (
                 <div className="card-primary p-4 space-y-2">
-                  <h3 className="eyebrow">Téléverser des fichiers</h3>
+                  <h3 className="eyebrow">{RAG_STRINGS.uploadFiles}</h3>
                   <DocumentUploader
                     source={selectedSource}
                     onUploaded={() => {
@@ -884,7 +962,7 @@ export default function KnowledgeBaseManager({ onClose }: KnowledgeBaseManagerPr
             </>
           ) : (
             <div className="card-primary p-6 text-center text-sm text-gray-500 italic">
-              Sélectionnez une source à gauche pour explorer son contenu.
+              {T.selectSource}
             </div>
           )}
         </div>

@@ -5,6 +5,7 @@
 import type { ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useActiveSyncJobs } from './useActiveSyncJobs.js';
+import { KB_MANAGER_STRINGS as T } from './strings/kb-manager.js';
 import type { RagDocument, RagFolder } from '../types.js';
 import {
   apiGet,
@@ -39,9 +40,10 @@ interface FolderChildren {
 const ROOT_KEY = '__root__' as const;
 
 function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} o`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} Kio`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} Mio`;
+  const units = T.byteUnits;
+  if (bytes < 1024) return `${bytes} ${units.b}`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} ${units.kb}`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} ${units.mb}`;
 }
 
 function FileIcon() {
@@ -154,11 +156,7 @@ export default function FolderTreeView({ source, refreshKey = 0 }: FolderTreeVie
         }));
       } catch (err) {
         const message =
-          err instanceof ApiError
-            ? err.message
-            : err instanceof Error
-              ? err.message
-              : 'Erreur de chargement.';
+          err instanceof ApiError ? err.message : err instanceof Error ? err.message : T.loadError;
         setChildren((prev) => ({
           ...prev,
           [key]: {
@@ -214,7 +212,7 @@ export default function FolderTreeView({ source, refreshKey = 0 }: FolderTreeVie
     setSyncMessage(null);
     try {
       await apiPost(`/api/rag/sources/${encodeURIComponent(source.id)}/sync`);
-      setSyncMessage('Synchronisation lancée.');
+      setSyncMessage(T.syncStartedMessage);
       // Re-arm the polling loop so the live progress block appears right
       // away — without this the user has to switch tabs and come back to
       // see the new active job (the hook self-suspends when nothing was
@@ -229,11 +227,7 @@ export default function FolderTreeView({ source, refreshKey = 0 }: FolderTreeVie
       setExpanded(new Set());
     } catch (err) {
       const message =
-        err instanceof ApiError
-          ? err.message
-          : err instanceof Error
-            ? err.message
-            : 'Échec de la synchronisation.';
+        err instanceof ApiError ? err.message : err instanceof Error ? err.message : T.syncFailed;
       setSyncError(message);
     } finally {
       setSyncing(false);
@@ -265,7 +259,7 @@ export default function FolderTreeView({ source, refreshKey = 0 }: FolderTreeVie
                 className="text-xs text-gray-500 italic py-1"
                 style={{ paddingLeft: `${depth * 16 + 32}px` }}
               >
-                Chargement…
+                {T.loading}
               </div>
             )}
             {folderChildren?.error && (
@@ -285,7 +279,7 @@ export default function FolderTreeView({ source, refreshKey = 0 }: FolderTreeVie
                     className="text-xs text-gray-600 italic py-1"
                     style={{ paddingLeft: `${depth * 16 + 32}px` }}
                   >
-                    Dossier vide.
+                    {T.emptyFolder}
                   </li>
                 )}
               </ul>
@@ -316,7 +310,7 @@ export default function FolderTreeView({ source, refreshKey = 0 }: FolderTreeVie
             className="text-[10px] uppercase tracking-wide text-amber-400 bg-amber-950/40 border border-amber-800/40 px-1.5 py-0.5 rounded flex-shrink-0"
             title={doc.ingestError ?? ''}
           >
-            Non supporté
+            {T.unsupported}
           </span>
         )}
         <span className="text-xs text-gray-600 ml-auto pl-2 flex-shrink-0">
@@ -341,7 +335,7 @@ export default function FolderTreeView({ source, refreshKey = 0 }: FolderTreeVie
           disabled={syncing || activeJob !== null}
           className="px-3 py-1.5 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-300 text-sm font-medium transition-all duration-200 disabled:opacity-50"
         >
-          {activeJob ? 'Synchronisation en cours…' : syncing ? 'Synchronisation…' : 'Synchroniser'}
+          {activeJob ? T.syncRunning : syncing ? T.syncingEllipsis : T.syncNow}
         </button>
       </div>
 
@@ -368,11 +362,14 @@ export default function FolderTreeView({ source, refreshKey = 0 }: FolderTreeVie
             />
           </svg>
           {activeJob.totalDocuments === 0 ? (
-            <span>Préparation de la synchronisation…</span>
+            <span>{T.preparingSync}</span>
           ) : (
             <span>
-              Synchronisation en cours : {activeJob.processedDocuments}/{activeJob.totalDocuments} (
-              {Math.round((activeJob.progress ?? 0) * 100)}%)
+              {T.syncProgressDetail(
+                activeJob.processedDocuments,
+                activeJob.totalDocuments,
+                Math.round((activeJob.progress ?? 0) * 100),
+              )}
             </span>
           )}
         </div>
@@ -391,11 +388,11 @@ export default function FolderTreeView({ source, refreshKey = 0 }: FolderTreeVie
       <div className="border-t border-white/5" />
 
       {!root || root.loading ? (
-        <p className="text-sm text-gray-500 italic">Chargement de l'arborescence…</p>
+        <p className="text-sm text-gray-500 italic">{T.treeLoading}</p>
       ) : root.error ? (
         <p className="text-sm text-red-400">{root.error}</p>
       ) : root.folders.length === 0 && root.documents.length === 0 ? (
-        <p className="text-sm text-gray-500 italic">Aucun fichier indexé pour le moment.</p>
+        <p className="text-sm text-gray-500 italic">{T.noIndexedFiles}</p>
       ) : (
         <ul className="space-y-0.5">
           {root.folders.map((f) => renderFolder(f, 0))}

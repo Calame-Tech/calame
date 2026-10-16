@@ -6,6 +6,7 @@ import type { ChangeEvent, DragEvent } from 'react';
 import { useRef, useState } from 'react';
 import type { RagDocument } from '../types.js';
 import { apiUpload, ApiError, type RagSourcePublic } from './api.js';
+import { KB_MANAGER_STRINGS as T } from './strings/kb-manager.js';
 
 /**
  * Maximum file size accepted by the uploader, in bytes. Backend MUST mirror
@@ -47,9 +48,10 @@ interface RejectedFile {
 }
 
 function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} o`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} Kio`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} Mio`;
+  const units = T.byteUnits;
+  if (bytes < 1024) return `${bytes} ${units.b}`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} ${units.kb}`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} ${units.mb}`;
 }
 
 /**
@@ -84,14 +86,14 @@ export default function DocumentUploader({ source, onUploaded }: DocumentUploade
       if (f.size > MAX_UPLOAD_SIZE_BYTES) {
         rejectedList.push({
           name: f.name,
-          reason: `Trop volumineux (${formatBytes(f.size)} > ${formatBytes(MAX_UPLOAD_SIZE_BYTES)})`,
+          reason: T.tooLarge(formatBytes(f.size), formatBytes(MAX_UPLOAD_SIZE_BYTES)),
         });
         continue;
       }
       if (!isAcceptedFile(f)) {
         rejectedList.push({
           name: f.name,
-          reason: `Type non supporté (${f.type || 'inconnu'})`,
+          reason: T.unsupportedType(f.type || T.unknownType),
         });
         continue;
       }
@@ -109,7 +111,7 @@ export default function DocumentUploader({ source, onUploaded }: DocumentUploade
     const { accepted, rejected: rejectedList } = validate(files);
     setRejected(rejectedList);
     if (accepted.length === 0) {
-      setError('Aucun fichier valide à téléverser.');
+      setError(T.noValidFile);
       return;
     }
 
@@ -128,17 +130,11 @@ export default function DocumentUploader({ source, onUploaded }: DocumentUploade
         formData,
       );
       const docs = data.documents ?? [];
-      setSuccess(
-        `${docs.length} fichier${docs.length > 1 ? 's' : ''} téléversé${docs.length > 1 ? 's' : ''}.`,
-      );
+      setSuccess(T.uploaded(docs.length));
       onUploaded?.(docs);
     } catch (err) {
       const message =
-        err instanceof ApiError
-          ? err.message
-          : err instanceof Error
-            ? err.message
-            : 'Échec du téléversement.';
+        err instanceof ApiError ? err.message : err instanceof Error ? err.message : T.uploadFailed;
       setError(message);
     } finally {
       setUploading(false);
@@ -212,14 +208,8 @@ export default function DocumentUploader({ source, onUploaded }: DocumentUploade
             d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"
           />
         </svg>
-        <p className="text-sm text-gray-300">
-          {uploading
-            ? 'Téléversement…'
-            : 'Glissez-déposez des fichiers ici, ou cliquez pour parcourir.'}
-        </p>
-        <p className="text-xs text-gray-500">
-          PDF, DOCX, MD, CSV, TXT, HTML — {formatBytes(MAX_UPLOAD_SIZE_BYTES)} max par fichier.
-        </p>
+        <p className="text-sm text-gray-300">{uploading ? T.uploading : T.dropHint}</p>
+        <p className="text-xs text-gray-500">{T.formatsHint(formatBytes(MAX_UPLOAD_SIZE_BYTES))}</p>
         <input
           ref={inputRef}
           type="file"
@@ -227,7 +217,7 @@ export default function DocumentUploader({ source, onUploaded }: DocumentUploade
           accept={ACCEPT_ATTR}
           onChange={handleFileChange}
           className="hidden"
-          aria-label="Sélectionner des fichiers à téléverser"
+          aria-label={T.selectFilesAria}
         />
       </div>
 
@@ -243,7 +233,7 @@ export default function DocumentUploader({ source, onUploaded }: DocumentUploade
       )}
       {rejected.length > 0 && (
         <div className="p-2.5 rounded-lg text-sm bg-amber-950/30 border border-amber-800/50 text-amber-300 space-y-1">
-          <p className="font-medium">Fichiers ignorés :</p>
+          <p className="font-medium">{T.ignoredFiles}</p>
           <ul className="list-disc list-inside text-xs space-y-0.5">
             {rejected.map((r) => (
               <li key={r.name}>

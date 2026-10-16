@@ -338,6 +338,79 @@ describe('applyToggleFolder', () => {
     expect(folderMap['f1']!.mode).toBe('strict');
     expect(folderMap['f1']!.checkedDocIds.has('d1')).toBe(true);
   });
+
+  // Tree: root ─┬─ a (doc a1) ─ a-sub (doc s1)
+  //             └─ b (doc b1)   + doc r1 directly in root
+  function tree(): FolderMap {
+    const docs = (folderId: string, ids: string[]) =>
+      ids.map((id) => makeDocument({ id, folderId, path: `${folderId}/${id}`, name: id }));
+    return {
+      root: makeFolderNode({
+        folder: makeFolder({ id: 'root', parentId: null, path: 'root', name: 'root' }),
+        mode: 'strict',
+        childFolderIds: ['a', 'b'],
+        documents: docs('root', ['r1']),
+      }),
+      a: makeFolderNode({
+        folder: makeFolder({ id: 'a', parentId: 'root', path: 'root/a', name: 'a' }),
+        mode: 'strict',
+        childFolderIds: ['a-sub'],
+        documents: docs('a', ['a1']),
+      }),
+      'a-sub': makeFolderNode({
+        folder: makeFolder({ id: 'a-sub', parentId: 'a', path: 'root/a/sub', name: 'sub' }),
+        mode: 'strict',
+        documents: docs('a-sub', ['s1']),
+      }),
+      b: makeFolderNode({
+        folder: makeFolder({ id: 'b', parentId: 'root', path: 'root/b', name: 'b' }),
+        mode: 'strict',
+        documents: docs('b', ['b1']),
+      }),
+    };
+  }
+  const stateOf = (id: string, map: FolderMap) => deriveFolderCheckState(id, map, true);
+
+  it('checking a folder selects its whole content, sub-folders and files included', () => {
+    const next = applyToggleFolder('root', 'checked', tree());
+    for (const id of ['root', 'a', 'a-sub', 'b']) expect(stateOf(id, next)).toBe('checked');
+    expect(buildDocumentScope(true, ['root'], [], next).allowedFolders).toEqual(['root']);
+  });
+
+  it('unchecking a folder deselects everything below it, even a previously checked child', () => {
+    const checkedChild = applyToggleFolder('a-sub', 'checked', tree());
+    expect(stateOf('root', checkedChild)).toBe('partial');
+    const next = applyToggleFolder('root', 'unchecked', checkedChild);
+    for (const id of ['root', 'a', 'a-sub', 'b']) expect(stateOf(id, next)).toBe('unchecked');
+    const scope = buildDocumentScope(true, ['root'], [], next);
+    expect(scope.allowedFolders).toEqual([]);
+    expect(scope.allowedDocuments).toEqual([]);
+  });
+
+  it('unchecking a sub-folder of a checked folder leaves the parent visibly partial', () => {
+    const next = applyToggleFolder('a', 'unchecked', applyToggleFolder('root', 'checked', tree()));
+    expect(stateOf('a', next)).toBe('unchecked');
+    expect(stateOf('a-sub', next)).toBe('unchecked');
+    expect(stateOf('b', next)).toBe('checked');
+    expect(stateOf('root', next)).toBe('partial');
+    const scope = buildDocumentScope(true, ['root'], [], next);
+    expect(scope.allowedFolders).toEqual(['root/b']);
+    expect(scope.allowedDocuments).toEqual(['root/r1']);
+  });
+
+  it('unchecking a file inside a checked folder keeps the rest selected', () => {
+    const { folderMap: next } = applyToggleDocument(
+      'a-sub',
+      's1',
+      applyToggleFolder('root', 'checked', tree()),
+    );
+    expect(stateOf('a-sub', next)).toBe('unchecked');
+    expect(stateOf('b', next)).toBe('checked');
+    expect(stateOf('root', next)).toBe('partial');
+    const scope = buildDocumentScope(true, ['root'], [], next);
+    expect(scope.allowedFolders).toEqual(['root/b']);
+    expect([...scope.allowedDocuments].sort()).toEqual(['a/a1', 'root/r1']);
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -4,6 +4,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiGet, ApiError, type RagUsageResponse } from './api.js';
+import { SYNC_PANELS_STRINGS as S } from './strings/sync-panels.js';
 
 interface EmbeddingUsageCardProps {
   /** Polling interval in ms. Defaults to 30s. */
@@ -26,7 +27,7 @@ function compactNumber(n: number): string {
     const v = n / 1_000;
     return `${v >= 10 ? v.toFixed(0) : v.toFixed(1)}K`;
   }
-  return n.toLocaleString('fr-CA');
+  return n.toLocaleString(S.locale);
 }
 
 function formatUsd(amount: number): string {
@@ -40,11 +41,11 @@ function formatUsd(amount: number): string {
 function periodLabel(p: 'month' | 'week' | 'all'): string {
   switch (p) {
     case 'month':
-      return '30 derniers jours';
+      return S.period30;
     case 'week':
-      return '7 derniers jours';
+      return S.period7;
     case 'all':
-      return "depuis l'origine";
+      return S.periodAll;
   }
 }
 
@@ -56,11 +57,11 @@ function periodLabel(p: 'month' | 'week' | 'all'): string {
  */
 function Sparkline({ values }: { values: number[] }) {
   if (values.length === 0) {
-    return <div className="text-xs text-gray-600 italic">Aucune activité récente.</div>;
+    return <div className="text-xs text-gray-600 italic">{S.noRecentActivity}</div>;
   }
   const max = Math.max(1, ...values);
   return (
-    <div className="flex items-end gap-px h-10" role="img" aria-label="Activité par jour">
+    <div className="flex items-end gap-px h-10" role="img" aria-label={S.activityPerDayAria}>
       {values.map((v, i) => {
         const ratio = v / max;
         // Floor at 8% so a tiny non-zero day is still visible against
@@ -71,7 +72,7 @@ function Sparkline({ values }: { values: number[] }) {
             key={i}
             className="flex-1 bg-os-600/60 rounded-sm transition-all"
             style={{ height: `${pct}%` }}
-            title={`${compactNumber(v)} tokens`}
+            title={`${compactNumber(v)} ${S.tokens}`}
           />
         );
       })}
@@ -100,11 +101,7 @@ export default function EmbeddingUsageCard({
     } catch (err) {
       if (cancelledRef.current) return;
       const message =
-        err instanceof ApiError
-          ? err.message
-          : err instanceof Error
-            ? err.message
-            : 'Erreur de chargement.';
+        err instanceof ApiError ? err.message : err instanceof Error ? err.message : S.loadError;
       setError(message);
     } finally {
       if (!cancelledRef.current) setLoading(false);
@@ -126,7 +123,7 @@ export default function EmbeddingUsageCard({
   if (loading && !usage) {
     return (
       <div className="card-primary p-4">
-        <p className="text-sm text-gray-500 italic">Chargement de la consommation…</p>
+        <p className="text-sm text-gray-500 italic">{S.usageLoading}</p>
       </div>
     );
   }
@@ -134,7 +131,9 @@ export default function EmbeddingUsageCard({
   if (error && !usage) {
     return (
       <div className="card-primary p-4 border border-red-800/40">
-        <p className="text-sm text-red-400">Impossible de charger la consommation : {error}</p>
+        <p className="text-sm text-red-400">
+          {S.usageLoadFailed} {error}
+        </p>
       </div>
     );
   }
@@ -164,13 +163,13 @@ export default function EmbeddingUsageCard({
     <div className="card-primary p-4 space-y-3">
       <div className="flex items-baseline justify-between gap-2">
         <div>
-          <h3 className="text-sm font-semibold text-gray-200">Consommation embeddings</h3>
+          <h3 className="text-sm font-semibold text-gray-200">{S.usageTitle}</h3>
           <p className="text-xs text-gray-500 mt-0.5">{periodLabel(usage.period)}</p>
         </div>
         <div className="text-right">
           <div className="text-2xl font-semibold text-os-300">
             {compactNumber(usage.totalTokens)}
-            <span className="text-sm text-gray-500 ml-1">tokens</span>
+            <span className="text-sm text-gray-500 ml-1">{S.tokens}</span>
           </div>
           <div className="text-xs text-gray-400">≈ {formatUsd(usage.totalCostUsd)}</div>
         </div>
@@ -179,10 +178,10 @@ export default function EmbeddingUsageCard({
       {capActive && cap && (
         <div className="space-y-1.5">
           <div className="flex items-baseline justify-between gap-2">
-            <div className="eyebrow">Cap mensuel</div>
+            <div className="eyebrow">{S.monthlyCap}</div>
             <div className="text-xs text-gray-400">
-              {cap.currentMonthTokens.toLocaleString('fr-CA')} /{' '}
-              {cap.monthlyTokenCap.toLocaleString('fr-CA')}
+              {cap.currentMonthTokens.toLocaleString(S.locale)} /{' '}
+              {cap.monthlyTokenCap.toLocaleString(S.locale)}
               <span className="text-gray-500 ml-1">({(fractionUsed * 100).toFixed(1)}%)</span>
             </div>
           </div>
@@ -192,50 +191,38 @@ export default function EmbeddingUsageCard({
             aria-valuenow={Math.round(fractionUsed * 100)}
             aria-valuemin={0}
             aria-valuemax={100}
-            aria-label="Consommation mensuelle d'embeddings"
+            aria-label={S.monthlyUsageAria}
           >
             <div className={`h-full ${barColor} transition-all`} style={{ width: `${barPct}%` }} />
           </div>
           {capExceeded && (
             <div className="text-xs text-red-300 bg-red-900/30 border border-red-800/40 rounded px-2 py-1.5">
-              Cap mensuel atteint. Les synchronisations vont échouer jusqu&apos;à la fin du mois ou
-              jusqu&apos;à ce que le cap soit relevé.
+              {S.capReached}
             </div>
           )}
           {capWarning && (
             <div className="text-xs text-yellow-300 bg-yellow-900/30 border border-yellow-800/40 rounded px-2 py-1.5">
-              Approche du cap mensuel
+              {S.capNearing}
               {cap.warningThreshold > 0 && (
-                <>
-                  {' '}
-                  (seuil {Math.round(cap.warningThreshold * 100)}
-                  %)
-                </>
+                <> {S.capThreshold(Math.round(cap.warningThreshold * 100))}</>
               )}
               .
             </div>
           )}
         </div>
       )}
-      {!capActive && (
-        <p className="text-[11px] text-gray-500 italic">
-          Pas de cap mensuel configuré (CALAME_RAG_MONTHLY_TOKEN_CAP).
-        </p>
-      )}
+      {!capActive && <p className="text-[11px] text-gray-500 italic">{S.capNotConfigured}</p>}
 
       {usage.perProvider.length > 0 && (
         <div className="space-y-1.5">
-          <div className="eyebrow">Par fournisseur</div>
+          <div className="eyebrow">{S.perProvider}</div>
           <ul className="space-y-1">
             {usage.perProvider.map((p) => (
               <li key={p.model} className="flex items-center justify-between text-xs gap-2">
                 <span className="text-gray-300 truncate font-mono-plex" title={p.model}>
-                  {p.model || '(modèle inconnu)'}
+                  {p.model || S.unknownModel}
                   {!p.local && !p.known && (
-                    <span
-                      className="ml-1 text-yellow-500/70"
-                      title="Tarif inconnu — coût non estimé"
-                    >
+                    <span className="ml-1 text-yellow-500/70" title={S.unknownPrice}>
                       ?
                     </span>
                   )}
@@ -245,9 +232,9 @@ export default function EmbeddingUsageCard({
                   {p.local ? (
                     <span
                       className="text-green-400 bg-green-950/40 border border-green-800/50 rounded px-1.5 py-0.5"
-                      title="Traité sur cette machine — aucun coût d'API"
+                      title={S.localTitle}
                     >
-                      local · gratuit
+                      {S.localFree}
                     </span>
                   ) : (
                     <span className="text-gray-500">({formatUsd(p.costUsd)})</span>
@@ -261,7 +248,7 @@ export default function EmbeddingUsageCard({
 
       {topSources.length > 0 && (
         <div className="space-y-1.5">
-          <div className="eyebrow">Top sources</div>
+          <div className="eyebrow">{S.topSources}</div>
           <ul className="space-y-1">
             {topSources.map((s) => (
               <li key={s.sourceId} className="flex items-center justify-between text-xs gap-2">
@@ -277,16 +264,13 @@ export default function EmbeddingUsageCard({
 
       {sparklineValues.length > 0 && (
         <div className="space-y-1.5">
-          <div className="eyebrow">Activité quotidienne</div>
+          <div className="eyebrow">{S.dailyActivity}</div>
           <Sparkline values={sparklineValues} />
         </div>
       )}
 
       {usage.totalTokens === 0 && (
-        <p className="text-xs text-gray-500 italic">
-          Aucun embedding facturé sur la période. Les chiffres apparaîtront après la première
-          synchronisation.
-        </p>
+        <p className="text-xs text-gray-500 italic">{S.noBilledEmbeddings}</p>
       )}
     </div>
   );

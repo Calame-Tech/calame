@@ -78,6 +78,7 @@
     },
     "errors": {
       "startFailed": "Failed to start MCP server \"{name}\".",
+      "noDataSource": "This MCP server has no data yet. Attach it to a data profile that contains your data (database or knowledge base) first.",
       "startNetworkError": "Network error starting MCP server \"{name}\".",
       "stopFailed": "Failed to stop MCP server \"{name}\".",
       "stopNetworkError": "Network error stopping MCP server \"{name}\".",
@@ -97,6 +98,10 @@
       "copied": "Copied!",
       "copy": "Copy"
     },
+    "advanced": {
+      "toggle": "Advanced options",
+      "hint": "File writing and other sign-in methods. Not needed to get started: the defaults are safe."
+    },
     "documentWrite": {
       "label": "Allow file creation and editing",
       "tooltip": "Lets MCP clients create and fully replace .md/.txt notes in the local folders ticked below. Off by default. Read access to a folder never implies write access. Writes are size-limited, audited, and never delete, rename or create folders.",
@@ -105,6 +110,7 @@
       "scopeNote": "A folder must also be part of this MCP's knowledge scope to be writable.",
       "sourceAriaLabel": "Allow writing in {name}",
       "toggleAriaLabel": "Toggle file creation and editing",
+      "hint": "Off (recommended): the MCP can only read your data, never change it.",
       "error": "Error updating file-write settings"
     },
     "responseMode": {
@@ -114,10 +120,13 @@
       "technical": "Technical",
       "natural": "Natural",
       "toggleAriaLabel": "Toggle response mode",
+      "hint": "Natural (recommended): plain-language answers without table or column names.",
       "tooltip": "In Natural mode, responses are phrased in plain language without technical terms. In Technical mode, the underlying database table and column names are visible."
     },
     "authMode": {
       "label": "Chat Authentication",
+      "hint": "Who may connect. API key (recommended): only apps holding a key you create in the API Keys tab.",
+      "current": "Access: {mode}",
       "openWarning": "Warning: this MCP server will be accessible without any authentication.",
       "options": {
         "token": {
@@ -971,7 +980,7 @@
       "usingLabel": "Using",
       "assignMore": "Assign more in the MCP detail page",
       "configureAiSettings": "Configure in AI Settings",
-      "aiNotConfigured": "AI is not configured. Go to <b>AI Settings</b> to set up a provider and API key.",
+      "aiNotConfigured": "No AI provider for chat is configured, so this test cannot run. Go to <b>Settings → AI</b> and add a provider (Anthropic, OpenRouter or a compatible endpoint) with its API key. The built-in local model only indexes documents and cannot answer.",
       "placeholderNoServer": "Start an MCP server first",
       "placeholderAiNotConfigured": "Configure AI in Settings first",
       "provider": {
@@ -988,8 +997,13 @@
       "networkError": "Network error. Please try again.",
       "step1": {
         "stepLabel": "Step 1",
-        "title": "Connect your first database",
-        "description": "Connect to a database to start exploring your data and building MCP servers.",
+        "title": "Connect your first source",
+        "description": "A source is the data your MCP server will read: a database, or a knowledge base made of documents.",
+        "knowledgeBase": {
+          "title": "Knowledge base (documents)",
+          "description": "Index a folder, uploaded files or another document source. You continue on the Knowledge base screen; the getting-started guide then shows the next steps.",
+          "button": "Add a knowledge base"
+        },
         "quickStart": {
           "title": "Quick start",
           "description": "Use our demo logistics database to explore Calame without any setup.",
@@ -1061,7 +1075,8 @@
           "copiedAriaLabel": "URL copied"
         },
         "goToDashboardButton": "Go to dashboard",
-        "fineTuneLink": "Fine-tune tables, tools & masking →"
+        "fineTuneLink": "Fine-tune tables, tools & masking →",
+        "connectClientButton": "Connect an AI client →"
       }
     },
     "welcome": {
@@ -1136,6 +1151,57 @@
       "copy": "Copy",
       "copyAll": "Copy all",
       "done": "Done"
+    },
+    "checklist": {
+      "title": "Getting started",
+      "description": "Four steps to a working MCP: your data goes into a data profile, and the MCP is attached to that profile. Each step updates from what actually exists on this server.",
+      "loading": "Checking your setup…",
+      "loadError": "Could not check your setup progress.",
+      "retry": "Retry",
+      "hide": "Hide",
+      "hideAriaLabel": "Fold the getting-started guide",
+      "showAriaLabel": "Reopen the getting-started guide",
+      "reopen": "Getting started · {done}/{total}",
+      "currentStep": "Current step: {step}",
+      "nextStep": "Then: {step}",
+      "status": {
+        "done": "done",
+        "current": "current step",
+        "todo": "not available yet"
+      },
+      "source": {
+        "title": "1. Connect data",
+        "hint": "Add a database or a knowledge base.",
+        "done": "Data is connected and ready to be queried.",
+        "action": "Add data",
+        "syncFailed": "The sync of “{name}” failed: the source is saved but not usable yet. Open it to see the error and sync again.",
+        "notReady": "“{name}” is saved but not indexed yet. It becomes usable once its sync completes.",
+        "openSource": "Open the source"
+      },
+      "dataProfile": {
+        "title": "2. Create a data profile",
+        "hint": "Create a data profile and select in it the data (tables, folders, files) to expose.",
+        "blocked": "Available once data is connected.",
+        "done": "A data profile contains data.",
+        "action": "Create a data profile",
+        "openAction": "Open"
+      },
+      "mcp": {
+        "title": "3. Create the MCP server",
+        "hint": "Create an MCP server and attach it to your data profile.",
+        "blocked": "Available once a data profile contains data.",
+        "done": "An MCP server is attached to a data profile.",
+        "action": "Create the MCP server",
+        "openAction": "Open"
+      },
+      "client": {
+        "title": "4. Connect and test the MCP",
+        "hint": "Open the “Connect” tab and follow the instructions for your AI client (Claude Desktop, Cursor…), then ask it a question about your data. This step is marked done only once a first successful call appears in the audit log.",
+        "blocked": "Available once an MCP server is created.",
+        "done": "A client has called this MCP server successfully.",
+        "action": "Connect a client",
+        "recheck": "Check again"
+      }
     }
   },
   "sources": {
@@ -1332,6 +1398,8 @@
       "title": "Needs attention",
       "itemCount": "{count, plural, one {# item} other {# items}}",
       "allClear": "All clear — nothing needs your attention.",
+      "sourceSyncFailed": "The sync of knowledge base “{name}” failed — it cannot be queried yet.",
+      "openSource": "Open",
       "writeRequestBanner": "{count, plural, one {# write request awaiting your approval} other {# write requests awaiting your approval}}",
       "review": "Review"
     },
@@ -1360,7 +1428,11 @@
         "knowledgeBaseCount": "{count, plural, one {# knowledge base} other {# knowledge bases}}",
         "connectedTooltip": "Connected and schema loaded",
         "notConnectedTooltip": "Not connected",
-        "empty": "No sources yet"
+        "empty": "No sources yet",
+        "kbBadge": "KB",
+        "kbReadyTooltip": "Indexed, ready to query",
+        "kbFailedTooltip": "Last sync failed",
+        "kbNotReadyTooltip": "Not indexed yet"
       },
       "dataConfigurations": {
         "eyebrow": "DATA CONFIGURATIONS",
@@ -2052,7 +2124,14 @@
       "createForm": {
         "namePlaceholder": "MCP name...",
         "create": "Create",
-        "duplicateName": "A profile named \"{name}\" already exists."
+        "duplicateName": "A profile named \"{name}\" already exists.",
+        "defaults": {
+          "title": "This MCP starts with safe settings:",
+          "authMode": "Access by API key: only apps holding a key you create can connect.",
+          "responseMode": "Natural answers: plain language, no table or column names.",
+          "documentWrite": "Read-only: the MCP cannot create or edit files.",
+          "changeLater": "You can change them later under \"Advanced options\" on the MCP page."
+        }
       },
       "newServerCard": "New MCP Server",
       "deleteConfirm": {
@@ -2120,7 +2199,7 @@
       "intro1": "The public URL changes every time the tunnel restarts, and this machine needs to stay on and connected for it to keep working. Intended for evaluation — use a server deployment of Calame for production.",
       "intro2": "Privacy: your files and database never leave this machine — only the content of MCP requests and responses transits, encrypted, through Cloudflare's network (and every endpoint still requires your API token). For a setup where traffic terminates on your own infrastructure, use a server deployment. See docs/security-tunnel.md for the full threat model.",
       "checkingStatus": "Checking tunnel status…",
-      "unavailable": "Remote access is not available on this instance.",
+      "unavailable": "Remote access (Copilot, ChatGPT) is not available in this installation: the secure tunnel component is missing. Reinstall Calame or contact your administrator. Clients installed on this computer (Claude Desktop, Cursor…) still work.",
       "active": "Tunnel active",
       "urlLabel": "MCP URL for this server",
       "tokenNote": "This endpoint still requires an API token — create one in the API Keys tab above.",
@@ -2225,7 +2304,8 @@
       }
     },
     "helpTip": {
-      "ariaLabel": "Help"
+      "ariaLabel": "Help",
+      "ariaLabelFor": "Help: {label}"
     }
   }
 }

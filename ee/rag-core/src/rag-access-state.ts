@@ -207,6 +207,9 @@ export function buildDocumentScope(
  * - Anything else (`'unchecked'` / `'partial'`) → switch to `strict` mode with
  *   an empty allowlist. The folder is effectively excluded until the user
  *   explicitly re-checks individual docs.
+ * - In both cases every loaded sub-folder is cleared, so the folder's whole
+ *   content follows the click; a folder covered by an auto-include ancestor
+ *   is first made explicit (see {@link expandAncestorAutoInclude}).
  *
  * Returns the same `folderMap` reference when `folderId` is unknown (no-op,
  * lets the component skip a setState round-trip).
@@ -216,13 +219,66 @@ export function applyToggleFolder(
   nextCheck: CheckState,
   folderMap: FolderMap,
 ): FolderMap {
-  const node = folderMap[folderId];
-  if (!node) return folderMap;
+  if (!folderMap[folderId]) return folderMap;
+  // A descendant of an auto-include folder is covered by it: make the
+  // coverage explicit first so the click only affects this sub-tree.
+  const next = expandAncestorAutoInclude(folderId, folderMap);
   const nextMode: FolderMode = nextCheck === 'checked' ? 'auto-include' : 'strict';
-  return {
-    ...folderMap,
-    [folderId]: { ...node, mode: nextMode, checkedDocIds: new Set() },
-  };
+  // Checking or unchecking a folder applies to its whole content: reset every
+  // loaded descendant so no stale sub-selection survives (an unchecked parent
+  // must not stay partially selected through a previously checked child).
+  resetDescendants(folderId, next);
+  next[folderId] = { ...next[folderId]!, mode: nextMode, checkedDocIds: new Set() };
+  return next;
+}
+
+/** Sets every loaded descendant of `folderId` to strict with nothing selected (mutates `map`). */
+function resetDescendants(folderId: string, map: FolderMap): void {
+  for (const cid of map[folderId]?.childFolderIds ?? []) {
+    const child = map[cid];
+    if (!child) continue;
+    map[cid] = { ...child, mode: 'strict', checkedDocIds: new Set() };
+    resetDescendants(cid, map);
+  }
+}
+
+/**
+ * Returns a copy of `folderMap` where the nearest auto-include ancestor of
+ * `folderId` is replaced by the equivalent explicit selection: every folder
+ * on the path down to `folderId` becomes strict with all its documents
+ * checked and its other sub-folders auto-include, and `folderId` itself
+ * becomes auto-include. The effective selection is unchanged; the caller can
+ * then toggle `folderId` (or one of its documents) independently.
+ */
+export function expandAncestorAutoInclude(folderId: string, folderMap: FolderMap): FolderMap {
+  const next: FolderMap = { ...folderMap };
+  const path: string[] = [];
+  let parentId = folderMap[folderId]?.folder.parentId ?? null;
+  let anchor: string | null = null;
+  while (parentId !== null) {
+    const parent = folderMap[parentId];
+    if (!parent) return next;
+    path.unshift(parentId);
+    if (parent.mode === 'auto-include') anchor = parentId;
+    parentId = parent.folder.parentId;
+  }
+  if (anchor === null) return next;
+  const chain = [...path.slice(path.indexOf(anchor)), folderId];
+  for (let i = 0; i < chain.length - 1; i++) {
+    const node = next[chain[i]!]!;
+    for (const cid of node.childFolderIds) {
+      if (cid !== chain[i + 1] && next[cid]) {
+        next[cid] = { ...next[cid]!, mode: 'auto-include', checkedDocIds: new Set() };
+      }
+    }
+    next[chain[i]!] = {
+      ...node,
+      mode: 'strict',
+      checkedDocIds: new Set(node.documents.map((d) => d.id)),
+    };
+  }
+  next[folderId] = { ...next[folderId]!, mode: 'auto-include', checkedDocIds: new Set() };
+  return next;
 }
 
 /** Result of {@link applyToggleDocument}. */
@@ -258,8 +314,11 @@ export function applyToggleDocument(
   docId: string,
   folderMap: FolderMap,
 ): ApplyToggleDocumentResult {
-  const node = folderMap[folderId];
-  if (!node) return { folderMap, toastMessage: null };
+  if (!folderMap[folderId]) return { folderMap, toastMessage: null };
+  if (isCoveredByAncestorAutoInclude(folderId, folderMap)) {
+    folderMap = expandAncestorAutoInclude(folderId, folderMap);
+  }
+  const node = folderMap[folderId]!;
 
   if (node.mode === 'auto-include') {
     // Pre-check every doc except the one being unchecked, then flip mode.

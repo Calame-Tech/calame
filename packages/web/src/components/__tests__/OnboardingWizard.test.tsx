@@ -40,13 +40,16 @@ interface Call {
 }
 
 /** Stubs fetch for a full happy-path wizard run and records call order. */
-function installFetchMock(): Call[] {
+function installFetchMock(existingProfiles?: Record<string, unknown>): Call[] {
   const calls: Call[] = [];
   const mock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const url = requestUrl(input);
     const method = (init?.method ?? 'GET').toUpperCase();
     calls.push({ method, url, body: init?.body as string | undefined });
 
+    if (existingProfiles && url.includes('/api/profiles/load')) {
+      return jsonResponse({ found: true, profiles: existingProfiles });
+    }
     if (url.includes('/api/connections/demo')) {
       return jsonResponse({ success: true, name: 'demo-logistique' });
     }
@@ -113,11 +116,31 @@ describe('OnboardingWizard', () => {
     expect(savedProfile.configurations).toEqual(['my-first-mcp-server-config']);
     expect(savedProfile.sources).toBeUndefined();
     expect(savedProfile.scopes).toBeUndefined();
+    // A brand-new MCP is saved with the explicit safe defaults.
+    expect(savedProfile.authMode).toBe('token');
+    expect(savedProfile.responseMode).toBe('friendly');
+    expect(savedProfile.documentWrite).toEqual({ enabled: false, sources: {} });
 
     // The configuration itself carries the real sources/scopes.
     const configBody = JSON.parse(calls[configIndex].body ?? '{}');
     expect(configBody.name).toBe('my-first-mcp-server-config');
     expect(configBody.sources).toEqual(['demo-logistique']);
+  });
+
+  it('does not push the new-MCP defaults onto an existing profile with the same name', async () => {
+    const calls = installFetchMock({
+      'my-first-mcp-server': { authMode: 'none', configurations: ['old-config'] },
+    });
+    render(<OnboardingWizard onComplete={vi.fn()} onSkip={vi.fn()} />);
+
+    await runToSubmit();
+    await waitFor(() => expect(screen.getByText("You're all set!")).toBeTruthy());
+
+    const save = calls.find((c) => c.method === 'POST' && c.url.includes('/api/profiles/save'));
+    const savedProfile = JSON.parse(save?.body ?? '{}').profiles['my-first-mcp-server'];
+    expect(savedProfile).not.toHaveProperty('authMode');
+    expect(savedProfile).not.toHaveProperty('responseMode');
+    expect(savedProfile).not.toHaveProperty('documentWrite');
   });
 
   it('does not save the profile when configuration creation fails', async () => {
@@ -175,5 +198,29 @@ describe('OnboardingWizard', () => {
     await waitFor(() => expect(screen.getByText("You're all set!")).toBeTruthy());
 
     expect(screen.queryByText(/Fine-tune tables, tools/)).toBeNull();
+  });
+});
+
+describe('OnboardingWizard — client step', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('points the final step to the new MCP "Connect" tab', async () => {
+    installFetchMock();
+    const onNavigateToConnect = vi.fn();
+    render(
+      <OnboardingWizard
+        onComplete={vi.fn()}
+        onSkip={vi.fn()}
+        onNavigateToConnect={onNavigateToConnect}
+      />,
+    );
+
+    await runToSubmit();
+    await waitFor(() => expect(screen.getByText("You're all set!")).toBeTruthy());
+
+    fireEvent.click(screen.getByText(/Connect an AI client/));
+    expect(onNavigateToConnect).toHaveBeenCalledWith('my-first-mcp-server');
   });
 });

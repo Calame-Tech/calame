@@ -5,8 +5,11 @@
 import { useMemo, useState } from 'react';
 import type { RagSourceType } from '../types.js';
 import type { RagSourcePublic } from '../routes/api-types.js';
-import { apiPost, apiPatch, ApiError } from './api.js';
+import { apiPost, apiPatch, ApiError, ApiTimeoutError, type RagSourceResponse } from './api.js';
+import { RAG_STRINGS, RAG_STRING_TABLES, translateJobError } from './onboarding-strings.js';
 import ReindexDialog from './ReindexDialog.js';
+import { SOURCE_FORM_STRINGS as SF } from './strings/source-form.js';
+import HelpTip from '../../../../packages/web/src/components/HelpTip.js';
 
 /**
  * Minimal projection of `AiSetting` needed by the embeddings dropdown. The
@@ -52,16 +55,17 @@ interface SourceTypeMeta {
  */
 interface PollingIntervalOption {
   value: number | null;
-  label: string;
+  labelKey: keyof typeof RAG_STRINGS.polling;
 }
 
+// Labels are resolved at render time so they follow the app locale.
 const POLLING_INTERVAL_OPTIONS: readonly PollingIntervalOption[] = [
-  { value: null, label: 'Désactivé (sync manuelle uniquement)' },
-  { value: 300, label: 'Toutes les 5 minutes' },
-  { value: 900, label: 'Toutes les 15 minutes' },
-  { value: 3600, label: 'Toutes les heures' },
-  { value: 21600, label: 'Toutes les 6 heures' },
-  { value: 86400, label: 'Tous les jours' },
+  { value: null, labelKey: 'off' },
+  { value: 300, labelKey: 'every5min' },
+  { value: 900, labelKey: 'every15min' },
+  { value: 3600, labelKey: 'hourly' },
+  { value: 21600, labelKey: 'every6h' },
+  { value: 86400, labelKey: 'daily' },
 ];
 
 const SOURCE_TYPES: readonly SourceTypeMeta[] = [
@@ -158,6 +162,17 @@ interface ServiceAccountKeyValidation {
   error: string | null;
 }
 
+/**
+ * Display label of an AI setting. The built-in local embedding setting is
+ * seeded server-side with a French label; show it in the UI locale unless the
+ * user renamed it.
+ */
+export function aiSettingDisplayLabel(s: { provider?: string; label: string }): string {
+  return s.provider === 'local' && s.label === RAG_STRING_TABLES.fr.localEmbeddingName
+    ? RAG_STRINGS.localEmbeddingName
+    : s.label;
+}
+
 function validateServiceAccountKey(raw: string): ServiceAccountKeyValidation {
   const trimmed = raw.trim();
   if (!trimmed) {
@@ -167,18 +182,18 @@ function validateServiceAccountKey(raw: string): ServiceAccountKeyValidation {
   try {
     parsed = JSON.parse(trimmed);
   } catch {
-    return { key: null, clientEmail: null, error: 'JSON invalide.' };
+    return { key: null, clientEmail: null, error: SF.saInvalidJson };
   }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    return { key: null, clientEmail: null, error: 'Doit être un objet JSON.' };
+    return { key: null, clientEmail: null, error: SF.saNotObject };
   }
   const obj = parsed as Record<string, unknown>;
   const email = typeof obj.client_email === 'string' ? obj.client_email : null;
   if (!email) {
-    return { key: null, clientEmail: null, error: 'Champ `client_email` manquant.' };
+    return { key: null, clientEmail: null, error: SF.saMissingClientEmail };
   }
   if (typeof obj.private_key !== 'string' || obj.private_key.length === 0) {
-    return { key: null, clientEmail: email, error: 'Champ `private_key` manquant.' };
+    return { key: null, clientEmail: email, error: SF.saMissingPrivateKey };
   }
   return { key: obj, clientEmail: email, error: null };
 }
@@ -236,6 +251,16 @@ function isValidHttpUrl(value: string): boolean {
   }
 }
 
+/**
+ * Upper bound for POST/PATCH /api/rag/sources and the "Tester" dry-run. Those
+ * routes await `connector.testConnection`, which has no server-side deadline:
+ * an unreachable network share (UNC path on Windows) or a silent host would
+ * otherwise leave "Enregistrement…" / "Test…" spinning forever. Set above the
+ * HTTP connector's own 60 s maximum so a legitimately slow check still
+ * completes.
+ */
+export const SOURCE_REQUEST_TIMEOUT_MS = 90_000;
+
 // ---------------------------------------------------------------------------
 // Sub-components (inline — small enough to keep in one file)
 // ---------------------------------------------------------------------------
@@ -243,15 +268,24 @@ function isValidHttpUrl(value: string): boolean {
 interface FieldLabelProps {
   htmlFor: string;
   required?: boolean;
-  children: React.ReactNode;
+  children: string;
+  /** Secondary explanation, folded behind a "?" (same HelpTip as the MCP view). */
+  help?: string;
 }
 
-function FieldLabel({ htmlFor, required, children }: FieldLabelProps) {
-  return (
+function FieldLabel({ htmlFor, required, children, help }: FieldLabelProps) {
+  const label = (
     <label htmlFor={htmlFor} className="text-sm text-gray-400">
       {children}
       {required && <span className="text-red-400 ml-0.5">*</span>}
     </label>
+  );
+  if (!help) return label;
+  return (
+    <div className="flex items-center gap-1.5">
+      {label}
+      <HelpTip content={help} label={children} position="right" maxWidth={320} size="xs" />
+    </div>
   );
 }
 
@@ -453,6 +487,8 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
   // ---- ui state ----
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  // Set when the last save timed out: the error banner then offers a retry.
+  const [saveRetryable, setSaveRetryable] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
@@ -479,91 +515,90 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
   // ---------------------------------------------------------------------------
 
   const validate = (): string | null => {
-    if (!name.trim()) return 'Le nom de la source est requis.';
+    if (!name.trim()) return RAG_STRINGS.nameRequired;
 
     if (type === 'local' && !rootPath.trim()) {
-      return 'Le chemin du dossier est requis.';
+      return RAG_STRINGS.rootPathRequired;
     }
 
     if (type === 's3') {
-      if (!s3Bucket.trim()) return 'Le nom du bucket S3 est requis.';
-      if (!s3Region.trim()) return 'La région S3 est requise.';
-      if (!s3AccessKeyId.trim()) return "L'Access Key ID est requis.";
+      if (!s3Bucket.trim()) return SF.s3BucketRequired;
+      if (!s3Region.trim()) return SF.s3RegionRequired;
+      if (!s3AccessKeyId.trim()) return SF.accessKeyIdRequired;
       // In edit mode the secret may be left blank (means "unchanged").
-      if (!isEditing && !s3SecretAccessKey) return 'Le Secret Access Key est requis.';
+      if (!isEditing && !s3SecretAccessKey) return SF.secretAccessKeyRequired;
     }
 
     if (type === 'http') {
       if (httpMode === 'urls') {
         const urls = parseLines(httpUrls);
-        if (urls.length === 0) return 'Saisissez au moins une URL.';
+        if (urls.length === 0) return SF.urlRequired;
         if (httpUrlErrors.length > 0) {
-          return `${httpUrlErrors.length} URL(s) invalide(s) — vérifiez le format http(s)://.`;
+          return SF.invalidUrls(httpUrlErrors.length);
         }
       }
       if (httpMode === 'sitemap') {
-        if (!httpSitemapUrl.trim()) return "L'URL du sitemap est requise.";
-        if (!isValidHttpUrl(httpSitemapUrl.trim()))
-          return "L'URL du sitemap doit être une URL http(s):// valide.";
+        if (!httpSitemapUrl.trim()) return SF.sitemapUrlRequired;
+        if (!isValidHttpUrl(httpSitemapUrl.trim())) return SF.sitemapUrlInvalid;
       }
     }
 
     if (type === 'gdrive') {
-      if (!gdriveRootFolderId.trim()) return "L'ID du dossier Google Drive est requis.";
+      if (!gdriveRootFolderId.trim()) return SF.gdriveFolderIdRequired;
       // In edit mode the JSON textarea may be left blank (means "keep current").
       if (!isEditing && !gdriveServiceAccountKey.trim()) {
-        return 'Collez la clé JSON du Service Account.';
+        return SF.pasteServiceAccountKey;
       }
       // If the user pasted something, it must validate.
       if (gdriveServiceAccountKey.trim() && gdriveKeyValidation.error) {
-        return `Service Account JSON invalide : ${gdriveKeyValidation.error}`;
+        return SF.serviceAccountJsonInvalid(gdriveKeyValidation.error);
       }
     }
 
     if (type === 'gsheets') {
       // In edit mode the JSON textarea may be left blank (means "keep current").
       if (!isEditing && !gsheetsServiceAccountKey.trim()) {
-        return 'Collez la clé JSON du Service Account.';
+        return SF.pasteServiceAccountKey;
       }
       if (gsheetsServiceAccountKey.trim() && gsheetsKeyValidation.error) {
-        return `Service Account JSON invalide : ${gsheetsKeyValidation.error}`;
+        return SF.serviceAccountJsonInvalid(gsheetsKeyValidation.error);
       }
       if (gsheetsMode === 'ids' && parseLines(gsheetsSpreadsheetIds).length === 0) {
-        return 'Renseignez au moins un ID de Google Sheet.';
+        return SF.spreadsheetIdRequired;
       }
       if (gsheetsMode === 'folder' && !gsheetsDriveFolderId.trim()) {
-        return "L'ID du dossier Drive est requis.";
+        return SF.driveFolderIdRequired;
       }
     }
 
     if (type === 'notion') {
       // In edit mode the API key textarea may be left blank (means "keep current").
       if (!isEditing && !notionApiKey.trim()) {
-        return "Le secret de l'intégration Notion est requis.";
+        return SF.notionSecretRequired;
       }
       if (notionApiKey.trim()) {
         const k = notionApiKey.trim();
         if (!k.startsWith('secret_') && !k.startsWith('ntn_')) {
-          return 'La clé Notion doit commencer par `secret_` ou `ntn_`.';
+          return SF.notionKeyPrefix;
         }
       }
     }
 
     if (type === 'sharepoint') {
-      if (!spTenantId.trim()) return "L'ID du tenant Azure AD est requis.";
-      if (!spClientId.trim()) return "L'ID de l'application (client ID) est requis.";
+      if (!spTenantId.trim()) return SF.tenantIdRequired;
+      if (!spClientId.trim()) return SF.clientIdRequired;
       // In edit mode the secret may be left blank (means "unchanged").
       if (!isEditing && !spClientSecret) {
-        return "Le client secret de l'application est requis.";
+        return SF.clientSecretRequired;
       }
-      if (!spSiteUrl.trim()) return "L'URL du site SharePoint est requise.";
+      if (!spSiteUrl.trim()) return SF.siteUrlRequired;
     }
 
     if (!embeddingSettingName) {
-      return 'Sélectionnez une configuration IA pour les embeddings.';
+      return RAG_STRINGS.embeddingRequired;
     }
     if (!selectedSettingSupportsEmbeddings) {
-      return 'La configuration IA sélectionnée ne supporte pas les embeddings.';
+      return RAG_STRINGS.embeddingUnsupported;
     }
     return null;
   };
@@ -785,6 +820,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
   const handleSave = async () => {
     setError(null);
     setServerError(null);
+    setSaveRetryable(false);
     setTestResult(null);
     const validationError = validate();
     if (validationError) {
@@ -794,28 +830,37 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
     setSaving(true);
     try {
       const payload = buildPayload();
-      const saved =
+      // POST and PATCH both answer `{ source }` (routes/rag-sources.ts) — the
+      // source itself must be unwrapped, otherwise the caller receives an
+      // object without `id` / `name`.
+      const response =
         isEditing && initial?.id
-          ? await apiPatch<RagSourcePublic>(
+          ? await apiPatch<RagSourceResponse>(
               `/api/rag/sources/${encodeURIComponent(initial.id)}`,
               payload,
+              { timeoutMs: SOURCE_REQUEST_TIMEOUT_MS },
             )
-          : await apiPost<RagSourcePublic>('/api/rag/sources', payload);
-      onSave(saved);
+          : await apiPost<RagSourceResponse>('/api/rag/sources', payload, {
+              timeoutMs: SOURCE_REQUEST_TIMEOUT_MS,
+            });
+      if (!response?.source) {
+        throw new Error(RAG_STRINGS.saveMissingSource);
+      }
+      onSave(response.source);
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
-        setError(
-          "Toutes les sources RAG doivent utiliser le même modèle d'embeddings (dimension fixe). " +
-            'Réessaie avec une config IA dont le modèle a la même dimension que les sources existantes.',
-        );
+        setError(SF.embeddingDimensionConflict);
         setServerError(err.message);
+      } else if (err instanceof ApiTimeoutError) {
+        setError(RAG_STRINGS.saveTimeout(Math.round(err.timeoutMs / 1000)));
+        setSaveRetryable(true);
       } else {
         const message =
           err instanceof ApiError
-            ? err.message
+            ? translateJobError(err.message)
             : err instanceof Error
               ? err.message
-              : "Échec de l'enregistrement.";
+              : RAG_STRINGS.saveFailed;
         setError(message);
       }
     } finally {
@@ -838,15 +883,21 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
       // used to create (or silently overwrite, when editing) the source as a
       // side effect just to have something to test against — surprising when
       // the user only wanted to check the config before committing to it.
-      await apiPost('/api/rag/sources/test-config', { type, config: buildConfig() });
-      setTestResult({ success: true, message: 'Connexion validée.' });
+      await apiPost(
+        '/api/rag/sources/test-config',
+        { type, config: buildConfig() },
+        { timeoutMs: SOURCE_REQUEST_TIMEOUT_MS },
+      );
+      setTestResult({ success: true, message: RAG_STRINGS.testSucceeded });
     } catch (err) {
       const message =
-        err instanceof ApiError
-          ? err.message
-          : err instanceof Error
-            ? err.message
-            : 'Échec du test.';
+        err instanceof ApiTimeoutError
+          ? RAG_STRINGS.testTimeout(Math.round(err.timeoutMs / 1000))
+          : err instanceof ApiError
+            ? translateJobError(err.message)
+            : err instanceof Error
+              ? err.message
+              : RAG_STRINGS.testFailed;
       setTestResult({ success: false, message });
     } finally {
       setTesting(false);
@@ -873,7 +924,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
           ? err.message
           : err instanceof Error
             ? err.message
-            : 'Sélecteur de dossier indisponible.';
+            : RAG_STRINGS.folderPickerUnavailable;
       setBrowseError(message);
     } finally {
       setBrowsingFolder(false);
@@ -888,28 +939,28 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
     <div className="card-primary p-5 space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="heading-md text-xl">
-          {isEditing ? 'Modifier la source' : 'Nouvelle source'}
+          {isEditing ? RAG_STRINGS.editSource : RAG_STRINGS.newSource}
         </h3>
         <button
           type="button"
           onClick={onCancel}
           className="text-xs text-gray-400 hover:text-gray-200"
         >
-          Fermer
+          {RAG_STRINGS.close}
         </button>
       </div>
 
       {/* Name */}
       <div>
         <FieldLabel htmlFor="rag-source-name" required>
-          Nom de la source
+          {RAG_STRINGS.sourceNameLabel}
         </FieldLabel>
         <input
           id="rag-source-name"
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="Documentation produit"
+          placeholder={SF.namePlaceholder}
           className="input-editorial w-full text-sm mt-1"
         />
       </div>
@@ -917,7 +968,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
       {/* Type */}
       <div>
         <FieldLabel htmlFor="rag-source-type" required>
-          Type
+          {RAG_STRINGS.typeLabel}
         </FieldLabel>
         <select
           id="rag-source-type"
@@ -928,16 +979,12 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
         >
           {SOURCE_TYPES.map((t) => (
             <option key={t.value} value={t.value} disabled={!t.available} className="bg-gray-800">
-              {t.label}
-              {!t.available ? ' — Bientôt' : ''}
+              {t.value === 'local' ? RAG_STRINGS.localFolderType : t.label}
+              {!t.available ? RAG_STRINGS.comingSoon : ''}
             </option>
           ))}
         </select>
-        {isEditing && (
-          <p className="text-xs text-gray-600 mt-1">
-            Le type d'une source ne peut pas être modifié après création.
-          </p>
-        )}
+        {isEditing && <p className="text-xs text-gray-600 mt-1">{RAG_STRINGS.typeImmutable}</p>}
       </div>
 
       {/* ------------------------------------------------------------------ */}
@@ -946,8 +993,8 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
       {type === 'local' && (
         <div className="space-y-4">
           <div>
-            <FieldLabel htmlFor="rag-source-rootpath" required>
-              Chemin absolu du dossier
+            <FieldLabel htmlFor="rag-source-rootpath" required help={RAG_STRINGS.help.rootPath}>
+              {RAG_STRINGS.rootPathLabel}
             </FieldLabel>
             <div className="flex items-center gap-2 mt-1">
               <input
@@ -962,10 +1009,10 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                 type="button"
                 onClick={() => void handleBrowseFolder()}
                 disabled={browsingFolder || saving}
-                title="Ouvrir le sélecteur de dossier natif sur la machine du serveur"
+                title={RAG_STRINGS.browseTitle}
                 className="px-3 py-2 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-300 text-sm font-medium transition-all duration-200 disabled:opacity-50"
               >
-                {browsingFolder ? 'Ouverture…' : 'Parcourir…'}
+                {browsingFolder ? RAG_STRINGS.browsing : RAG_STRINGS.browse}
               </button>
               <button
                 type="button"
@@ -973,23 +1020,26 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                 disabled={testing || saving}
                 className="px-3 py-2 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-300 text-sm font-medium transition-all duration-200 disabled:opacity-50"
               >
-                {testing ? 'Test…' : 'Tester'}
+                {testing ? RAG_STRINGS.testing : RAG_STRINGS.test}
               </button>
             </div>
-            <HelperText>
-              Le serveur doit pouvoir lire ce chemin. Les fichiers ajoutés ultérieurement sont
-              indexés à la prochaine synchronisation.
-            </HelperText>
+            {browsingFolder && (
+              <p role="status" className="text-xs text-gray-400 mt-1">
+                {RAG_STRINGS.folderPickerWaiting}
+              </p>
+            )}
             {browseError && (
               <p className="text-xs text-amber-400 mt-1">
-                {browseError} Vous pouvez toujours saisir le chemin manuellement.
+                {browseError} {RAG_STRINGS.typePathManually}
               </p>
             )}
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <FieldLabel htmlFor="local-include-globs">Include globs</FieldLabel>
+              <FieldLabel htmlFor="local-include-globs" help={RAG_STRINGS.help.globsInclude}>
+                {RAG_STRINGS.includeGlobs}
+              </FieldLabel>
               <textarea
                 id="local-include-globs"
                 value={localIncludeGlobs}
@@ -998,10 +1048,11 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                 rows={3}
                 className="input-editorial w-full text-sm mt-1 font-mono-plex resize-y"
               />
-              <HelperText>Une glob par ligne. Vide = tout inclure.</HelperText>
             </div>
             <div>
-              <FieldLabel htmlFor="local-exclude-globs">Exclude globs</FieldLabel>
+              <FieldLabel htmlFor="local-exclude-globs" help={RAG_STRINGS.help.localGlobsExclude}>
+                {RAG_STRINGS.excludeGlobs}
+              </FieldLabel>
               <textarea
                 id="local-exclude-globs"
                 value={localExcludeGlobs}
@@ -1010,13 +1061,10 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                 rows={3}
                 className="input-editorial w-full text-sm mt-1 font-mono-plex resize-y"
               />
-              <HelperText>
-                Une glob par ligne, ajoutée aux exclusions par défaut (node_modules, .git).
-              </HelperText>
             </div>
           </div>
 
-          <div className="flex items-start gap-2">
+          <div className="flex items-center gap-2">
             <input
               id="local-include-hidden"
               type="checkbox"
@@ -1025,12 +1073,15 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               className="mt-0.5 accent-os-500 focus:ring-2 focus:ring-os-500"
             />
             <label htmlFor="local-include-hidden" className="text-sm text-gray-400 select-none">
-              Inclure les fichiers cachés
-              <HelperText>
-                Fichiers et dossiers commençant par un point (.env, .cache…), exclus par défaut. Les
-                fichiers de plus de 50 Mo sont toujours ignorés.
-              </HelperText>
+              {RAG_STRINGS.includeHidden}
             </label>
+            <HelpTip
+              content={RAG_STRINGS.help.includeHidden}
+              label={RAG_STRINGS.includeHidden}
+              position="right"
+              maxWidth={320}
+              size="xs"
+            />
           </div>
         </div>
       )}
@@ -1057,8 +1108,8 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               />
             </div>
             <div>
-              <FieldLabel htmlFor="s3-region" required>
-                Région
+              <FieldLabel htmlFor="s3-region" required help={RAG_STRINGS.help.s3Region}>
+                {SF.s3Region}
               </FieldLabel>
               <input
                 id="s3-region"
@@ -1069,7 +1120,6 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                 className="input-editorial w-full text-sm mt-1"
                 autoComplete="off"
               />
-              <HelperText>Utilisez 'auto' pour Cloudflare R2.</HelperText>
             </div>
           </div>
 
@@ -1097,11 +1147,11 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                 type="password"
                 value={s3SecretAccessKey}
                 onChange={(e) => setS3SecretAccessKey(e.target.value)}
-                placeholder={isEditing ? '(inchangé)' : '••••••••••••••••••••'}
+                placeholder={isEditing ? SF.unchanged : '••••••••••••••••••••'}
                 className="input-editorial w-full text-sm mt-1"
                 autoComplete="new-password"
               />
-              {isEditing && <HelperText>Laissez vide pour conserver la clé existante.</HelperText>}
+              {isEditing && <HelperText>{SF.keepExistingKey}</HelperText>}
             </div>
           </div>
 
@@ -1113,7 +1163,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               className="w-full flex items-center justify-between px-3 py-2.5 text-xs text-gray-400 hover:text-gray-300 hover:bg-white/[0.03] transition-colors"
               aria-expanded={s3ShowAdvanced}
             >
-              <span className="font-medium">Avancé (optionnel)</span>
+              <span className="font-medium">{RAG_STRINGS.advancedOptional}</span>
               <span aria-hidden="true" className="text-gray-600">
                 {s3ShowAdvanced ? '▲' : '▼'}
               </span>
@@ -1122,7 +1172,9 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
             {s3ShowAdvanced && (
               <div className="px-3 pb-4 pt-1 space-y-3 border-t border-white/5">
                 <div>
-                  <FieldLabel htmlFor="s3-prefix">Préfixe (racine logique)</FieldLabel>
+                  <FieldLabel htmlFor="s3-prefix" help={RAG_STRINGS.help.s3Prefix}>
+                    {SF.s3Prefix}
+                  </FieldLabel>
                   <input
                     id="s3-prefix"
                     type="text"
@@ -1131,13 +1183,12 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                     placeholder="docs/"
                     className="input-editorial w-full text-sm mt-1"
                   />
-                  <HelperText>
-                    Racine logique dans le bucket. Laisser vide pour tout le bucket.
-                  </HelperText>
                 </div>
 
                 <div>
-                  <FieldLabel htmlFor="s3-endpoint">Endpoint personnalisé</FieldLabel>
+                  <FieldLabel htmlFor="s3-endpoint" help={RAG_STRINGS.help.s3Endpoint}>
+                    {SF.s3Endpoint}
+                  </FieldLabel>
                   <input
                     id="s3-endpoint"
                     type="text"
@@ -1146,10 +1197,9 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                     placeholder="https://<account>.r2.cloudflarestorage.com"
                     className="input-editorial w-full text-sm mt-1"
                   />
-                  <HelperText>Pour R2 / MinIO. Laisser vide pour AWS S3 standard.</HelperText>
                 </div>
 
-                <div className="flex items-start gap-2 pt-1">
+                <div className="flex items-center gap-2 pt-1">
                   <input
                     id="s3-force-path-style"
                     type="checkbox"
@@ -1162,15 +1212,21 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                     className="text-sm text-gray-400 select-none"
                   >
                     Force path-style
-                    <HelperText>
-                      Requis pour MinIO. Désactiver pour AWS S3 et Cloudflare R2.
-                    </HelperText>
                   </label>
+                  <HelpTip
+                    content={RAG_STRINGS.help.s3ForcePathStyle}
+                    label="Force path-style"
+                    position="right"
+                    maxWidth={320}
+                    size="xs"
+                  />
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <FieldLabel htmlFor="s3-include-globs">Include globs</FieldLabel>
+                    <FieldLabel htmlFor="s3-include-globs" help={RAG_STRINGS.help.globsInclude}>
+                      {RAG_STRINGS.includeGlobs}
+                    </FieldLabel>
                     <textarea
                       id="s3-include-globs"
                       value={s3IncludeGlobs}
@@ -1179,10 +1235,11 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                       rows={3}
                       className="input-editorial w-full text-sm mt-1 font-mono-plex resize-y"
                     />
-                    <HelperText>Une glob par ligne. Vide = tout inclure.</HelperText>
                   </div>
                   <div>
-                    <FieldLabel htmlFor="s3-exclude-globs">Exclude globs</FieldLabel>
+                    <FieldLabel htmlFor="s3-exclude-globs" help={RAG_STRINGS.help.globsExclude}>
+                      {RAG_STRINGS.excludeGlobs}
+                    </FieldLabel>
                     <textarea
                       id="s3-exclude-globs"
                       value={s3ExcludeGlobs}
@@ -1191,7 +1248,6 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                       rows={3}
                       className="input-editorial w-full text-sm mt-1 font-mono-plex resize-y"
                     />
-                    <HelperText>Une glob par ligne.</HelperText>
                   </div>
                 </div>
               </div>
@@ -1206,7 +1262,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               disabled={testing || saving}
               className="px-3 py-2 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-300 text-sm font-medium transition-all duration-200 disabled:opacity-50"
             >
-              {testing ? 'Test…' : 'Tester la connexion'}
+              {testing ? RAG_STRINGS.testing : RAG_STRINGS.testConnection}
             </button>
           </div>
         </div>
@@ -1221,7 +1277,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
           <div>
             <fieldset>
               <legend className="text-sm text-gray-400 mb-2">
-                Mode d'indexation <span className="text-red-400">*</span>
+                {SF.httpIndexMode} <span className="text-red-400">*</span>
               </legend>
               <div className="flex gap-4">
                 <label className="flex items-center gap-2 cursor-pointer select-none text-sm text-gray-300">
@@ -1233,7 +1289,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                     onChange={() => setHttpMode('urls')}
                     className="accent-os-500"
                   />
-                  Liste d'URLs fixe
+                  {SF.httpModeUrls}
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer select-none text-sm text-gray-300">
                   <input
@@ -1244,7 +1300,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                     onChange={() => setHttpMode('sitemap')}
                     className="accent-os-500"
                   />
-                  Sitemap XML
+                  {SF.httpModeSitemap}
                 </label>
               </div>
             </fieldset>
@@ -1253,8 +1309,8 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
           {/* URLs textarea */}
           {httpMode === 'urls' && (
             <div>
-              <FieldLabel htmlFor="http-urls" required>
-                URLs à indexer
+              <FieldLabel htmlFor="http-urls" required help={RAG_STRINGS.help.httpUrls}>
+                {SF.httpUrlsLabel}
               </FieldLabel>
               <textarea
                 id="http-urls"
@@ -1270,20 +1326,19 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                 <div className="mt-1 space-y-0.5">
                   {httpUrlErrors.map((url) => (
                     <p key={url} className="text-xs text-red-400 font-mono-plex">
-                      URL invalide : {url}
+                      {SF.httpInvalidUrl(url)}
                     </p>
                   ))}
                 </div>
               )}
-              <HelperText>Une URL http(s):// par ligne.</HelperText>
             </div>
           )}
 
           {/* Sitemap URL */}
           {httpMode === 'sitemap' && (
             <div>
-              <FieldLabel htmlFor="http-sitemap-url" required>
-                URL du sitemap
+              <FieldLabel htmlFor="http-sitemap-url" required help={RAG_STRINGS.help.httpSitemap}>
+                {SF.httpSitemapLabel}
               </FieldLabel>
               <input
                 id="http-sitemap-url"
@@ -1293,16 +1348,15 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                 placeholder="https://docs.exemple.com/sitemap.xml"
                 className="input-editorial w-full text-sm mt-1"
               />
-              <HelperText>
-                Le connecteur fetche le XML et indexe chaque entrée &lt;loc&gt;.
-              </HelperText>
             </div>
           )}
 
           {/* Common fields (always visible) */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <FieldLabel htmlFor="http-user-agent">User-Agent</FieldLabel>
+              <FieldLabel htmlFor="http-user-agent" help={RAG_STRINGS.help.httpUserAgent}>
+                User-Agent
+              </FieldLabel>
               <input
                 id="http-user-agent"
                 type="text"
@@ -1311,10 +1365,11 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                 placeholder="CalameRAG/1.0"
                 className="input-editorial w-full text-sm mt-1"
               />
-              <HelperText>Envoyé dans chaque requête HTTP.</HelperText>
             </div>
             <div>
-              <FieldLabel htmlFor="http-timeout">Timeout (ms)</FieldLabel>
+              <FieldLabel htmlFor="http-timeout" help={RAG_STRINGS.help.httpTimeout}>
+                Timeout (ms)
+              </FieldLabel>
               <input
                 id="http-timeout"
                 type="number"
@@ -1325,7 +1380,6 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                 onChange={(e) => setHttpTimeoutMs(Number(e.target.value))}
                 className="input-editorial w-full text-sm mt-1"
               />
-              <HelperText>Min 1 000 ms, max 60 000 ms. Défaut : 10 000.</HelperText>
             </div>
           </div>
 
@@ -1337,7 +1391,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               className="w-full flex items-center justify-between px-3 py-2.5 text-xs text-gray-400 hover:text-gray-300 hover:bg-white/[0.03] transition-colors"
               aria-expanded={httpShowAdvanced}
             >
-              <span className="font-medium">Avancé (filtres, sécurité)</span>
+              <span className="font-medium">{SF.httpAdvanced}</span>
               <span aria-hidden="true" className="text-gray-600">
                 {httpShowAdvanced ? '▲' : '▼'}
               </span>
@@ -1346,7 +1400,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
             {httpShowAdvanced && (
               <div className="px-3 pb-4 pt-1 space-y-3 border-t border-white/5">
                 <div>
-                  <FieldLabel htmlFor="http-allowed-hosts">Hosts autorisés</FieldLabel>
+                  <FieldLabel htmlFor="http-allowed-hosts">{SF.httpAllowedHosts}</FieldLabel>
                   <textarea
                     id="http-allowed-hosts"
                     value={httpAllowedHosts}
@@ -1355,15 +1409,17 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                     rows={3}
                     className="input-editorial w-full text-sm mt-1 font-mono-plex resize-y"
                   />
-                  <HelperText>
-                    Allowlist de sécurité. Laisser vide pour autoriser tous les hosts des URLs
-                    indexées. Protège contre les docIds malicieux.
-                  </HelperText>
+                  <HelperText>{SF.httpAllowedHostsHelp}</HelperText>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <FieldLabel htmlFor="http-include-globs">Include globs (pathname)</FieldLabel>
+                    <FieldLabel
+                      htmlFor="http-include-globs"
+                      help={RAG_STRINGS.help.httpGlobsInclude}
+                    >
+                      {RAG_STRINGS.includeGlobsPathname}
+                    </FieldLabel>
                     <textarea
                       id="http-include-globs"
                       value={httpIncludeGlobs}
@@ -1372,10 +1428,11 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                       rows={3}
                       className="input-editorial w-full text-sm mt-1 font-mono-plex resize-y"
                     />
-                    <HelperText>Appliqués au pathname de l'URL. Vide = tout inclure.</HelperText>
                   </div>
                   <div>
-                    <FieldLabel htmlFor="http-exclude-globs">Exclude globs (pathname)</FieldLabel>
+                    <FieldLabel htmlFor="http-exclude-globs" help={RAG_STRINGS.help.globsExclude}>
+                      {RAG_STRINGS.excludeGlobsPathname}
+                    </FieldLabel>
                     <textarea
                       id="http-exclude-globs"
                       value={httpExcludeGlobs}
@@ -1384,7 +1441,6 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                       rows={3}
                       className="input-editorial w-full text-sm mt-1 font-mono-plex resize-y"
                     />
-                    <HelperText>Une glob par ligne.</HelperText>
                   </div>
                 </div>
               </div>
@@ -1399,7 +1455,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               disabled={testing || saving}
               className="px-3 py-2 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-300 text-sm font-medium transition-all duration-200 disabled:opacity-50"
             >
-              {testing ? 'Test…' : 'Tester la connexion'}
+              {testing ? RAG_STRINGS.testing : RAG_STRINGS.testConnection}
             </button>
           </div>
         </div>
@@ -1412,15 +1468,15 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
         <div className="space-y-4">
           {/* Setup helper — admin-facing onboarding steps. */}
           <div className="p-3 rounded-lg bg-os-950/30 border border-os-900/40 text-xs text-gray-400 space-y-1">
-            <p className="font-medium text-gray-300">Préparation du Service Account</p>
+            <p className="font-medium text-gray-300">{SF.saSetupTitle}</p>
             <ol className="list-decimal list-inside space-y-0.5 ml-1">
-              <li>Créer un Service Account dans Google Cloud Console.</li>
-              <li>Activer l'API Google Drive sur le projet.</li>
-              <li>Générer et télécharger la clé JSON du Service Account.</li>
+              <li>{SF.gdriveStep1}</li>
+              <li>{SF.gdriveStep2}</li>
+              <li>{SF.gdriveStep3}</li>
               <li>
-                Partager le dossier Drive avec l'email du Service Account (champ{' '}
-                <span className="font-mono-plex">client_email</span> de la clé JSON, accès Viewer
-                suffisant).
+                {SF.gdriveStep4Before}
+                <span className="font-mono-plex">client_email</span>
+                {SF.gdriveStep4After}
               </li>
             </ol>
           </div>
@@ -1428,7 +1484,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
           {/* Service Account JSON */}
           <div>
             <FieldLabel htmlFor="gdrive-key" required={!isEditing}>
-              Clé JSON du Service Account
+              {SF.saKeyLabel}
             </FieldLabel>
             <textarea
               id="gdrive-key"
@@ -1436,7 +1492,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               onChange={(e) => setGdriveServiceAccountKey(e.target.value)}
               placeholder={
                 isEditing
-                  ? '(inchangé — laissez vide pour conserver la clé existante)'
+                  ? SF.saKeyUnchangedPlaceholder
                   : '{ "type": "service_account", "client_email": "...", "private_key": "...", ... }'
               }
               rows={7}
@@ -1451,17 +1507,17 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
             )}
             {gdriveKeyValidation.clientEmail && !gdriveKeyValidation.error && (
               <p className="text-xs text-green-400 mt-1">
-                Service Account détecté :{' '}
+                {SF.saDetected}{' '}
                 <span className="font-mono-plex">{gdriveKeyValidation.clientEmail}</span>
               </p>
             )}
-            {isEditing && <HelperText>Laissez vide pour conserver la clé enregistrée.</HelperText>}
+            {isEditing && <HelperText>{SF.keepSavedKey}</HelperText>}
           </div>
 
           {/* Root folder ID */}
           <div>
             <FieldLabel htmlFor="gdrive-root" required>
-              ID du dossier racine
+              {SF.gdriveRootLabel}
             </FieldLabel>
             <input
               id="gdrive-root"
@@ -1473,9 +1529,10 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               autoComplete="off"
             />
             <HelperText>
-              Dans l'URL <span className="font-mono-plex">drive.google.com/drive/folders/</span>
-              <span className="font-mono-plex font-semibold text-gray-400">&lt;cet ID&gt;</span>. Le
-              dossier doit être partagé avec le Service Account.
+              {SF.gdriveRootHelpBefore}
+              <span className="font-mono-plex">drive.google.com/drive/folders/</span>
+              <span className="font-mono-plex font-semibold text-gray-400">&lt;cet ID&gt;</span>
+              {SF.gdriveRootHelpAfter}
             </HelperText>
           </div>
 
@@ -1489,8 +1546,8 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               className="mt-0.5 accent-os-500 focus:ring-2 focus:ring-os-500"
             />
             <label htmlFor="gdrive-recursive" className="text-sm text-gray-400 select-none">
-              Indexer récursivement les sous-dossiers
-              <HelperText>Désactivez pour n'indexer que le dossier racine.</HelperText>
+              {SF.recursiveLabel}
+              <HelperText>{SF.recursiveHelp}</HelperText>
             </label>
           </div>
 
@@ -1502,7 +1559,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               className="w-full flex items-center justify-between px-3 py-2.5 text-xs text-gray-400 hover:text-gray-300 hover:bg-white/[0.03] transition-colors"
               aria-expanded={gdriveShowAdvanced}
             >
-              <span className="font-medium">Avancé (impersonation, filtres mime)</span>
+              <span className="font-medium">{SF.gdriveAdvanced}</span>
               <span aria-hidden="true" className="text-gray-600">
                 {gdriveShowAdvanced ? '▲' : '▼'}
               </span>
@@ -1521,10 +1578,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                     className="input-editorial w-full text-sm mt-1"
                     autoComplete="off"
                   />
-                  <HelperText>
-                    Délégation à l'échelle du domaine (Domain-wide delegation) uniquement. Laissez
-                    vide dans la plupart des cas.
-                  </HelperText>
+                  <HelperText>{SF.impersonateHelp}</HelperText>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1538,7 +1592,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                       rows={3}
                       className="input-editorial w-full text-sm mt-1 font-mono-plex resize-y"
                     />
-                    <HelperText>Un mime type par ligne. Vide = tout inclure.</HelperText>
+                    <HelperText>{SF.mimeIncludeHelp}</HelperText>
                   </div>
                   <div>
                     <FieldLabel htmlFor="gdrive-exclude-mimes">Exclude mime types</FieldLabel>
@@ -1550,7 +1604,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                       rows={3}
                       className="input-editorial w-full text-sm mt-1 font-mono-plex resize-y"
                     />
-                    <HelperText>Un mime type par ligne.</HelperText>
+                    <HelperText>{SF.mimeExcludeHelp}</HelperText>
                   </div>
                 </div>
               </div>
@@ -1565,7 +1619,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               disabled={testing || saving}
               className="px-3 py-2 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-300 text-sm font-medium transition-all duration-200 disabled:opacity-50"
             >
-              {testing ? 'Test…' : 'Tester la connexion'}
+              {testing ? RAG_STRINGS.testing : RAG_STRINGS.testConnection}
             </button>
           </div>
         </div>
@@ -1578,25 +1632,22 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
         <div className="space-y-4">
           {/* Setup helper — admin-facing onboarding steps. */}
           <div className="p-3 rounded-lg bg-os-950/30 border border-os-900/40 text-xs text-gray-400 space-y-1">
-            <p className="font-medium text-gray-300">Préparation du Service Account</p>
+            <p className="font-medium text-gray-300">{SF.saSetupTitle}</p>
             <ol className="list-decimal list-inside space-y-0.5 ml-1">
+              <li>{SF.gsheetsStep1}</li>
               <li>
-                Réutiliser le Service Account de Google Drive si vous en avez déjà configuré un.
+                {SF.gsheetsStep2Before}
+                <em>{SF.gsheetsStep2Em}</em>
+                {SF.gsheetsStep2After}
               </li>
-              <li>
-                Activer l'API Google Sheets <em>et</em> l'API Google Drive sur le projet GCP.
-              </li>
-              <li>
-                Partager chaque Google Sheet (ou le dossier Drive d'énumération) avec l'email du
-                Service Account (accès Viewer suffisant).
-              </li>
+              <li>{SF.gsheetsStep3}</li>
             </ol>
           </div>
 
           {/* Service Account JSON */}
           <div>
             <FieldLabel htmlFor="gsheets-key" required={!isEditing}>
-              Clé JSON du Service Account
+              {SF.saKeyLabel}
             </FieldLabel>
             <textarea
               id="gsheets-key"
@@ -1604,7 +1655,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               onChange={(e) => setGsheetsServiceAccountKey(e.target.value)}
               placeholder={
                 isEditing
-                  ? '(inchangé — laissez vide pour conserver la clé existante)'
+                  ? SF.saKeyUnchangedPlaceholder
                   : '{ "type": "service_account", "client_email": "...", "private_key": "...", ... }'
               }
               rows={7}
@@ -1619,17 +1670,17 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
             )}
             {gsheetsKeyValidation.clientEmail && !gsheetsKeyValidation.error && (
               <p className="text-xs text-green-400 mt-1">
-                Service Account détecté :{' '}
+                {SF.saDetected}{' '}
                 <span className="font-mono-plex">{gsheetsKeyValidation.clientEmail}</span>
               </p>
             )}
-            {isEditing && <HelperText>Laissez vide pour conserver la clé enregistrée.</HelperText>}
+            {isEditing && <HelperText>{SF.keepSavedKey}</HelperText>}
           </div>
 
           {/* Mode toggle: explicit IDs vs Drive folder enumeration */}
           <div>
             <FieldLabel htmlFor="gsheets-mode" required>
-              Source des Google Sheets
+              {SF.gsheetsSourceLabel}
             </FieldLabel>
             <div className="flex items-center gap-3 mt-1.5">
               <label className="flex items-center gap-1.5 text-sm text-gray-300 cursor-pointer">
@@ -1641,7 +1692,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                   onChange={() => setGsheetsMode('ids')}
                   className="accent-os-500 focus:ring-2 focus:ring-os-500"
                 />
-                IDs explicites
+                {SF.gsheetsModeIds}
               </label>
               <label className="flex items-center gap-1.5 text-sm text-gray-300 cursor-pointer">
                 <input
@@ -1652,7 +1703,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                   onChange={() => setGsheetsMode('folder')}
                   className="accent-os-500 focus:ring-2 focus:ring-os-500"
                 />
-                Dossier Drive
+                {SF.gsheetsModeFolder}
               </label>
             </div>
           </div>
@@ -1660,7 +1711,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
           {gsheetsMode === 'ids' && (
             <div>
               <FieldLabel htmlFor="gsheets-ids" required>
-                IDs des Google Sheets (un par ligne)
+                {SF.gsheetsIdsLabel}
               </FieldLabel>
               <textarea
                 id="gsheets-ids"
@@ -1673,9 +1724,10 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                 spellCheck={false}
               />
               <HelperText>
-                Dans l'URL <span className="font-mono-plex">docs.google.com/spreadsheets/d/</span>
+                {SF.gsheetsIdsHelpBefore}
+                <span className="font-mono-plex">docs.google.com/spreadsheets/d/</span>
                 <span className="font-mono-plex font-semibold text-gray-400">&lt;cet ID&gt;</span>
-                /edit. Chaque onglet du classeur devient un document distinct.
+                {SF.gsheetsIdsHelpAfter}
               </HelperText>
             </div>
           )}
@@ -1683,7 +1735,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
           {gsheetsMode === 'folder' && (
             <div>
               <FieldLabel htmlFor="gsheets-folder" required>
-                ID du dossier Drive
+                {SF.gsheetsFolderLabel}
               </FieldLabel>
               <input
                 id="gsheets-folder"
@@ -1695,8 +1747,9 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                 autoComplete="off"
               />
               <HelperText>
-                Tous les Google Sheets <em>directement</em> dans ce dossier seront indexés. Aucune
-                récursion (les sous-dossiers sont ignorés).
+                {SF.gsheetsFolderHelpBefore}
+                <em>{SF.gsheetsFolderHelpEm}</em>
+                {SF.gsheetsFolderHelpAfter}
               </HelperText>
             </div>
           )}
@@ -1711,11 +1764,13 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               className="mt-0.5 accent-os-500 focus:ring-2 focus:ring-os-500"
             />
             <label htmlFor="gsheets-include-archived" className="text-sm text-gray-400 select-none">
-              Inclure les onglets archivés
+              {SF.gsheetsIncludeArchived}
               <HelperText>
-                Les onglets dont le nom commence par{' '}
-                <span className="font-mono-plex">archive_</span> ou{' '}
-                <span className="font-mono-plex">_old</span> sont ignorés par défaut.
+                {SF.gsheetsArchivedHelpBefore}
+                <span className="font-mono-plex">archive_</span>
+                {SF.gsheetsArchivedHelpMid}
+                <span className="font-mono-plex">_old</span>
+                {SF.gsheetsArchivedHelpAfter}
               </HelperText>
             </label>
           </div>
@@ -1728,7 +1783,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               className="w-full flex items-center justify-between px-3 py-2.5 text-xs text-gray-400 hover:text-gray-300 hover:bg-white/[0.03] transition-colors"
               aria-expanded={gsheetsShowAdvanced}
             >
-              <span className="font-medium">Avancé (impersonation, plage par défaut)</span>
+              <span className="font-medium">{SF.gsheetsAdvanced}</span>
               <span aria-hidden="true" className="text-gray-600">
                 {gsheetsShowAdvanced ? '▲' : '▼'}
               </span>
@@ -1747,14 +1802,11 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                     className="input-editorial w-full text-sm mt-1"
                     autoComplete="off"
                   />
-                  <HelperText>
-                    Délégation à l'échelle du domaine (Domain-wide delegation) uniquement. Laissez
-                    vide dans la plupart des cas.
-                  </HelperText>
+                  <HelperText>{SF.impersonateHelp}</HelperText>
                 </div>
 
                 <div>
-                  <FieldLabel htmlFor="gsheets-range">Plage par défaut</FieldLabel>
+                  <FieldLabel htmlFor="gsheets-range">{SF.gsheetsRange}</FieldLabel>
                   <input
                     id="gsheets-range"
                     type="text"
@@ -1765,9 +1817,11 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                     autoComplete="off"
                   />
                   <HelperText>
-                    Notation A1 (par exemple <span className="font-mono-plex">A:Z</span> ou{' '}
-                    <span className="font-mono-plex">A1:D100</span>). Vide = toute la plage utilisée
-                    de chaque onglet.
+                    {SF.gsheetsRangeHelpBefore}
+                    <span className="font-mono-plex">A:Z</span>
+                    {SF.gsheetsRangeHelpMid}
+                    <span className="font-mono-plex">A1:D100</span>
+                    {SF.gsheetsRangeHelpAfter}
                   </HelperText>
                 </div>
               </div>
@@ -1782,7 +1836,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               disabled={testing || saving}
               className="px-3 py-2 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-300 text-sm font-medium transition-all duration-200 disabled:opacity-50"
             >
-              {testing ? 'Test…' : 'Tester la connexion'}
+              {testing ? RAG_STRINGS.testing : RAG_STRINGS.testConnection}
             </button>
           </div>
         </div>
@@ -1795,42 +1849,38 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
         <div className="space-y-4">
           {/* Setup helper — admin-facing onboarding steps. */}
           <div className="p-3 rounded-lg bg-os-950/30 border border-os-900/40 text-xs text-gray-400 space-y-1">
-            <p className="font-medium text-gray-300">Préparation de l'intégration Notion</p>
+            <p className="font-medium text-gray-300">{SF.notionSetupTitle}</p>
             <ol className="list-decimal list-inside space-y-0.5 ml-1">
               <li>
-                Ouvrir <span className="font-mono-plex">notion.so/profile/integrations</span> →{' '}
-                «&nbsp;New integration&nbsp;» → copier le secret.
+                {SF.notionStep1Before}
+                <span className="font-mono-plex">notion.so/profile/integrations</span>
+                {SF.notionStep1After}
               </li>
-              <li>
-                Dans chaque page/database à indexer, cliquer «&nbsp;Share&nbsp;» et inviter
-                l'intégration.
-              </li>
+              <li>{SF.notionStep2}</li>
             </ol>
           </div>
 
           {/* API key */}
           <div>
             <FieldLabel htmlFor="notion-api-key" required={!isEditing}>
-              Secret de l'intégration
+              {SF.notionSecretLabel}
             </FieldLabel>
             <input
               id="notion-api-key"
               type="password"
               value={notionApiKey}
               onChange={(e) => setNotionApiKey(e.target.value)}
-              placeholder={
-                isEditing ? '(inchangé — laissez vide pour conserver la clé)' : 'secret_… ou ntn_…'
-              }
+              placeholder={isEditing ? SF.notionKeyUnchangedPlaceholder : SF.notionKeyExample}
               className="input-editorial w-full text-sm mt-1 font-mono-plex"
               autoComplete="new-password"
               spellCheck={false}
             />
-            {isEditing && <HelperText>Laissez vide pour conserver la clé enregistrée.</HelperText>}
+            {isEditing && <HelperText>{SF.keepSavedKey}</HelperText>}
           </div>
 
           {/* Root IDs */}
           <div>
-            <FieldLabel htmlFor="notion-root-ids">IDs racines (optionnel)</FieldLabel>
+            <FieldLabel htmlFor="notion-root-ids">{SF.notionRootIds}</FieldLabel>
             <textarea
               id="notion-root-ids"
               value={notionRootIds}
@@ -1841,10 +1891,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               autoComplete="off"
               spellCheck={false}
             />
-            <HelperText>
-              IDs de pages ou databases à utiliser comme racines (un par ligne, avec ou sans
-              tirets). Laissez vide pour indexer tout le contenu partagé avec l'intégration.
-            </HelperText>
+            <HelperText>{SF.notionRootIdsHelp}</HelperText>
           </div>
 
           {/* Include archived */}
@@ -1857,10 +1904,8 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               className="mt-0.5 accent-os-500 focus:ring-2 focus:ring-os-500"
             />
             <label htmlFor="notion-include-archived" className="text-sm text-gray-400 select-none">
-              Inclure les pages archivées
-              <HelperText>
-                Désactivé par défaut. Activez pour indexer les pages déplacées vers la corbeille.
-              </HelperText>
+              {SF.notionIncludeArchived}
+              <HelperText>{SF.notionArchivedHelp}</HelperText>
             </label>
           </div>
 
@@ -1872,7 +1917,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               disabled={testing || saving}
               className="px-3 py-2 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-300 text-sm font-medium transition-all duration-200 disabled:opacity-50"
             >
-              {testing ? 'Test…' : 'Tester la connexion'}
+              {testing ? RAG_STRINGS.testing : RAG_STRINGS.testConnection}
             </button>
           </div>
         </div>
@@ -1885,26 +1930,25 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
         <div className="space-y-4">
           {/* Setup helper — admin-facing onboarding steps. */}
           <div className="p-3 rounded-lg bg-os-950/30 border border-os-900/40 text-xs text-gray-400 space-y-1">
-            <p className="font-medium text-gray-300">Préparation de l'application Azure AD</p>
+            <p className="font-medium text-gray-300">{SF.spSetupTitle}</p>
             <ol className="list-decimal list-inside space-y-0.5 ml-1">
               <li>
-                Enregistrer une application dans Azure AD (
-                <span className="font-mono-plex">portal.azure.com</span> → App registrations).
+                {SF.spStep1Before}
+                <span className="font-mono-plex">portal.azure.com</span>
+                {SF.spStep1After}
               </li>
               <li>
-                Ajouter la permission <span className="font-mono-plex">Application</span> :{' '}
-                <span className="font-mono-plex">Sites.Read.All</span> (large) ou{' '}
-                <span className="font-mono-plex">Sites.Selected</span> (portée par site).
+                {SF.spStep2Before}
+                <span className="font-mono-plex">Application</span>
+                {SF.spStep2Mid1}
+                <span className="font-mono-plex">Sites.Read.All</span>
+                {SF.spStep2Mid2}
+                <span className="font-mono-plex">Sites.Selected</span>
+                {SF.spStep2After}
               </li>
-              <li>
-                Cliquer «&nbsp;Grant admin consent&nbsp;» pour activer la permission au niveau du
-                tenant.
-              </li>
-              <li>
-                Sous «&nbsp;Certificates &amp; secrets&nbsp;», créer un client secret et le copier
-                (affiché une seule fois).
-              </li>
-              <li>Renseigner tenantId, clientId et le secret ci-dessous.</li>
+              <li>{SF.spStep3}</li>
+              <li>{SF.spStep4}</li>
+              <li>{SF.spStep5}</li>
             </ol>
           </div>
 
@@ -1924,7 +1968,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                 autoComplete="off"
                 spellCheck={false}
               />
-              <HelperText>GUID du tenant Azure AD.</HelperText>
+              <HelperText>{SF.spTenantHelp}</HelperText>
             </div>
             <div>
               <FieldLabel htmlFor="sp-client-id" required>
@@ -1940,7 +1984,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                 autoComplete="off"
                 spellCheck={false}
               />
-              <HelperText>GUID de l'application enregistrée.</HelperText>
+              <HelperText>{SF.spClientHelp}</HelperText>
             </div>
           </div>
 
@@ -1954,18 +1998,18 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               type="password"
               value={spClientSecret}
               onChange={(e) => setSpClientSecret(e.target.value)}
-              placeholder={isEditing ? '(inchangé)' : '••••••••••••••••••••'}
+              placeholder={isEditing ? SF.unchanged : '••••••••••••••••••••'}
               className="input-editorial w-full text-sm mt-1 font-mono-plex"
               autoComplete="new-password"
               spellCheck={false}
             />
-            {isEditing && <HelperText>Laissez vide pour conserver le secret existant.</HelperText>}
+            {isEditing && <HelperText>{SF.keepExistingSecret}</HelperText>}
           </div>
 
           {/* Site URL */}
           <div>
             <FieldLabel htmlFor="sp-site-url" required>
-              URL du site SharePoint
+              {SF.spSiteUrlLabel}
             </FieldLabel>
             <input
               id="sp-site-url"
@@ -1978,10 +2022,11 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               spellCheck={false}
             />
             <HelperText>
-              URL complète (
-              <span className="font-mono-plex">https://contoso.sharepoint.com/sites/...</span>) ou
-              forme hôte-relative (
-              <span className="font-mono-plex">contoso.sharepoint.com:/sites/...</span>).
+              {SF.spSiteUrlHelpBefore}
+              <span className="font-mono-plex">https://contoso.sharepoint.com/sites/...</span>
+              {SF.spSiteUrlHelpMid}
+              <span className="font-mono-plex">contoso.sharepoint.com:/sites/...</span>
+              {SF.spSiteUrlHelpAfter}
             </HelperText>
           </div>
 
@@ -1995,8 +2040,8 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               className="mt-0.5 accent-os-500 focus:ring-2 focus:ring-os-500"
             />
             <label htmlFor="sp-recursive" className="text-sm text-gray-400 select-none">
-              Indexer récursivement les sous-dossiers
-              <HelperText>Désactivez pour n'indexer que le dossier racine.</HelperText>
+              {SF.recursiveLabel}
+              <HelperText>{SF.recursiveHelp}</HelperText>
             </label>
           </div>
 
@@ -2008,7 +2053,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               className="w-full flex items-center justify-between px-3 py-2.5 text-xs text-gray-400 hover:text-gray-300 hover:bg-white/[0.03] transition-colors"
               aria-expanded={spShowAdvanced}
             >
-              <span className="font-medium">Avancé (drive, sous-dossier, filtres mime)</span>
+              <span className="font-medium">{SF.spAdvanced}</span>
               <span aria-hidden="true" className="text-gray-600">
                 {spShowAdvanced ? '▲' : '▼'}
               </span>
@@ -2017,7 +2062,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
             {spShowAdvanced && (
               <div className="px-3 pb-4 pt-1 space-y-3 border-t border-white/5">
                 <div>
-                  <FieldLabel htmlFor="sp-drive-name">Nom du Document Library</FieldLabel>
+                  <FieldLabel htmlFor="sp-drive-name">{SF.spDriveName}</FieldLabel>
                   <input
                     id="sp-drive-name"
                     type="text"
@@ -2026,13 +2071,11 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                     placeholder="Documents"
                     className="input-editorial w-full text-sm mt-1"
                   />
-                  <HelperText>
-                    Par défaut : la bibliothèque «&nbsp;Documents&nbsp;» principale du site.
-                  </HelperText>
+                  <HelperText>{SF.spDriveNameHelp}</HelperText>
                 </div>
 
                 <div>
-                  <FieldLabel htmlFor="sp-root-path">Sous-dossier racine</FieldLabel>
+                  <FieldLabel htmlFor="sp-root-path">{SF.spRootPath}</FieldLabel>
                   <input
                     id="sp-root-path"
                     type="text"
@@ -2042,9 +2085,9 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                     className="input-editorial w-full text-sm mt-1 font-mono-plex"
                   />
                   <HelperText>
-                    Chemin à l'intérieur du drive (ex.{' '}
-                    <span className="font-mono-plex">/Shared Documents/Projects</span>). Laissez
-                    vide pour indexer toute la bibliothèque.
+                    {SF.spRootPathHelpBefore}
+                    <span className="font-mono-plex">/Shared Documents/Projects</span>
+                    {SF.spRootPathHelpAfter}
                   </HelperText>
                 </div>
 
@@ -2061,7 +2104,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                       rows={3}
                       className="input-editorial w-full text-sm mt-1 font-mono-plex resize-y"
                     />
-                    <HelperText>Un mime type par ligne. Vide = tout inclure.</HelperText>
+                    <HelperText>{SF.mimeIncludeHelp}</HelperText>
                   </div>
                   <div>
                     <FieldLabel htmlFor="sp-exclude-mimes">Exclude mime types</FieldLabel>
@@ -2073,7 +2116,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                       rows={3}
                       className="input-editorial w-full text-sm mt-1 font-mono-plex resize-y"
                     />
-                    <HelperText>Un mime type par ligne.</HelperText>
+                    <HelperText>{SF.mimeExcludeHelp}</HelperText>
                   </div>
                 </div>
               </div>
@@ -2088,7 +2131,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               disabled={testing || saving}
               className="px-3 py-2 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-300 text-sm font-medium transition-all duration-200 disabled:opacity-50"
             >
-              {testing ? 'Test…' : 'Tester la connexion'}
+              {testing ? RAG_STRINGS.testing : RAG_STRINGS.testConnection}
             </button>
           </div>
         </div>
@@ -2098,14 +2141,19 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
       {/* Embeddings AI setting                                                */}
       {/* ------------------------------------------------------------------ */}
       <div>
-        <FieldLabel htmlFor="rag-source-embedding" required>
-          Configuration d'embeddings
+        <FieldLabel
+          htmlFor="rag-source-embedding"
+          required
+          help={
+            selectedSetting?.provider === 'local' && selectedSettingSupportsEmbeddings
+              ? RAG_STRINGS.help.localEmbeddings
+              : undefined
+          }
+        >
+          {RAG_STRINGS.embeddingLabel}
         </FieldLabel>
         {aiSettings.length === 0 ? (
-          <p className="text-xs text-amber-400 mt-1">
-            Le fournisseur local intégré est indisponible — vérifiez l'installation ou configurez un
-            fournisseur distant dans la section "AI Settings".
-          </p>
+          <p className="text-xs text-amber-400 mt-1">{SF.localProviderUnavailable}</p>
         ) : (
           <select
             id="rag-source-embedding"
@@ -2114,7 +2162,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
             className="input-editorial w-full text-sm mt-1"
           >
             <option value="" className="bg-gray-800">
-              Sélectionner une configuration IA…
+              {RAG_STRINGS.selectEmbedding}
             </option>
             {/* Le fournisseur local trie en premier — c'est ce qui rend le RAG
                 utilisable sans configuration : la plupart des utilisateurs
@@ -2124,24 +2172,24 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               .map((s) => {
                 const supports = s.capabilities?.includes('embeddings');
                 const isLocal = s.provider === 'local';
-                let label = s.label;
+                let label = aiSettingDisplayLabel(s);
                 if (supports) {
                   if (isLocal) {
-                    label += ' — inclus, 100 % local';
+                    label += RAG_STRINGS.localEmbeddingSuffix;
                     if (s.embeddingDimensions !== undefined)
-                      label += ` (${s.embeddingDimensions} dims)`;
+                      label += SF.dims(s.embeddingDimensions);
                   } else if (s.embeddingModel) {
                     label += ` — ${s.embeddingModel}`;
                   }
                 } else {
-                  label += ' — embeddings non supportés';
+                  label += SF.embeddingsUnsupportedSuffix;
                 }
                 return (
                   <option
                     key={s.name}
                     value={s.name}
                     disabled={!supports}
-                    title={supports ? undefined : 'Cette config IA ne supporte pas les embeddings'}
+                    title={supports ? undefined : SF.embeddingsUnsupportedTitle}
                     className="bg-gray-800"
                   >
                     {label}
@@ -2152,23 +2200,24 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
         )}
         {embeddingsCapableSettings.length === 0 && aiSettings.length > 0 && (
           <p className="text-xs text-amber-400 mt-1">
-            Aucune configuration IA disponible ne supporte les embeddings. Activez la capacité
-            <span className="font-mono-plex"> embeddings</span> sur l'une de vos configurations.
+            {SF.noEmbeddingConfigBefore}
+            <span className="font-mono-plex"> embeddings</span>
+            {SF.noEmbeddingConfigAfter}
           </p>
         )}
         {selectedSetting && selectedSettingSupportsEmbeddings && (
           <>
             <div className="flex items-center gap-4 mt-1">
               <p className="text-xs text-gray-500">
-                Modèle :{' '}
+                {RAG_STRINGS.modelLabel}{' '}
                 <span className="font-mono-plex text-gray-400">
-                  {selectedSetting.embeddingModel ?? '(non spécifié)'}
+                  {selectedSetting.embeddingModel ?? SF.notSpecified}
                 </span>
               </p>
               {(selectedSetting.embeddingDimensions ?? initial?.embeddingDimensions) !==
                 undefined && (
                 <p className="text-xs text-gray-500">
-                  Dimensions :{' '}
+                  {RAG_STRINGS.dimensionsLabel}{' '}
                   <span className="font-mono-plex text-gray-400">
                     {selectedSetting.embeddingDimensions ?? initial?.embeddingDimensions}
                   </span>
@@ -2177,32 +2226,21 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
             </div>
             {selectedSetting.provider === 'local' ? (
               <>
-                <p className="text-xs text-gray-500 mt-1">
-                  Traitement 100 % local — vos documents et vos requêtes ne quittent jamais cet
-                  ordinateur. Pour un corpus très volumineux ou une qualité maximale, vous pouvez
-                  configurer votre propre fournisseur d'embeddings dans « AI Settings ».
-                </p>
                 {selectedSetting.localModelAvailable === false && (
-                  <p className="text-xs text-red-400 mt-1">
-                    Modèle local introuvable sur le disque. Réinstallez l'application ou contactez
-                    votre administrateur.
-                  </p>
+                  <p className="text-xs text-red-400 mt-1">{SF.localModelMissing}</p>
                 )}
                 <a
                   href="https://ai.google.dev/gemma/terms"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-xs text-gray-600 hover:text-gray-400 underline underline-offset-2 mt-1 inline-block"
-                  title="EmbeddingGemma est distribué sous les Gemma Terms of Use — voir third_party/NOTICES.md dans l'installation pour la liste complète des licences tierces"
+                  title={SF.thirdPartyLicensesTitle}
                 >
-                  Licences tierces
+                  {SF.thirdPartyLicenses}
                 </a>
               </>
             ) : (
-              <p className="text-xs text-gray-500 mt-1">
-                Les documents et les requêtes de recherche sont envoyés à ce fournisseur pour être
-                convertis en vecteurs.
-              </p>
+              <p className="text-xs text-gray-500 mt-1">{SF.remoteEmbeddingsNotice}</p>
             )}
           </>
         )}
@@ -2212,7 +2250,9 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
       {/* Polling interval (auto-sync)                                         */}
       {/* ------------------------------------------------------------------ */}
       <div>
-        <FieldLabel htmlFor="rag-source-polling">Intervalle de synchronisation auto</FieldLabel>
+        <FieldLabel htmlFor="rag-source-polling" help={RAG_STRINGS.help.polling}>
+          {RAG_STRINGS.pollingLabel}
+        </FieldLabel>
         <select
           id="rag-source-polling"
           value={pollingIntervalSeconds === null ? '' : String(pollingIntervalSeconds)}
@@ -2228,34 +2268,44 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               value={opt.value === null ? '' : String(opt.value)}
               className="bg-gray-800"
             >
-              {opt.label}
+              {RAG_STRINGS.polling[opt.labelKey]}
             </option>
           ))}
         </select>
-        <HelperText>
-          Choisissez la fréquence à laquelle la source est interrogée pour détecter les changements.
-          La synchronisation manuelle reste toujours disponible.
-        </HelperText>
       </div>
 
       {/* Error / test result banners */}
       {error && (
-        <div className="p-2.5 rounded-lg text-sm bg-red-950/30 border border-red-800/50 text-red-400 space-y-1">
+        <div
+          role="alert"
+          className="p-2.5 rounded-lg text-sm bg-red-950/30 border border-red-800/50 text-red-400 space-y-1"
+        >
           <p>{error}</p>
           {serverError && <p className="text-xs text-red-300 opacity-80">{serverError}</p>}
+          {saveRetryable && (
+            <button
+              type="button"
+              onClick={() => void handleSave()}
+              disabled={saving}
+              className="mt-1 px-3 py-1.5 rounded-lg bg-red-900/40 hover:bg-red-900/60 border border-red-800/50 text-red-200 text-xs font-medium transition-all duration-200 disabled:opacity-50"
+            >
+              {RAG_STRINGS.retry}
+            </button>
+          )}
           {serverError && embeddingSettingName && (
             <button
               type="button"
               onClick={() => setShowReindexDialog(true)}
               className="mt-1 px-3 py-1.5 rounded-lg bg-red-900/40 hover:bg-red-900/60 border border-red-800/50 text-red-200 text-xs font-medium transition-all duration-200"
             >
-              Migrer les sources existantes vers ce modèle…
+              {SF.migrateSources}
             </button>
           )}
         </div>
       )}
       {testResult && (
         <div
+          role={testResult.success ? 'status' : 'alert'}
           className={`p-2.5 rounded-lg text-sm ${
             testResult.success
               ? 'bg-green-950/30 border border-green-800/50 text-green-400'
@@ -2271,23 +2321,25 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
           type="button"
           onClick={() => void handleSave()}
           disabled={saving}
+          aria-busy={saving}
           className="px-4 py-2 rounded-lg bg-os-700 hover:bg-os-600 text-white text-sm font-medium transition-all duration-200 disabled:opacity-50 shadow-md shadow-os-900/20"
         >
-          {saving ? 'Enregistrement…' : 'Enregistrer'}
+          {saving ? RAG_STRINGS.saving : RAG_STRINGS.save}
         </button>
         <button
           type="button"
           onClick={onCancel}
           className="px-4 py-2 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-300 text-sm font-medium transition-all duration-200"
         >
-          Annuler
+          {RAG_STRINGS.cancel}
         </button>
       </div>
+      {saving && <p className="text-xs text-gray-500">{RAG_STRINGS.savingHint}</p>}
 
       {showReindexDialog && (
         <ReindexDialog
           targetSettingName={embeddingSettingName}
-          targetLabel={selectedSetting?.label}
+          targetLabel={selectedSetting ? aiSettingDisplayLabel(selectedSetting) : undefined}
           onClose={() => setShowReindexDialog(false)}
           onStarted={() => {
             setError(null);

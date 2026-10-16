@@ -5,12 +5,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { RagJob } from '../types.js';
 import { apiGet, type RagJobListResponse } from './api.js';
+import { SYNC_PANELS_STRINGS as S } from './strings/sync-panels.js';
 
 export interface SourceJobInfo {
   /** The currently active (pending or running) job for this source, or null. */
   activeJob: RagJob | null;
   /** The most recent failed job for this source, or null. */
   lastFailedJob: RagJob | null;
+  /**
+   * Id of the most recent terminal (completed or failed) job, or null. Lets
+   * callers notice a job that finished between two polls without ever being
+   * seen as active (e.g. an empty or missing folder fails/completes at once).
+   */
+  lastTerminalJobId: string | null;
 }
 
 export interface UseActiveSyncJobsResult {
@@ -45,7 +52,7 @@ export function buildJobMap(sourceIds: string[], jobs: RagJob[]): Map<string, So
       sourceJobs.find((j) => j.status === 'completed' || j.status === 'failed') ?? null;
     const lastFailedJob =
       lastTerminalJob !== null && lastTerminalJob.status === 'failed' ? lastTerminalJob : null;
-    map.set(id, { activeJob, lastFailedJob });
+    map.set(id, { activeJob, lastFailedJob, lastTerminalJobId: lastTerminalJob?.id ?? null });
   }
   return map;
 }
@@ -70,8 +77,13 @@ export function useActiveSyncJobs(
   // Keep a ref to latest sourceIds so the interval callback stays current
   // without being recreated on every render.
   const sourceIdsRef = useRef<string[]>(sourceIds);
+  // Last jobs payload, so a source list that arrives after the first poll
+  // (the usual order on mount) is mapped right away instead of waiting for
+  // the next tick — or forever, when no job is active and polling stopped.
+  const lastJobsRef = useRef<RagJob[] | null>(null);
   useEffect(() => {
     sourceIdsRef.current = sourceIds;
+    if (lastJobsRef.current) setJobMap(buildJobMap(sourceIds, lastJobsRef.current));
   }, [sourceIds]);
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -99,6 +111,7 @@ export function useActiveSyncJobs(
       if (cancelledRef.current) return;
 
       const jobs = data.jobs ?? [];
+      lastJobsRef.current = jobs;
       const map = buildMap(jobs);
       setJobMap(map);
 
@@ -152,13 +165,13 @@ export function formatRelativeTime(iso: string | null | undefined): string | nul
   try {
     const diffMs = Date.now() - new Date(iso).getTime();
     const diffSec = Math.floor(diffMs / 1000);
-    if (diffSec < 60) return 'il y a quelques secondes';
+    if (diffSec < 60) return S.relFewSeconds;
     const diffMin = Math.floor(diffSec / 60);
-    if (diffMin < 60) return `il y a ${diffMin} min`;
+    if (diffMin < 60) return S.relMinutes(diffMin);
     const diffH = Math.floor(diffMin / 60);
-    if (diffH < 24) return `il y a ${diffH} h`;
+    if (diffH < 24) return S.relHours(diffH);
     const diffD = Math.floor(diffH / 24);
-    return `il y a ${diffD} j`;
+    return S.relDays(diffD);
   } catch {
     return null;
   }

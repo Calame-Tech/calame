@@ -96,6 +96,19 @@ interface SourceRow {
   deleted_at: string | null;
 }
 
+/** List-endpoint row: the source plus the denormalized counts shown on the cards. */
+interface SourceRowWithCounts extends SourceRow {
+  folder_count: number | null;
+  document_count: number | null;
+}
+
+/**
+ * Same definitions as the MCP adapter's `listSources` (document-adapters.ts):
+ * folders of the source, and its non-deleted documents.
+ */
+const COUNT_COLUMNS = `(SELECT COUNT(*) FROM rag_folders f WHERE f.source_id = s.id) AS folder_count,
+  (SELECT COUNT(*) FROM rag_documents d WHERE d.source_id = s.id AND d.deleted_at IS NULL) AS document_count`;
+
 /**
  * Project a SourceRow onto its public API shape, decrypting the config blob.
  *
@@ -201,20 +214,28 @@ export function registerRagSourcesRoutes(app: Express, deps: RagRouteDeps): void
 
       let sql: string;
       if (onlyDeleted) {
-        sql = `SELECT * FROM rag_sources
-				       WHERE deleted_at IS NOT NULL AND tenant_id = ?
-				       ORDER BY deleted_at DESC`;
+        sql = `SELECT s.*, ${COUNT_COLUMNS} FROM rag_sources s
+				       WHERE s.deleted_at IS NOT NULL AND s.tenant_id = ?
+				       ORDER BY s.deleted_at DESC`;
       } else if (showDeleted) {
-        sql = `SELECT * FROM rag_sources
-				       WHERE tenant_id = ?
-				       ORDER BY created_at ASC`;
+        sql = `SELECT s.*, ${COUNT_COLUMNS} FROM rag_sources s
+				       WHERE s.tenant_id = ?
+				       ORDER BY s.created_at ASC`;
       } else {
-        sql = `SELECT * FROM rag_sources
-				       WHERE deleted_at IS NULL AND tenant_id = ?
-				       ORDER BY created_at ASC`;
+        sql = `SELECT s.*, ${COUNT_COLUMNS} FROM rag_sources s
+				       WHERE s.deleted_at IS NULL AND s.tenant_id = ?
+				       ORDER BY s.created_at ASC`;
       }
-      const rows = deps.db.prepare<[string], SourceRow>(sql).all(tenantId);
-      res.json({ sources: rows.map((r) => rowToSource(r, deps)) });
+      const rows = deps.db.prepare<[string], SourceRowWithCounts>(sql).all(tenantId);
+      // The UI source cards render these counts; omitting them displayed
+      // "undefined document · undefined dossier" (RagSourceWithCounts contract).
+      res.json({
+        sources: rows.map((r) => ({
+          ...rowToSource(r, deps),
+          folderCount: r.folder_count ?? 0,
+          documentCount: r.document_count ?? 0,
+        })),
+      });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       audit(deps, { type: 'rag.sources.list.failed', payload: { error: message } });
@@ -294,8 +315,8 @@ export function registerRagSourcesRoutes(app: Express, deps: RagRouteDeps): void
     }
 
     // Validate the connector config end-to-end before persisting. For local
-    // sources this also auto-creates the rootPath when its parent exists,
-    // so admins don't need to mkdir the folder manually.
+    // sources this rejects a rootPath that is missing, not a folder or not
+    // readable (it is never created on the user's behalf).
     const connector = deps.resolveConnector?.(parsed.data.type);
     if (connector) {
       try {
@@ -762,9 +783,9 @@ export function registerRagSourcesRoutes(app: Express, deps: RagRouteDeps): void
   /**
    * POST /api/rag/sources/:id/test — Validate connector reachability.
    *
-   * For `local`, the connector's `testConnection` is invoked: it auto-creates
-   * the rootPath when its parent directory exists (typo guard), and surfaces
-   * filesystem errors with a clear message. Other source types respond 501
+   * For `local`, the connector's `testConnection` is invoked: it rejects a
+   * rootPath that is missing, not a folder or not readable, with a clear
+   * message (the folder is never created). Other source types respond 501
    * until their connectors land.
    */
   app.post('/api/rag/sources/:id/test', async (req: Request, res: Response) => {

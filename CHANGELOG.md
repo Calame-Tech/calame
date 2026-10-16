@@ -7,6 +7,73 @@ root `package.json` version flows to the Docker image and `create-calame`).
 
 ## [Unreleased]
 
+### Fixed
+
+- Knowledge base source cards no longer show "undefined document · undefined
+  folder": the source list API now returns each source's document and folder
+  counts.
+- Configuration → Knowledge bases: remaining English words in the French UI
+  ("Scopes RAG", "profile", "knowledge bases") are translated, the selection
+  summary keeps its space ("10 documents sélectionnés"), and the built-in
+  local embedding option shows as "Local embeddings (built in)" in English.
+- Local-folder sources: "Test" no longer creates a missing folder and reports
+  "Connection verified". Testing, saving and syncing now check that the folder
+  exists, is a folder and can be listed (drive letters and UNC shares included).
+  A missing or unreadable folder fails with a translated error that shows in the
+  sync history (ERROR column) and on the source card. A sync that completes
+  between two polls now refreshes the card too, so it no longer stays on
+  "Never synced".
+- Knowledge bases (Sources and Configuration, ee/rag-core): every visible
+  string now follows the chosen language (sync history, "+ New source",
+  embedding usage, empty states, PII-masking toggle, save buttons, dialogs,
+  relative times). The French embeddings help now points to « Paramètres IA ».
+  A test checks fr/en key parity.
+- Knowledge base, "+ Add source": saving a source now unwraps the server's
+  `{ source }` response (the new source was shown as "undefined" and not
+  selected), the source list shows an error with "Réessayer" instead of loading
+  forever when the server does not answer, and running syncs show real
+  `processed / total` document counters.
+- Saving or testing a source no longer spins forever when the server cannot
+  reach it (e.g. an unreachable network share): the request times out after
+  90 s with an explicit message and a retry action.
+- Getting-started checklist and dashboard no longer treat a knowledge base
+  whose sync failed (or has not finished) as connected: step 1 only completes
+  once a source is indexed, a failed sync is named with a link to the source
+  and listed under "Needs attention", and the Sources card lists knowledge
+  bases instead of "No sources yet".
+- MCP server page: the status and Start/Stop button update right after
+  starting or stopping, instead of after reopening the page.
+- MCP test chat: with no AI provider for chat, it no longer shows "Using
+  Anthropic" (the built-in local embedding model was mistaken for a chat
+  provider) and explains what to configure in Settings → AI.
+- Knowledge base screens (list, sync status, trash, upload, local-folder source
+  form, help tips, sync errors) and the "No data source available" start error
+  now follow the app language (EN/FR). Fields specific to the S3, HTTP, Google,
+  Notion and SharePoint connectors are still French-only.
+
+### Added
+
+- Getting-started checklist (connect a source → create the MCP → use it from a
+  client) on the dashboard and sources page. Its state comes from the server
+  (sources, saved profiles, audit log); the client step is only marked done
+  after a successful audited call. It can be hidden and disappears for good
+  once a client call succeeds.
+- `GET /api/audit` accepts an optional `result=success|error` filter.
+- The onboarding wizard's first screen offers a knowledge base next to
+  databases, and shows which getting-started step each screen belongs to.
+- `POST /api/serve/start` returns `code: "no_data_source"` alongside the
+  existing message when no source is available.
+
+### Changed
+
+- New MCP servers (from the "New MCP" button and from the onboarding wizard)
+  are saved with explicit safe defaults: API-key access, natural answers,
+  file writing off. Existing profiles are never overwritten. Each first-launch
+  option has a short explanation; file writing and other sign-in methods sit
+  under "Advanced options".
+- The source form's secondary explanations are folded behind "?" help tips
+  (keyboard accessible; clicking pins a tip open).
+
 ## [0.8.4] - 2026-10-13
 
 ### Security

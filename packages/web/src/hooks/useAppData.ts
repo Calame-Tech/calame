@@ -8,6 +8,7 @@ import { useState, useCallback, useMemo, useEffect } from 'react';
 import { apiFetch } from '../lib/api.js';
 import {
   createDefaultProfile,
+  createNewProfile,
   arraysToSets,
   persistProfiles,
   buildProfilesData,
@@ -417,10 +418,17 @@ export function useAppData(isUserPage: boolean) {
   }, []);
 
   // Profile CRUD
-  const handleProfileCreate = useCallback((name: string, label: string) => {
-    setProfiles((prev) => [...prev, { name, label }]);
-    setActiveProfileIndex((prev) => prev + 1);
-  }, []);
+  const handleProfileCreate = useCallback(
+    (name: string, label: string) => {
+      // Never overwrite an existing profile's settings with the new-MCP defaults.
+      if (profiles.some((p) => p.name === name)) return;
+      setProfiles((prev) =>
+        prev.some((p) => p.name === name) ? prev : [...prev, createNewProfile(name, label)],
+      );
+      setActiveProfileIndex((prev) => prev + 1);
+    },
+    [profiles],
+  );
 
   const handleProfileDelete = useCallback(
     async (index: number) => {

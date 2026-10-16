@@ -1,9 +1,10 @@
-import React, { useState, useEffect, Suspense } from 'react';
+import React, { useState, useEffect, useCallback, Suspense } from 'react';
 import { useTranslations } from 'use-intl/react';
 import { apiFetch } from '../lib/api.js';
 import type { NamedConnection, DatabaseSchema } from '../types/schema.js';
 import ConnectionManager from './ConnectionManager.js';
 import AddSourceModal from './AddSourceModal.js';
+import { SETUP_REFRESH_EVENT } from './SetupChecklist.js';
 
 export type SourcesTab = 'databases' | 'knowledge';
 
@@ -29,7 +30,7 @@ export interface SourcesPageProps {
    * Must be passed as a React.ComponentType so that SourcesPage never
    * directly imports @calame-ee/* (BUSL package).
    */
-  KnowledgeBaseManagerComponent: React.ComponentType;
+  KnowledgeBaseManagerComponent: React.ComponentType<{ onSourcesChange?: (count: number) => void }>;
 }
 
 /** Fetch count of RAG sources so the KB tab badge stays accurate */
@@ -59,6 +60,12 @@ export default function SourcesPage({
   const t = useTranslations('sources.sourcesPage');
   const [showAddModal, setShowAddModal] = useState(false);
   const [ragSourceCount, setRagSourceCount] = useState(0);
+  // On every knowledge-base list refresh, the floating setup guide re-reads
+  // the sources' sync state (a new source is saved before it is indexed).
+  const handleRagSourcesChange = useCallback((count: number) => {
+    setRagSourceCount(count);
+    window.dispatchEvent(new Event(SETUP_REFRESH_EVENT));
+  }, []);
 
   // Fetch RAG source count when the component mounts and when ragEnabled changes.
   useEffect(() => {
@@ -203,7 +210,7 @@ export default function SourcesPage({
                 </div>
               }
             >
-              <KnowledgeBaseManagerComponent />
+              <KnowledgeBaseManagerComponent onSourcesChange={handleRagSourcesChange} />
             </Suspense>
           ) : (
             /* Explanatory card when RAG is unavailable */

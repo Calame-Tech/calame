@@ -78,6 +78,7 @@
     },
     "errors": {
       "startFailed": "Échec du démarrage du serveur MCP « {name} ».",
+      "noDataSource": "Ce serveur MCP n’a pas encore de données. Rattachez-le d’abord à un profil de données qui contient vos données (base de données ou base de connaissances).",
       "startNetworkError": "Erreur réseau lors du démarrage du serveur MCP « {name} ».",
       "stopFailed": "Échec de l’arrêt du serveur MCP « {name} ».",
       "stopNetworkError": "Erreur réseau lors de l’arrêt du serveur MCP « {name} ».",
@@ -97,6 +98,10 @@
       "copied": "Copié !",
       "copy": "Copier"
     },
+    "advanced": {
+      "toggle": "Options avancées",
+      "hint": "Écriture de fichiers et autres modes de connexion. Inutile pour démarrer : les réglages par défaut sont sûrs."
+    },
     "documentWrite": {
       "label": "Autoriser la création et la modification de fichiers",
       "tooltip": "Permet aux clients MCP de créer et de remplacer entièrement des notes .md/.txt dans les dossiers locaux cochés ci-dessous. Désactivé par défaut. L'accès en lecture à un dossier n'implique jamais l'écriture. Les écritures sont limitées en taille, journalisées, et ne suppriment, ne renomment ni ne créent jamais de dossiers.",
@@ -105,6 +110,7 @@
       "scopeNote": "Un dossier doit aussi faire partie du périmètre de connaissances de ce MCP pour être modifiable.",
       "sourceAriaLabel": "Autoriser l'écriture dans {name}",
       "toggleAriaLabel": "Activer la création et la modification de fichiers",
+      "hint": "Désactivé (recommandé) : le MCP peut seulement lire vos données, jamais les modifier.",
       "error": "Erreur lors de la mise à jour des paramètres d'écriture de fichiers"
     },
     "responseMode": {
@@ -114,10 +120,13 @@
       "technical": "Technique",
       "natural": "Naturel",
       "toggleAriaLabel": "Basculer le mode de réponse",
+      "hint": "Naturel (recommandé) : réponses en langage simple, sans noms de tables ni de colonnes.",
       "tooltip": "En mode Naturel, les réponses sont formulées en langage simple, sans termes techniques. En mode Technique, les noms des tables et colonnes de la base de données sous-jacente sont visibles."
     },
     "authMode": {
       "label": "Authentification du chat",
+      "hint": "Qui peut se connecter. Clé API (recommandé) : seules les applications munies d’une clé créée dans l’onglet Clés API.",
+      "current": "Accès : {mode}",
       "openWarning": "Attention : ce serveur MCP sera accessible sans aucune authentification.",
       "options": {
         "token": {
@@ -971,7 +980,7 @@
       "usingLabel": "Utilise",
       "assignMore": "Attribuez-en davantage depuis la page de détail du MCP",
       "configureAiSettings": "Configurez dans les paramètres IA",
-      "aiNotConfigured": "L’IA n’est pas configurée. Rendez-vous dans <b>Paramètres IA</b> pour configurer un fournisseur et une clé API.",
+      "aiNotConfigured": "Aucun fournisseur d’IA pour le chat n’est configuré : ce test ne peut pas s’exécuter. Ouvrez <b>Paramètres → IA</b> et ajoutez un fournisseur (Anthropic, OpenRouter ou un point d’accès compatible) avec sa clé API. Le modèle local intégré sert uniquement à indexer les documents et ne peut pas répondre.",
       "placeholderNoServer": "Démarrez d’abord un serveur MCP",
       "placeholderAiNotConfigured": "Configurez d’abord l’IA dans les paramètres",
       "provider": {
@@ -988,8 +997,13 @@
       "networkError": "Erreur réseau. Veuillez réessayer.",
       "step1": {
         "stepLabel": "Étape 1",
-        "title": "Connectez votre première base de données",
-        "description": "Connectez-vous à une base de données pour commencer à explorer vos données et créer des serveurs MCP.",
+        "title": "Connectez votre première source",
+        "description": "Une source, ce sont les données que votre serveur MCP pourra lire : une base de données, ou une base de connaissances faite de documents.",
+        "knowledgeBase": {
+          "title": "Base de connaissances (documents)",
+          "description": "Indexez un dossier, des fichiers envoyés ou une autre source de documents. Vous continuez dans l’écran Base de connaissances ; le guide de démarrage affiche ensuite les étapes suivantes.",
+          "button": "Ajouter une base de connaissances"
+        },
         "quickStart": {
           "title": "Démarrage rapide",
           "description": "Utilisez notre base de données logistique de démonstration pour découvrir Calame sans aucune configuration.",
@@ -1061,7 +1075,8 @@
           "copiedAriaLabel": "URL copiée"
         },
         "goToDashboardButton": "Aller au tableau de bord",
-        "fineTuneLink": "Affiner les tables, outils et masquage →"
+        "fineTuneLink": "Affiner les tables, outils et masquage →",
+        "connectClientButton": "Connecter un client IA →"
       }
     },
     "welcome": {
@@ -1136,6 +1151,57 @@
       "copy": "Copier",
       "copyAll": "Tout copier",
       "done": "Terminé"
+    },
+    "checklist": {
+      "title": "Bien démarrer",
+      "description": "Quatre étapes pour un MCP fonctionnel : vos données vont dans un profil de données, et le MCP se rattache à ce profil. Chaque étape se met à jour selon ce qui existe réellement sur ce serveur.",
+      "loading": "Vérification de votre configuration…",
+      "loadError": "Impossible de vérifier l’avancement de la configuration.",
+      "retry": "Réessayer",
+      "hide": "Masquer",
+      "hideAriaLabel": "Replier le guide de démarrage",
+      "showAriaLabel": "Rouvrir le guide de démarrage",
+      "reopen": "Bien démarrer · {done}/{total}",
+      "currentStep": "Étape en cours : {step}",
+      "nextStep": "Ensuite : {step}",
+      "status": {
+        "done": "terminée",
+        "current": "étape en cours",
+        "todo": "pas encore disponible"
+      },
+      "source": {
+        "title": "1. Connecter des données",
+        "hint": "Ajoutez une base de données ou une base de connaissances.",
+        "done": "Des données sont connectées et prêtes à être interrogées.",
+        "action": "Ajouter des données",
+        "syncFailed": "La synchronisation de « {name} » a échoué : la source est enregistrée mais pas encore utilisable. Ouvrez-la pour voir l’erreur et relancer la synchronisation.",
+        "notReady": "« {name} » est enregistrée mais pas encore indexée. Elle sera utilisable une fois sa synchronisation terminée.",
+        "openSource": "Ouvrir la source"
+      },
+      "dataProfile": {
+        "title": "2. Créer un profil de données",
+        "hint": "Créez un profil de données et sélectionnez-y les données (tables, dossiers, fichiers) à exposer.",
+        "blocked": "Disponible une fois des données connectées.",
+        "done": "Un profil de données contient des données.",
+        "action": "Créer un profil de données",
+        "openAction": "Ouvrir"
+      },
+      "mcp": {
+        "title": "3. Créer le serveur MCP",
+        "hint": "Créez un serveur MCP et rattachez-le à votre profil de données.",
+        "blocked": "Disponible une fois un profil de données rempli.",
+        "done": "Un serveur MCP est rattaché à un profil de données.",
+        "action": "Créer le serveur MCP",
+        "openAction": "Ouvrir"
+      },
+      "client": {
+        "title": "4. Connecter et tester le MCP",
+        "hint": "Ouvrez l’onglet « Connexion » et suivez les instructions pour votre client IA (Claude Desktop, Cursor…), puis posez-lui une question sur vos données. Cette étape n’est validée qu’à l’apparition d’un premier appel réussi dans le journal d’audit.",
+        "blocked": "Disponible une fois un serveur MCP créé.",
+        "done": "Un client a appelé ce serveur MCP avec succès.",
+        "action": "Connecter un client",
+        "recheck": "Vérifier à nouveau"
+      }
     }
   },
   "sources": {
@@ -1332,6 +1398,8 @@
       "title": "Nécessite votre attention",
       "itemCount": "{count, plural, one {# élément} other {# éléments}}",
       "allClear": "Tout est en ordre — rien ne nécessite votre attention.",
+      "sourceSyncFailed": "La synchronisation de la base de connaissances « {name} » a échoué — elle n’est pas encore interrogeable.",
+      "openSource": "Ouvrir",
       "writeRequestBanner": "{count, plural, one {# demande d’écriture en attente de votre approbation} other {# demandes d’écriture en attente de votre approbation}}",
       "review": "Examiner"
     },
@@ -1360,7 +1428,11 @@
         "knowledgeBaseCount": "{count, plural, one {# base de connaissances} other {# bases de connaissances}}",
         "connectedTooltip": "Connectée, schéma chargé",
         "notConnectedTooltip": "Non connectée",
-        "empty": "Aucune source pour le moment"
+        "empty": "Aucune source pour le moment",
+        "kbBadge": "BC",
+        "kbReadyTooltip": "Indexée, prête à être interrogée",
+        "kbFailedTooltip": "La dernière synchronisation a échoué",
+        "kbNotReadyTooltip": "Pas encore indexée"
       },
       "dataConfigurations": {
         "eyebrow": "CONFIGURATIONS DE DONNÉES",
@@ -2052,7 +2124,14 @@
       "createForm": {
         "namePlaceholder": "Nom du MCP...",
         "create": "Créer",
-        "duplicateName": "Un profil nommé « {name} » existe déjà."
+        "duplicateName": "Un profil nommé « {name} » existe déjà.",
+        "defaults": {
+          "title": "Ce MCP démarre avec des réglages sûrs :",
+          "authMode": "Accès par clé API : seules les applications munies d’une clé que vous créez peuvent se connecter.",
+          "responseMode": "Réponses naturelles : langage simple, sans noms de tables ni de colonnes.",
+          "documentWrite": "Lecture seule : le MCP ne peut ni créer ni modifier de fichiers.",
+          "changeLater": "Vous pourrez les modifier plus tard dans « Options avancées » sur la page du MCP."
+        }
       },
       "newServerCard": "Nouveau serveur MCP",
       "deleteConfirm": {
@@ -2120,7 +2199,7 @@
       "intro1": "L’URL publique change à chaque redémarrage du tunnel, et cette machine doit rester allumée et connectée pour qu’il continue de fonctionner. Prévu pour l’évaluation — utilisez un déploiement serveur de Calame pour la production.",
       "intro2": "Confidentialité : vos fichiers et votre base de données ne quittent jamais cette machine — seul le contenu des requêtes et réponses MCP transite, chiffré, via le réseau de Cloudflare (et chaque point de terminaison exige toujours votre jeton API). Pour une configuration où le trafic se termine sur votre propre infrastructure, utilisez un déploiement serveur. Voir docs/security-tunnel.md pour le modèle de menace complet.",
       "checkingStatus": "Vérification de l’état du tunnel…",
-      "unavailable": "L’accès distant n’est pas disponible sur cette instance.",
+      "unavailable": "L’accès distant (Copilot, ChatGPT) n’est pas disponible dans cette installation : le composant de tunnel sécurisé est absent. Réinstallez Calame ou contactez votre administrateur. Les clients installés sur cet ordinateur (Claude Desktop, Cursor…) restent utilisables.",
       "active": "Tunnel actif",
       "urlLabel": "URL MCP pour ce serveur",
       "tokenNote": "Ce point de terminaison exige toujours un jeton API — créez-en un dans l’onglet Clés API ci-dessus.",
@@ -2225,7 +2304,8 @@
       }
     },
     "helpTip": {
-      "ariaLabel": "Aide"
+      "ariaLabel": "Aide",
+      "ariaLabelFor": "Aide : {label}"
     }
   }
 }

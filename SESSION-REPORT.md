@@ -5,6 +5,113 @@ every commit. Newest first.
 
 ---
 
+## 2026-10-15 — CALAME-1 : corrections du troisième test réel (compteurs de la fiche source, restes de traduction)
+
+- **« undefined document · undefined dossier » sur la fiche d'une source locale (cause établie)** :
+  `GET /api/rag/sources` (`ee/rag-core/src/routes/rag-sources.ts`) renvoyait seulement
+  `rowToSource(row)`, sans `documentCount` ni `folderCount`. Le type UI `RagSourceWithCounts`
+  (`ee/rag-core/src/web/api.ts`) annonçait pourtant ces champs, et `KnowledgeBaseManager` les
+  affichait tels quels. Seul l'adaptateur MCP (`packages/cli/src/rag/document-adapters.ts`,
+  `listSources`) les calculait. Le symptôme était donc indépendant de l'état de l'indexation.
+  Correctif : la route de liste calcule les deux compteurs en SQL, avec les mêmes définitions que
+  l'adaptateur (dossiers de la source, documents non supprimés). La fiche n'affiche plus la ligne
+  si les compteurs manquent, plutôt que « undefined ».
+- **Restes de traduction, Configuration → Bases de connaissances** (`strings/rag-access.ts`) :
+  « Bases de connaissances accessibles — profil », « Accès aux bases de connaissances mis à jour
+  pour le profil « … ». », « Recommandé pour les bases de connaissances volumineuses », et « ce
+  profil » dans l'introduction. Pour « 10 documentssélectionnés », l'espace ne reposait que sur
+  une marge CSS (`ml-1`) : il est désormais présent dans le texte. Le réglage local d'embeddings est
+  créé côté serveur avec le libellé français « Embeddings locaux (inclus) ». `aiSettingDisplayLabel`
+  (`SourceForm.tsx`) l'affiche dans la langue de l'interface (« Local embeddings (built in) ») tant
+  que l'utilisateur ne l'a pas renommé. La donnée en base n'est pas modifiée.
+- **Dossier local invalide (correction précédente)** : vérifiée en place. `assertReadableRoot`
+  est appelé par `testConnection` et par les listings racine. Les tests
+  `local-folder.test.ts` (« rejects a missing folder whose parent exists, without creating it »,
+  « fails root-level listings on a missing folder… ») et `onboarding-strings.test.ts` passent.
+  Deux commentaires de `rag-sources.ts` affirmaient encore que le dossier était créé
+  automatiquement : ils sont corrigés (commentaires seulement).
+- Tests ajoutés :
+  - `rag-sources.test.ts` : la liste renvoie les compteurs, à 0 pour une source vide, en excluant
+    les documents supprimés.
+  - `knowledge-base-source-flow.test.tsx` : fiche rendue avec et sans statistiques (jamais
+    « undefined ») ; libellé anglais du réglage local d'embeddings.
+  - `rag-access-selector-strings.test.tsx` : titre en français et « 10 documents sélectionnés »
+    avec l'espace. Ce test échoue sur l'ancien balisage, vérifié.
+- Vérifications : `pnpm format` puis `format:check` (OK), `lint` (0 erreur, 4 warnings
+  préexistants dans `write-indexing.integration.test.ts`), `typecheck` (OK), `build` (OK),
+  `test` (189 fichiers passés, 3 ignorés ; 2801 tests passés, 19 ignorés).
+- Non fait : le parcours bout en bout n'a pas été rejoué dans l'app desktop. **Rien n'a été
+  validé sous Windows.** La version testée reste non confirmée (package.json = 0.8.4).
+
+---
+
+## 2026-10-15 — CALAME-1 : corrections du second test réel (dossier local invalide, traductions)
+
+- **Dossier local invalide accepté (cause établie)** : `LocalFolderConnector.testConnection`
+  créait le dossier manquant dès que son parent existait (`mkdir`). « Tester » renvoyait donc
+  « Connexion validée. » et la synchro d'un dossier vide finissait « Terminé, 0 / 0 ». La fiche
+  restait sur « Jamais synchronisé » parce qu'un job démarré et fini entre deux polls n'était
+  jamais vu actif, et que `refreshSources()` ne se déclenchait donc pas.
+  Correctif : la nouvelle fonction `assertReadableRoot` (dans `ee/rag-connectors/src/local-folder.ts`)
+  vérifie l'existence, le type et la lisibilité (`opendir`), sans création. Elle est appelée par
+  `testConnection` et par les listings racine. Une synchro sur un dossier introuvable échoue donc
+  avec l'erreur dans l'historique (ERREUR) et sur la fiche (encart d'erreur visible).
+  `translateJobError` traduit ces messages, et `useActiveSyncJobs` expose `lastTerminalJobId`
+  pour rafraîchir la fiche.
+  Windows : les chemins lecteur et UNC passent par les mêmes appels `stat`/`opendir`. La traduction
+  est testée avec des chemins Windows, mais aucune exécution réelle n'a eu lieu sous Windows.
+- **Traductions** : toutes les chaînes visibles de rag-core passent par des tables fr/en
+  (`ee/rag-core/src/web/strings/*.ts` et le helper `localized()` d'`onboarding-strings.ts`). Les
+  vues couvertes sont KnowledgeBaseManager, FolderTreeView, DocumentUploader, SourceForm,
+  RagAccessSelector, SyncHistoryPanel, IngestionStatusCard, EmbeddingUsageCard, ReindexDialog et
+  les temps relatifs. Le test `strings-parity.test.ts` vérifie la parité des clés et des arités.
+  Les messages d'erreur serveur non reconnus restent verbatim.
+- Version testée : toujours non confirmée (package.json = 0.8.4).
+
+## 2026-10-14 — CALAME-1 : parcours de première configuration (retour testeur desktop Windows, points 05/07/08/09)
+
+Branche `agent/calame-1-fiabilise-le-parcours-guid-jusquau-premi`, 4 commits d'implémentation + ce compte rendu, puis une passe de corrections après relecture (Hermes + revue approfondie, voir plus bas). **Version testée par le testeur non confirmée** (0.8.3 ou 0.8.4) : `git diff v0.8.3 v0.8.4` ne touche ni `ee/rag-core/src/web`, ni `packages/web/src`, ni les routes `rag-sources`/`serve` — les causes ci-dessous valent pour les deux. **Rien n'a été validé sous Windows** (tout est exécuté sur macOS).
+
+**05 — « + Add source » → « Knowledge base »** : pas de reproduction sur Windows ; causes établies dans le code :
+1. `SourceForm.handleSave` typait la réponse de `POST/PATCH /api/rag/sources` comme `RagSourcePublic` alors que la route renvoie `{ source }` (`ee/rag-core/src/routes/rag-sources.ts`, `res.status(201).json({ source })`) → `handleCreated` recevait un objet sans `id`/`name` (« Source "undefined" enregistrée », sélection perdue). Corrigé : déballage + erreur explicite si `source` absent.
+2. `apiGet` n'avait aucun timeout : un serveur qui ne répond pas laissait « Chargement des sources… » indéfiniment. Ajout de `timeoutMs` (`ApiTimeoutError`, 20 s) et d'un état « Impossible de charger les sources » + « Réessayer » ; une liste vide n'est plus présentée comme « aucune source » si le chargement a échoué.
+3. `useActiveSyncJobs` construisait la carte des jobs avant l'arrivée de la liste des sources et arrêtait de sonder sans job actif → badge de sync figé. Corrigé (dernière réponse mémorisée et réappliquée). La progression affichée vient des compteurs réels du job (`processed / total`), sans pourcentage estimé.
+4. Le sélecteur de dossier natif peut s'ouvrir derrière la fenêtre : message d'attente explicite (hypothèse plausible côté desktop, non vérifiée sous Windows).
+
+**08 — premier MCP** : `NEW_MCP_DEFAULTS` (`packages/web/src/lib/profiles.ts`) = `authMode: 'token'`, `responseMode: 'friendly'`, écriture de documents désactivée — identiques aux replis backend, écrits explicitement. Ils sont appliqués aux deux chemins de création : `createNewProfile` (bouton « Nouveau MCP », via `newMcpDefaults()`) et le premier profil sauvegardé par l'assistant d'onboarding (`OnboardingWizard`, via `newMcpDefaultsFor(name)`, seulement si `/api/profiles/load` confirme que le nom est libre — sinon rien n'est envoyé et le profil existant garde ses réglages, la route de sauvegarde fusionnant les champs). Masquage, périmètres et restrictions réseau non touchés ; un profil existant n'est jamais écrasé (`useAppData.handleProfileCreate`). Explication courte i18n par option, options avancées repliées (`McpDetailPage`, `ServePanel`).
+
+**07 — parcours guidé** : `SetupChecklist` + `lib/setup-progress.ts`, état dérivé uniquement du serveur (sources, `/api/profiles/load`, `/api/audit?profileName=<mcp>&result=success&limit=1`) donc stable au rechargement ; l'étape « client » ne passe à « fait » que sur une entrée d'audit `success` pour le MCP. Prochaine action affichée après création d'une source. Pas de sondage périodique : nouvelle vérification au retour sur la fenêtre (focus / visibilité) ou via « Vérifier à nouveau ».
+
+**09 — vue surchargée retenue : le formulaire de source `SourceForm`** (indices : c'est l'écran ouvert par « + Add source » → « Knowledge base » dans le même retour, et c'est la vue de configuration la plus dense en paragraphes d'aide). Explications secondaires déplacées dans `HelpTip` (« ? » de la vue MCP), rendu activable au clavier (Entrée/Espace/Échap, focus), `aria-label` spécifique et `aria-describedby`.
+
+**Vérification bout en bout locale** (macOS, serveur `packages/cli/dist` sur data dir jetable, modèle local `embeddinggemma-300m`) : source `local` (3 fichiers) → `201 { source }` → sync 3/3 documents → profil aux valeurs par défaut + scope sur la source → `serve/start` → token ; `/mcp/<profil>` sans token ou token invalide = **401** ; client `@modelcontextprotocol/sdk` : `initialize`, `tools/list` (`rag_search`, …), `rag_search` renvoie le fait attendu. Audit vide avant l'appel, 1 entrée `success` après ; checklist calculée : source → MCP → client passe à « fait » seulement après l'appel. Profil créé via les mêmes requêtes HTTP que l'UI, pas en cliquant l'UI.
+
+**Corrections après relecture** (consignes du capitaine, par priorité) :
+1. **05 — timeouts d'écriture** : `apiPost`/`apiPatch` acceptent `timeoutMs` (helper commun `request()` dans `ee/rag-core/src/web/api.ts`). `SourceForm` l'applique au POST/PATCH de source et au bouton « Tester » (`SOURCE_REQUEST_TIMEOUT_MS` = 90 s, au-dessus du maximum de 60 s du connecteur HTTP, car ces routes attendent `connector.testConnection` sans délai côté serveur — cas d'un chemin réseau/UNC injoignable). À l'échéance : message explicite, bouton « Réessayer » pour l'enregistrement, avertissement que la source a pu être créée malgré tout (pas de succès supposé). Testé avec un POST et un test-config qui ne répondent jamais.
+2. **SetupChecklist** : plus de `setInterval` de 15 s ; bouton « Masquer » persistant (`localStorage` `calame.setupChecklist.hidden`) ; masqué et mémorisé dès qu'un appel client réussi est observé, et rien n'est affiché avant la première réponse (pas de flash pour une installation déjà fonctionnelle) ; audit interrogé par MCP avec `result=success&limit=1` (nouveau filtre optionnel `result` sur `GET /api/audit`, valeurs inconnues ignorées) au lieu de 100 entrées ; réponses obsolètes ignorées (compteur de requête).
+3. `NEW_MCP_DEFAULTS` appliqué dans `OnboardingWizard` et `createNewProfile` (voir 08).
+4. `HelpTip` : un clic sur une aide ouverte au survol l'épingle au lieu de la refermer ; second clic / Échap / perte de focus la referment.
+5. **i18n rag-core** : `ee/rag-core` n'a pas de runtime i18n (toute l'UI base de connaissances est en français en dur, et le code BUSL ne peut pas importer la configuration `use-intl` de `packages/web`). Les chaînes ajoutées sont regroupées dans `ee/rag-core/src/web/onboarding-strings.ts` (`RAG_STRINGS`), prêtes à migrer vers `en.json`/`fr.json`. Elles existent désormais en FR et EN (voir le point 3 de la deuxième passe).
+6. Reformatage parasite du tableau `headers` de `en.json`/`fr.json` retiré.
+
+**Deuxième passe — test réel Smeagol (navigateur, instance jetable)**, consignes du capitaine par priorité :
+1. **Source enregistrée ≠ prête** : nouvel utilitaire `packages/web/src/lib/rag-source-readiness.ts` (état par source dérivé du dernier job de `GET /api/rag/jobs` : `ready` / `failed` / `syncing` / `not-synced`). `computeSetupProgress` ne valide l'étape 1 que si une base de données existe ou si une base de connaissances est `ready` ; une sync échouée est nommée (« La synchronisation de « X » a échoué… ») avec « Ouvrir la source » (onglet Base de connaissances — pas de lien profond vers une source précise, le routeur ne le permet pas). Tableau de bord : échec listé sous « Nécessite votre attention » (plus de « Tout est en ordre » dans ce cas). Carte Sources : liste aussi les bases de connaissances (pastille prête/échec/non indexée) ; « Aucune source » seulement si le total est 0. Limite : les connexions de base de données restent comptées comme prêtes (pas d'état de santé côté liste).
+2. **Fiche MCP** : `McpDetailPage` reçoit `fetchServeStatus` (le poller partagé de `useAppData`) et l'appelle après Démarrer/Arrêter avant de libérer le bouton. Cause exacte du « reste Inactif jusqu'à réouverture » non reproduite ici : la fiche dépendait du sondage de 5 s ; le rafraîchissement immédiat supprime la fenêtre où l'état était périmé.
+3. **Traductions** : `RAG_STRINGS` (`ee/rag-core/src/web/onboarding-strings.ts`) existe en FR et EN ; la langue est résolue comme l'app (`calame-locale` puis langue du navigateur, défaut EN), lue à chaque accès. Passés par ce mécanisme :
+   - **Liste** (`KnowledgeBaseManager.tsx`) : titre/description, « Modifier la source », modes de sync, états de sync (« Synchronisation en cours », « Jamais synchronisé », « Échec de la dernière sync », y compris les `aria-label`), infobulles du bouton de resynchronisation, bouton et titre « Corbeille », « Téléverser des fichiers », « Échec de la suppression définitive. », erreurs connues des jobs (`translateJobError`, messages inconnus laissés tels quels).
+   - **Formulaire, parcours dossier local** (`SourceForm.tsx`) : titre, Fermer, « Nom de la source », Type (dont « Local (dossier) »), mention « type non modifiable », chemin du dossier, Parcourir…/Ouverture…, Tester / Tester la connexion / Test…, résultats du test, globs, fichiers cachés, « Configuration d'embeddings » (sélecteur, suffixe « inclus, 100 % local », Modèle/Dimensions), « Intervalle de synchronisation auto » et ses fréquences (`POLLING_INTERVAL_OPTIONS` porte désormais une clé résolue au rendu), « Avancé (optionnel) » (S3), Enregistrer/Annuler, délais dépassés, aides « ? », validations nom / chemin / embeddings, « Échec de l'enregistrement. ».
+   - « No data source available » : code `no_data_source` ajouté à la réponse de `serve/start`, traduit dans la fiche MCP.
+
+   **Limite — reste en français uniquement** : les libellés, aides inline et validations propres aux connecteurs S3 (Bucket, Région, Préfixe, Endpoint…), HTTP (liste d'URLs, sitemap, allowlist…), Google Drive / Google Sheets, Notion et SharePoint ; dans le formulaire, le message de conflit de dimension (409) et « Migrer les sources existantes… », les avertissements sur les embeddings (fournisseur local indisponible, aucune config compatible, modèle local introuvable, envoi au fournisseur distant, « Licences tierces », suffixe « embeddings non supportés ») ; dans la liste, le texte de la corbeille hors titre (durée de rétention, restaurer/supprimer), les dialogues de confirmation ; les autres composants de rag-core ne passent pas par `RAG_STRINGS` : panneaux de détail d'une source (`FolderTreeView`, `DocumentUploader`, `SyncHistoryPanel`, `IngestionStatusCard`, `EmbeddingUsageCard`), `ReindexDialog`, et le sélecteur d'accès RAG de la fiche MCP (`RagAccessSelector`).
+4. **Assistant** : le premier écran s'intitule « Connectez votre première source » et propose « Base de connaissances (documents) » (si RAG activé) qui ferme l'assistant et ouvre l'onglet Base de connaissances, où la checklist prend le relais ; l'en-tête affiche l'étape de la checklist correspondante (« Étape 1 sur 4 · 1. Connecter une source », étapes 2–3 → « Créer le serveur MCP », 4 → « L'utiliser depuis un client »). Morceaux extraits dans `OnboardingSourceChoice.tsx` (limite `max-lines`).
+5. **Test du MCP** : cause établie — `GET /api/ai-settings` expose `config = settings[0]`, qui sur une installation neuve est le réglage local d'embeddings (`provider: 'local'`, `configured: true`) ; `ChatPanel` le prenait pour un fournisseur de chat et retombait sur le libellé « Anthropic ». `findChatSetting` retient le premier réglage configuré capable de `chat` et affiche son libellé réel ; sinon message explicite (quoi configurer, dans Paramètres → IA). Le « Error: could not reach the server. » n'est plus atteignable dans ce cas (saisie désactivée sans IA).
+
+Tests ajoutés : `rag-source-readiness.test.ts`, cas de readiness dans `setup-progress.test.ts`, `ChatPanel.test.ts`, `ee/rag-core/src/web/__tests__/onboarding-strings.test.ts`, cas EN dans `source-form-help.test.tsx` (nom, type « Local (folder) », fréquences de sync, Browse…/Cancel, fichiers cachés) et `knowledge-base-source-flow.test.tsx` (titre, « Never synced », « Trash (0) », absence de texte FR) ; les tests FR existants fixent `calame-locale=fr`. Vérifications (après la troisième passe i18n) : `prettier --write` (aucun changement), `lint` (0 erreur, 4 warnings préexistants dans `write-indexing.integration.test.ts`), `typecheck` (`tsc -b --noEmit`), `pnpm -r run build`, `test` (187 fichiers, 2780 passés, 19 ignorés) — verts. `configurations.test.ts` a échoué une fois (401) dans une exécution complète puis passé seul et dans l'exécution suivante : instabilité préexistante, sans lien. Parcours bout en bout non rejoué ; **rien validé sous Windows**.
+
+Vérifications (première passe de corrections) : `pnpm format:check`, `pnpm build`, `pnpm lint` (0 erreur, 4 warnings préexistants dans `write-indexing.integration.test.ts`), `pnpm typecheck`, `pnpm test` (2770 passés, 19 ignorés) — tous verts. La vérification bout en bout ci-dessus n'a pas été rejouée après ces corrections (elles ne touchent pas le chemin serveur source → MCP → client, hormis le filtre d'audit couvert par test de route).
+
+---
+
 ## 2026-09-07 — Support Microsoft SQL Server + correctif filtres silencieusement ignorés (release 0.8.0)
 
 Support MSSQL de bout en bout (demande client), implémenté par agents parallèles à périmètres disjoints puis revue + E2E live avant merge. Branche `feat/mssql-connector` mergée dans `main` (commit `c284b71`, +4122/-352 sur 51 fichiers), release **0.8.0** taguée dans la foulée.

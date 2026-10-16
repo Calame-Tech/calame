@@ -10,6 +10,72 @@ export function createDefaultProfile(): Profile {
 }
 
 /**
+ * Options a freshly created MCP starts with. They match the backend fallbacks
+ * (`authMode ?? 'token'` in routes/serve.ts and routes/chat-auth.ts,
+ * `responseMode ?? 'friendly'`, file writes off unless opted in) but are written
+ * explicitly so a new MCP never relies on implicit behaviour:
+ * - authMode 'token': clients need an API key — never open access.
+ * - responseMode 'friendly': plain-language answers, no table/column names.
+ * - documentWrite disabled: read-only, no file creation or editing.
+ * Masking, data scoping and network restrictions are untouched: they live on
+ * the configurations / global settings, not on the new profile.
+ */
+export const NEW_MCP_DEFAULTS = {
+  authMode: 'token',
+  responseMode: 'friendly',
+  documentWrite: { enabled: false, sources: {} },
+} as const satisfies Pick<Profile, 'authMode' | 'responseMode' | 'documentWrite'>;
+
+/** Build a new MCP profile with the safe defaults above. */
+export function createNewProfile(name: string, label: string): Profile {
+  return {
+    name,
+    label,
+    ...newMcpDefaults(),
+  };
+}
+
+/**
+ * Fresh copy of NEW_MCP_DEFAULTS (the nested `documentWrite` object must not
+ * be shared between profiles, which mutate it when the user edits them).
+ */
+export function newMcpDefaults(): Pick<Profile, 'authMode' | 'responseMode' | 'documentWrite'> {
+  return {
+    authMode: NEW_MCP_DEFAULTS.authMode,
+    responseMode: NEW_MCP_DEFAULTS.responseMode,
+    documentWrite: {
+      enabled: NEW_MCP_DEFAULTS.documentWrite.enabled,
+      sources: { ...NEW_MCP_DEFAULTS.documentWrite.sources },
+    },
+  };
+}
+
+/**
+ * True only when the server confirms no saved profile has this name. Used to
+ * apply NEW_MCP_DEFAULTS without overwriting an existing profile's settings
+ * (POST /api/profiles/save merges fields). When existence cannot be checked
+ * it answers false: omitting the defaults is safe, the backend fallbacks are
+ * the same values.
+ */
+export async function isNewProfileName(name: string): Promise<boolean> {
+  try {
+    const res = await apiFetch('/api/profiles/load', { credentials: 'include' });
+    if (!res.ok) return false;
+    const data = (await res.json()) as { found?: boolean; profiles?: Record<string, unknown> };
+    return !data.found || !Object.prototype.hasOwnProperty.call(data.profiles ?? {}, name);
+  } catch {
+    return false;
+  }
+}
+
+/** NEW_MCP_DEFAULTS for a profile name not saved yet, nothing otherwise. */
+export async function newMcpDefaultsFor(
+  name: string,
+): Promise<Partial<Pick<Profile, 'authMode' | 'responseMode' | 'documentWrite'>>> {
+  return (await isNewProfileName(name)) ? newMcpDefaults() : {};
+}
+
+/**
  * Derive a URL-safe profile name from a human-readable label. The backend
  * chat/auth routes only accept `[a-zA-Z0-9_-]+` profile names, so every
  * profile-creation UI must go through this (the label keeps the raw text).

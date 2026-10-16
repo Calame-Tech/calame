@@ -72,6 +72,11 @@ export default function ExposeTunnel({ profileName }: ExposeTunnelProps) {
       const res = await apiFetch('/api/tunnel/status');
       const data = await res.json();
       if (data.success !== false) {
+        // The reason is a technical diagnostic (paths, dev commands): keep it
+        // in the logs and show the user a translated message instead.
+        if (data.available === false && data.unavailableReason) {
+          console.warn(`[tunnel] unavailable: ${data.unavailableReason}`);
+        }
         setStatus(data);
       } else {
         setStatusError(data.message || t('errors.statusCheckFailed'));
@@ -96,7 +101,11 @@ export default function ExposeTunnel({ profileName }: ExposeTunnelProps) {
       const res = await apiFetch('/api/tunnel/start', { method: 'POST' });
       const data = await res.json();
       if (!data.success) {
-        setStartError(data.message || t('errors.startFailed'));
+        // 503 = cloudflared missing: same translated message as the status.
+        if (res.status === 503) console.warn(`[tunnel] start refused: ${data.message}`);
+        setStartError(
+          res.status === 503 ? t('unavailable') : data.message || t('errors.startFailed'),
+        );
       }
     } catch {
       setStartError(t('errors.startNetworkError'));
@@ -143,7 +152,7 @@ export default function ExposeTunnel({ profileName }: ExposeTunnelProps) {
           {statusError}
         </div>
       ) : status && !status.available ? (
-        <p className="text-sm text-gray-500">{status.unavailableReason || t('unavailable')}</p>
+        <p className="text-sm text-gray-500">{t('unavailable')}</p>
       ) : status?.running && mcpUrl ? (
         <div className="space-y-3">
           <div className="flex items-center gap-2">

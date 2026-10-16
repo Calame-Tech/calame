@@ -69,6 +69,16 @@ describe('ServePanel', () => {
     expect(onCreateProfile).toHaveBeenCalledWith('my-new-server', 'My New Server');
   });
 
+  it('explains the safe defaults a new MCP starts with, before it is created', () => {
+    renderPanel();
+    fireEvent.click(screen.getByText('New MCP Server'));
+    const defaults = screen.getByTestId('new-mcp-defaults');
+    expect(defaults.textContent).toContain('Access by API key');
+    expect(defaults.textContent).toContain('Natural answers');
+    expect(defaults.textContent).toContain('Read-only');
+    expect(defaults.textContent).toContain('Advanced options');
+  });
+
   it('blocks creation and shows an inline error when the slugified name already exists', () => {
     const { onCreateProfile } = renderPanel({
       profiles: [{ name: 'default', label: 'Default' }],

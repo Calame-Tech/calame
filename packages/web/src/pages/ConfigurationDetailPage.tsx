@@ -221,12 +221,23 @@ function ConfigurationDetailView({
 
   // Tab switcher: 'databases' mirrors the existing UI, 'knowledge' mounts RagAccessSelector.
   const [activeConfigTab, setActiveConfigTab] = useState<'databases' | 'knowledge'>('databases');
+  // Once opened, the Knowledge tab stays mounted (hidden) so its unsaved
+  // selection survives tab switches and is what the single Save persists.
+  const [knowledgeMounted, setKnowledgeMounted] = useState(false);
+  if (activeConfigTab === 'knowledge' && !knowledgeMounted) setKnowledgeMounted(true);
+  // Knowledge selection edited but not saved yet (null = untouched). The
+  // header Save is the only save action and persists it with the Databases tab.
+  const [pendingDocSelection, setPendingDocSelection] = useState<{
+    sources: string[];
+    scopes: Record<string, ScopeSelection>;
+  } | null>(null);
 
   // Dirty-state tracking (Lot D3) — compares the local edit state above
   // against the last-saved `config` prop so navigation away can warn before
   // silently discarding unsaved changes.
   const isDirty = useMemo(
     () =>
+      pendingDocSelection !== null ||
       isConfigurationDirty(config, configName, {
         label,
         selectedConns,
@@ -242,6 +253,7 @@ function ConfigurationDetailView({
       localSelectedTables,
       localTableOptions,
       localColumnMasking,
+      pendingDocSelection,
     ],
   );
 
@@ -321,8 +333,8 @@ function ConfigurationDetailView({
 
   // ---------------------------------------------------------------------------
   // RAG scope helpers — extract document-kind entries from the current config.
-  // These are preserved verbatim when the Databases tab is saved, and updated
-  // by RagAccessSelector when the Knowledge tab is saved.
+  // Saved as-is by the single header Save unless the Knowledge tab reported
+  // an edited selection (see `pendingDocSelection`).
   // ---------------------------------------------------------------------------
 
   /**
@@ -346,26 +358,6 @@ function ConfigurationDetailView({
     if (!config?.sources || !config?.scopes) return [];
     return config.sources.filter(
       (id) => config.scopes !== undefined && config.scopes[id]?.kind === 'document',
-    );
-  }, [config]);
-
-  /**
-   * Returns the non-document (relational) scopes and sources from the config.
-   * Preserved when saving from the Knowledge tab so relational settings aren't lost.
-   */
-  const configRelationalScopes = useMemo<Record<string, ScopeSelection>>(() => {
-    if (!config?.scopes) return {};
-    const result: Record<string, ScopeSelection> = {};
-    for (const [id, scope] of Object.entries(config.scopes)) {
-      if (scope.kind !== 'document') result[id] = scope;
-    }
-    return result;
-  }, [config]);
-
-  const configRelationalSources = useMemo<string[]>(() => {
-    if (!config?.sources || !config?.scopes) return [];
-    return config.sources.filter(
-      (id) => config.scopes === undefined || config.scopes[id]?.kind !== 'document',
     );
   }, [config]);
 
@@ -416,9 +408,12 @@ function ConfigurationDetailView({
     const validConnNames = new Set(connections.map((c) => c.name));
     const relationalSources = [...selectedConns].filter((id) => validConnNames.has(id));
 
-    const sourcesArray = [...relationalSources, ...configDocumentSources];
+    // Knowledge-base selection: the one displayed in the Knowledge tab if it
+    // was edited, otherwise the saved one.
+    const documentSources = pendingDocSelection?.sources ?? configDocumentSources;
+    const sourcesArray = [...relationalSources, ...documentSources];
     const scopes: Record<string, import('../types/schema.js').ScopeSelection> = {
-      ...configDocumentScopes,
+      ...(pendingDocSelection?.scopes ?? configDocumentScopes),
     };
     for (const sourceId of relationalSources) {
       scopes[sourceId] = {
@@ -436,6 +431,7 @@ function ConfigurationDetailView({
     };
     const success = await onSave(configToSave);
     if (success) {
+      setPendingDocSelection(null);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } else {
@@ -808,8 +804,8 @@ function ConfigurationDetailView({
       )}
 
       {/* --- KNOWLEDGE TAB --- */}
-      {activeConfigTab === 'knowledge' && ragEnabled && (
-        <div className="card-primary p-4">
+      {knowledgeMounted && ragEnabled && (
+        <div className="card-primary p-4" hidden={activeConfigTab !== 'knowledge'}>
           {/*
            * NOTE: `profileName` below is intentionally `configName` — RagAccessSelector
            * uses this value only as an identifier label and as part of the default POST
@@ -847,28 +843,9 @@ function ConfigurationDetailView({
               profileName={configName}
               initialScopes={configDocumentScopes}
               initialSources={configDocumentSources}
-              saveEndpoint="/api/configurations"
-              saveBodyTransform={({ sources, scopes }) => ({
-                // Merge relational sources/scopes back in so the Databases tab settings
-                // are not overwritten when saving from the Knowledge tab.
-                name: configName,
-                label,
-                sources: [...configRelationalSources, ...sources],
-                scopes: { ...configRelationalScopes, ...scopes },
-              })}
-              onSaved={(newScopes, newSources) => {
-                // Reflect the merged update in local configurations state so the UI
-                // stays consistent without a full page refresh.
-                onSave({
-                  name: configName,
-                  label,
-                  sources: [...configRelationalSources, ...newSources],
-                  scopes: {
-                    ...configRelationalScopes,
-                    ...newScopes,
-                  },
-                });
-              }}
+              // Single save action: the header Save persists this selection
+              // together with the Databases tab (no second, diverging Save).
+              onSelectionChange={setPendingDocSelection}
             />
           </Suspense>
         </div>

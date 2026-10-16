@@ -1,10 +1,11 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useTranslations } from 'use-intl/react';
 import { apiFetch, getCurrentTenant } from '../lib/api.js';
 import type { AuthMode, Config, Profile, ServeStatus } from '../types/schema.js';
 import { getProfileTableNames, getProfileRelationalSources } from '../lib/profile-accessors.js';
 import { buildMcpPath } from '../lib/mcp-url.js';
 import { slugifyProfileName } from '../lib/profiles.js';
+import type { McpCreateDraft } from '../lib/mcp-draft.js';
 import ChatPanel from './ChatPanel.js';
 import HelpTip from './HelpTip.js';
 import McpProbe from './McpProbe.js';
@@ -34,6 +35,10 @@ interface ServePanelProps {
   onCreateProfile?: (name: string, label: string, withPrefill?: boolean) => void;
   /** Opens the creation form with this data configuration preselected. */
   prefillConfigurationLabel?: string;
+  /** Reopens the creation form as it was left (see lib/mcp-draft). */
+  initialDraft?: Omit<McpCreateDraft, 'prefillConfiguration'>;
+  /** Reports the creation form's content on every edit; `null` once it closes. */
+  onDraftChange?: (draft: Omit<McpCreateDraft, 'prefillConfiguration'> | null) => void;
   onDeleteProfile?: (index: number) => void;
   onPreviewProfile?: (name: string) => void;
   onOpenAiSettings?: () => void;
@@ -48,6 +53,8 @@ export default function ServePanel({
   onSelectProfile,
   onCreateProfile,
   prefillConfigurationLabel,
+  initialDraft,
+  onDraftChange,
   onDeleteProfile,
   onPreviewProfile,
   onOpenAiSettings,
@@ -55,17 +62,28 @@ export default function ServePanel({
   const t = useTranslations('serveTunnel.servePanel');
   const tCommon = useTranslations('common');
   // Coming from a data configuration: the form is open with it preselected;
-  // the server is only created on an explicit "Create".
-  const [showCreateForm, setShowCreateForm] = useState(prefillConfigurationLabel !== undefined);
-  const [withPrefill, setWithPrefill] = useState(prefillConfigurationLabel !== undefined);
-  const [newLabel, setNewLabel] = useState('');
-  const [newName, setNewName] = useState('');
+  // the server is only created on an explicit "Create". A draft left on
+  // another page reopens the form as it was.
+  const [showCreateForm, setShowCreateForm] = useState(
+    initialDraft !== undefined || prefillConfigurationLabel !== undefined,
+  );
+  const [withPrefill, setWithPrefill] = useState(
+    initialDraft ? initialDraft.withPrefill : prefillConfigurationLabel !== undefined,
+  );
+  const [newLabel, setNewLabel] = useState(initialDraft?.label ?? '');
+  const [newName, setNewName] = useState(initialDraft?.name ?? '');
   const [createError, setCreateError] = useState<string | null>(null);
   const [confirmDeleteProfile, setConfirmDeleteProfile] = useState<string | null>(null);
   const [togglingProfile, setTogglingProfile] = useState<string | null>(null);
   const [stoppingAll, setStoppingAll] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copiedChatLink, setCopiedChatLink] = useState<string | null>(null);
+
+  // Keep the draft in sync while the form is open. Create and Cancel discard
+  // it explicitly: creating navigates away before any effect could run.
+  useEffect(() => {
+    if (showCreateForm) onDraftChange?.({ label: newLabel, name: newName, withPrefill });
+  }, [showCreateForm, newLabel, newName, withPrefill]);
 
   // Use profiles from props as source of truth (backend status only adds metadata, not new profiles)
   const allProfiles = useMemo(() => {
@@ -239,6 +257,7 @@ export default function ServePanel({
                   }
                   if (withPrefill) onCreateProfile(newName, newLabel, true);
                   else onCreateProfile(newName, newLabel);
+                  onDraftChange?.(null);
                   setShowCreateForm(false);
                   setWithPrefill(false);
                   setNewLabel('');
@@ -252,6 +271,7 @@ export default function ServePanel({
               </button>
               <button
                 onClick={() => {
+                  onDraftChange?.(null);
                   setShowCreateForm(false);
                   setWithPrefill(false);
                   setNewLabel('');

@@ -7,6 +7,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import type { Dispatch, ReactNode, SetStateAction } from 'react';
 import { apiFetch } from '../lib/api.js';
+import { clearMcpDrafts } from '../lib/mcp-draft.js';
 import { resolveLocationRoutes } from '../router/index.js';
 
 /** Logged-in admin user info (email + role) shown in the Sidebar footer. */
@@ -121,6 +122,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       }
     })();
   }, []);
+
+  // In-progress MCP creation drafts never outlive the admin session (logout,
+  // expired or revoked session), so they cannot leak to the next account.
+  useEffect(() => {
+    if (!authenticated) clearMcpDrafts();
+  }, [authenticated]);
 
   const bumpDataVersion = useCallback(() => setDataVersion((v) => v + 1), []);
 

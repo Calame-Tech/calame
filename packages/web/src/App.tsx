@@ -318,6 +318,7 @@ export default function App() {
             {view.page === 'mcp-list' && (
               <McpListPage
                 prefillConfiguration={view.prefillConfiguration}
+                draftAccount={currentUser?.email ?? ''}
                 configurations={configurations}
                 setView={setView}
                 configWithProfileOptions={configWithProfileOptions}

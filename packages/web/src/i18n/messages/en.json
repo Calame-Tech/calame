@@ -980,9 +980,12 @@
       "usingLabel": "Using",
       "assignMore": "Assign more in the MCP detail page",
       "configureAiSettings": "Configure in AI Settings",
-      "aiNotConfigured": "No AI provider for chat is configured, so this test cannot run. Go to <b>Settings → AI</b> and add a provider (Anthropic, OpenRouter or a compatible endpoint) with its API key. The built-in local model only indexes documents and cannot answer.",
+      "aiNotConfigured": "No AI provider for chat is configured, so this test cannot run. Go to <b>Settings → AI Provider</b> and add a provider (Anthropic, OpenRouter or a compatible endpoint) with its API key. The built-in local model only indexes documents and cannot answer.",
       "placeholderNoServer": "Start an MCP server first",
       "placeholderAiNotConfigured": "Configure AI in Settings first",
+      "llmNotice": "This conversational test sends your question to the AI provider below (an LLM, using its API key), which then calls the MCP tools. To check the MCP server alone, without any AI, use “Test MCP” next to the running server.",
+      "chatError": "Error: {message}",
+      "noResponse": "no response from the AI provider.",
       "provider": {
         "custom": "Custom"
       }
@@ -1200,7 +1203,19 @@
         "blocked": "Available once an MCP server is created.",
         "done": "A client has called this MCP server successfully.",
         "action": "Connect a client",
-        "recheck": "Check again"
+        "recheck": "Check again",
+        "probeVerified": "Connection verified ✓ (MCP test passed). Now ask a question about your data from your AI client (Claude Desktop, Cursor…): this step completes on that first successful call.",
+        "probeVerifiedTools": "Connection verified ✓ ({count, plural, =0 {no tool discovered} one {# tool discovered} other {# tools discovered}}). Now ask a question about your data from your AI client (Claude Desktop, Cursor…): this step completes on that first successful call.",
+        "probeFailed": "Last MCP test failed: {reason}. Open the MCP server to see the details, fix it, then run “Test MCP” again.",
+        "probeReasons": {
+          "serverStopped": "server stopped",
+          "config": "configuration incomplete",
+          "auth": "authentication refused",
+          "unreachable": "server unreachable",
+          "timeout": "timeout",
+          "protocol": "protocol error",
+          "backend": "server error"
+        }
       }
     }
   },
@@ -2181,6 +2196,35 @@
         "stop": "Stop",
         "startTooltip": "Start this MCP server",
         "stopTooltip": "Stop this MCP server"
+      },
+      "mcpProbe": {
+        "button": "Test MCP",
+        "running": "Testing…",
+        "tooltip": "Connect to this MCP endpoint, run the MCP handshake and list its tools. No AI provider is called and no tool is executed.",
+        "success": "MCP reachable: handshake OK, {count, plural, =0 {no tool exposed} one {# tool discovered} other {# tools discovered}}.",
+        "scope": "This checks the connection, the MCP handshake and tool discovery only. It does not run the tools or validate the data sources.",
+        "action": "What to do: {action}",
+        "technicalDetails": "Technical details",
+        "categories": {
+          "config": "MCP test not possible: configuration incomplete",
+          "auth": "MCP test failed: authentication refused",
+          "unreachable": "MCP test failed: server unreachable",
+          "timeout": "MCP test failed: timeout",
+          "protocol": "MCP test failed: protocol error",
+          "backend": "MCP test failed: server error"
+        },
+        "networkError": {
+          "message": "The Calame server could not be reached to run the MCP test.",
+          "action": "Check that Calame is still running, then retry."
+        },
+        "unexpectedResponse": {
+          "message": "The Calame server returned an unexpected response (HTTP {status}).",
+          "action": "Check the server logs, then retry. If you just updated Calame, restart it."
+        },
+        "serverStopped": {
+          "message": "The MCP server is stopped.",
+          "action": "Click Start, then run the test again."
+        }
       }
     },
     "exposeTunnel": {

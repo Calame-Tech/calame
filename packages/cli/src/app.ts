@@ -34,6 +34,7 @@ import { registerTokensRoute } from './routes/tokens.js';
 import { registerAuditRoute } from './routes/audit.js';
 import { registerServeRoute } from './routes/serve.js';
 import { registerServeStatusRoute } from './routes/serve-status.js';
+import { registerMcpProbeRoute } from './routes/mcp-probe.js';
 import { WriteQueue } from './write-queue.js';
 import { registerWriteQueueRoute } from './routes/write-queue.js';
 import { NotificationDispatcher } from './notifications.js';
@@ -285,6 +286,7 @@ export function createApp(
   registerAuditRoute(app, appState);
   registerServeRoute(app, appState);
   registerServeStatusRoute(app, appState);
+  registerMcpProbeRoute(app, appState);
   registerWriteQueueRoute(app, appState);
   registerNotificationsRoute(app, appState);
   registerUsersRoute(app, appState);

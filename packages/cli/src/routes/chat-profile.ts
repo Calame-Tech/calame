@@ -16,6 +16,7 @@ import type { ServeProfile } from '@calame/core';
 import { upgradeProfileShape } from '@calame/core';
 import { DEFAULT_TENANT_ID } from '../tenancy.js';
 import { isChatCapable } from '../ai-resolver.js';
+import { isSettingConfigured } from '../ai-config.js';
 
 /** Shape of the response profile object. */
 interface ChatProfileInfo {
@@ -131,12 +132,16 @@ export function registerChatProfileRoute(app: Express, state: AppState): void {
             .map((name) => mgr.getSetting(name))
             .filter((s): s is NonNullable<typeof s> => s !== null)
             .filter(isChatCapable)
+            // Same preference as resolveAiSetting: settings with credentials first.
+            .sort((a, b) => Number(isSettingConfigured(b)) - Number(isSettingConfigured(a)))
             .map((s) => ({ name: s.name, label: s.label }));
           if (resolved.length > 0) info.aiSettings = resolved;
         } else {
           // No explicit list → expose the global fallback (first chat-capable
-          // setting) so the client knows what is used.
-          const fallback = mgr.listSettings().find(isChatCapable);
+          // setting, preferring one with credentials — as resolveAiSetting
+          // does) so the client knows what is used.
+          const chat = mgr.listSettings().filter(isChatCapable);
+          const fallback = chat.find(isSettingConfigured) ?? chat[0];
           if (fallback) info.aiSettings = [{ name: fallback.name, label: fallback.label }];
         }
       }

@@ -7,6 +7,7 @@ import { buildMcpPath } from '../lib/mcp-url.js';
 import { slugifyProfileName } from '../lib/profiles.js';
 import ChatPanel from './ChatPanel.js';
 import HelpTip from './HelpTip.js';
+import McpProbe from './McpProbe.js';
 
 const AUTH_MODE_STYLES: Record<AuthMode, string> = {
   open: 'bg-yellow-700/20 text-yellow-400 border border-yellow-600/30',
@@ -29,6 +30,7 @@ interface ServePanelProps {
   onCreateProfile?: (name: string, label: string) => void;
   onDeleteProfile?: (index: number) => void;
   onPreviewProfile?: (name: string) => void;
+  onOpenAiSettings?: () => void;
 }
 
 export default function ServePanel({
@@ -41,6 +43,7 @@ export default function ServePanel({
   onCreateProfile,
   onDeleteProfile,
   onPreviewProfile,
+  onOpenAiSettings,
 }: ServePanelProps) {
   const t = useTranslations('serveTunnel.servePanel');
   const tCommon = useTranslations('common');
@@ -403,6 +406,7 @@ export default function ServePanel({
                     </button>
                   </div>
                 )}
+                <McpProbe profileName={profile.name} isActive={isActive} />
               </div>
 
               <div className="mt-3 flex items-center justify-between">
@@ -480,6 +484,7 @@ export default function ServePanel({
           activeProfiles={Object.entries(serveStatus.profileStatuses ?? {})
             .filter(([, s]) => s.active)
             .map(([name]) => name)}
+          onOpenAiSettings={onOpenAiSettings}
         />
       </div>
     </div>

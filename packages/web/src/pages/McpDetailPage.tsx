@@ -16,6 +16,7 @@ import ExposeTunnel from '../components/ExposeTunnel.js';
 import TokenManager from '../components/TokenManager.js';
 import AuditLogViewer from '../components/AuditLogViewer.js';
 import McpUsers from '../components/McpUsers.js';
+import { McpProbeButton, McpProbeResult } from '../components/McpProbe.js';
 import { persistProfiles, buildProfilesData, NEW_MCP_DEFAULTS } from '../lib/profiles.js';
 import {
   getConfigurationTableNames,
@@ -761,6 +762,11 @@ function McpDetailView({
                 )}
               </button>
             )}
+            <McpProbeButton
+              profileName={profile.name}
+              isActive={isActive}
+              className="px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 disabled:opacity-50 bg-gray-700/30 text-gray-300 hover:bg-gray-700/50"
+            />
             <button
               onClick={() => (isActive ? handleStopProfile() : handleStartProfile())}
               disabled={togglingProfile}
@@ -838,6 +844,8 @@ function McpDetailView({
             )}
           </div>
         </div>
+
+        <McpProbeResult profileName={profile.name} isActive={isActive} />
 
         {/* Endpoint + Chat URLs (copiable, side by side) */}
         <div className="mt-3 flex flex-wrap gap-4">

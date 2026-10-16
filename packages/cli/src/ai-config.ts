@@ -141,7 +141,7 @@ function maskApiKey(key: string): string {
   return '***';
 }
 
-function isSettingConfigured(s: AiSetting): boolean {
+export function isSettingConfigured(s: AiSetting): boolean {
   // Local runs on-device with no API key or base URL — it's always
   // "configured" from the DB's point of view. Whether the model files are
   // actually staged on disk is a separate, runtime-only concern (surfaced as

@@ -144,11 +144,19 @@ const report = {
     files: manifest.files,
     corpusMB: Math.round((manifest.totalBytes / 1048576) * 10) / 10,
     byFormat: manifest.byFormat,
-    embedder: embedder === 'onnx' ? 'local ONNX embeddinggemma-300m q4 (batch 8)' : 'fake (sha256)',
+    embedder:
+      embedder === 'onnx'
+        ? `local ONNX embeddinggemma-300m q4 (batch ${results.onnx?.batchSize ?? '?'})`
+        : 'fake (sha256)',
     maxFileSizeBytes: BENCH_MAX_FILE_BYTES,
     parseTimeoutMs: process.env['CALAME_RAG_PARSE_TIMEOUT_MS'] ?? 'default (120000)',
     docTimeoutMs: process.env['CALAME_RAG_DOC_TIMEOUT_MS'] ?? 'default (300000)',
-    onnxThreads: 'onnxruntime default (not configurable yet)',
+    // 0 = onnxruntime default (one thread per physical core).
+    onnxThreads:
+      embedder === 'onnx'
+        ? (process.env['CALAME_LOCAL_EMBEDDING_THREADS'] ??
+          `default (${results.onnx?.intraOpNumThreads})`)
+        : 'n/a',
   },
   ...results,
 };

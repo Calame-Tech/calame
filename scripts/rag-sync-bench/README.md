@@ -100,9 +100,10 @@ Par scénario (`<label>.json`) :
   `--watch-settle-ms` avant de modifier le corpus.
 - Les verrous Word ne sont pas reproductibles hors Windows : ils sont couverts
   par des tests simulés (`rag-sync-isolation.test.ts`), pas par ce banc.
-- Mesures natives Windows : la procédure reproductible sera ajoutée à
-  [`docs/benchmarks/rag-sync/README.md`](../../docs/benchmarks/rag-sync/README.md)
-  (à venir, étape 5) ; aucune mesure Windows n'est revendiquée tant qu'elle
-  n'a pas été exécutée nativement.
-- Le nombre de threads ONNX n'est pas encore réglable : le rapport indique
-  « onnxruntime default ».
+- Mesures natives Windows : procédure reproductible dans
+  [`docs/benchmarks/rag-sync/README.md`](../../docs/benchmarks/rag-sync/README.md#procédure-windows-à-exécuter-nativement--non-réalisée-à-ce-jour) ;
+  aucune mesure Windows n'est revendiquée tant qu'elle n'a pas été exécutée
+  nativement (`environment.nativeWindows` dans le rapport JSON).
+- Threads ONNX et taille de lot : défauts de production de
+  `LocalOnnxEmbeddingClient`, recopiés dans le rapport (`onnx`, `config.onnxThreads`) ;
+  `CALAME_LOCAL_EMBEDDING_THREADS` est lu comme en production (`0` = défaut onnxruntime).

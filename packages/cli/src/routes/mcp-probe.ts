@@ -37,6 +37,8 @@ export type McpProbeStage = 'preflight' | 'initialize' | 'list_tools';
 export interface McpProbeError {
   category: McpProbeErrorCategory;
   stage: McpProbeStage;
+  /** Stable code for cases the UI words itself (e.g. a stopped server). */
+  code?: 'server_stopped' | 'unknown_profile';
   message: string;
   action: string;
   /** Redacted technical detail, kept for diagnosis. */
@@ -54,8 +56,51 @@ export interface McpProbeOptions {
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 
+/** Outcome of the last probe of a profile, as reported by `GET /api/serve/mcp-probe/last`. */
+export type LastMcpProbe =
+  | { success: true; at: string; toolCount: number }
+  | {
+      success: false;
+      at: string;
+      error: Pick<McpProbeError, 'category' | 'code' | 'message' | 'action'>;
+    };
+
+/**
+ * Last probe per profile, kept in server memory so the setup guide can show
+ * it after a page reload. Not persisted: a restart forgets it.
+ */
+const lastProbes = new WeakMap<AppState, Map<string, LastMcpProbe>>();
+
+function recordProbe(
+  state: AppState,
+  profileName: string,
+  outcome: { toolCount: number } | { error: McpProbeError },
+): void {
+  let byProfile = lastProbes.get(state);
+  if (!byProfile) {
+    byProfile = new Map();
+    lastProbes.set(state, byProfile);
+  }
+  const at = new Date().toISOString();
+  byProfile.set(
+    profileName,
+    'error' in outcome
+      ? {
+          success: false,
+          at,
+          error: {
+            category: outcome.error.category,
+            code: outcome.error.code,
+            message: outcome.error.message,
+            action: outcome.error.action,
+          },
+        }
+      : { success: true, at, toolCount: outcome.toolCount },
+  );
+}
+
 const probeSchema = z.object({
-  profileName: z.string().min(1).optional(),
+  profileName: z.string().min(1).max(200).optional(),
 });
 
 /**
@@ -214,6 +259,18 @@ export function registerMcpProbeRoute(
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const resolveOrigin = options.resolveOrigin ?? localOrigin;
 
+  app.get('/api/serve/mcp-probe/last', (_req, res) => {
+    const results: Record<string, LastMcpProbe> = {};
+    for (const [name, probe] of lastProbes.get(state) ?? []) {
+      if (!(name in state.serveProfiles)) continue;
+      // A success only holds while the profile is still served: once stopped
+      // it no longer proves anything, whichever way the server was stopped.
+      if (probe.success && !state.activeProfileNames.has(name)) continue;
+      results[name] = probe;
+    }
+    res.json({ results });
+  });
+
   app.post('/api/serve/mcp-probe', async (req, res) => {
     const parsed = probeSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
@@ -227,31 +284,37 @@ export function registerMcpProbeRoute(
       return;
     }
 
-    if (!state.serveMode) {
-      res.status(409).json({
+    const activeNames = state.serveMode
+      ? Object.keys(state.serveProfiles).filter((name) => state.activeProfileNames.has(name))
+      : [];
+    const profileName = parsed.data.profileName ?? activeNames[0];
+    if (profileName && !(profileName in state.serveProfiles)) {
+      res.status(404).json({
         success: false,
-        error: preflight(
-          'The MCP server is not running.',
-          'Start the MCP server from the Serve page, then retry.',
-        ),
+        profileName,
+        error: {
+          ...preflight(
+            `The MCP profile "${profileName}" does not exist.`,
+            'Pick an existing profile in the MCP server settings, then run the test again.',
+          ),
+          code: 'unknown_profile',
+        },
       });
       return;
     }
-
-    const activeNames = Object.keys(state.serveProfiles).filter((name) =>
-      state.activeProfileNames.has(name),
-    );
-    const profileName = parsed.data.profileName ?? activeNames[0];
     if (!profileName || !activeNames.includes(profileName)) {
-      res.status(409).json({
-        success: false,
-        error: preflight(
-          profileName
-            ? `Profile "${profileName}" is not active.`
-            : 'No MCP profile is being served.',
-          'Activate the profile on the Serve page, then retry.',
-        ),
-      });
+      // A stopped server or profile: nothing listens on its endpoint.
+      const error: McpProbeError = {
+        category: 'unreachable',
+        stage: 'preflight',
+        code: 'server_stopped',
+        message: profileName
+          ? `The MCP server "${profileName}" is stopped.`
+          : 'No MCP server is running.',
+        action: 'Click Start on the MCP server, then run the test again.',
+      };
+      if (profileName) recordProbe(state, profileName, { error });
+      res.status(409).json({ success: false, profileName, error });
       return;
     }
 
@@ -265,13 +328,12 @@ export function registerMcpProbeRoute(
       const userId = sessionId ? validateSession(sessionId)?.userId : undefined;
       const token = userId ? state.userManager?.getUserToken(userId) : null;
       if (!token) {
-        res.status(409).json({
-          success: false,
-          error: preflight(
-            'No MCP token is available for your account, so the protected endpoint cannot be tested.',
-            'Set CALAME_SECRET_KEY on the server and restart it, or switch the profile to open access.',
-          ),
-        });
+        const error = preflight(
+          'No MCP token is available for your account, so the protected endpoint cannot be tested.',
+          'Set CALAME_SECRET_KEY on the server and restart it, or switch the profile to open access.',
+        );
+        recordProbe(state, profileName, { error });
+        res.status(409).json({ success: false, error });
         return;
       }
       bearerToken = token;
@@ -293,6 +355,7 @@ export function registerMcpProbeRoute(
       stage = 'list_tools';
       const { tools } = await client.listTools(undefined, { timeout: timeoutMs });
       const serverInfo = client.getServerVersion();
+      recordProbe(state, profileName, { toolCount: tools.length });
       res.json({
         success: true,
         profileName,
@@ -305,6 +368,7 @@ export function registerMcpProbeRoute(
       });
     } catch (err) {
       const error = classifyMcpProbeError(err, stage, secrets);
+      recordProbe(state, profileName, { error });
       res.status(error.category === 'timeout' ? 504 : 502).json({
         success: false,
         profileName,

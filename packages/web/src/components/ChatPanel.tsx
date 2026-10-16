@@ -16,6 +16,8 @@ interface ChatMessage {
 interface ChatPanelProps {
   selectedTables: Record<string, Set<string>>;
   activeProfiles: string[];
+  /** Opens Settings on the "AI Provider" tab; without it the setting is only named. */
+  onOpenAiSettings?: () => void;
 }
 
 interface AiStatus {
@@ -69,7 +71,11 @@ export function describeChatSetting(
   return details && details !== setting.label ? `${setting.label} (${details})` : setting.label;
 }
 
-export default function ChatPanel({ selectedTables, activeProfiles }: ChatPanelProps) {
+export default function ChatPanel({
+  selectedTables,
+  activeProfiles,
+  onOpenAiSettings,
+}: ChatPanelProps) {
   const t = useTranslations('chat');
   const [chatInput, setChatInput] = useState('');
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -295,7 +301,18 @@ export default function ChatPanel({ selectedTables, activeProfiles }: ChatPanelP
         ) : (
           <div className="mb-4 px-4 py-3 rounded-lg bg-amber-950/30 border border-amber-800/50 text-sm text-amber-400">
             {t.rich('panel.aiNotConfigured', {
-              b: (chunks) => <span className="font-medium">{chunks}</span>,
+              b: (chunks) =>
+                onOpenAiSettings ? (
+                  <button
+                    type="button"
+                    onClick={onOpenAiSettings}
+                    className="font-medium underline hover:text-amber-300 focus:outline-none focus-visible:ring-1 focus-visible:ring-amber-500 rounded"
+                  >
+                    {chunks}
+                  </button>
+                ) : (
+                  <span className="font-medium">{chunks}</span>
+                ),
             })}
           </div>
         ))}

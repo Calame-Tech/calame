@@ -60,7 +60,8 @@ describe('ChatPanel (conversational LLM test)', () => {
     renderPanel();
 
     expect(await screen.findByText(/No AI provider for chat is configured/)).toBeTruthy();
-    expect(screen.getByText('Settings → AI')).toBeTruthy();
+    // Named like the real setting; plain text when no navigation is wired.
+    expect(screen.getByText('Settings → AI Provider').tagName).toBe('SPAN');
     expect(screen.queryByText(/Anthropic \(/)).toBeNull();
     expect(screen.queryByText('Using')).toBeNull();
 
@@ -69,6 +70,22 @@ describe('ChatPanel (conversational LLM test)', () => {
     ) as HTMLTextAreaElement;
     expect(input.disabled).toBe(true);
     expect(fetchMock.mock.calls.some((c) => String(c[0]) === '/api/chat/stream')).toBe(false);
+  });
+
+  it('without a provider: links straight to the "AI Provider" setting', async () => {
+    installFetch([localEmbeddings], () => json({}));
+    const onOpenAiSettings = vi.fn();
+    render(
+      <ChatPanel
+        selectedTables={{}}
+        activeProfiles={['demo']}
+        onOpenAiSettings={onOpenAiSettings}
+      />,
+      { wrapper: I18nProvider },
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Settings → AI Provider' }));
+    expect(onOpenAiSettings).toHaveBeenCalledTimes(1);
   });
 
   it('shows the provider actually configured, not a default "Anthropic"', async () => {
@@ -93,7 +110,7 @@ describe('ChatPanel (conversational LLM test)', () => {
 
   it('shows the error returned by the server instead of a generic message', async () => {
     const serverMessage =
-      'AI setting "Claude" (Anthropic) has no API key. Go to Settings → AI, edit "Claude" and enter its API key.';
+      'AI setting "Claude" (Anthropic) has no API key. Go to Settings → AI Provider, edit "Claude" and enter its API key.';
     const fetchMock = installFetch(
       [{ name: 'claude', label: 'Claude', provider: 'anthropic', configured: true }],
       () => json({ success: false, message: serverMessage }, 503),

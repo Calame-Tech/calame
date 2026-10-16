@@ -170,20 +170,82 @@ describe('POST /api/serve/mcp-probe', () => {
     expect(JSON.stringify(res.body)).not.toContain(adminToken);
   });
 
-  it('reports a configuration error when the MCP server is not running', async () => {
+  it('reports a stopped server when the MCP server is not running', async () => {
     await start();
     const res = await probe().expect(409);
-    expect(res.body.error).toMatchObject({ category: 'config', stage: 'preflight' });
-    expect(res.body.error.action).toMatch(/Start the MCP server/);
+    expect(res.body.error).toMatchObject({
+      category: 'unreachable',
+      stage: 'preflight',
+      code: 'server_stopped',
+    });
+    expect(res.body.error.action).toMatch(/Click Start/);
     expect(mcpRequests).toHaveLength(0);
   });
 
-  it('reports a configuration error for an inactive profile', async () => {
+  it('reports a stopped server for a profile that was stopped', async () => {
     serve('docs', { authMode: 'open' });
+    serve('other', { authMode: 'open' });
+    state.activeProfileNames.delete('other');
     await start();
     const res = await probe({ profileName: 'other' }).expect(409);
-    expect(res.body.error).toMatchObject({ category: 'config', stage: 'preflight' });
-    expect(res.body.error.message).toContain('"other" is not active');
+    expect(res.body.error).toMatchObject({
+      category: 'unreachable',
+      stage: 'preflight',
+      code: 'server_stopped',
+    });
+    expect(res.body.error.message).toContain('"other" is stopped');
+    expect(mcpRequests).toHaveLength(0);
+  });
+
+  it('remembers the last probe of each profile on the server', async () => {
+    serve('docs', { authMode: 'open' });
+    await start();
+    const last = () => request(origin).get('/api/serve/mcp-probe/last').set('Cookie', adminCookie);
+
+    expect((await last().expect(200)).body).toEqual({ results: {} });
+
+    await probe({ profileName: 'docs' }).expect(200);
+    expect((await last()).body.results.docs).toMatchObject({ success: true, toolCount: 1 });
+
+    // Stopping the server then re-testing replaces the success with the failure.
+    state.activeProfileNames.delete('docs');
+    await probe({ profileName: 'docs' }).expect(409);
+    expect((await last()).body.results.docs).toMatchObject({
+      success: false,
+      error: { category: 'unreachable', code: 'server_stopped' },
+    });
+    expect(typeof (await last()).body.results.docs.at).toBe('string');
+  });
+
+  it('stops reporting a success once the profile is stopped, without a new test', async () => {
+    serve('docs', { authMode: 'open' });
+    await start();
+    const last = () => request(origin).get('/api/serve/mcp-probe/last').set('Cookie', adminCookie);
+
+    await probe({ profileName: 'docs' }).expect(200);
+    expect((await last()).body.results.docs).toMatchObject({ success: true });
+
+    state.activeProfileNames.delete('docs');
+    expect((await last()).body.results).toEqual({});
+  });
+
+  it('rejects an unknown profile without remembering it', async () => {
+    serve('docs', { authMode: 'open' });
+    await start();
+    const res = await probe({ profileName: 'ghost' }).expect(404);
+    expect(res.body.error).toMatchObject({
+      category: 'config',
+      stage: 'preflight',
+      code: 'unknown_profile',
+    });
+    expect(mcpRequests).toHaveLength(0);
+    const last = await request(origin)
+      .get('/api/serve/mcp-probe/last')
+      .set('Cookie', adminCookie)
+      .expect(200);
+    expect(last.body).toEqual({ results: {} });
+
+    await probe({ profileName: 'x'.repeat(201) }).expect(400);
   });
 
   it('says what to configure when no admin token can be recovered', async () => {

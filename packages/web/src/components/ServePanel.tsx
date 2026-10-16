@@ -30,6 +30,7 @@ interface ServePanelProps {
   onCreateProfile?: (name: string, label: string) => void;
   onDeleteProfile?: (index: number) => void;
   onPreviewProfile?: (name: string) => void;
+  onOpenAiSettings?: () => void;
 }
 
 export default function ServePanel({
@@ -42,6 +43,7 @@ export default function ServePanel({
   onCreateProfile,
   onDeleteProfile,
   onPreviewProfile,
+  onOpenAiSettings,
 }: ServePanelProps) {
   const t = useTranslations('serveTunnel.servePanel');
   const tCommon = useTranslations('common');
@@ -404,7 +406,7 @@ export default function ServePanel({
                     </button>
                   </div>
                 )}
-                {isActive && <McpProbe profileName={profile.name} />}
+                <McpProbe profileName={profile.name} isActive={isActive} />
               </div>
 
               <div className="mt-3 flex items-center justify-between">
@@ -482,6 +484,7 @@ export default function ServePanel({
           activeProfiles={Object.entries(serveStatus.profileStatuses ?? {})
             .filter(([, s]) => s.active)
             .map(([name]) => name)}
+          onOpenAiSettings={onOpenAiSettings}
         />
       </div>
     </div>

@@ -32,6 +32,8 @@ interface ServerState {
   ragSources?: Array<{ id: string; name: string }>;
   /** Newest first, like GET /api/rag/jobs. */
   ragJobs?: Array<{ sourceId: string; status: string; error: string | null }>;
+  /** Last MCP probe per profile, as kept by the server. */
+  probes?: Record<string, unknown>;
   fail?: boolean;
 }
 
@@ -51,6 +53,9 @@ function installServer(server: ServerState) {
     }
     if (url.includes('/api/rag/jobs')) {
       return jsonResponse({ jobs: server.ragJobs ?? [] });
+    }
+    if (url.includes('/api/serve/mcp-probe/last')) {
+      return jsonResponse({ results: server.probes ?? {} });
     }
     if (url.includes('/api/profiles/load')) {
       const profiles = server.profiles ?? {};
@@ -156,6 +161,59 @@ describe('SetupChecklist', () => {
       page: 'mcp-detail',
       profileName: 'sales',
       activeSection: 'connect',
+    });
+  });
+
+  describe('step 4 reflects the last MCP test kept by the server', () => {
+    function step4Hint(): string {
+      const item = screen
+        .getAllByText(/4\. Connect and test the MCP/)
+        .map((el) => el.closest('li'))
+        .find(Boolean);
+      return item?.querySelector('p + p')?.textContent ?? '';
+    }
+
+    it('not tested: keeps the client instructions', async () => {
+      installServer({ configurations: [salesData], profiles: salesMcp });
+      render(<SetupChecklist sourceCount={1} onNavigate={vi.fn()} />);
+      await screen.findAllByText('1. Connect data');
+      expect(step4Hint()).toContain('follow the instructions for your AI client');
+      expect(step4Hint()).not.toContain('Connection verified');
+    });
+
+    it('test passed: shows the verified connection, yet stays open until a client call', async () => {
+      installServer({
+        configurations: [salesData],
+        profiles: salesMcp,
+        probes: { sales: { success: true, at: '2026-10-16T10:00:00.000Z', toolCount: 3 } },
+      });
+      render(<SetupChecklist sourceCount={1} onNavigate={vi.fn()} />);
+      await screen.findAllByText('1. Connect data');
+      expect(stepStatus(/4\. Connect and test the MCP/)).toBe('current');
+      expect(step4Hint()).toContain('Connection verified ✓ (3 tools discovered)');
+      expect(step4Hint()).toContain('ask a question about your data from your AI client');
+      expect(screen.queryByRole('alert')).toBeNull();
+      expect(localStorage.getItem(SETUP_CHECKLIST_HIDDEN_KEY)).toBeNull();
+    });
+
+    it('test failed: shows the short reason as an alert', async () => {
+      installServer({
+        configurations: [salesData],
+        profiles: salesMcp,
+        probes: {
+          sales: {
+            success: false,
+            at: '2026-10-16T10:00:00.000Z',
+            error: { category: 'unreachable', code: 'server_stopped', message: 'stopped' },
+          },
+        },
+      });
+      render(<SetupChecklist sourceCount={1} onNavigate={vi.fn()} />);
+      await screen.findAllByText('1. Connect data');
+      expect(stepStatus(/4\. Connect and test the MCP/)).toBe('current');
+      expect(screen.getByRole('alert').textContent).toContain(
+        'Last MCP test failed: server stopped.',
+      );
     });
   });
 

@@ -1,11 +1,13 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useTranslations } from 'use-intl/react';
 import { apiFetch } from '../lib/api.js';
+import { SETUP_REFRESH_EVENT } from './SetupChecklist.js';
 
 /**
  * "Test MCP" button for an active profile. Calls the deterministic backend
  * probe (`POST /api/serve/mcp-probe`): connect, initialize, tools/list — no
- * LLM provider involved and no tool called.
+ * LLM provider involved and no tool called. Stays available on a stopped
+ * server so the probe can report it; a start or stop clears the last result.
  */
 
 type ProbeErrorCategory = 'config' | 'auth' | 'unreachable' | 'timeout' | 'protocol' | 'backend';
@@ -13,6 +15,7 @@ type ProbeErrorCategory = 'config' | 'auth' | 'unreachable' | 'timeout' | 'proto
 interface ProbeError {
   category: ProbeErrorCategory;
   stage?: string;
+  code?: string;
   message: string;
   action: string;
   detail?: string;
@@ -32,10 +35,19 @@ const CATEGORIES: ProbeErrorCategory[] = [
   'backend',
 ];
 
-export default function McpProbe({ profileName }: { profileName: string }) {
+export default function McpProbe({
+  profileName,
+  isActive,
+}: {
+  profileName: string;
+  isActive: boolean;
+}) {
   const t = useTranslations('serveTunnel.servePanel.mcpProbe');
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<ProbeResult | null>(null);
+
+  // A result obtained before a start or stop no longer describes the server.
+  useEffect(() => setResult(null), [isActive]);
 
   const runProbe = useCallback(async () => {
     setRunning(true);
@@ -76,7 +88,18 @@ export default function McpProbe({ profileName }: { profileName: string }) {
       CATEGORIES.includes(body.error.category) &&
       typeof body.error.message === 'string'
     ) {
-      setResult({ success: false, error: body.error });
+      // A stopped server is worded here, in the UI language.
+      setResult({
+        success: false,
+        error:
+          body.error.code === 'server_stopped'
+            ? {
+                ...body.error,
+                message: t('serverStopped.message'),
+                action: t('serverStopped.action'),
+              }
+            : body.error,
+      });
     } else {
       const fallback = (data as { error?: unknown; message?: unknown } | null) ?? {};
       const raw = typeof fallback.error === 'string' ? fallback.error : fallback.message;
@@ -92,6 +115,8 @@ export default function McpProbe({ profileName }: { profileName: string }) {
       });
     }
     setRunning(false);
+    // The server kept this outcome: let the setup guide (step 4) reflect it.
+    window.dispatchEvent(new Event(SETUP_REFRESH_EVENT));
   }, [profileName, t]);
 
   return (

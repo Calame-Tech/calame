@@ -65,6 +65,7 @@ export default function McpListPage({
           }}
           onDeleteProfile={handleProfileDelete}
           onPreviewProfile={(name) => setPreviewProfile(name)}
+          onOpenAiSettings={() => setView({ page: 'settings', initialTab: 'ai' })}
         />
       </div>
     </div>

@@ -980,7 +980,7 @@
       "usingLabel": "Utilise",
       "assignMore": "Attribuez-en davantage depuis la page de détail du MCP",
       "configureAiSettings": "Configurez dans les paramètres IA",
-      "aiNotConfigured": "Aucun fournisseur d’IA pour le chat n’est configuré : ce test ne peut pas s’exécuter. Ouvrez <b>Paramètres → IA</b> et ajoutez un fournisseur (Anthropic, OpenRouter ou un point d’accès compatible) avec sa clé API. Le modèle local intégré sert uniquement à indexer les documents et ne peut pas répondre.",
+      "aiNotConfigured": "Aucun fournisseur d’IA pour le chat n’est configuré : ce test ne peut pas s’exécuter. Ouvrez <b>Paramètres → Fournisseur IA</b> et ajoutez un fournisseur (Anthropic, OpenRouter ou un point d’accès compatible) avec sa clé API. Le modèle local intégré sert uniquement à indexer les documents et ne peut pas répondre.",
       "placeholderNoServer": "Démarrez d’abord un serveur MCP",
       "placeholderAiNotConfigured": "Configurez d’abord l’IA dans les paramètres",
       "llmNotice": "Ce test conversationnel envoie votre question au fournisseur d’IA ci-dessous (un LLM, avec sa clé API), qui appelle ensuite les outils MCP. Pour vérifier le serveur MCP seul, sans IA, utilisez « Tester le MCP » à côté du serveur lancé.",
@@ -1203,7 +1203,19 @@
         "blocked": "Disponible une fois un serveur MCP créé.",
         "done": "Un client a appelé ce serveur MCP avec succès.",
         "action": "Connecter un client",
-        "recheck": "Vérifier à nouveau"
+        "recheck": "Vérifier à nouveau",
+        "probeVerified": "Connexion vérifiée ✓ (test MCP réussi). Il reste à poser une question sur vos données depuis votre client IA (Claude Desktop, Cursor…) : l’étape sera validée à ce premier appel réussi.",
+        "probeVerifiedTools": "Connexion vérifiée ✓ ({count, plural, =0 {aucun outil découvert} one {# outil découvert} other {# outils découverts}}). Il reste à poser une question sur vos données depuis votre client IA (Claude Desktop, Cursor…) : l’étape sera validée à ce premier appel réussi.",
+        "probeFailed": "Dernier test MCP en échec : {reason}. Ouvrez le serveur MCP pour voir le détail, corrigez puis relancez « Tester le MCP ».",
+        "probeReasons": {
+          "serverStopped": "serveur arrêté",
+          "config": "configuration incomplète",
+          "auth": "authentification refusée",
+          "unreachable": "serveur injoignable",
+          "timeout": "délai dépassé",
+          "protocol": "erreur de protocole",
+          "backend": "erreur serveur"
+        }
       }
     }
   },
@@ -2208,6 +2220,10 @@
         "unexpectedResponse": {
           "message": "Le serveur Calame a renvoyé une réponse inattendue (HTTP {status}).",
           "action": "Consultez les journaux du serveur, puis réessayez. Si vous venez de mettre Calame à jour, redémarrez-le."
+        },
+        "serverStopped": {
+          "message": "Le serveur MCP est arrêté.",
+          "action": "Cliquez sur Démarrer puis relancez le test."
         }
       }
     },

@@ -121,7 +121,7 @@ describe('resolveAiSetting', () => {
         ok: false,
         status: 503,
         message:
-          'AI setting "Claude" (Anthropic) has no API key. Go to Settings → AI, edit "Claude" and enter its API key.',
+          'AI setting "Claude" (Anthropic) has no API key. Go to Settings → AI Provider, edit "Claude" and enter its API key.',
       });
     });
 

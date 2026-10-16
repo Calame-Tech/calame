@@ -76,6 +76,13 @@ interface SetupChecklistProps {
   refreshKey?: unknown;
 }
 
+/** Last "Test MCP" outcome of a profile, as kept by the server (GET /api/serve/mcp-probe/last). */
+export type LastMcpProbe =
+  | { success: true; at: string; toolCount?: number }
+  | { success: false; at: string; error: { category: string; code?: string } };
+
+const PROBE_REASONS = ['config', 'auth', 'unreachable', 'timeout', 'protocol', 'backend'];
+
 type LoadState =
   | { status: 'idle' }
   | { status: 'loading' }
@@ -86,6 +93,7 @@ type LoadState =
       profiles: SavedProfileSummary[];
       audit: AuditLogEntry[];
       ragSources: RagSourceReadiness[];
+      probes: Record<string, LastMcpProbe>;
     };
 
 async function fetchJson<T>(url: string): Promise<T> {
@@ -104,8 +112,16 @@ async function fetchSetupResources(ragEnabled: boolean): Promise<{
   profiles: SavedProfileSummary[];
   audit: AuditLogEntry[];
   ragSources: RagSourceReadiness[];
+  probes: Record<string, LastMcpProbe>;
 }> {
   const ragSourcesPromise = ragEnabled ? fetchRagReadiness() : Promise.resolve([]);
+  // Informative only: the guide still loads if the probe results are unavailable.
+  const probesPromise = fetchJson<{ results?: Record<string, LastMcpProbe> }>(
+    '/api/serve/mcp-probe/last',
+  ).then(
+    (data) => data.results ?? {},
+    () => ({}),
+  );
   const [configurationsData, profilesData] = await Promise.all([
     // Indexed by data profile name, like the profiles below (see useAppData).
     fetchJson<{
@@ -136,6 +152,7 @@ async function fetchSetupResources(ragEnabled: boolean): Promise<{
     profiles,
     audit: auditPages.flatMap((page) => page.entries ?? []),
     ragSources: await ragSourcesPromise,
+    probes: await probesPromise,
   };
 }
 
@@ -265,6 +282,33 @@ export default function SetupChecklist({
       ? (progress.failedSources[0] ?? progress.notReadySources[0] ?? null)
       : null;
 
+  // Step 4 stays open until a client call is audited, but reflects the latest
+  // "Test MCP" run on an attached MCP: verified connection, or why it failed.
+  const lastProbe =
+    progress?.client === 'current' && state.status === 'ready'
+      ? mcpProfileNames(state.profiles, state.dataProfiles)
+          .map((name) => state.probes[name])
+          .filter((probe): probe is LastMcpProbe => Boolean(probe?.at))
+          .sort((a, b) => b.at.localeCompare(a.at))[0]
+      : undefined;
+  const clientHint = !lastProbe
+    ? t('client.hint')
+    : lastProbe.success
+      ? typeof lastProbe.toolCount === 'number'
+        ? t('client.probeVerifiedTools', { count: lastProbe.toolCount })
+        : t('client.probeVerified')
+      : t('client.probeFailed', {
+          reason: t(
+            `client.probeReasons.${
+              lastProbe.error.code === 'server_stopped'
+                ? 'serverStopped'
+                : PROBE_REASONS.includes(lastProbe.error.category)
+                  ? lastProbe.error.category
+                  : 'backend'
+            }`,
+          ),
+        });
+
   const steps: Record<SetupStepId, Omit<SetupStepProps, 'index' | 'status'>> | null = progress
     ? {
         source: {
@@ -317,8 +361,9 @@ export default function SetupChecklist({
             progress.client === 'done'
               ? t('client.done')
               : progress.client === 'current'
-                ? t('client.hint')
+                ? clientHint
                 : t('client.blocked'),
+          alert: lastProbe?.success === false,
           actionLabel: t('client.action'),
           onAction: progress.mcpName
             ? () =>

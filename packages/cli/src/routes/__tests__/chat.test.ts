@@ -492,7 +492,7 @@ describe('POST /api/chat/stream', () => {
       .expect(503);
 
     expect(res.body.message).toBe(
-      'AI setting "Claude" (Anthropic) has no API key. Go to Settings → AI, edit "Claude" and enter its API key.',
+      'AI setting "Claude" (Anthropic) has no API key. Go to Settings → AI Provider, edit "Claude" and enter its API key.',
     );
     expect(streamChatTurn).not.toHaveBeenCalled();
     expect(createMcpChatTools).not.toHaveBeenCalled();

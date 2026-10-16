@@ -121,10 +121,56 @@ describe('ServePanel', () => {
       vi.unstubAllGlobals();
     });
 
-    it('is only offered for active profiles', () => {
-      installProbe(() => json({}));
+    it('stays available on a stopped server and reports it with what to do', async () => {
+      const fetchMock = installProbe(() =>
+        json(
+          {
+            success: false,
+            profileName: 'default',
+            error: {
+              category: 'unreachable',
+              stage: 'preflight',
+              code: 'server_stopped',
+              message: 'The MCP server "default" is stopped.',
+              action: 'Click Start on the MCP server, then run the test again.',
+            },
+          },
+          409,
+        ),
+      );
       renderPanel();
-      expect(screen.queryByText('Test MCP')).toBeNull();
+      fireEvent.click(screen.getByText('Test MCP'));
+      const alert = await screen.findByRole('alert');
+      expect(alert.textContent).toContain('MCP test failed: server unreachable');
+      expect(alert.textContent).toContain('The MCP server is stopped.');
+      expect(alert.textContent).toContain('What to do: Click Start, then run the test again.');
+      // The probe itself classifies the stopped server.
+      expect(fetchMock.mock.calls.some((c) => String(c[0]) === '/api/serve/mcp-probe')).toBe(true);
+    });
+
+    it('drops a successful result once the server is stopped', async () => {
+      installProbe(() =>
+        json({
+          success: true,
+          profileName: 'default',
+          tools: [{ name: 'query', description: '' }],
+        }),
+      );
+      const props = {
+        config,
+        selectedTables: {},
+        profiles,
+        onSelectProfile: vi.fn(),
+      };
+      const { rerender } = render(<ServePanel {...props} serveStatus={activeStatus} />);
+      fireEvent.click(screen.getByText('Test MCP'));
+      expect((await screen.findByTestId('mcp-probe-result')).textContent).toContain(
+        '1 tool discovered',
+      );
+
+      rerender(<ServePanel {...props} serveStatus={serveStatus} />);
+      expect(screen.queryByTestId('mcp-probe-result')).toBeNull();
+      expect(screen.getByText('Test MCP')).toBeTruthy();
     });
 
     it('lists discovered tools without calling any AI endpoint, and states the scope', async () => {

@@ -111,6 +111,6 @@ function checkCredentials(setting: ChatCapableAiSetting): AiResolution {
     status: 503,
     message:
       `AI setting "${setting.label}" (${PROVIDER_NAMES[setting.provider]}) has no ${missing}. ` +
-      `Go to Settings → AI, edit "${setting.label}" and enter its ${missing}.`,
+      `Go to Settings → AI Provider, edit "${setting.label}" and enter its ${missing}.`,
   };
 }

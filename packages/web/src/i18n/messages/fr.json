@@ -2181,6 +2181,31 @@
         "stop": "Arrêter",
         "startTooltip": "Démarrer ce serveur MCP",
         "stopTooltip": "Arrêter ce serveur MCP"
+      },
+      "mcpProbe": {
+        "button": "Tester le MCP",
+        "running": "Test en cours…",
+        "tooltip": "Se connecte à ce point d'accès MCP, effectue la poignée de main MCP et liste ses outils. Aucun fournisseur d'IA n'est appelé et aucun outil n'est exécuté.",
+        "success": "MCP joignable : poignée de main OK, {count, plural, =0 {aucun outil exposé} one {# outil découvert} other {# outils découverts}}.",
+        "scope": "Ce test vérifie uniquement la connexion, la poignée de main MCP et la découverte des outils. Il n'exécute pas les outils et ne valide pas les sources de données.",
+        "action": "À faire : {action}",
+        "technicalDetails": "Détails techniques",
+        "categories": {
+          "config": "Test MCP impossible : configuration incomplète",
+          "auth": "Échec du test MCP : authentification refusée",
+          "unreachable": "Échec du test MCP : serveur injoignable",
+          "timeout": "Échec du test MCP : délai dépassé",
+          "protocol": "Échec du test MCP : erreur de protocole",
+          "backend": "Échec du test MCP : erreur serveur"
+        },
+        "networkError": {
+          "message": "Le serveur Calame est injoignable, le test MCP n'a pas pu être lancé.",
+          "action": "Vérifiez que Calame est toujours lancé, puis réessayez."
+        },
+        "unexpectedResponse": {
+          "message": "Le serveur Calame a renvoyé une réponse inattendue (HTTP {status}).",
+          "action": "Consultez les journaux du serveur, puis réessayez. Si vous venez de mettre Calame à jour, redémarrez-le."
+        }
       }
     },
     "exposeTunnel": {

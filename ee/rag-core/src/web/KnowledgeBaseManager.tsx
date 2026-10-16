@@ -20,6 +20,7 @@ import { RAG_STRINGS, ragLocale, translateJobError } from './onboarding-strings.
 import { KB_MANAGER_STRINGS as T } from './strings/kb-manager.js';
 import SyncHistoryPanel from './SyncHistoryPanel.js';
 import EmbeddingUsageCard from './EmbeddingUsageCard.js';
+import SyncRetryAlert, { InitialSyncAlert, useInitialSync } from './SyncRetryAlert.js';
 import {
   useActiveSyncJobs,
   formatRelativeTime,
@@ -359,14 +360,6 @@ export default function KnowledgeBaseManager({
 
   const selectedSource = sources.find((s) => s.id === selectedSourceId) ?? null;
 
-  const handleCreated = (source: RagSourcePublic) => {
-    setShowCreateForm(false);
-    setSelectedSourceId(source.id);
-    setActionMessage(T.sourceSaved(source.name));
-    setTimeout(() => setActionMessage(null), 3000);
-    void refreshSources();
-  };
-
   const handleUpdated = (source: RagSourcePublic) => {
     setEditingSource(null);
     setSelectedSourceId(source.id);
@@ -385,25 +378,28 @@ export default function KnowledgeBaseManager({
 
   /**
    * Re-sync a single source. Sends POST /api/rag/sources/:id/sync and manages
-   * optimistic UI state so the badge flips immediately.
+   * optimistic UI state so the badge flips immediately. Resolves with the
+   * error message when the sync could not be queued, null otherwise.
    */
   const handleResync = useCallback(
-    async (source: RagSourcePublic) => {
+    async (source: RagSourcePublic, initial = false): Promise<string | null> => {
       setResyncingIds((prev) => new Set([...prev, source.id]));
       // Optimistic: show "in progress" badge right away.
       setOptimisticActiveIds((prev) => new Set([...prev, source.id]));
       setError(null);
       try {
         await apiPost(`/api/rag/sources/${encodeURIComponent(source.id)}/sync`);
-        showAction(T.syncStarted(source.name));
+        showAction(initial ? T.sourceSavedSyncStarted(source.name) : T.syncStarted(source.name));
         // Restart the poll loop right away so the badge picks up the new
         // `pending`/`running` row without waiting for the next scheduled
         // tick (the loop self-suspends when nothing is active).
         triggerPoll();
+        return null;
       } catch (err) {
         if (err instanceof ApiError && err.status === 409) {
           // Already queued — the badge will reflect this from the poll.
           showAction(T.syncAlreadyRunningFor(source.name));
+          return null;
         } else {
           const message =
             err instanceof ApiError
@@ -411,13 +407,15 @@ export default function KnowledgeBaseManager({
               : err instanceof Error
                 ? err.message
                 : T.syncFailed;
-          setError(message);
+          // A failed initial trigger gets its own alert (InitialSyncAlert).
+          if (!initial) setError(message);
           // Revert optimistic state on real failure.
           setOptimisticActiveIds((prev) => {
             const next = new Set(prev);
             next.delete(source.id);
             return next;
           });
+          return message;
         }
       } finally {
         setResyncingIds((prev) => {
@@ -429,6 +427,17 @@ export default function KnowledgeBaseManager({
     },
     [showAction, triggerPoll],
   );
+  // A new source is otherwise only indexed on the next file change or
+  // scheduled pass: trigger the same sync as the "Re-sync" button, once.
+  const initialSync = useInitialSync(handleResync);
+
+  const handleCreated = (source: RagSourcePublic) => {
+    setShowCreateForm(false);
+    setSelectedSourceId(source.id);
+    showAction(T.sourceSaved(source.name));
+    void refreshSources();
+    initialSync.start(source);
+  };
 
   const handleDelete = async (source: RagSourcePublic) => {
     if (!window.confirm(T.confirmDelete(source.name, RETENTION_DAYS))) {
@@ -679,6 +688,7 @@ export default function KnowledgeBaseManager({
           {error}
         </div>
       )}
+      <InitialSyncAlert initialSync={initialSync} />
 
       {showCreateForm && !editingSource && (
         <SourceForm
@@ -923,16 +933,16 @@ export default function KnowledgeBaseManager({
                 const failed = jobMap.get(selectedSource.id);
                 if (!failed?.lastFailedJob || failed.activeJob) return null;
                 return (
-                  <p
-                    role="alert"
-                    className="text-xs text-red-400 break-words border border-red-900/50 bg-red-950/30 rounded px-3 py-2"
-                  >
-                    {RAG_STRINGS.lastSyncFailedAria(
+                  <SyncRetryAlert
+                    compact
+                    message={RAG_STRINGS.lastSyncFailedAria(
                       failed.lastFailedJob.error
                         ? translateJobError(failed.lastFailedJob.error)
                         : RAG_STRINGS.unknownError,
                     )}
-                  </p>
+                    onRetry={() => void handleResync(selectedSource)}
+                    retrying={resyncingIds.has(selectedSource.id)}
+                  />
                 );
               })()}
 

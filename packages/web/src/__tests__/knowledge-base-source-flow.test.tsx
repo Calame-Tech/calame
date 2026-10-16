@@ -50,6 +50,7 @@ const CREATED_SOURCE = {
 
 let sources: unknown[] = [];
 let jobs: unknown[] = [];
+let syncPosts: string[] = [];
 let overrides: Array<{ match: (url: string, method: string) => boolean; handler: Handler }> = [];
 
 function route(url: string, init?: RequestInit): Promise<Response> | Response {
@@ -60,6 +61,25 @@ function route(url: string, init?: RequestInit): Promise<Response> | Response {
   if (url === '/api/rag/sources' && method === 'GET') return json({ sources });
   if (url.startsWith('/api/ai-settings')) return json({ success: true, settings: [LOCAL_SETTING] });
   if (url.startsWith('/api/rag/jobs')) return json({ jobs });
+  if (/\/api\/rag\/sources\/[^/]+\/sync$/.test(url) && method === 'POST') {
+    syncPosts.push(url);
+    const job = {
+      id: `job_${syncPosts.length}`,
+      sourceId: decodeURIComponent(url.split('/')[4] ?? ''),
+      status: 'pending',
+      progress: 0,
+      totalDocuments: 0,
+      processedDocuments: 0,
+      skippedByEtag: 0,
+      gcDeleted: 0,
+      tokensEmbedded: 0,
+      error: null,
+      startedAt: '2026-01-01T00:00:00.000Z',
+      finishedAt: null,
+    };
+    jobs = [job, ...jobs];
+    return json({ job }, 202);
+  }
   if (/\/api\/rag\/sources\/[^/]+\/folders/.test(url)) return json({ folders: [] });
   if (/\/api\/rag\/sources\/[^/]+\/documents/.test(url)) return json({ documents: [] });
   return json({ error: 'not mocked' }, 503);
@@ -70,6 +90,7 @@ beforeEach(() => {
   localStorage.setItem('calame-locale', 'fr');
   sources = [];
   jobs = [];
+  syncPosts = [];
   overrides = [];
   vi.stubGlobal(
     'fetch',
@@ -278,6 +299,123 @@ describe('KnowledgeBaseManager — first source flow', () => {
       "Le test n'a pas abouti après 90 s.",
     );
     expect(screen.getByRole('button', { name: 'Tester' })).toBeEnabled();
+  });
+});
+
+describe('KnowledgeBaseManager — initial sync after creation', () => {
+  function createSourceOnSave() {
+    overrides.push({
+      match: (url, method) => url === '/api/rag/sources' && method === 'POST',
+      handler: () => {
+        sources = [{ ...CREATED_SOURCE, folderCount: 0, documentCount: 0 }];
+        return json({ source: CREATED_SOURCE }, 201);
+      },
+    });
+  }
+
+  it('triggers the existing POST /sync exactly once and shows it started', async () => {
+    createSourceOnSave();
+
+    render(<KnowledgeBaseManager />);
+    await openCreateForm();
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer' }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Source "Docs" enregistrée. Synchronisation initiale lancée.',
+    );
+    // The queued job is picked up by the job poll, without any extra click.
+    expect((await screen.findAllByText(/Synchronisation en cours…/)).length).toBeGreaterThan(0);
+    // Let re-renders and list refreshes settle: still a single trigger.
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
+    expect(syncPosts).toEqual(['/api/rag/sources/src_1/sync']);
+  });
+
+  it('treats a sync already running (watcher / scheduler) as started, without error', async () => {
+    createSourceOnSave();
+    overrides.push({
+      match: (url, method) => url.endsWith('/sync') && method === 'POST',
+      handler: (url) => {
+        syncPosts.push(url);
+        return json({ error: 'Sync already in progress for this source.' }, 409);
+      },
+    });
+
+    render(<KnowledgeBaseManager />);
+    await openCreateForm();
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer' }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Sync déjà en cours pour "Docs".');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(syncPosts).toHaveLength(1);
+  });
+
+  it('keeps the source when the trigger fails and only retries on an explicit click', async () => {
+    createSourceOnSave();
+    let fail = true;
+    overrides.push({
+      match: (url, method) => url.endsWith('/sync') && method === 'POST',
+      handler: (url) => {
+        syncPosts.push(url);
+        return fail
+          ? json({ error: 'Embedding provider unavailable' }, 500)
+          : json({ job: null }, 202);
+      },
+    });
+
+    render(<KnowledgeBaseManager />);
+    await openCreateForm();
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(
+      'La source "Docs" est enregistrée, mais sa synchronisation initiale n\'a pas pu démarrer',
+    );
+    expect(alert).toHaveTextContent('Embedding provider unavailable');
+    // The source stays listed and selected.
+    expect(screen.getAllByRole('heading', { name: 'Docs' })).not.toHaveLength(0);
+    // No automatic retry loop.
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
+    expect(syncPosts).toHaveLength(1);
+
+    fail = false;
+    fireEvent.click(screen.getByRole('button', { name: 'Relancer la synchronisation' }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Synchronisation initiale lancée.');
+    expect(screen.queryByText(/n'a pas pu démarrer/)).not.toBeInTheDocument();
+    expect(syncPosts).toHaveLength(2);
+  });
+
+  it('offers an explicit retry when the sync job itself failed', async () => {
+    sources = [{ ...CREATED_SOURCE, folderCount: 0, documentCount: 0 }];
+    jobs = [
+      {
+        id: 'job_1',
+        sourceId: 'src_1',
+        status: 'failed',
+        progress: 0,
+        totalDocuments: 0,
+        processedDocuments: 0,
+        skippedByEtag: 0,
+        gcDeleted: 0,
+        tokensEmbedded: 0,
+        error: 'boom',
+        startedAt: '2026-01-01T00:00:00.000Z',
+        finishedAt: '2026-01-01T00:00:01.000Z',
+      },
+    ];
+
+    render(<KnowledgeBaseManager />);
+    fireEvent.click(await screen.findByText('Docs'));
+
+    const retry = await screen.findByRole('button', { name: 'Relancer la synchronisation' });
+    expect(syncPosts).toHaveLength(0);
+    fireEvent.click(retry);
+    expect(await screen.findByRole('status')).toHaveTextContent('Sync lancée pour "Docs".');
+    expect(syncPosts).toEqual(['/api/rag/sources/src_1/sync']);
   });
 });
 

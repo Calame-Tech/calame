@@ -156,6 +156,19 @@ function isHiddenRelPath(relPath: string): boolean {
   return relPath.split('/').some((segment) => segment.startsWith('.'));
 }
 
+/**
+ * True for Microsoft Office owner/lock files (`~$Report.docx`): Word creates
+ * one next to every open document; it is a tiny binary stub, not a real
+ * document, and parsing it always fails. MUST stay in line with
+ * `isOfficeTempFile` in `@calame-ee/rag-core` (pipeline/document-errors.ts),
+ * duplicated for the same reason as {@link SKIP_TOO_LARGE_PREFIX}. The host
+ * filters them too; skipping them here also keeps the watcher from
+ * triggering a sync every time Word opens or closes a file.
+ */
+function isOfficeTempFileName(relPath: string): boolean {
+  return (relPath.split('/').pop() ?? relPath).startsWith('~$');
+}
+
 /** Resolved per-file size cap: default 50 MB; <= 0 disables the cap. */
 function effectiveMaxFileSize(config: LocalFolderConfig): number {
   const cap = config.maxFileSizeBytes ?? DEFAULT_MAX_FILE_SIZE_BYTES;
@@ -395,6 +408,7 @@ export class LocalFolderConnector implements DocumentSourceConnector {
       if (!config.includeHidden && isHiddenRelPath(normalizedRel)) {
         continue;
       }
+      if (isOfficeTempFileName(normalizedRel)) continue;
       if (!matchGlobs(normalizedRel, config.includeGlobs, excludes)) {
         continue;
       }
@@ -548,6 +562,7 @@ export class LocalFolderConnector implements DocumentSourceConnector {
       // and the default excludes are dropped here too. Second line of
       // defense behind the `ignored` pruning above.
       if (!config.includeHidden && isHiddenRelPath(relPath)) return null;
+      if (isOfficeTempFileName(relPath)) return null;
       if (!matchGlobs(relPath, config.includeGlobs, excludes)) {
         return null;
       }

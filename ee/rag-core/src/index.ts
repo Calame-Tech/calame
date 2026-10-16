@@ -92,6 +92,20 @@ export type {
 // ---------- Pipeline ----------
 export { IngestionPipeline } from './pipeline/ingest.js';
 export type { IngestionPipelineDeps, IngestDocumentInput } from './pipeline/ingest.js';
+export {
+  DocumentRejectedError,
+  classifyReadError,
+  isOfficeTempFile,
+} from './pipeline/document-errors.js';
+export type { DocumentRejectionKind } from './pipeline/document-errors.js';
+export {
+  IsolatedParser,
+  DEFAULT_PARSE_TIMEOUT_MS,
+  DEFAULT_PARSE_WORKER_MAX_HEAP_MB,
+  readParseTimeoutMs,
+  resolveParseWorkerUrl,
+} from './parsers/isolated-parser.js';
+export type { IsolatedParserOptions } from './parsers/isolated-parser.js';
 
 // ---------- Jobs ----------
 export { SyncQueue, recoverOrphanedJobs } from './jobs/sync-queue.js';

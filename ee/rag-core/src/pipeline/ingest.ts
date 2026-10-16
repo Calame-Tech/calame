@@ -9,7 +9,9 @@ import type { Database as BetterSqlite3Database } from 'better-sqlite3';
 import type { EmbeddingClient, RagDocument, RagFolder, RagSource, VectorStore } from '../types.js';
 import { pickChunker } from '../chunker/index.js';
 import type { ChunkOptions } from '../chunker/types.js';
-import { getParserForMimeType } from '../parsers/index.js';
+import { getParserForMimeType, UnsupportedMimeTypeError } from '../parsers/index.js';
+import type { ParsedDocument } from '../parsers/types.js';
+import { DocumentRejectedError } from './document-errors.js';
 import { assertWithinCap, type EmbeddingCapConfig } from '../jobs/embedding-cap.js';
 
 /** @deprecated Kept for backwards compatibility. Prefer `ChunkOptions`. */
@@ -72,6 +74,14 @@ export interface IngestionPipelineDeps {
    * pre-cap behaviour (unbounded).
    */
   capConfig?: EmbeddingCapConfig;
+  /**
+   * Optional out-of-process parser runner (in production: an
+   * {@link IsolatedParser} worker with a hard per-file timeout). When absent
+   * the parser runs in-process — used by tests and as a fallback when the
+   * compiled worker script cannot be found. The MIME type is still resolved
+   * in-process first so unsupported formats fail fast without a worker trip.
+   */
+  parseDocument?: (mimeType: string, buffer: Buffer, filename: string) => Promise<ParsedDocument>;
 }
 
 /** Inputs to {@link IngestionPipeline.ingestDocument}. */
@@ -151,6 +161,7 @@ export class IngestionPipeline {
   private readonly chunkOptions: ChunkOptions | undefined;
   private readonly onTokensEmbedded: ((count: number) => void) | undefined;
   private readonly capConfig: EmbeddingCapConfig | undefined;
+  private readonly parseDocument: IngestionPipelineDeps['parseDocument'];
 
   constructor(deps: IngestionPipelineDeps) {
     this.db = deps.db;
@@ -160,6 +171,7 @@ export class IngestionPipeline {
     this.chunkOptions = deps.chunkOptions;
     this.onTokensEmbedded = deps.onTokensEmbedded;
     this.capConfig = deps.capConfig;
+    this.parseDocument = deps.parseDocument;
   }
 
   /**
@@ -185,6 +197,14 @@ export class IngestionPipeline {
    * Ingest (or refresh) a single document. Returns the resulting
    * {@link RagDocument} row. If the content hash matches the previously
    * indexed copy, no work is performed.
+   *
+   * Failure semantics — last valid version is kept: parsing, chunking and
+   * embedding all happen BEFORE any write, and the write itself (document
+   * row + chunks + vectors) is one SQLite transaction. If anything throws, the
+   * previously indexed version (row, chunks, vectors, hash, etag) is left
+   * exactly as it was and stays searchable; because its stored etag/hash
+   * still describe the OLD content, the next sync retries the new content.
+   * A brand-new document that fails leaves no row at all.
    */
   async ingestDocument(input: IngestDocumentInput): Promise<RagDocument> {
     const hash = sha256Hex(input.buffer);
@@ -223,7 +243,24 @@ export class IngestionPipeline {
     // Pass the source-relative path so the dispatcher can route generic
     // `text/plain` to the code parser when the extension is recognized.
     const parser = getParserForMimeType(input.mimeType, input.path);
-    const parsed = await parser(input.buffer, input.path);
+    let parsed: ParsedDocument;
+    try {
+      parsed = this.parseDocument
+        ? await this.parseDocument(input.mimeType, input.buffer, input.path)
+        : await parser(input.buffer, input.path);
+    } catch (err: unknown) {
+      // A parser failure is a property of THIS file (corrupt DOCX, …): tag it
+      // so the sync worker isolates it instead of counting it towards the
+      // infrastructure circuit-breaker. Nothing has been written yet, so a
+      // previously indexed version of the document stays intact.
+      if (err instanceof DocumentRejectedError || err instanceof UnsupportedMimeTypeError) {
+        throw err;
+      }
+      const detail = err instanceof Error ? err.message : String(err);
+      throw new DocumentRejectedError('parse_failed', `The file could not be parsed: ${detail}`, {
+        cause: err,
+      });
+    }
     // Pick the chunker that matches the parser's declared format. Falls
     // back to the plain chunker when the parser omits a format hint.
     // For `code`, the chunker also needs the detected language and the

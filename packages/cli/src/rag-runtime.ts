@@ -185,12 +185,33 @@ export async function initRagRuntime(
     log.info('RAG monthly embedding cap: no cap configured (unlimited).');
   }
 
+  // Parse documents in a worker thread with a hard per-file timeout so one
+  // corrupt / pathological file (a DOCX that sends mammoth into a loop, …)
+  // is stopped and skipped instead of stalling or crashing the whole sync.
+  // Falls back to in-process parsing when the compiled worker is missing.
+  const parseWorkerUrl = ragCore.resolveParseWorkerUrl();
+  const isolatedParser = parseWorkerUrl
+    ? new ragCore.IsolatedParser({
+        workerUrl: parseWorkerUrl,
+        timeoutMs: ragCore.readParseTimeoutMs(),
+      })
+    : null;
+  if (!isolatedParser) {
+    log.warn('RAG parser worker not found — documents are parsed in-process (no hard timeout).');
+  }
+
   const pipeline = new ragCore.IngestionPipeline({
     db: db.raw,
     vectorStore,
     embeddingClient: defaultEmbeddingClient ?? makeUnconfiguredEmbeddingClient(dimension),
     resolveEmbeddingClient,
     capConfig,
+    ...(isolatedParser
+      ? {
+          parseDocument: (mimeType: string, buffer: Buffer, filename: string) =>
+            isolatedParser.parse(mimeType, buffer, filename),
+        }
+      : {}),
   });
 
   // Token-bucket rate limiter shared by every connector singleton (and the

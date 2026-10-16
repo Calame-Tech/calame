@@ -10,6 +10,11 @@ import { RAG_LISTING_SKIP_TOO_LARGE_PREFIX } from '../types.js';
 import type { ConnectorLike, RagRouteDeps } from './types.js';
 import { EmbeddingCapExceededError } from '../jobs/embedding-cap.js';
 import { UnsupportedMimeTypeError } from '../parsers/index.js';
+import {
+  DocumentRejectedError,
+  classifyReadError,
+  isOfficeTempFile,
+} from '../pipeline/document-errors.js';
 
 /**
  * Resolve the tenant id for a request, falling back to the literal
@@ -105,13 +110,121 @@ function sendError(res: Response, status: number, message: string): void {
   res.status(status).json({ error: message });
 }
 
-/** Read all bytes from a Node Readable stream into a single Buffer. */
-async function streamToBuffer(stream: NodeJS.ReadableStream): Promise<Buffer> {
+/**
+ * Read all bytes from a Node Readable stream into a single Buffer, refusing
+ * to buffer more than `maxBytes` (the stream is destroyed — file handle
+ * closed — as soon as the cap is crossed).
+ */
+async function streamToBuffer(stream: NodeJS.ReadableStream, maxBytes: number): Promise<Buffer> {
   const chunks: Buffer[] = [];
+  let total = 0;
   for await (const chunk of stream) {
-    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : (chunk as Buffer));
+    const buf = typeof chunk === 'string' ? Buffer.from(chunk) : (chunk as Buffer);
+    total += buf.byteLength;
+    if (total > maxBytes) {
+      destroyStream(stream);
+      throw new DocumentRejectedError(
+        'too_large',
+        `File is larger than the ${formatBytes(maxBytes)} per-document limit; it was skipped.`,
+      );
+    }
+    chunks.push(buf);
   }
   return Buffer.concat(chunks);
+}
+
+/** Close a connector stream (and its file handle) — idempotent, null-safe. */
+function destroyStream(stream: NodeJS.ReadableStream | null): void {
+  const s = stream as (NodeJS.ReadableStream & { destroy?: () => void }) | null;
+  if (s && typeof s.destroy === 'function') s.destroy();
+}
+
+function formatBytes(n: number): string {
+  return n >= 1024 * 1024 ? `${Math.round(n / (1024 * 1024))} MB` : `${n} bytes`;
+}
+
+/**
+ * Default host-side cap on the bytes buffered for ONE document: 50 MB, the
+ * same as the browser upload cap and the local connector's listing-time
+ * default. It is the safety net for connectors that don't enforce a cap at
+ * listing time and for files that grew between listing and fetch.
+ */
+const DEFAULT_MAX_DOC_BYTES = 50 * 1024 * 1024;
+
+/**
+ * Effective byte cap for a source: the source's own `maxFileSizeBytes` when
+ * configured (local connector; `<= 0` means "no cap", as there), otherwise
+ * `CALAME_RAG_MAX_DOC_BYTES`, otherwise {@link DEFAULT_MAX_DOC_BYTES}.
+ */
+function readMaxDocBytes(config: Record<string, unknown>): number {
+  const perSource = config['maxFileSizeBytes'];
+  if (typeof perSource === 'number') {
+    return perSource <= 0 ? Number.POSITIVE_INFINITY : perSource;
+  }
+  const raw = process.env['CALAME_RAG_MAX_DOC_BYTES'];
+  const parsed = raw === undefined ? NaN : Number.parseInt(raw, 10);
+  return Number.isNaN(parsed) || parsed <= 0 ? DEFAULT_MAX_DOC_BYTES : parsed;
+}
+
+/**
+ * Bounded retries for a file that is locked by another program (Word on
+ * Windows holds an exclusive lock while saving). `CALAME_RAG_LOCKED_RETRIES`
+ * (default 2 → at most 3 attempts) and `CALAME_RAG_LOCKED_RETRY_DELAY_MS`
+ * (default 500 ms, linear backoff: 500 ms then 1 s). After the last attempt
+ * the file is rejected as `locked` for this sync and retried on the next one.
+ */
+function readLockedRetryPolicy(): { retries: number; delayMs: number } {
+  const int = (name: string, fallback: number): number => {
+    const raw = process.env[name];
+    const parsed = raw === undefined ? NaN : Number.parseInt(raw, 10);
+    return Number.isNaN(parsed) || parsed < 0 ? fallback : parsed;
+  };
+  return {
+    retries: Math.min(int('CALAME_RAG_LOCKED_RETRIES', 2), 10),
+    delayMs: int('CALAME_RAG_LOCKED_RETRY_DELAY_MS', 500),
+  };
+}
+
+/**
+ * Fetch one document and buffer it, with the per-document timeout, the byte
+ * cap and the bounded lock retries. The connector stream is always destroyed
+ * on failure so no file handle outlives the attempt (on Windows a leaked
+ * handle would itself keep the file locked).
+ */
+async function fetchDocumentBytes(
+  connector: ConnectorLike,
+  config: Record<string, unknown>,
+  sourceId: string,
+  doc: { id: string; path: string },
+  timeoutMs: number,
+): Promise<{ buffer: Buffer; mimeType: string }> {
+  const maxBytes = readMaxDocBytes(config);
+  const { retries, delayMs } = readLockedRetryPolicy();
+  for (let attempt = 0; ; attempt++) {
+    let stream: NodeJS.ReadableStream | null = null;
+    try {
+      const fetched = await withTimeout(
+        connector.fetchDocument(config, sourceId, doc.id),
+        timeoutMs,
+        `fetchDocument(${doc.path})`,
+      );
+      stream = fetched.stream;
+      const buffer = await withTimeout(
+        streamToBuffer(fetched.stream, maxBytes),
+        timeoutMs,
+        `streamToBuffer(${doc.path})`,
+      );
+      return { buffer, mimeType: fetched.mimeType };
+    } catch (err: unknown) {
+      destroyStream(stream);
+      const rejected = classifyReadError(err);
+      if (rejected?.kind === 'locked' && attempt < retries) {
+        await new Promise((r) => setTimeout(r, delayMs * (attempt + 1)));
+        continue;
+      }
+      throw rejected ?? err;
+    }
+  }
 }
 
 /**
@@ -233,10 +346,11 @@ function readMaxConsecutiveFailures(): number {
  * — a hung parser will freeze the worker indefinitely). NaN falls back to the
  * default.
  *
- * This is a *soft* timeout: the underlying promise (e.g. mammoth parser, HTTP
- * fetch without an AbortSignal) is not actively cancelled — Promise.race only
- * lets us continue past it. The leaked promise resolves or rejects later and
- * its result is discarded. Acceptable trade-off for unblocking the sync.
+ * This is a *soft* timeout for fetch / read / embed: Promise.race only lets
+ * the sync continue past them (a timed-out fetch's stream is destroyed).
+ * PARSING has its own *hard* timeout (`CALAME_RAG_PARSE_TIMEOUT_MS`, default
+ * 120 s) enforced by the IsolatedParser worker, which is terminated — so a
+ * parser stuck in a loop really stops instead of leaking a busy thread.
  */
 function readDocTimeoutMs(): number {
   const raw = process.env['CALAME_RAG_DOC_TIMEOUT_MS'];
@@ -389,6 +503,20 @@ export async function runSyncJob(
       return;
     }
 
+    // Office owner/lock files (`~$Report.docx`) are never real documents —
+    // Word creates one next to every open file. Drop them before counting so
+    // they neither fail nor appear in the summary; a stale indexed copy (from
+    // before this filter existed) is GC'd below since its path is no longer
+    // listed.
+    const officeTempCount = entries.length;
+    entries = entries.filter((e) => !isOfficeTempFile(e.doc.path));
+    if (entries.length !== officeTempCount) {
+      deps.logger?.info(
+        `[rag-sync] ignored ${officeTempCount - entries.length} Office temp file(s) (~$*)`,
+        { component: `rag-sync/${source.id}` },
+      );
+    }
+
     deps.db
       .prepare(`UPDATE rag_jobs SET total_documents = ? WHERE id = ?`)
       .run(entries.length, jobId);
@@ -510,24 +638,8 @@ export async function runSyncJob(
         deps.logger?.info(`[rag-sync] fetch ${doc.path}`, {
           component: `rag-sync/${source.id}`,
         });
-        // Hoisted so the catch block below can read them when handling
-        // UnsupportedMimeTypeError (so we can still persist the file
-        // metadata to the tree view).
-        let fetched: { stream: NodeJS.ReadableStream; mimeType: string } | null = null;
-        let buffer: Buffer | null = null;
-        fetched = await withTimeout(
-          connector.fetchDocument(config, source.id, doc.id),
-          docTimeoutMs,
-          `fetchDocument(${doc.path})`,
-        );
-        deps.logger?.info(`[rag-sync] buffer ${doc.path}`, {
-          component: `rag-sync/${source.id}`,
-        });
-        buffer = await withTimeout(
-          streamToBuffer(fetched.stream),
-          docTimeoutMs,
-          `streamToBuffer(${doc.path})`,
-        );
+        const fetched = await fetchDocumentBytes(connector, config, source.id, doc, docTimeoutMs);
+        const buffer = fetched.buffer;
         deps.logger?.info(
           `[rag-sync] ingest ${doc.path} (${buffer.byteLength} bytes, ${fetched.mimeType})`,
           { component: `rag-sync/${source.id}` },
@@ -578,6 +690,17 @@ export async function runSyncJob(
           skippedUnsupported++;
           consecutiveFailures = 0; // reset — this isn't a failure of the embedding pipeline
           deps.logger?.info(`[rag-sync] SKIPPED (unsupported MIME) ${doc.path}: ${err.message}`, {
+            component: `rag-sync/${source.id}`,
+          });
+        } else if (err instanceof DocumentRejectedError) {
+          // Per-file rejection (corrupt, parser timeout, too large, locked,
+          // unreadable): record it with the file path and move on. It says
+          // nothing about the storage / embedding infrastructure, so it
+          // neither trips nor resets the consecutive-failure breaker. The
+          // previously indexed version, if any, is left untouched.
+          failures++;
+          lastError = `${doc.path}: ${err.message}`;
+          deps.logger?.warn(`[rag-sync] REJECTED (${err.kind}) ${doc.path}: ${err.message}`, {
             component: `rag-sync/${source.id}`,
           });
         } else {

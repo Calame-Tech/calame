@@ -327,6 +327,15 @@ describe('LocalFolderConnector.listDocuments — default filters, size cap, etag
     expect(nested.map((d) => d.name)).toEqual(['notes.txt']);
   });
 
+  it('ignores Office owner/lock files (~$*.docx) created by Word', async () => {
+    await writeFile(join(root, 'Rapport.docx'), 'real');
+    await writeFile(join(root, '~$Rapport.docx'), Buffer.alloc(162, 0));
+    await writeFile(join(root, '~$udget.xlsx'), Buffer.alloc(162, 0));
+
+    const docs = await connector.listDocuments(config(), 'src-1');
+    expect(docs.map((d) => d.name)).toEqual(['Rapport.docx']);
+  });
+
   it('flags files over maxFileSizeBytes at discovery instead of dropping them', async () => {
     await writeFile(join(root, 'big.bin'), Buffer.alloc(32, 1));
     await writeFile(join(root, 'small.txt'), 'tiny');

@@ -1,7 +1,8 @@
 // Guided first-run path in four steps: 1. connect data, 2. create a data
 // profile that contains it, 3. create an MCP attached to that profile,
 // 4. connect / test the MCP from a client. Shown as a floating card on every
-// page until the first MCP is used; each step reflects server-side resources
+// page; once a client has used the first MCP it shows a success state until
+// the user closes it. Each step reflects server-side resources
 // (see lib/setup-progress.ts) and links to the existing screen that performs
 // it — this component never creates anything itself.
 
@@ -23,10 +24,16 @@ import type { AuditLogEntry } from '../types/schema.js';
 import type { View } from '../router/index.js';
 
 /**
- * Set once a client call has been observed, so an installation that already
- * works never shows the guide (nor queries for it) again.
+ * Set only when the user closes the success state (4/4): from then on the
+ * guide is neither shown nor queried again.
  */
-export const SETUP_CHECKLIST_HIDDEN_KEY = 'calame.setupChecklist.hidden';
+export const SETUP_CHECKLIST_DISMISSED_KEY = 'calame.setupChecklist.dismissed';
+/**
+ * Former flag, written automatically as soon as a client call was observed —
+ * before the user could ever see the success state. It is ignored (and
+ * cleared on close) so those installations get the success state once.
+ */
+export const SETUP_CHECKLIST_LEGACY_HIDDEN_KEY = 'calame.setupChecklist.hidden';
 /** Set while the user has folded the card; a button reopens it. */
 export const SETUP_CHECKLIST_COLLAPSED_KEY = 'calame.setupChecklist.collapsed';
 
@@ -35,6 +42,14 @@ export const SETUP_REFRESH_EVENT = 'calame:setup-refresh';
 
 /** Upper bound on per-MCP audit lookups — first runs have one or two MCPs. */
 const MAX_PROFILES_CHECKED = 10;
+
+/**
+ * While step 4 waits for a first client call, the guide re-checks the server
+ * on its own — bounded, so a forgotten tab does not poll forever (focus and
+ * "Check again" still work afterwards).
+ */
+export const SETUP_POLL_INTERVAL_MS = 10_000;
+export const SETUP_POLL_MAX_ATTEMPTS = 60;
 
 /**
  * Below this width the expanded card would cover page actions (e.g. "+ New
@@ -163,7 +178,7 @@ export default function SetupChecklist({
   refreshKey = 0,
 }: SetupChecklistProps) {
   const t = useTranslations('onboarding.checklist');
-  const [hidden, setHidden] = useState(() => readFlag(SETUP_CHECKLIST_HIDDEN_KEY));
+  const [hidden, setHidden] = useState(() => readFlag(SETUP_CHECKLIST_DISMISSED_KEY));
   const [narrow, setNarrow] = useState(() => narrowWindowQuery()?.matches === true);
   const [collapsed, setCollapsed] = useState(
     () => readFlag(SETUP_CHECKLIST_COLLAPSED_KEY) || narrowWindowQuery()?.matches === true,
@@ -190,14 +205,19 @@ export default function SetupChecklist({
   // Only the latest request may update the state: a slow response must not
   // overwrite a newer one (e.g. a refresh triggered by a new source).
   const requestIdRef = useRef(0);
+  // Requests in flight: a periodic check is skipped while one is pending.
+  const inFlightRef = useRef(0);
 
   const load = useCallback(async () => {
     const requestId = ++requestIdRef.current;
+    inFlightRef.current += 1;
     try {
       const data = await fetchSetupResources(ragEnabled);
       if (requestId === requestIdRef.current) setState({ status: 'ready', ...data });
     } catch {
       if (requestId === requestIdRef.current) setState({ status: 'error' });
+    } finally {
+      inFlightRef.current -= 1;
     }
   }, [ragEnabled]);
 
@@ -222,8 +242,9 @@ export default function SetupChecklist({
     void load();
   }, [hidden, load, sourceCount, refreshKey]);
 
-  // No timer: re-check when the user comes back to Calame (typically after
-  // trying the MCP from their AI client) or asks for it explicitly.
+  // Re-check when the user comes back to Calame (typically after trying the
+  // MCP from their AI client), after an action that changes a step (see
+  // SETUP_REFRESH_EVENT) or when asked explicitly.
   useEffect(() => {
     if (hidden) return;
     const onFocus = () => {
@@ -251,13 +272,31 @@ export default function SetupChecklist({
       : null;
 
   // The loop is complete once a client has used the first MCP: the guide
-  // disappears for good.
+  // shows a success state until the user closes it.
   const allDone = progress?.allDone ?? false;
+
+  // Step 4 completes on a call made from another application: poll (bounded,
+  // never overlapping a pending request, paused while the tab is hidden) until
+  // it is observed.
+  const waitingForClient = !hidden && progress?.client === 'current';
   useEffect(() => {
-    if (!allDone) return;
-    writeFlag(SETUP_CHECKLIST_HIDDEN_KEY, true);
+    if (!waitingForClient) return;
+    let attempts = 0;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'hidden' || inFlightRef.current > 0) return;
+      attempts += 1;
+      if (attempts >= SETUP_POLL_MAX_ATTEMPTS) window.clearInterval(timer);
+      void load();
+    }, SETUP_POLL_INTERVAL_MS);
+    return () => window.clearInterval(timer);
+  }, [waitingForClient, load]);
+
+  // Only an explicit close hides the guide for good.
+  const dismiss = () => {
+    writeFlag(SETUP_CHECKLIST_DISMISSED_KEY, true);
+    writeFlag(SETUP_CHECKLIST_LEGACY_HIDDEN_KEY, false);
     setHidden(true);
-  }, [allDone]);
+  };
 
   const setFolded = (value: boolean) => {
     writeFlag(SETUP_CHECKLIST_COLLAPSED_KEY, value);
@@ -273,7 +312,7 @@ export default function SetupChecklist({
 
   // Nothing is shown before the first answer, so an installation that already
   // has a used MCP never flashes the guide.
-  if (hidden || allDone || state.status === 'idle') return null;
+  if (hidden || state.status === 'idle') return null;
 
   // A saved source that is not indexed must not read as "connected": name it
   // (failed sync first) and point to it instead of to "Add data".
@@ -408,6 +447,11 @@ export default function SetupChecklist({
               {steps[progress.currentStep].title}
             </span>
           )}
+          {allDone && (
+            <span className="min-w-0 truncate font-normal" data-testid="setup-pill-step">
+              {t('success.pill')}
+            </span>
+          )}
         </button>
       </>
     );
@@ -423,7 +467,9 @@ export default function SetupChecklist({
       >
         <div className="flex items-start justify-between gap-3">
           <h2 id="setup-checklist-title" className="text-sm font-semibold text-gray-100">
-            {t('title')}
+            {allDone
+              ? t('reopen', { done: SETUP_STEPS.length, total: SETUP_STEPS.length })
+              : t('title')}
           </h2>
           <button
             type="button"
@@ -434,7 +480,56 @@ export default function SetupChecklist({
             {t('hide')}
           </button>
         </div>
-        <p className="text-xs text-gray-500 mb-3">{t('description')}</p>
+        {allDone && progress ? (
+          <div data-testid="setup-success" className="mt-2 space-y-3">
+            <div role="status" className="space-y-1">
+              <p className="text-sm font-semibold text-emerald-300">{t('success.congrats')}</p>
+              <p className="text-xs text-gray-300">✓ {t('client.done')}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 mb-1.5">{t('success.next')}</p>
+              <div className="flex flex-wrap items-center gap-2">
+                {progress.mcpName && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      navigate({ page: 'mcp-detail', profileName: progress.mcpName as string })
+                    }
+                    className="text-[11px] font-semibold rounded-md px-2.5 py-1 text-os-300 bg-os-500/10 hover:bg-os-500/20 focus:outline-none focus-visible:ring-1 focus-visible:ring-os-500/40"
+                  >
+                    {t('success.openMcp')}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => navigate({ page: 'audit-log' })}
+                  className="text-[11px] font-semibold rounded-md px-2.5 py-1 text-os-300 bg-os-500/10 hover:bg-os-500/20 focus:outline-none focus-visible:ring-1 focus-visible:ring-os-500/40"
+                >
+                  {t('success.auditLog')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigate({ page: 'sources' })}
+                  className="text-[11px] font-semibold rounded-md px-2.5 py-1 text-os-300 bg-os-500/10 hover:bg-os-500/20 focus:outline-none focus-visible:ring-1 focus-visible:ring-os-500/40"
+                >
+                  {t('success.addData')}
+                </button>
+              </div>
+            </div>
+            <div className="flex items-center justify-between gap-3 border-t border-gray-800 pt-3">
+              <span className="text-[11px] text-gray-500">{t('success.closeHint')}</span>
+              <button
+                type="button"
+                onClick={dismiss}
+                className="flex-none text-[11px] font-semibold rounded-md px-2.5 py-1 bg-os-600 hover:bg-os-500 text-white focus:outline-none focus-visible:ring-1 focus-visible:ring-os-500/40"
+              >
+                {t('success.close')}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <p className="text-xs text-gray-500 mb-3">{t('description')}</p>
+        )}
 
         {state.status === 'loading' && (
           <p role="status" className="text-sm text-gray-500">
@@ -472,7 +567,7 @@ export default function SetupChecklist({
           </p>
         )}
 
-        {progress && steps && (
+        {progress && steps && !allDone && (
           <ol className="space-y-2">
             {SETUP_STEPS.map((id, i) => (
               <SetupStep key={id} index={i + 1} status={progress[id]} {...steps[id]} />

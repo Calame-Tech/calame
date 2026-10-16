@@ -1216,6 +1216,16 @@
           "protocol": "protocol error",
           "backend": "server error"
         }
+      },
+      "success": {
+        "pill": "Your MCP works ✓",
+        "congrats": "Congratulations, your MCP server works!",
+        "next": "What you can do next:",
+        "openMcp": "Open the MCP server",
+        "auditLog": "See the calls in the audit log",
+        "addData": "Add more data",
+        "closeHint": "The guide will not come back once closed.",
+        "close": "Close the guide"
       }
     }
   },

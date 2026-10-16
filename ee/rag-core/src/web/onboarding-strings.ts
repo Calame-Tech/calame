@@ -125,6 +125,9 @@ const FR = {
   // KnowledgeBaseManager
   sourcesLoading: 'Chargement des sources…',
   sourcesLoadError: 'Impossible de charger les sources.',
+  sourcesRefreshing: 'Synchronisation de la liste des sources…',
+  sourcesRefreshError: (detail: string) =>
+    `Impossible de rafraîchir la liste des sources (${detail}). Dernière liste connue affichée.`,
   syncProgress: (processed: number, total: number) => ` (${processed} / ${total} documents)`,
 
   // SourceForm — save / test outcomes
@@ -262,6 +265,9 @@ const EN: typeof FR = {
 
   sourcesLoading: 'Loading sources…',
   sourcesLoadError: 'Could not load the sources.',
+  sourcesRefreshing: 'Syncing the source list…',
+  sourcesRefreshError: (detail: string) =>
+    `Could not refresh the source list (${detail}). Showing the last known list.`,
   syncProgress: (processed: number, total: number) => ` (${processed} / ${total} documents)`,
 
   saveMissingSource: 'The server did not return the saved source. Reload the list.',

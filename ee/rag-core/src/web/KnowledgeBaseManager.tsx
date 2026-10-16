@@ -8,7 +8,6 @@ import {
   apiGet,
   apiPost,
   ApiError,
-  type RagSourceListResponse,
   type RagSourcePublic,
   type RagSourceWithCounts,
 } from './api.js';
@@ -22,6 +21,7 @@ import SyncHistoryPanel from './SyncHistoryPanel.js';
 import EmbeddingUsageCard from './EmbeddingUsageCard.js';
 import { InitialSyncAlert, useInitialSync } from './SyncRetryAlert.js';
 import SourceDetailNotices from './SourceDetailNotices.js';
+import { LOAD_TIMEOUT_MS, useSourceList, type KnownSourcesCache } from './useSourceList.js';
 import {
   useActiveSyncJobs,
   formatRelativeTime,
@@ -43,6 +43,11 @@ interface KnowledgeBaseManagerProps {
    * created until the user confirms there.
    */
   onCreateProfileFromSource?: (source: { id: string; name: string }) => void;
+  /**
+   * Seeds the list with the last known sources (shown with a "syncing"
+   * notice until the server answers) and receives every authoritative list.
+   */
+  sourcesCache?: KnownSourcesCache;
 }
 
 function formatDate(value?: string): string {
@@ -198,13 +203,6 @@ function RefreshIcon({ spinning }: { spinning: boolean }) {
 const RETENTION_DAYS = 7;
 
 /**
- * Upper bound for the initial list requests. `fetch` has no timeout of its
- * own, so a server that never answers would otherwise leave the view on
- * "Chargement des sources…" forever with no way out.
- */
-export const LOAD_TIMEOUT_MS = 20_000;
-
-/**
  * Compute how many days remain before the source is hard-deleted by the
  * cleanup cron. Negative values mean the source is past retention and will be
  * collected on the next server boot (or already has been — the UI just hasn't
@@ -223,8 +221,8 @@ export default function KnowledgeBaseManager({
   onClose,
   onSourcesChange,
   onCreateProfileFromSource,
+  sourcesCache,
 }: KnowledgeBaseManagerProps) {
-  const [sources, setSources] = useState<RagSourceWithCounts[]>([]);
   const [aiSettings, setAiSettings] = useState<AiSettingOption[]>([]);
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -241,9 +239,6 @@ export default function KnowledgeBaseManager({
   const [view, setView] = useState<'sources' | 'deleted'>('sources');
   const [deletedSources, setDeletedSources] = useState<RagSourcePublic[]>([]);
   const [loading, setLoading] = useState(true);
-  // False until the source list has been fetched once — an empty `sources`
-  // array must not be presented as "no source" when the fetch failed.
-  const [sourcesLoaded, setSourcesLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   // Track per-source "requesting sync" state independently from active jobs.
@@ -257,26 +252,11 @@ export default function KnowledgeBaseManager({
   // counters across.
   const [folderRefreshTicks, setFolderRefreshTicks] = useState<Record<string, number>>({});
 
-  // Ref so a new callback identity does not re-create refreshSources (which
-  // would re-run the initial load effect).
-  const onSourcesChangeRef = useRef(onSourcesChange);
-  onSourcesChangeRef.current = onSourcesChange;
-
-  const refreshSources = useCallback(async (): Promise<void> => {
-    try {
-      const data = await apiGet<RagSourceListResponse>('/api/rag/sources', {
-        timeoutMs: LOAD_TIMEOUT_MS,
-      });
-      setSources(data.sources ?? []);
-      setSourcesLoaded(true);
-      onSourcesChangeRef.current?.(data.sources?.length ?? 0);
-      setError(null);
-    } catch (err) {
-      const message =
-        err instanceof ApiError ? err.message : err instanceof Error ? err.message : T.loadError;
-      setError(message);
-    }
-  }, []);
+  const { sources, sourcesLoaded, refreshing, refreshSources } = useSourceList(
+    sourcesCache,
+    onSourcesChange,
+    setError,
+  );
 
   /**
    * Pull the list of soft-deleted sources. Kept separate from
@@ -728,9 +708,18 @@ export default function KnowledgeBaseManager({
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] gap-4 items-start">
         {/* Source list */}
         <div className="space-y-2">
-          {loading && (
+          {loading && !sourcesLoaded && (
             <p role="status" className="text-sm text-gray-500 italic">
               {RAG_STRINGS.sourcesLoading}
+            </p>
+          )}
+          {sourcesLoaded && refreshing && (
+            <p
+              role="status"
+              className="inline-flex items-center gap-1.5 text-xs text-gray-500 italic"
+            >
+              <RefreshIcon spinning />
+              {RAG_STRINGS.sourcesRefreshing}
             </p>
           )}
           {!loading && !sourcesLoaded && (

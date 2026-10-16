@@ -8,6 +8,7 @@ import { createContext, useCallback, useContext, useEffect, useState } from 'rea
 import type { Dispatch, ReactNode, SetStateAction } from 'react';
 import { apiFetch } from '../lib/api.js';
 import { clearMcpDrafts } from '../lib/mcp-draft.js';
+import { clearKnownRagSources } from '../lib/known-rag-sources.js';
 import { resolveLocationRoutes } from '../router/index.js';
 
 /** Logged-in admin user info (email + role) shown in the Sidebar footer. */
@@ -149,6 +150,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!authenticated) clearMcpDrafts();
   }, [authenticated]);
+
+  // The last known knowledge-base lists are purged whenever the session ends
+  // or the signed-in account changes.
+  const accountEmail = currentUser?.email;
+  useEffect(() => {
+    clearKnownRagSources();
+  }, [authenticated, accountEmail]);
 
   const bumpDataVersion = useCallback(() => setDataVersion((v) => v + 1), []);
 

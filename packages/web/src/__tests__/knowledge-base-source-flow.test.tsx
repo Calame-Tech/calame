@@ -475,3 +475,35 @@ describe('KnowledgeBaseManager — built-in embedding label', () => {
     expect(screen.queryByRole('option', { name: /Embeddings locaux/ })).not.toBeInTheDocument();
   });
 });
+
+describe('KnowledgeBaseManager — next step towards a data configuration', () => {
+  it('offers to create a configuration with an indexed source, and only navigates on click', async () => {
+    sources = [{ ...CREATED_SOURCE, folderCount: 1, documentCount: 4 }];
+    const onCreateProfileFromSource = vi.fn();
+
+    render(<KnowledgeBaseManager onCreateProfileFromSource={onCreateProfileFromSource} />);
+    fireEvent.click(await screen.findByText('Docs'));
+
+    const cta = await screen.findByRole('button', {
+      name: 'Créer une configuration de données avec cette source',
+    });
+    expect(onCreateProfileFromSource).not.toHaveBeenCalled();
+    fireEvent.click(cta);
+    expect(onCreateProfileFromSource).toHaveBeenCalledWith({ id: 'src_1', name: 'Docs' });
+  });
+
+  it('does not offer it while the source has no indexed document yet', async () => {
+    sources = [{ ...CREATED_SOURCE, folderCount: 0, documentCount: 0 }];
+
+    render(<KnowledgeBaseManager onCreateProfileFromSource={vi.fn()} />);
+    fireEvent.click(await screen.findByText('Docs'));
+
+    // The detail panel of the source is open.
+    expect(await screen.findByText('Aucune indexation en cours.')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', {
+        name: 'Créer une configuration de données avec cette source',
+      }),
+    ).not.toBeInTheDocument();
+  });
+});

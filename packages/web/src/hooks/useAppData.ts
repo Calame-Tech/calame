@@ -422,12 +422,19 @@ export function useAppData(isUserPage: boolean) {
 
   // Profile CRUD
   const handleProfileCreate = useCallback(
-    (name: string, label: string) => {
+    (name: string, label: string, configurations?: string[]) => {
       // Never overwrite an existing profile's settings with the new-MCP defaults.
       if (profiles.some((p) => p.name === name)) return;
-      setProfiles((prev) =>
-        prev.some((p) => p.name === name) ? prev : [...prev, createNewProfile(name, label)],
-      );
+      const created = createNewProfile(name, label);
+      if (configurations?.length) {
+        // Created with a preselected data configuration: persist the
+        // attachment right away, as toggling it on the detail page does.
+        created.configurations = configurations;
+        persistProfiles(buildProfilesData([...profiles, created]))
+          .then(() => apiFetch('/api/serve/refresh', { method: 'POST' }))
+          .catch(() => {});
+      }
+      setProfiles((prev) => (prev.some((p) => p.name === name) ? prev : [...prev, created]));
       setActiveProfileIndex((prev) => prev + 1);
     },
     [profiles],

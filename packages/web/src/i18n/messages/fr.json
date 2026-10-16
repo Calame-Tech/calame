@@ -236,7 +236,9 @@
       "effectiveHeading": "Tables effectives (fusionnées à partir de {count, plural, one {# configuration} other {# configurations}})",
       "noTablesSelected": "Aucune table sélectionnée dans les configurations.",
       "colsLabel": "{count} col.",
-      "toolTitle": "Outil : {tool}"
+      "toolTitle": "Outil : {tool}",
+      "suggestAttach": "Rattacher la configuration de données « {label} » à ce serveur ?",
+      "suggestAttachButton": "Rattacher"
     },
     "users": {
       "heading": "Utilisateurs ayant accès à {name}"
@@ -284,6 +286,12 @@
       "tableToolsHelp": "Configurez chaque table individuellement : outils exposés, limite de lignes, colonnes filtrables/groupables et masquage des données sensibles.",
       "filterPlaceholder": "Filtrer les tables...",
       "filterHelp": "Filtre les tables affichées par nom."
+    },
+    "nextStep": {
+      "description": "Étape suivante : exposez cette configuration de données via un serveur MCP.",
+      "createMcp": "Créer un serveur MCP avec cette configuration",
+      "attachLabel": "Serveur MCP existant",
+      "attachMcp": "Rattacher à ce serveur…"
     }
   },
   "configGraph": {
@@ -1257,7 +1265,8 @@
       "maskedColumnsBadge": "{count, plural, one {# colonne masquée} other {# colonnes masquées}}",
       "mountedByPrefix": "Monté par",
       "stopped": "(arrêté)",
-      "notMounted": "Non monté par aucun serveur"
+      "notMounted": "Non monté par aucun serveur",
+      "includedSource": "Source incluse : {name} (entièrement accessible, modifiable ensuite dans l’onglet Bases de connaissances)"
     },
     "sourcesPage": {
       "kbDisabledDefault": "Les fonctionnalités de base de connaissances ne sont pas disponibles sur cette instance",
@@ -2157,7 +2166,8 @@
           "responseMode": "Réponses naturelles : langage simple, sans noms de tables ni de colonnes.",
           "documentWrite": "Lecture seule : le MCP ne peut ni créer ni modifier de fichiers.",
           "changeLater": "Vous pourrez les modifier plus tard dans « Options avancées » sur la page du MCP."
-        }
+        },
+        "includedConfiguration": "Configuration de données incluse : {label}"
       },
       "newServerCard": "Nouveau serveur MCP",
       "deleteConfirm": {

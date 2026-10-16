@@ -272,6 +272,7 @@ export default function App() {
 
             {view.page === 'configurations' && (
               <ConfigurationsPage
+                prefillSource={view.prefillSource}
                 setView={setView}
                 configurations={configurations}
                 setConfigurations={setConfigurations}
@@ -288,6 +289,7 @@ export default function App() {
                 view={view}
                 setView={setView}
                 configurations={configurations}
+                profiles={profiles}
                 connections={connections}
                 connectionSchemas={connectionSchemas}
                 piiDetections={piiDetections}
@@ -304,6 +306,8 @@ export default function App() {
 
             {view.page === 'mcp-list' && (
               <McpListPage
+                prefillConfiguration={view.prefillConfiguration}
+                configurations={configurations}
                 setView={setView}
                 configWithProfileOptions={configWithProfileOptions}
                 selectedTables={selectedTables}

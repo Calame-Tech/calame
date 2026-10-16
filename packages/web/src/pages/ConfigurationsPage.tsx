@@ -17,6 +17,8 @@ import type { Configuration, NamedConnection, Profile, ServeStatus } from '../ty
 import type { View } from '../router/index.js';
 
 interface ConfigurationsPageProps {
+  /** Knowledge source to preselect in the creation form (guided source → configuration step). */
+  prefillSource?: { id: string; name: string };
   setView: Dispatch<SetStateAction<View>>;
   configurations: Configuration[];
   setConfigurations: Dispatch<SetStateAction<Configuration[]>>;
@@ -41,6 +43,7 @@ const SOURCE_DOT_COLORS: Record<string, string> = {
 };
 
 export default function ConfigurationsPage({
+  prefillSource,
   setView,
   configurations,
   setConfigurations,
@@ -70,11 +73,25 @@ export default function ConfigurationsPage({
         serveStatus={serveStatus}
         mode={mode}
         onModeChange={setMode}
+        prefillSource={prefillSource}
         onSelect={(name) => setView({ page: 'config-detail', configName: name })}
-        onCreate={(name, label) => {
+        onCreate={(name, label, source) => {
           const newConfig: Configuration = {
             name,
             label,
+            // The preselected knowledge source, fully included (same scope
+            // as checking the whole source in the Knowledge tab).
+            ...(source && {
+              sources: [source.id],
+              scopes: {
+                [source.id]: {
+                  kind: 'document',
+                  mode: 'allowAll',
+                  allowedFolders: [],
+                  allowedDocuments: [],
+                },
+              },
+            }),
           };
           // Add to local state immediately so detail view can find it
           setConfigurations((prev) => [...prev, newConfig]);
@@ -98,8 +115,9 @@ interface ConfigurationListViewProps {
   serveStatus: ServeStatus;
   mode: ConfigViewMode;
   onModeChange: (mode: ConfigViewMode) => void;
+  prefillSource?: { id: string; name: string };
   onSelect: (name: string) => void;
-  onCreate: (name: string, label: string) => void;
+  onCreate: (name: string, label: string, source?: { id: string; name: string }) => void;
   onDelete: (name: string) => void;
 }
 
@@ -110,15 +128,19 @@ function ConfigurationListView({
   serveStatus,
   mode,
   onModeChange,
+  prefillSource,
   onSelect,
   onCreate,
   onDelete,
 }: ConfigurationListViewProps) {
   const t = useTranslations('sources.configurationsPage');
   const tCommon = useTranslations('common');
-  const [creating, setCreating] = useState(false);
-  const [newName, setNewName] = useState('');
-  const [newLabel, setNewLabel] = useState('');
+  // Coming from a knowledge source: the form is open and prefilled, but the
+  // configuration is only created on an explicit "Create".
+  const [creating, setCreating] = useState(prefillSource !== undefined);
+  const [newName, setNewName] = useState(prefillSource?.name ?? '');
+  const [newLabel, setNewLabel] = useState(prefillSource?.name ?? '');
+  const [includedSource, setIncludedSource] = useState(prefillSource);
 
   const handleCreate = () => {
     const slug = newName
@@ -126,10 +148,11 @@ function ConfigurationListView({
       .toLowerCase()
       .replace(/[^a-z0-9-]/g, '-');
     if (!slug) return;
-    onCreate(slug, newLabel.trim() || slug);
+    onCreate(slug, newLabel.trim() || slug, includedSource);
     setCreating(false);
     setNewName('');
     setNewLabel('');
+    setIncludedSource(undefined);
   };
 
   const connByName = new Map(connections.map((c) => [c.name, c]));
@@ -194,10 +217,21 @@ function ConfigurationListView({
             <Button variant="primary" onClick={handleCreate} disabled={!newName.trim()}>
               {t('create')}
             </Button>
-            <Button variant="ghost" onClick={() => setCreating(false)}>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setCreating(false);
+                setIncludedSource(undefined);
+              }}
+            >
               {tCommon('cancel')}
             </Button>
           </div>
+          {includedSource && (
+            <p className="text-xs text-gray-400 mt-2">
+              {t('includedSource', { name: includedSource.name })}
+            </p>
+          )}
         </div>
       )}
 

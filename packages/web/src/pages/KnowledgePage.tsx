@@ -34,6 +34,9 @@ export default function KnowledgePage({
       ragEnabled={ragEnabled}
       ragDisabledReason={ragDisabledReason}
       KnowledgeBaseManagerComponent={KnowledgeBaseManager}
+      onCreateProfileFromSource={(source) =>
+        setView({ page: 'configurations', prefillSource: source })
+      }
     />
   );
 }

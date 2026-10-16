@@ -236,7 +236,9 @@
       "effectiveHeading": "Effective Tables (merged from {count, plural, one {# configuration} other {# configurations}})",
       "noTablesSelected": "No tables selected in configurations.",
       "colsLabel": "{count} cols",
-      "toolTitle": "Tool: {tool}"
+      "toolTitle": "Tool: {tool}",
+      "suggestAttach": "Attach the data configuration “{label}” to this server?",
+      "suggestAttachButton": "Attach"
     },
     "users": {
       "heading": "Users with access to {name}"
@@ -284,6 +286,12 @@
       "tableToolsHelp": "Configure each table individually: exposed tools, row limit, filterable/groupable columns, and sensitive data masking.",
       "filterPlaceholder": "Filter tables...",
       "filterHelp": "Filter the displayed tables by name."
+    },
+    "nextStep": {
+      "description": "Next step: expose this data configuration through an MCP server.",
+      "createMcp": "Create an MCP server with this configuration",
+      "attachLabel": "Existing MCP server",
+      "attachMcp": "Attach to this server…"
     }
   },
   "configGraph": {
@@ -1257,7 +1265,8 @@
       "maskedColumnsBadge": "{count, plural, one {# masked column} other {# masked columns}}",
       "mountedByPrefix": "Mounted by",
       "stopped": "(stopped)",
-      "notMounted": "Not mounted by any server"
+      "notMounted": "Not mounted by any server",
+      "includedSource": "Included source: {name} (fully accessible, editable later in the Knowledge bases tab)"
     },
     "sourcesPage": {
       "kbDisabledDefault": "Knowledge base features are unavailable on this instance",
@@ -2157,7 +2166,8 @@
           "responseMode": "Natural answers: plain language, no table or column names.",
           "documentWrite": "Read-only: the MCP cannot create or edit files.",
           "changeLater": "You can change them later under \"Advanced options\" on the MCP page."
-        }
+        },
+        "includedConfiguration": "Included data configuration: {label}"
       },
       "newServerCard": "New MCP Server",
       "deleteConfirm": {

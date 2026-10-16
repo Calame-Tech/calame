@@ -20,7 +20,8 @@ import { RAG_STRINGS, ragLocale, translateJobError } from './onboarding-strings.
 import { KB_MANAGER_STRINGS as T } from './strings/kb-manager.js';
 import SyncHistoryPanel from './SyncHistoryPanel.js';
 import EmbeddingUsageCard from './EmbeddingUsageCard.js';
-import SyncRetryAlert, { InitialSyncAlert, useInitialSync } from './SyncRetryAlert.js';
+import { InitialSyncAlert, useInitialSync } from './SyncRetryAlert.js';
+import SourceDetailNotices from './SourceDetailNotices.js';
 import {
   useActiveSyncJobs,
   formatRelativeTime,
@@ -36,6 +37,12 @@ interface KnowledgeBaseManagerProps {
    * guided-setup checklist and tab badge without re-fetching.
    */
   onSourcesChange?: (count: number) => void;
+  /**
+   * Guided next step for an indexed source: open the data-configuration
+   * creation with this source preselected. Navigation only — nothing is
+   * created until the user confirms there.
+   */
+  onCreateProfileFromSource?: (source: { id: string; name: string }) => void;
 }
 
 function formatDate(value?: string): string {
@@ -215,6 +222,7 @@ function daysUntilHardDelete(deletedAt: string | null): number | null {
 export default function KnowledgeBaseManager({
   onClose,
   onSourcesChange,
+  onCreateProfileFromSource,
 }: KnowledgeBaseManagerProps) {
   const [sources, setSources] = useState<RagSourceWithCounts[]>([]);
   const [aiSettings, setAiSettings] = useState<AiSettingOption[]>([]);
@@ -927,24 +935,13 @@ export default function KnowledgeBaseManager({
                 </div>
                 <SyncStatusBadge source={selectedSource} jobInfo={jobMap.get(selectedSource.id)} />
               </div>
-              {(() => {
-                // The badge only carries the error in its tooltip — spell it
-                // out on the detail card so a failed sync is never silent.
-                const failed = jobMap.get(selectedSource.id);
-                if (!failed?.lastFailedJob || failed.activeJob) return null;
-                return (
-                  <SyncRetryAlert
-                    compact
-                    message={RAG_STRINGS.lastSyncFailedAria(
-                      failed.lastFailedJob.error
-                        ? translateJobError(failed.lastFailedJob.error)
-                        : RAG_STRINGS.unknownError,
-                    )}
-                    onRetry={() => void handleResync(selectedSource)}
-                    retrying={resyncingIds.has(selectedSource.id)}
-                  />
-                );
-              })()}
+              <SourceDetailNotices
+                source={selectedSource}
+                jobInfo={jobMap.get(selectedSource.id)}
+                onRetry={() => void handleResync(selectedSource)}
+                retrying={resyncingIds.has(selectedSource.id)}
+                onCreateProfile={onCreateProfileFromSource}
+              />
 
               <FolderTreeView
                 source={selectedSource}

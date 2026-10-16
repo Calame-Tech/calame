@@ -113,6 +113,7 @@ export default function McpDetailPage({
         onServeAction={fetchServeStatus}
         config={configWithProfileOptions}
         initialActiveSection={view.activeSection}
+        sectionRequestKey={view}
         configurations={configurations}
         onProfilesChange={setProfiles}
         activeProfileIndex={activeProfileIndex}
@@ -189,6 +190,12 @@ interface McpDetailViewProps {
   onNavigateToUser: (userId: string) => void;
   onNavigateToAiSettings: () => void;
   initialActiveSection?: string;
+  /**
+   * Changes (by identity) on every navigation to this MCP, e.g. a link to
+   * `#/mcp/<name>/connect` while the page is already open: the tab is then
+   * re-selected from `initialActiveSection`.
+   */
+  sectionRequestKey?: unknown;
 }
 
 function McpDetailView({
@@ -207,6 +214,7 @@ function McpDetailView({
   onNavigateBack,
   onNavigateToUser,
   initialActiveSection,
+  sectionRequestKey,
 }: McpDetailViewProps) {
   const t = useTranslations('mcpDetail');
   const tCommon = useTranslations('common');
@@ -226,6 +234,12 @@ function McpDetailView({
       | 'users'
       | 'scoping') ?? 'tables',
   );
+
+  // The view is keyed by MCP name, so it is not remounted when only the
+  // requested tab changes (same MCP): follow the navigation explicitly.
+  useEffect(() => {
+    setActiveSection((initialActiveSection as typeof activeSection | undefined) ?? 'tables');
+  }, [initialActiveSection, sectionRequestKey]);
 
   const [editingLabel, setEditingLabel] = useState(false);
   const [editLabel, setEditLabel] = useState('');

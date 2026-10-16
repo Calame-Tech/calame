@@ -1,8 +1,10 @@
 // McpDetailPage component tests (Phase 3 #16).
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { screen, fireEvent } from '@testing-library/react';
+import { screen, fireEvent, act } from '@testing-library/react';
 import McpDetailPage from '../McpDetailPage.js';
+import { useNavigation } from '../../router/useNavigation.js';
+import type { View } from '../../router/view.js';
 import { createNewProfile } from '../../lib/profiles.js';
 import {
   render,
@@ -77,6 +79,55 @@ describe('McpDetailPage', () => {
     fireEvent.click(screen.getByText('Exposed Data'));
     await flushEffects();
     expect(screen.queryByText('AI Settings')).toBeNull();
+  });
+
+  it('selects the Connect tab on a hash navigation to /connect while the same MCP is open', async () => {
+    let navigate: (view: View) => void = () => {};
+    function RoutedPage() {
+      const { view, setView } = useNavigation();
+      navigate = setView;
+      if (view.page !== 'mcp-detail') return null;
+      return (
+        <McpDetailPage
+          view={view}
+          setView={setView}
+          profiles={[makeProfile()]}
+          setProfiles={vi.fn()}
+          serveStatus={makeServeStatus()}
+          configWithProfileOptions={makeConfig()}
+          configurations={[]}
+          setConfigurations={vi.fn()}
+          activeProfileIndex={0}
+          setActiveProfileIndex={vi.fn()}
+          handleProfileDelete={vi.fn(async () => {})}
+          handleConfigurationSave={vi.fn(async () => true)}
+        />
+      );
+    }
+    window.location.hash = '#/mcp/default';
+    try {
+      render(<RoutedPage />);
+      await flushEffects();
+      expect(screen.queryByText('AI Settings')).toBeNull();
+
+      // e.g. the getting-started card's "Connect a client" link.
+      act(() => {
+        window.location.hash = '#/mcp/default/connect';
+        window.dispatchEvent(new HashChangeEvent('hashchange'));
+      });
+      await flushEffects();
+      expect(screen.getByText('AI Settings')).toBeTruthy();
+
+      // Back on another tab, the same link (unchanged URL) still selects Connect.
+      fireEvent.click(screen.getByText('Exposed Data'));
+      await flushEffects();
+      expect(screen.queryByText('AI Settings')).toBeNull();
+      act(() => navigate({ page: 'mcp-detail', profileName: 'default', activeSection: 'connect' }));
+      await flushEffects();
+      expect(screen.getByText('AI Settings')).toBeTruthy();
+    } finally {
+      window.location.hash = '';
+    }
   });
 
   it('shows a not-found message for an unknown profile', async () => {

@@ -190,7 +190,9 @@ describe('SetupChecklist', () => {
 
     render(<SetupChecklist sourceCount={1} onNavigate={vi.fn()} />);
     const reopen = await screen.findByRole('button', { name: 'Reopen the getting-started guide' });
-    expect(reopen.textContent).toBe('Getting started · 2/4');
+    // The pill names the current step so the guide stays readable while folded.
+    expect(reopen.textContent).toContain('Getting started · 2/4');
+    expect(screen.getByTestId('setup-pill-step').textContent).toBe('3. Create the MCP server');
     fireEvent.click(reopen);
     expect(screen.getAllByText('1. Connect data').length).toBeGreaterThan(0);
     expect(localStorage.getItem(SETUP_CHECKLIST_COLLAPSED_KEY)).toBeNull();
@@ -266,10 +268,51 @@ describe('SetupChecklist', () => {
     installServer({});
     render(<SetupChecklist sourceCount={0} onNavigate={vi.fn()} />);
     const reopen = await screen.findByRole('button', { name: 'Reopen the getting-started guide' });
-    expect(screen.queryByText('1. Connect data')).toBeNull();
+    // Folded: only the current step's name, not the step list.
+    expect(screen.queryByRole('list')).toBeNull();
+    expect(screen.getByTestId('setup-pill-step').textContent).toBe('1. Connect data');
     // Folding by width is not a user choice: nothing is persisted.
     expect(localStorage.getItem(SETUP_CHECKLIST_COLLAPSED_KEY)).toBeNull();
     fireEvent.click(reopen);
     expect(screen.getAllByText('1. Connect data').length).toBeGreaterThan(0);
+  });
+
+  it('folds back to the pill after a step action on a narrow window', async () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn((query: string) => ({
+        matches: query === '(max-width: 1023px)',
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    );
+    installServer({});
+    const onNavigate = vi.fn();
+    render(<SetupChecklist sourceCount={0} onNavigate={onNavigate} />);
+    const pill = await screen.findByRole('button', { name: 'Reopen the getting-started guide' });
+    expect(screen.getByTestId('setup-pill-step').textContent).toBe('1. Connect data');
+    fireEvent.click(pill);
+    fireEvent.click(screen.getByRole('button', { name: 'Add data' }));
+    expect(onNavigate).toHaveBeenCalledWith({ page: 'sources' });
+    // The destination page's commands are not left under the open card.
+    expect(screen.getByRole('button', { name: 'Reopen the getting-started guide' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Add data' })).toBeNull();
+  });
+
+  it('reserves room at the bottom of the page for the floating card', async () => {
+    const rect = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockReturnValue({ height: 40 } as DOMRect);
+    try {
+      installServer({});
+      render(<SetupChecklist sourceCount={0} onNavigate={vi.fn()} />);
+      await screen.findAllByText('1. Connect data');
+      const spacer = screen.getByTestId('setup-checklist-spacer');
+      expect(spacer.style.height).toBe('64px');
+      expect(spacer.getAttribute('aria-hidden')).toBe('true');
+    } finally {
+      rect.mockRestore();
+    }
   });
 });

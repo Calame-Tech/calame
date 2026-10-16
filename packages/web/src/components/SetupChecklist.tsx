@@ -147,9 +147,28 @@ export default function SetupChecklist({
 }: SetupChecklistProps) {
   const t = useTranslations('onboarding.checklist');
   const [hidden, setHidden] = useState(() => readFlag(SETUP_CHECKLIST_HIDDEN_KEY));
+  const [narrow, setNarrow] = useState(() => narrowWindowQuery()?.matches === true);
   const [collapsed, setCollapsed] = useState(
     () => readFlag(SETUP_CHECKLIST_COLLAPSED_KEY) || narrowWindowQuery()?.matches === true,
   );
+  // Height of the floating card or pill, reserved at the bottom of the page
+  // so the last commands of a page can always be scrolled clear of it.
+  const [reservedHeight, setReservedHeight] = useState(0);
+  const observerRef = useRef<ResizeObserver | null>(null);
+  const floatingRef = useCallback((el: HTMLElement | null) => {
+    observerRef.current?.disconnect();
+    observerRef.current = null;
+    if (!el) {
+      setReservedHeight(0);
+      return;
+    }
+    const measure = () => setReservedHeight(el.getBoundingClientRect().height);
+    measure();
+    if (typeof ResizeObserver === 'function') {
+      observerRef.current = new ResizeObserver(measure);
+      observerRef.current.observe(el);
+    }
+  }, []);
   const [state, setState] = useState<LoadState>({ status: 'idle' });
   // Only the latest request may update the state: a slow response must not
   // overwrite a newer one (e.g. a refresh triggered by a new source).
@@ -171,6 +190,7 @@ export default function SetupChecklist({
     const query = narrowWindowQuery();
     if (!query) return;
     const onChange = () => {
+      setNarrow(query.matches);
       if (query.matches) setCollapsed(true);
     };
     query.addEventListener?.('change', onChange);
@@ -227,6 +247,13 @@ export default function SetupChecklist({
     setCollapsed(value);
   };
 
+  // On a narrow window, a step action leads to a page whose commands the open
+  // card would cover: fold it back to the pill (without remembering it).
+  const navigate = (view: View) => {
+    if (narrow) setCollapsed(true);
+    onNavigate(view);
+  };
+
   // Nothing is shown before the first answer, so an installation that already
   // has a used MCP never flashes the guide.
   if (hidden || allDone || state.status === 'idle') return null;
@@ -253,7 +280,7 @@ export default function SetupChecklist({
           alert: progress.source !== 'done' && progress.failedSources.length > 0,
           actionLabel: pendingSource ? t('source.openSource') : t('source.action'),
           onAction: () =>
-            onNavigate(pendingSource ? { page: 'sources', tab: 'knowledge' } : { page: 'sources' }),
+            navigate(pendingSource ? { page: 'sources', tab: 'knowledge' } : { page: 'sources' }),
         },
         dataProfile: {
           title: t('dataProfile.title'),
@@ -267,8 +294,8 @@ export default function SetupChecklist({
             progress.dataProfile === 'done' ? t('dataProfile.openAction') : t('dataProfile.action'),
           onAction: () =>
             progress.dataProfile === 'done' && progress.dataProfileName
-              ? onNavigate({ page: 'config-detail', configName: progress.dataProfileName })
-              : onNavigate({ page: 'configurations' }),
+              ? navigate({ page: 'config-detail', configName: progress.dataProfileName })
+              : navigate({ page: 'configurations' }),
         },
         mcp: {
           title: t('mcp.title'),
@@ -281,8 +308,8 @@ export default function SetupChecklist({
           actionLabel: progress.mcp === 'done' ? t('mcp.openAction') : t('mcp.action'),
           onAction: () =>
             progress.mcp === 'done' && progress.mcpName
-              ? onNavigate({ page: 'mcp-detail', profileName: progress.mcpName })
-              : onNavigate({ page: 'mcp-list' }),
+              ? navigate({ page: 'mcp-detail', profileName: progress.mcpName })
+              : navigate({ page: 'mcp-list' }),
         },
         client: {
           title: t('client.title'),
@@ -295,7 +322,7 @@ export default function SetupChecklist({
           actionLabel: t('client.action'),
           onAction: progress.mcpName
             ? () =>
-                onNavigate({
+                navigate({
                   page: 'mcp-detail',
                   profileName: progress.mcpName as string,
                   activeSection: 'connect',
@@ -307,85 +334,108 @@ export default function SetupChecklist({
       }
     : null;
 
+  const spacer = (
+    <div
+      aria-hidden="true"
+      data-testid="setup-checklist-spacer"
+      style={{ height: reservedHeight ? reservedHeight + 24 : 0 }}
+    />
+  );
+
   if (collapsed) {
     return (
-      <button
-        type="button"
-        onClick={() => setFolded(false)}
-        aria-label={t('showAriaLabel')}
-        className="fixed bottom-4 right-4 z-40 rounded-full bg-os-600 hover:bg-os-500 text-white text-xs font-semibold px-4 py-2 shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-os-300"
-      >
-        {progress
-          ? t('reopen', { done: progress.doneCount, total: SETUP_STEPS.length })
-          : t('title')}
-      </button>
+      <>
+        {spacer}
+        <button
+          ref={floatingRef}
+          type="button"
+          onClick={() => setFolded(false)}
+          aria-label={t('showAriaLabel')}
+          className="fixed bottom-4 right-4 z-40 max-w-[calc(100vw-2rem)] rounded-full bg-os-600 hover:bg-os-500 text-white text-xs font-semibold px-4 py-2 shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-os-300 flex items-center gap-2"
+        >
+          <span className="flex-none">
+            {progress
+              ? t('reopen', { done: progress.doneCount, total: SETUP_STEPS.length })
+              : t('title')}
+          </span>
+          {progress && steps && progress.currentStep && (
+            <span className="min-w-0 truncate font-normal" data-testid="setup-pill-step">
+              {steps[progress.currentStep].title}
+            </span>
+          )}
+        </button>
+      </>
     );
   }
 
   return (
-    <section
-      className="fixed bottom-4 right-4 z-40 w-[22rem] max-w-[calc(100vw-2rem)] max-h-[calc(100vh-2rem)] overflow-y-auto card-primary p-4 shadow-2xl"
-      aria-labelledby="setup-checklist-title"
-    >
-      <div className="flex items-start justify-between gap-3">
-        <h2 id="setup-checklist-title" className="text-sm font-semibold text-gray-100">
-          {t('title')}
-        </h2>
-        <button
-          type="button"
-          onClick={() => setFolded(true)}
-          aria-label={t('hideAriaLabel')}
-          className="flex-none text-[11px] text-gray-500 hover:text-gray-300 focus:outline-none focus-visible:ring-1 focus-visible:ring-os-500/40 rounded"
-        >
-          {t('hide')}
-        </button>
-      </div>
-      <p className="text-xs text-gray-500 mb-3">{t('description')}</p>
-
-      {state.status === 'loading' && (
-        <p role="status" className="text-sm text-gray-500">
-          {t('loading')}
-        </p>
-      )}
-
-      {state.status === 'error' && (
-        <div role="alert" className="flex items-center gap-3 text-sm text-red-400">
-          <span>{t('loadError')}</span>
+    <>
+      {spacer}
+      <section
+        ref={floatingRef}
+        className="fixed bottom-4 right-4 z-40 w-[22rem] max-w-[calc(100vw-2rem)] max-h-[calc(100vh-2rem)] overflow-y-auto card-primary p-4 shadow-2xl"
+        aria-labelledby="setup-checklist-title"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <h2 id="setup-checklist-title" className="text-sm font-semibold text-gray-100">
+            {t('title')}
+          </h2>
           <button
             type="button"
-            onClick={() => {
-              setState({ status: 'loading' });
-              void load();
-            }}
-            className="text-xs text-os-300 hover:underline focus:outline-none focus-visible:ring-1 focus-visible:ring-os-500/40 rounded"
+            onClick={() => setFolded(true)}
+            aria-label={t('hideAriaLabel')}
+            className="flex-none text-[11px] text-gray-500 hover:text-gray-300 focus:outline-none focus-visible:ring-1 focus-visible:ring-os-500/40 rounded"
           >
-            {t('retry')}
+            {t('hide')}
           </button>
         </div>
-      )}
+        <p className="text-xs text-gray-500 mb-3">{t('description')}</p>
 
-      {progress && steps && progress.currentStep && (
-        <p className="text-xs text-gray-300 mb-3" data-testid="setup-current-step">
-          {t('currentStep', { step: steps[progress.currentStep].title })}
-          {progress.nextStep && (
-            <>
-              <br />
-              <span className="text-gray-500">
-                {t('nextStep', { step: steps[progress.nextStep].title })}
-              </span>
-            </>
-          )}
-        </p>
-      )}
+        {state.status === 'loading' && (
+          <p role="status" className="text-sm text-gray-500">
+            {t('loading')}
+          </p>
+        )}
 
-      {progress && steps && (
-        <ol className="space-y-2">
-          {SETUP_STEPS.map((id, i) => (
-            <SetupStep key={id} index={i + 1} status={progress[id]} {...steps[id]} />
-          ))}
-        </ol>
-      )}
-    </section>
+        {state.status === 'error' && (
+          <div role="alert" className="flex items-center gap-3 text-sm text-red-400">
+            <span>{t('loadError')}</span>
+            <button
+              type="button"
+              onClick={() => {
+                setState({ status: 'loading' });
+                void load();
+              }}
+              className="text-xs text-os-300 hover:underline focus:outline-none focus-visible:ring-1 focus-visible:ring-os-500/40 rounded"
+            >
+              {t('retry')}
+            </button>
+          </div>
+        )}
+
+        {progress && steps && progress.currentStep && (
+          <p className="text-xs text-gray-300 mb-3" data-testid="setup-current-step">
+            {t('currentStep', { step: steps[progress.currentStep].title })}
+            {progress.nextStep && (
+              <>
+                <br />
+                <span className="text-gray-500">
+                  {t('nextStep', { step: steps[progress.nextStep].title })}
+                </span>
+              </>
+            )}
+          </p>
+        )}
+
+        {progress && steps && (
+          <ol className="space-y-2">
+            {SETUP_STEPS.map((id, i) => (
+              <SetupStep key={id} index={i + 1} status={progress[id]} {...steps[id]} />
+            ))}
+          </ol>
+        )}
+      </section>
+    </>
   );
 }
 

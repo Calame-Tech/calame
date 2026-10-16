@@ -49,3 +49,20 @@ export function buildMcpUrl(
   const trimmed = origin.endsWith('/') ? origin.slice(0, -1) : origin;
   return `${trimmed}${buildMcpPath(profileName, tenantId)}`;
 }
+
+/**
+ * Port of an MCP origin as reported by `/api/serve/status` (`mcpOrigin`),
+ * falling back to the scheme default when the origin omits it. Returns `0`
+ * when the origin is unknown or malformed — callers treat `0` as "unknown",
+ * never as a real port.
+ */
+export function mcpPortFromOrigin(origin: string | null | undefined): number {
+  if (!origin) return 0;
+  try {
+    const url = new URL(origin);
+    if (url.port) return Number(url.port);
+    return url.protocol === 'https:' ? 443 : 80;
+  } catch {
+    return 0;
+  }
+}

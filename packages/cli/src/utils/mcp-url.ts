@@ -51,3 +51,33 @@ export function buildMcpUrl(
   const trimmed = origin.endsWith('/') ? origin.slice(0, -1) : origin;
   return `${trimmed}${buildMcpPath(profileName, tenantId)}`;
 }
+
+/**
+ * Minimal request surface needed to derive the public MCP origin. Kept
+ * structural so callers can pass an Express `Request` or a test double.
+ */
+export interface McpOriginRequest {
+  protocol: string;
+  get(name: 'host'): string | undefined;
+}
+
+/**
+ * Single source of truth for the MCP origin (`protocol://host[:port]`) that
+ * clients should use to reach this server. MCP routes are mounted at the app
+ * root (never under `CALAME_BASE_PATH`), so the origin is all that is needed
+ * before appending `buildMcpPath(...)`.
+ *
+ * Derived from the request the admin UI just made: `req.protocol` and the
+ * `Host` header already honour `CALAME_TRUST_PROXY` (X-Forwarded-Proto /
+ * X-Forwarded-Host), so a reverse-proxied install reports its public address.
+ * Falls back to the configured listening port on localhost when the request
+ * carries no Host header. Returns `null` when neither is known — callers must
+ * then show an honest "address unavailable" state rather than invent one.
+ */
+export function resolveMcpOrigin(req: McpOriginRequest, fallbackPort?: number): string | null {
+  const protocol = req.protocol === 'https' ? 'https' : 'http';
+  const host = req.get('host');
+  if (host) return `${protocol}://${host}`;
+  if (fallbackPort && fallbackPort > 0) return `${protocol}://localhost:${fallbackPort}`;
+  return null;
+}

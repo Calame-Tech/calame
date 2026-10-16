@@ -327,6 +327,11 @@ export type ScopeSelection =
 export interface ServeStatus {
   active: boolean;
   port: number;
+  /**
+   * Effective MCP origin (`protocol://host[:port]`) reported by the server —
+   * same source of truth as the Connexion snippet. `null`/absent when unknown.
+   */
+  mcpOrigin?: string | null;
   profiles: string[];
   profileStatuses?: Record<string, { active: boolean; endpoint: string }>;
   startedAt?: string;

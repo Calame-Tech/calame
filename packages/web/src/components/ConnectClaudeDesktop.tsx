@@ -210,9 +210,8 @@ export default function ConnectClaudeDesktop({ profileName }: ConnectClaudeDeskt
         {snippetOpen && (
           <div className="mt-2 space-y-2">
             <p className="text-xs text-gray-600">
-              {t.rich('snippetHostPlaceholder', {
-                code1: (chunks) => <code className="text-gray-500">&lt;{chunks}&gt;</code>,
-                code2: (chunks) => <code className="text-gray-500">&lt;{chunks}&gt;</code>,
+              {t.rich('snippetTokenPlaceholder', {
+                code: (chunks) => <code className="text-gray-500">&lt;{chunks}&gt;</code>,
               })}
             </p>
             {snippetLoading ? (

@@ -70,7 +70,7 @@ function installFetchMock(
               mcpServers: {
                 'calame-default': {
                   command: 'npx',
-                  args: ['-y', 'calame-mcp-bridge', '<YOUR-CALAME-HOST>', '<TOKEN>'],
+                  args: ['-y', 'calame-mcp-bridge', 'http://127.0.0.1:4567/mcp/default', '<TOKEN>'],
                 },
               },
             },
@@ -201,7 +201,8 @@ describe('ConnectClaudeDesktop', () => {
     await waitFor(() => {
       expect(screen.getByText(/calame-mcp-bridge/)).toBeTruthy();
     });
-    expect(screen.getAllByText(/YOUR-CALAME-HOST/).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText(/http:\/\/127\.0\.0\.1:4567\/mcp\/default/)).toBeTruthy();
+    expect(screen.queryByText(/YOUR-CALAME-HOST/)).toBeNull();
 
     fireEvent.click(screen.getByText('Copy'));
     await waitFor(() => {

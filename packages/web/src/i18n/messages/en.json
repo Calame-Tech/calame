@@ -1472,7 +1472,8 @@
         "eyebrow": "MCP SERVERS",
         "help": "Start, stop and manage your MCP servers exposed to AI clients",
         "activeSuffix": "· {count} active",
-        "servingOnPort": "serving on port {port}",
+        "servingAt": "serving at {address}",
+        "servingAddressUnknown": "serving (address not available yet)",
         "noServerRunning": "no server running",
         "on": "ON",
         "off": "OFF",
@@ -2301,7 +2302,7 @@
       "connectingButton": "Connecting…",
       "notFound": "Claude Desktop wasn't found on this machine.",
       "manualToggle": "Other clients / another machine",
-      "snippetHostPlaceholder": "Replace <code1>YOUR-CALAME-HOST</code1> and <code2>TOKEN</code2> with your Calame host and an API key."
+      "snippetTokenPlaceholder": "Replace <code>TOKEN</code> with an API key."
     }
   },
   "setupLogin": {

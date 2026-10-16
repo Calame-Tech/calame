@@ -1472,7 +1472,8 @@
         "eyebrow": "SERVEURS MCP",
         "help": "Démarrer, arrêter et gérer vos serveurs MCP exposés aux clients IA",
         "activeSuffix": "· {count} actif(s)",
-        "servingOnPort": "en service sur le port {port}",
+        "servingAt": "en service sur {address}",
+        "servingAddressUnknown": "en service (adresse pas encore disponible)",
         "noServerRunning": "aucun serveur en cours d’exécution",
         "on": "ON",
         "off": "OFF",
@@ -2301,7 +2302,7 @@
       "connectingButton": "Connexion…",
       "notFound": "Claude Desktop est introuvable sur cette machine.",
       "manualToggle": "Autres clients / une autre machine",
-      "snippetHostPlaceholder": "Remplacez <code1>YOUR-CALAME-HOST</code1> et <code2>TOKEN</code2> par votre hôte Calame et une clé API."
+      "snippetTokenPlaceholder": "Remplacez <code>TOKEN</code> par une clé API."
     }
   },
   "setupLogin": {

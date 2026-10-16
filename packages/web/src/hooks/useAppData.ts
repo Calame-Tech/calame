@@ -6,6 +6,7 @@
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { apiFetch } from '../lib/api.js';
+import { mcpPortFromOrigin } from '../lib/mcp-url.js';
 import {
   createDefaultProfile,
   createNewProfile,
@@ -41,6 +42,7 @@ function shallowServeStatusEqual(a: ServeStatus, b: ServeStatus): boolean {
   return (
     a.active === b.active &&
     a.port === b.port &&
+    a.mcpOrigin === b.mcpOrigin &&
     a.startedAt === b.startedAt &&
     a.totalRequests === b.totalRequests &&
     JSON.stringify(a.profiles) === JSON.stringify(b.profiles) &&
@@ -207,7 +209,8 @@ export function useAppData(isUserPage: boolean) {
       if (data.success !== false) {
         const next: ServeStatus = {
           active: data.serving ?? data.active ?? false,
-          port: data.port ?? 0,
+          port: data.port ?? mcpPortFromOrigin(data.mcpOrigin),
+          mcpOrigin: data.mcpOrigin ?? null,
           profiles: data.profiles ?? [],
           profileStatuses: data.profileStatuses,
           startedAt: data.startedAt,

@@ -11,7 +11,12 @@ import {
   makeProfile,
   installFetchMock,
 } from './testUtils.js';
-import type { AuditLogEntry, Configuration, NamedConnection } from '../../types/schema.js';
+import type {
+  AuditLogEntry,
+  Configuration,
+  NamedConnection,
+  ServeStatus,
+} from '../../types/schema.js';
 
 vi.mock('../../context/SessionContext.js', () => ({
   useSession: vi.fn(),
@@ -38,7 +43,12 @@ const recentActivity: AuditLogEntry[] = [
   },
 ];
 
-function renderPage(setView = vi.fn(), pendingWriteCount = 0) {
+function renderPage(
+  setView = vi.fn(),
+  pendingWriteCount = 0,
+  serveOverrides: Partial<ServeStatus> = {},
+  activeMcpCount = 0,
+) {
   render(
     <DashboardPage
       setView={setView}
@@ -46,9 +56,9 @@ function renderPage(setView = vi.fn(), pendingWriteCount = 0) {
       configurations={configurations}
       connections={connections}
       connectionSchemas={{}}
-      serveStatus={makeServeStatus()}
+      serveStatus={makeServeStatus(serveOverrides)}
       recentActivity={recentActivity}
-      activeMcpCount={0}
+      activeMcpCount={activeMcpCount}
       totalMcpCount={1}
       connectedCount={0}
       pendingWriteCount={pendingWriteCount}
@@ -79,6 +89,18 @@ describe('DashboardPage', () => {
     // Profile and configuration entries from the pipeline stage footers
     expect(screen.getByText('Sales')).toBeTruthy();
     expect(screen.getByText('Main DB')).toBeTruthy();
+  });
+
+  it('shows the effective MCP address when a server is active, never "port 0"', () => {
+    renderPage(vi.fn(), 0, { active: true, port: 0, mcpOrigin: 'http://127.0.0.1:4567' }, 1);
+    expect(screen.getByText('serving at http://127.0.0.1:4567')).toBeTruthy();
+    expect(screen.queryByText(/port 0/)).toBeNull();
+  });
+
+  it('shows an honest state when the MCP address is not known', () => {
+    renderPage(vi.fn(), 0, { active: true, port: 0, mcpOrigin: null }, 1);
+    expect(screen.getByText('serving (address not available yet)')).toBeTruthy();
+    expect(screen.queryByText(/port 0/)).toBeNull();
   });
 
   it('navigates per item from the pipeline stage footers', () => {

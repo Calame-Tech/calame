@@ -287,7 +287,9 @@ export default function PipelineStrip({
         sub={
           <span className={activeMcpCount > 0 ? 'text-emerald-400' : ''}>
             {activeMcpCount > 0
-              ? t('mcpServers.servingOnPort', { port: serveStatus.port })
+              ? serveStatus.mcpOrigin
+                ? t('mcpServers.servingAt', { address: serveStatus.mcpOrigin })
+                : t('mcpServers.servingAddressUnknown')
               : t('mcpServers.noServerRunning')}
           </span>
         }

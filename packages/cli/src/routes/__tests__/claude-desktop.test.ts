@@ -253,21 +253,24 @@ describe('claude-desktop integration routes', () => {
       expect(res.body.success).toBe(false);
     });
 
-    it('returns an npx-based snippet with placeholders and does not mint a token', async () => {
+    it('returns an npx-based snippet with the effective address and does not mint a token', async () => {
       const res = await request(app)
         .get('/api/integrations/claude-desktop/snippet')
         .set('Cookie', cookie)
+        .set('Host', 'calame.local:4567')
         .query({ profileName: 'prod' })
         .expect(200);
 
       expect(res.body.success).toBe(true);
+      expect(res.body.snippet).not.toContain('YOUR-CALAME-HOST');
+      expect(res.body.mcpUrl).toBe('http://calame.local:4567/mcp/prod');
       const snippet = JSON.parse(res.body.snippet);
       const entry = snippet.mcpServers['calame-prod'];
       expect(entry.command).toBe('npx');
       expect(entry.args).toEqual([
         '-y',
         'mcp-remote',
-        'http://<YOUR-CALAME-HOST>/mcp/prod',
+        'http://calame.local:4567/mcp/prod',
         '--header',
         'Authorization: Bearer <TOKEN>',
       ]);
@@ -280,12 +283,13 @@ describe('claude-desktop integration routes', () => {
       const res = await request(app)
         .get('/api/integrations/claude-desktop/snippet')
         .set('Cookie', cookie)
+        .set('Host', 'calame.local:4567')
         .query({ profileName: 'prod', tenantId: 'acme-corp' })
         .expect(200);
 
       const snippet = JSON.parse(res.body.snippet);
       expect(snippet.mcpServers['calame-acme-corp-prod'].args[2]).toBe(
-        'http://<YOUR-CALAME-HOST>/mcp/acme-corp/prod',
+        'http://calame.local:4567/mcp/acme-corp/prod',
       );
     });
 

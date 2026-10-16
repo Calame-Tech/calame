@@ -406,7 +406,9 @@ function McpDetailView({
     _tenant === 'default'
       ? (profileStatus?.endpoint ?? `/mcp/${profile.name}`)
       : buildMcpPath(profile.name, _tenant);
-  const endpoint = `${window.location.origin}${basePath}`;
+  // Effective MCP origin from the server (same source as the Connexion
+  // snippet); the browser origin is only a fallback before the first poll.
+  const endpoint = `${serveStatus.mcpOrigin ?? window.location.origin}${basePath}`;
 
   /** Save all profiles to backend before starting, so new profiles are known */
   const saveProfiles = async () => {

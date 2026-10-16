@@ -317,13 +317,20 @@ describe('ConnectClaudeDesktop', () => {
       installWithGenerate(async () => {
         throw new Error('offline');
       });
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
       await openSnippet();
 
       fireEvent.click(screen.getByText('Create an API key and insert it'));
       await waitFor(() =>
-        expect(screen.getByText('Network error while creating the API key.')).toBeTruthy(),
+        expect(
+          screen.getByText('The API key could not be created: the server is unreachable.'),
+        ).toBeTruthy(),
       );
       expect((screen.getByText('Try again') as HTMLButtonElement).disabled).toBe(false);
+      // The technical detail stays in the console, not in the message.
+      expect(screen.queryByText(/offline/)).toBeNull();
+      expect(consoleError).toHaveBeenCalled();
+      consoleError.mockRestore();
     });
   });
 });

@@ -2301,7 +2301,7 @@
         "snippetLoadFailed": "Échec du chargement de l’extrait de configuration manuelle.",
         "snippetLoadNetworkError": "Erreur réseau lors du chargement de l’extrait de configuration manuelle.",
         "createKeyFailed": "Impossible de créer la clé API.",
-        "createKeyNetworkError": "Erreur réseau lors de la création de la clé API."
+        "createKeyNetworkError": "La clé API n'a pas pu être créée : le serveur est injoignable."
       },
       "heading": "Connectez votre IA",
       "headingHelp": "Connectez ce serveur MCP à Claude Desktop, ou récupérez un extrait manuel pour d’autres clients MCP.",

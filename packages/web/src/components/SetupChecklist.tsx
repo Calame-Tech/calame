@@ -1,9 +1,10 @@
 // Guided first-run path in four steps: 1. connect data, 2. create a data
 // profile that contains it, 3. create an MCP attached to that profile,
-// 4. connect / test the MCP from a client. Shown on every page, as a panel
-// docked on the right of a wide window (the page reserves its width), or as a
-// pill / bottom sheet on a narrow one; once a client has used the first MCP it shows a success state until
-// the user closes it. Each step reflects server-side resources
+// 4. connect / test the MCP from a client. Shown on every page and always part
+// of the page layout (never over it): expanded, a column on the right of a wide
+// window or a block above the content of a narrow one; folded, a pill above
+// the content. Once a client has used the first MCP it shows a success state
+// until the user closes it. Each step reflects server-side resources
 // (see lib/setup-progress.ts) and links to the existing screen that performs
 // it — this component never creates anything itself.
 
@@ -53,10 +54,10 @@ export const SETUP_POLL_INTERVAL_MS = 10_000;
 export const SETUP_POLL_MAX_ATTEMPTS = 60;
 
 /**
- * Below this width the expanded card would cover page actions (e.g. "+ New
- * source" on a ~750 px desktop window): it starts folded as a compact pill.
+ * Below this width the content is too narrow to give up a column: the expanded
+ * guide becomes a block above the content, and it starts folded as a pill.
  */
-const NARROW_WINDOW_QUERY = '(max-width: 1023px)';
+const NARROW_WINDOW_QUERY = '(max-width: 899px)';
 
 function narrowWindowQuery(): MediaQueryList | null {
   return typeof window.matchMedia === 'function' ? window.matchMedia(NARROW_WINDOW_QUERY) : null;
@@ -91,15 +92,13 @@ interface SetupChecklistProps {
   /** Any change (by identity) forces a reload, e.g. a navigation or a save. */
   refreshKey?: unknown;
   /**
-   * Called with true while the expanded guide is docked on the right of a
-   * wide window: the page must then reserve SETUP_PANEL_WIDTH_CLASS on its
-   * right so the panel covers none of its commands.
+   * Called with where the guide sits in the page layout, so the page lays its
+   * content beside ('column') or below ('top') it; 'none' when nothing shows.
    */
-  onDockedChange?: (docked: boolean) => void;
+  onLayoutChange?: (layout: SetupGuideLayout) => void;
 }
 
-/** Right margin the page keeps free for the docked panel (same width, lg and up). */
-export const SETUP_PANEL_WIDTH_CLASS = 'lg:mr-[22rem]';
+export type SetupGuideLayout = 'none' | 'top' | 'column';
 
 /** Last "Test MCP" outcome of a profile, as kept by the server (GET /api/serve/mcp-probe/last). */
 export type LastMcpProbe =
@@ -186,7 +185,7 @@ export default function SetupChecklist({
   ragEnabled = false,
   onNavigate,
   refreshKey = 0,
-  onDockedChange,
+  onLayoutChange,
 }: SetupChecklistProps) {
   const t = useTranslations('onboarding.checklist');
   const [hidden, setHidden] = useState(() => readFlag(SETUP_CHECKLIST_DISMISSED_KEY));
@@ -194,24 +193,6 @@ export default function SetupChecklist({
   const [collapsed, setCollapsed] = useState(
     () => readFlag(SETUP_CHECKLIST_COLLAPSED_KEY) || narrowWindowQuery()?.matches === true,
   );
-  // Height of the floating card or pill, reserved at the bottom of the page
-  // so the last commands of a page can always be scrolled clear of it.
-  const [reservedHeight, setReservedHeight] = useState(0);
-  const observerRef = useRef<ResizeObserver | null>(null);
-  const floatingRef = useCallback((el: HTMLElement | null) => {
-    observerRef.current?.disconnect();
-    observerRef.current = null;
-    if (!el) {
-      setReservedHeight(0);
-      return;
-    }
-    const measure = () => setReservedHeight(el.getBoundingClientRect().height);
-    measure();
-    if (typeof ResizeObserver === 'function') {
-      observerRef.current = new ResizeObserver(measure);
-      observerRef.current.observe(el);
-    }
-  }, []);
   const [state, setState] = useState<LoadState>({ status: 'idle' });
   // Only the latest request may update the state: a slow response must not
   // overwrite a newer one (e.g. a refresh triggered by a new source).
@@ -232,8 +213,8 @@ export default function SetupChecklist({
     }
   }, [ragEnabled]);
 
-  // Fold (without remembering it) when the window becomes narrow, so the card
-  // never ends up over the page's commands; the pill still reopens it.
+  // Fold (without remembering it) when the window becomes narrow, so the block
+  // does not push the page down; the pill still reopens it.
   useEffect(() => {
     const query = narrowWindowQuery();
     if (!query) return;
@@ -314,20 +295,22 @@ export default function SetupChecklist({
     setCollapsed(value);
   };
 
-  // On a narrow window, a step action leads to a page whose commands the open
-  // card would cover: fold it back to the pill (without remembering it).
+  // On a narrow window, a step action leads to a page that the open block
+  // would push down: fold it back to the pill (without remembering it).
   const navigate = (view: View) => {
     if (narrow) setCollapsed(true);
     onNavigate(view);
   };
 
-  // Wide window, expanded: a panel docked on the right whose width the page
-  // reserves (instead of a card floating over its commands).
-  const docked = !hidden && state.status !== 'idle' && !collapsed && !narrow;
+  // Wide window, expanded: a column beside the content (which loses that
+  // width); otherwise the pill or the block sits above the content.
+  const visible = !hidden && state.status !== 'idle';
+  const docked = visible && !collapsed && !narrow;
+  const layout: SetupGuideLayout = !visible ? 'none' : docked ? 'column' : 'top';
   useEffect(() => {
-    onDockedChange?.(docked);
-  }, [docked, onDockedChange]);
-  useEffect(() => () => onDockedChange?.(false), [onDockedChange]);
+    onLayoutChange?.(layout);
+  }, [layout, onLayoutChange]);
+  useEffect(() => () => onLayoutChange?.('none'), [onLayoutChange]);
 
   // Nothing is shown before the first answer, so an installation that already
   // has a used MCP never flashes the guide.
@@ -437,24 +420,17 @@ export default function SetupChecklist({
       }
     : null;
 
-  const spacer = (
-    <div
-      aria-hidden="true"
-      data-testid="setup-checklist-spacer"
-      style={{ height: reservedHeight ? reservedHeight + 24 : 0 }}
-    />
-  );
+  // Below the fixed mobile menu button, aligned with the page padding.
+  const topBlockClass = 'flex-none px-6 md:px-8 pt-16 md:pt-6';
 
   if (collapsed) {
     return (
-      <>
-        {spacer}
+      <div data-testid="setup-checklist-pill-row" className={`${topBlockClass} flex justify-end`}>
         <button
-          ref={floatingRef}
           type="button"
           onClick={() => setFolded(false)}
           aria-label={t('showAriaLabel')}
-          className="fixed bottom-4 right-4 z-40 max-w-[calc(100vw-2rem)] rounded-full bg-os-600 hover:bg-os-500 text-white text-xs font-semibold px-4 py-2 shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-os-300 flex items-center gap-2"
+          className="max-w-full rounded-full bg-os-600 hover:bg-os-500 text-white text-xs font-semibold px-4 py-2 shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-os-300 flex items-center gap-2"
         >
           <span className="flex-none">
             {progress
@@ -472,140 +448,137 @@ export default function SetupChecklist({
             </span>
           )}
         </button>
-      </>
+      </div>
     );
   }
 
-  return (
-    <>
-      {!docked && spacer}
-      <section
-        ref={docked ? undefined : floatingRef}
-        data-testid="setup-checklist-panel"
-        data-layout={docked ? 'docked' : 'sheet'}
-        className={
-          docked
-            ? // Full height on the right, beside the page (which keeps this width free).
-              'fixed top-0 right-0 bottom-0 z-30 w-[22rem] overflow-y-auto bg-gray-950 border-l border-gray-800 p-4'
-            : // Narrow window: a bottom sheet capped at half the height, so the
-              // top of the page stays visible and the spacer lets every command
-              // be scrolled above it.
-              'fixed bottom-4 inset-x-4 z-40 max-h-[50vh] overflow-y-auto card-primary p-4 shadow-2xl'
-        }
-        aria-labelledby="setup-checklist-title"
-      >
-        <div className="flex items-start justify-between gap-3">
-          <h2 id="setup-checklist-title" className="text-sm font-semibold text-gray-100">
-            {allDone
-              ? t('reopen', { done: SETUP_STEPS.length, total: SETUP_STEPS.length })
-              : t('title')}
-          </h2>
-          <button
-            type="button"
-            onClick={() => setFolded(true)}
-            aria-label={t('hideAriaLabel')}
-            className="flex-none text-[11px] text-gray-500 hover:text-gray-300 focus:outline-none focus-visible:ring-1 focus-visible:ring-os-500/40 rounded"
-          >
-            {t('hide')}
-          </button>
-        </div>
-        {allDone && progress ? (
-          <div data-testid="setup-success" className="mt-2 space-y-3">
-            <div role="status" className="space-y-1">
-              <p className="text-sm font-semibold text-emerald-300">{t('success.congrats')}</p>
-              <p className="text-xs text-gray-300">✓ {t('client.done')}</p>
-            </div>
-            <div>
-              <p className="text-xs text-gray-500 mb-1.5">{t('success.next')}</p>
-              <div className="flex flex-wrap items-center gap-2">
-                {progress.mcpName && (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      navigate({ page: 'mcp-detail', profileName: progress.mcpName as string })
-                    }
-                    className="text-[11px] font-semibold rounded-md px-2.5 py-1 text-os-300 bg-os-500/10 hover:bg-os-500/20 focus:outline-none focus-visible:ring-1 focus-visible:ring-os-500/40"
-                  >
-                    {t('success.openMcp')}
-                  </button>
-                )}
+  const panel = (
+    <section
+      data-testid="setup-checklist-panel"
+      data-layout={layout}
+      className={
+        docked
+          ? // A column of the layout, viewport-high with its own scroll: the
+            // content beside it is narrower, never covered.
+            'flex-none w-[22rem] self-start sticky top-0 h-screen overflow-y-auto bg-gray-950 border-l border-gray-800 p-4'
+          : 'card-primary p-4'
+      }
+      aria-labelledby="setup-checklist-title"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <h2 id="setup-checklist-title" className="text-sm font-semibold text-gray-100">
+          {allDone
+            ? t('reopen', { done: SETUP_STEPS.length, total: SETUP_STEPS.length })
+            : t('title')}
+        </h2>
+        <button
+          type="button"
+          onClick={() => setFolded(true)}
+          aria-label={t('hideAriaLabel')}
+          className="flex-none text-[11px] text-gray-500 hover:text-gray-300 focus:outline-none focus-visible:ring-1 focus-visible:ring-os-500/40 rounded"
+        >
+          {t('hide')}
+        </button>
+      </div>
+      {allDone && progress ? (
+        <div data-testid="setup-success" className="mt-2 space-y-3">
+          <div role="status" className="space-y-1">
+            <p className="text-sm font-semibold text-emerald-300">{t('success.congrats')}</p>
+            <p className="text-xs text-gray-300">✓ {t('client.done')}</p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-500 mb-1.5">{t('success.next')}</p>
+            <div className="flex flex-wrap items-center gap-2">
+              {progress.mcpName && (
                 <button
                   type="button"
-                  onClick={() => navigate({ page: 'audit-log' })}
+                  onClick={() =>
+                    navigate({ page: 'mcp-detail', profileName: progress.mcpName as string })
+                  }
                   className="text-[11px] font-semibold rounded-md px-2.5 py-1 text-os-300 bg-os-500/10 hover:bg-os-500/20 focus:outline-none focus-visible:ring-1 focus-visible:ring-os-500/40"
                 >
-                  {t('success.auditLog')}
+                  {t('success.openMcp')}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => navigate({ page: 'sources' })}
-                  className="text-[11px] font-semibold rounded-md px-2.5 py-1 text-os-300 bg-os-500/10 hover:bg-os-500/20 focus:outline-none focus-visible:ring-1 focus-visible:ring-os-500/40"
-                >
-                  {t('success.addData')}
-                </button>
-              </div>
-            </div>
-            <div className="flex items-center justify-between gap-3 border-t border-gray-800 pt-3">
-              <span className="text-[11px] text-gray-500">{t('success.closeHint')}</span>
+              )}
               <button
                 type="button"
-                onClick={dismiss}
-                className="flex-none text-[11px] font-semibold rounded-md px-2.5 py-1 bg-os-600 hover:bg-os-500 text-white focus:outline-none focus-visible:ring-1 focus-visible:ring-os-500/40"
+                onClick={() => navigate({ page: 'audit-log' })}
+                className="text-[11px] font-semibold rounded-md px-2.5 py-1 text-os-300 bg-os-500/10 hover:bg-os-500/20 focus:outline-none focus-visible:ring-1 focus-visible:ring-os-500/40"
               >
-                {t('success.close')}
+                {t('success.auditLog')}
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate({ page: 'sources' })}
+                className="text-[11px] font-semibold rounded-md px-2.5 py-1 text-os-300 bg-os-500/10 hover:bg-os-500/20 focus:outline-none focus-visible:ring-1 focus-visible:ring-os-500/40"
+              >
+                {t('success.addData')}
               </button>
             </div>
           </div>
-        ) : (
-          <p className="text-xs text-gray-500 mb-3">{t('description')}</p>
-        )}
-
-        {state.status === 'loading' && (
-          <p role="status" className="text-sm text-gray-500">
-            {t('loading')}
-          </p>
-        )}
-
-        {state.status === 'error' && (
-          <div role="alert" className="flex items-center gap-3 text-sm text-red-400">
-            <span>{t('loadError')}</span>
+          <div className="flex items-center justify-between gap-3 border-t border-gray-800 pt-3">
+            <span className="text-[11px] text-gray-500">{t('success.closeHint')}</span>
             <button
               type="button"
-              onClick={() => {
-                setState({ status: 'loading' });
-                void load();
-              }}
-              className="text-xs text-os-300 hover:underline focus:outline-none focus-visible:ring-1 focus-visible:ring-os-500/40 rounded"
+              onClick={dismiss}
+              className="flex-none text-[11px] font-semibold rounded-md px-2.5 py-1 bg-os-600 hover:bg-os-500 text-white focus:outline-none focus-visible:ring-1 focus-visible:ring-os-500/40"
             >
-              {t('retry')}
+              {t('success.close')}
             </button>
           </div>
-        )}
+        </div>
+      ) : (
+        <p className="text-xs text-gray-500 mb-3">{t('description')}</p>
+      )}
 
-        {progress && steps && progress.currentStep && (
-          <p className="text-xs text-gray-300 mb-3" data-testid="setup-current-step">
-            {t('currentStep', { step: steps[progress.currentStep].title })}
-            {progress.nextStep && (
-              <>
-                <br />
-                <span className="text-gray-500">
-                  {t('nextStep', { step: steps[progress.nextStep].title })}
-                </span>
-              </>
-            )}
-          </p>
-        )}
+      {state.status === 'loading' && (
+        <p role="status" className="text-sm text-gray-500">
+          {t('loading')}
+        </p>
+      )}
 
-        {progress && steps && !allDone && (
-          <ol className="space-y-2">
-            {SETUP_STEPS.map((id, i) => (
-              <SetupStep key={id} index={i + 1} status={progress[id]} {...steps[id]} />
-            ))}
-          </ol>
-        )}
-      </section>
-    </>
+      {state.status === 'error' && (
+        <div role="alert" className="flex items-center gap-3 text-sm text-red-400">
+          <span>{t('loadError')}</span>
+          <button
+            type="button"
+            onClick={() => {
+              setState({ status: 'loading' });
+              void load();
+            }}
+            className="text-xs text-os-300 hover:underline focus:outline-none focus-visible:ring-1 focus-visible:ring-os-500/40 rounded"
+          >
+            {t('retry')}
+          </button>
+        </div>
+      )}
+
+      {progress && steps && progress.currentStep && (
+        <p className="text-xs text-gray-300 mb-3" data-testid="setup-current-step">
+          {t('currentStep', { step: steps[progress.currentStep].title })}
+          {progress.nextStep && (
+            <>
+              <br />
+              <span className="text-gray-500">
+                {t('nextStep', { step: steps[progress.nextStep].title })}
+              </span>
+            </>
+          )}
+        </p>
+      )}
+
+      {progress && steps && !allDone && (
+        <ol className="space-y-2">
+          {SETUP_STEPS.map((id, i) => (
+            <SetupStep key={id} index={i + 1} status={progress[id]} {...steps[id]} />
+          ))}
+        </ol>
+      )}
+    </section>
   );
+
+  // Narrow window: a block above the content, which it pushes down.
+  return docked ? panel : <div className={topBlockClass}>{panel}</div>;
 }
 
 interface SetupStepProps {

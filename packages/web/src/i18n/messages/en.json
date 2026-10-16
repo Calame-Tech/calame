@@ -2301,7 +2301,7 @@
         "snippetLoadFailed": "Failed to load the manual configuration snippet.",
         "snippetLoadNetworkError": "Network error loading the manual configuration snippet.",
         "createKeyFailed": "Couldn't create the API key.",
-        "createKeyNetworkError": "Network error while creating the API key."
+        "createKeyNetworkError": "The API key could not be created: the server is unreachable."
       },
       "heading": "Connect your AI",
       "headingHelp": "Wire this MCP server into Claude Desktop, or grab a manual snippet for other MCP clients.",

@@ -389,6 +389,36 @@ describe('KnowledgeBaseManager — initial sync after creation', () => {
     expect(syncPosts).toHaveLength(2);
   });
 
+  it('explains an unreachable server in French, keeping "Failed to fetch" for the console', async () => {
+    createSourceOnSave();
+    overrides.push({
+      match: (url, method) => url.endsWith('/sync') && method === 'POST',
+      handler: (url) => {
+        syncPosts.push(url);
+        throw new TypeError('Failed to fetch');
+      },
+    });
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      render(<KnowledgeBaseManager />);
+      await openCreateForm();
+      fireEvent.click(screen.getByRole('button', { name: 'Enregistrer' }));
+
+      const alert = await screen.findByRole('alert');
+      expect(alert).toHaveTextContent(
+        'La source "Docs" est enregistrée, mais sa synchronisation initiale n\'a pas pu démarrer : le serveur est injoignable.',
+      );
+      expect(alert).not.toHaveTextContent('Failed to fetch');
+      expect(screen.getByRole('button', { name: 'Relancer la synchronisation' })).toBeEnabled();
+      expect(consoleError).toHaveBeenCalledWith(
+        expect.stringContaining('src_1'),
+        expect.objectContaining({ message: 'Failed to fetch' }),
+      );
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
   it('offers an explicit retry when the sync job itself failed', async () => {
     sources = [{ ...CREATED_SOURCE, folderCount: 0, documentCount: 0 }];
     jobs = [

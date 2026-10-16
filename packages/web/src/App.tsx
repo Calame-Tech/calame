@@ -8,7 +8,7 @@ import UserDashboard from './components/UserDashboard.js';
 import WelcomePage from './components/WelcomePage.js';
 import ChatEntryPage from './components/ChatEntryPage.js';
 import ProfilePreview from './components/ProfilePreview.js';
-import SetupChecklist, { SETUP_PANEL_WIDTH_CLASS } from './components/SetupChecklist.js';
+import SetupChecklist, { type SetupGuideLayout } from './components/SetupChecklist.js';
 import { Redirect, useNavigation, resolveLocationRoutes } from './router/index.js';
 import type { View } from './router/index.js';
 import { useSession } from './context/SessionContext.js';
@@ -99,8 +99,8 @@ export default function App() {
   // The floating getting-started guide re-checks the server whenever the
   // user navigates or saves a data profile / MCP.
   const setupRefreshKey = useMemo(() => ({}), [view, configurations, profiles]);
-  // While the expanded guide is docked on the right, the page keeps its width free.
-  const [setupGuideDocked, setSetupGuideDocked] = useState(false);
+  // The guide is part of the layout: a column beside the page or a block above it.
+  const [setupGuideLayout, setSetupGuideLayout] = useState<SetupGuideLayout>('none');
 
   // Profile preview modal state
   const [previewProfile, setPreviewProfile] = useState<string | null>(null);
@@ -222,13 +222,24 @@ export default function App() {
         onLogout={logout}
       />
 
-      {/* Main content column */}
+      {/* Main content column, beside or below the getting-started guide */}
       <div
-        className={`flex-1 flex flex-col min-w-0 ${setupGuideDocked ? SETUP_PANEL_WIDTH_CLASS : ''}`}
+        className={`flex-1 flex min-w-0 ${setupGuideLayout === 'column' ? 'flex-row' : 'flex-col'}`}
       >
+        {/* Guided first-run path, on every page until the first MCP is used */}
+        <SetupChecklist
+          sourceCount={connections.length}
+          ragEnabled={ragEnabled}
+          onNavigate={setView}
+          refreshKey={setupRefreshKey}
+          onLayoutChange={setSetupGuideLayout}
+        />
+
         {/* Page content */}
         <main
-          className="flex-1 p-6 md:p-8 pt-16 md:pt-8 animate-fade-in-up overflow-x-hidden"
+          className={`flex-1 min-w-0 p-6 md:p-8 animate-fade-in-up overflow-x-hidden ${
+            setupGuideLayout === 'top' ? 'pt-6 md:pt-6' : 'pt-16 md:pt-8'
+          } ${setupGuideLayout === 'column' ? 'order-first' : ''}`}
           key={`${view.page}-${activeProfile.name}`}
         >
           <div className="max-w-7xl mx-auto w-full">
@@ -383,15 +394,6 @@ export default function App() {
             {view.page === 'audit-log' && <AuditLogPage setView={setView} profiles={profiles} />}
           </div>
         </main>
-
-        {/* Guided first-run path, on every page until the first MCP is used */}
-        <SetupChecklist
-          sourceCount={connections.length}
-          ragEnabled={ragEnabled}
-          onNavigate={setView}
-          refreshKey={setupRefreshKey}
-          onDockedChange={setSetupGuideDocked}
-        />
 
         {/* Profile preview modal */}
         {previewProfile && (

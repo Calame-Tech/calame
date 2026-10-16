@@ -156,7 +156,9 @@ export default function ConnectClaudeDesktop({ profileName }: ConnectClaudeDeskt
       } else {
         setKeyError(data.message || t('errors.createKeyFailed'));
       }
-    } catch {
+    } catch (err) {
+      // Technical detail (e.g. "Failed to fetch") for the console only.
+      console.error('[connect] API key creation failed', err);
       setKeyError(t('errors.createKeyNetworkError'));
     } finally {
       creatingKeyRef.current = false;

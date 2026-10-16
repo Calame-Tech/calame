@@ -409,14 +409,13 @@ export default function KnowledgeBaseManager({
           showAction(T.syncAlreadyRunningFor(source.name));
           return null;
         } else {
-          const message =
-            err instanceof ApiError
-              ? err.message
-              : err instanceof Error
-                ? err.message
-                : T.syncFailed;
+          // No HTTP answer (e.g. "Failed to fetch"): explain it in plain words
+          // and keep the technical detail in the console.
+          const unreachable = !(err instanceof ApiError);
+          if (unreachable) console.error(`[rag] sync request failed for ${source.id}`, err);
+          const message = unreachable ? T.serverUnreachable : err.message || T.syncFailed;
           // A failed initial trigger gets its own alert (InitialSyncAlert).
-          if (!initial) setError(message);
+          if (!initial) setError(unreachable ? T.syncCouldNotStart(source.name, message) : message);
           // Revert optimistic state on real failure.
           setOptimisticActiveIds((prev) => {
             const next = new Set(prev);

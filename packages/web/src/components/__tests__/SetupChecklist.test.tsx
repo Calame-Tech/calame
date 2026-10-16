@@ -483,7 +483,7 @@ describe('SetupChecklist', () => {
     vi.stubGlobal(
       'matchMedia',
       vi.fn((query: string) => ({
-        matches: query === '(max-width: 1023px)',
+        matches: query === '(max-width: 899px)',
         media: query,
         addEventListener: vi.fn(),
         removeEventListener: vi.fn(),
@@ -505,7 +505,7 @@ describe('SetupChecklist', () => {
     vi.stubGlobal(
       'matchMedia',
       vi.fn((query: string) => ({
-        matches: query === '(max-width: 1023px)',
+        matches: query === '(max-width: 899px)',
         media: query,
         addEventListener: vi.fn(),
         removeEventListener: vi.fn(),
@@ -524,74 +524,77 @@ describe('SetupChecklist', () => {
     expect(screen.queryByRole('button', { name: 'Add data' })).toBeNull();
   });
 
-  it('reserves room at the bottom of the page for the floating pill', async () => {
+  // The guide is laid out with the page (a column or a block above it): it
+  // can cover nothing, whatever the page or the scroll position.
+  const expectInLayout = (el: HTMLElement) => {
+    for (const cls of ['fixed', 'absolute']) expect(el.className.split(/\s+/)).not.toContain(cls);
+    expect(el.className).not.toMatch(/(^|\s)(inset-|bottom-|right-|z-)/);
+  };
+
+  it('keeps the folded pill in the page layout, above the content', async () => {
     localStorage.setItem(SETUP_CHECKLIST_COLLAPSED_KEY, '1');
-    const rect = vi
-      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
-      .mockReturnValue({ height: 40 } as DOMRect);
-    try {
-      installServer({});
-      render(<SetupChecklist sourceCount={0} onNavigate={vi.fn()} />);
-      await screen.findByRole('button', { name: 'Reopen the getting-started guide' });
-      const spacer = screen.getByTestId('setup-checklist-spacer');
-      expect(spacer.style.height).toBe('64px');
-      expect(spacer.getAttribute('aria-hidden')).toBe('true');
-    } finally {
-      rect.mockRestore();
-    }
+    const onLayoutChange = vi.fn();
+    installServer({});
+    render(<SetupChecklist sourceCount={0} onNavigate={vi.fn()} onLayoutChange={onLayoutChange} />);
+    const pill = await screen.findByRole('button', { name: 'Reopen the getting-started guide' });
+    expectInLayout(pill);
+    expectInLayout(screen.getByTestId('setup-checklist-pill-row'));
+    expect(onLayoutChange).toHaveBeenLastCalledWith('top');
   });
 
-  it('docks the expanded guide beside the page on a wide window and asks it to reserve the width', async () => {
+  it('lays the expanded guide out as a column beside the page on a wide window', async () => {
     installServer({});
-    const onDockedChange = vi.fn();
-    render(<SetupChecklist sourceCount={0} onNavigate={vi.fn()} onDockedChange={onDockedChange} />);
+    const onLayoutChange = vi.fn();
+    render(<SetupChecklist sourceCount={0} onNavigate={vi.fn()} onLayoutChange={onLayoutChange} />);
     await screen.findAllByText('1. Connect data');
     const panel = screen.getByTestId('setup-checklist-panel');
-    expect(panel.getAttribute('data-layout')).toBe('docked');
-    // No bottom spacer: the page keeps the panel's width free instead.
-    expect(screen.queryByTestId('setup-checklist-spacer')).toBeNull();
-    expect(onDockedChange).toHaveBeenLastCalledWith(true);
+    expect(panel.getAttribute('data-layout')).toBe('column');
+    expectInLayout(panel);
+    // Its own scroll, viewport-high, with a fixed width taken from the content.
+    expect(panel.className).toContain('overflow-y-auto');
+    expect(panel.className).toContain('flex-none');
+    expect(onLayoutChange).toHaveBeenLastCalledWith('column');
 
     // Folding to the pill gives the width back to the page.
     fireEvent.click(screen.getByRole('button', { name: 'Fold the getting-started guide' }));
-    expect(onDockedChange).toHaveBeenLastCalledWith(false);
-    expect(screen.getByTestId('setup-checklist-spacer')).toBeTruthy();
+    expect(onLayoutChange).toHaveBeenLastCalledWith('top');
   });
 
-  it('opens as a bounded bottom sheet on a narrow window, never docked', async () => {
+  it('opens as a block above the content on a narrow window, never a column', async () => {
     vi.stubGlobal(
       'matchMedia',
       vi.fn((query: string) => ({
-        matches: query === '(max-width: 1023px)',
+        matches: query === '(max-width: 899px)',
         media: query,
         addEventListener: vi.fn(),
         removeEventListener: vi.fn(),
       })),
     );
     installServer({});
-    const onDockedChange = vi.fn();
-    render(<SetupChecklist sourceCount={0} onNavigate={vi.fn()} onDockedChange={onDockedChange} />);
+    const onLayoutChange = vi.fn();
+    render(<SetupChecklist sourceCount={0} onNavigate={vi.fn()} onLayoutChange={onLayoutChange} />);
     fireEvent.click(
       await screen.findByRole('button', { name: 'Reopen the getting-started guide' }),
     );
     const panel = screen.getByTestId('setup-checklist-panel');
-    expect(panel.getAttribute('data-layout')).toBe('sheet');
-    expect(panel.className).toContain('max-h-[50vh]');
-    expect(screen.getByTestId('setup-checklist-spacer')).toBeTruthy();
-    expect(onDockedChange).not.toHaveBeenCalledWith(true);
+    expect(panel.getAttribute('data-layout')).toBe('top');
+    expectInLayout(panel);
+    expectInLayout(panel.parentElement as HTMLElement);
+    expect(onLayoutChange).not.toHaveBeenCalledWith('column');
+    expect(onLayoutChange).toHaveBeenLastCalledWith('top');
   });
 
-  it('releases the reserved width when the guide is closed after success', async () => {
+  it('gives the layout back when the guide is closed after success', async () => {
     installServer({
       configurations: [salesData],
       profiles: salesMcp,
       entries: [{ profileName: 'sales', result: 'success' }],
     });
-    const onDockedChange = vi.fn();
-    render(<SetupChecklist sourceCount={1} onNavigate={vi.fn()} onDockedChange={onDockedChange} />);
+    const onLayoutChange = vi.fn();
+    render(<SetupChecklist sourceCount={1} onNavigate={vi.fn()} onLayoutChange={onLayoutChange} />);
     await screen.findByTestId('setup-success');
-    expect(onDockedChange).toHaveBeenLastCalledWith(true);
+    expect(onLayoutChange).toHaveBeenLastCalledWith('column');
     fireEvent.click(screen.getByRole('button', { name: 'Close the guide' }));
-    expect(onDockedChange).toHaveBeenLastCalledWith(false);
+    expect(onLayoutChange).toHaveBeenLastCalledWith('none');
   });
 });

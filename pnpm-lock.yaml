@@ -22,7 +22,7 @@ overrides:
   adm-zip: '>=0.6.1'
   sharp: '>=0.35.5'
   mysql2: '>=3.22.0'
-  '@xmldom/xmldom': '>=0.8.15'
+  '@xmldom/xmldom': ^0.8.15
   brace-expansion@5.0.9: ^5.0.11
   undici@7.x: ^7.29.1
   proxy-addr: ^2.0.8
@@ -2453,9 +2453,9 @@ packages:
   '@vitest/utils@2.1.9':
     resolution: {integrity: sha512-v0psaMSkNJ3A2NMrUEHFRzJtDPFn+/VWZ5WxImB21T9fjucJRmS7xCS3ppEnARb9y11OAzaD+P2Ps+b+BGX5iQ==}
 
-  '@xmldom/xmldom@0.9.12':
-    resolution: {integrity: sha512-5AXjrcMClTryPe9LgZrygpB1lj7s0S9E0+W+AHaVKAVyHanafK86iPSvG5xHVSp/jC+VH1UXu0TAEmY279xH7A==}
-    engines: {node: '>=14.6'}
+  '@xmldom/xmldom@0.8.15':
+    resolution: {integrity: sha512-/5NV/vDALVFDXgLmfsy9TRCBlKwO2LNBFzpzvb9iIj+jR+eSc6DLYYvVOdivT/jm7MtU6TebYuRmzEOI7w40UA==}
+    engines: {node: '>=10.0.0'}
 
   abbrev@1.1.1:
     resolution: {integrity: sha512-nne9/IiQ/hzIhY6pdDnbBtz7DjPTKrY00P/zvPSm5pOFkl6xuGrGnXn/VtTNNfNtAfZ9/1RtehkszU9qcTii0Q==}
@@ -7571,7 +7571,7 @@ snapshots:
       loupe: 3.2.1
       tinyrainbow: 1.2.0
 
-  '@xmldom/xmldom@0.9.12': {}
+  '@xmldom/xmldom@0.8.15': {}
 
   abbrev@1.1.1:
     optional: true
@@ -9185,7 +9185,7 @@ snapshots:
 
   mammoth@1.12.0:
     dependencies:
-      '@xmldom/xmldom': 0.9.12
+      '@xmldom/xmldom': 0.8.15
       argparse: 1.0.10
       base64-js: 1.5.1
       bluebird: 3.4.7

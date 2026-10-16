@@ -23,6 +23,7 @@ import {
   classifyReadError,
   isOfficeTempFile,
 } from '../pipeline/document-errors.js';
+import { timePhase } from '../pipeline/phase-timings.js';
 
 /**
  * Resolve the tenant id for a request, falling back to the literal
@@ -539,7 +540,8 @@ export async function runSyncJob(
 
     let entries: Awaited<ReturnType<typeof walkConnector>>;
     try {
-      entries = await walkConnector(connector, config, source.id, source.tenantId, deps.db);
+      const walk = () => walkConnector(connector, config, source.id, source.tenantId, deps.db);
+      entries = await timePhase(deps.onSyncPhaseTiming, 'walk', walk);
     } catch (err: unknown) {
       const m = err instanceof Error ? err.message : String(err);
       deps.db
@@ -727,7 +729,9 @@ export async function runSyncJob(
         deps.logger?.info(`[rag-sync] fetch ${doc.path}`, {
           component: `rag-sync/${source.id}`,
         });
-        const fetched = await fetchDocumentBytes(connector, config, source.id, doc, docTimeoutMs);
+        const fetched = await timePhase(deps.onSyncPhaseTiming, 'read', () =>
+          fetchDocumentBytes(connector, config, source.id, doc, docTimeoutMs),
+        );
         const buffer = fetched.buffer;
         deps.logger?.info(
           `[rag-sync] ingest ${doc.path} (${buffer.byteLength} bytes, ${fetched.mimeType})`,

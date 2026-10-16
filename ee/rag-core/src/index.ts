@@ -98,6 +98,7 @@ export {
   isOfficeTempFile,
 } from './pipeline/document-errors.js';
 export type { DocumentRejectionKind } from './pipeline/document-errors.js';
+export type { SyncPhase, PhaseTimingSink } from './pipeline/phase-timings.js';
 export {
   IsolatedParser,
   DEFAULT_PARSE_TIMEOUT_MS,

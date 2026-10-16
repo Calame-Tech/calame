@@ -9,6 +9,10 @@ root `package.json` version flows to the Docker image and `create-calame`).
 
 ### Fixed
 
+- DOCX files are read again: the `@xmldom/xmldom` override is pinned to
+  `^0.8.15` (the `>=0.8.15` range resolved to 0.9.x, which mammoth cannot
+  use). 0.8.15 is the patched 0.8.x release for the high advisory that motivated
+  the override, and `pnpm audit --prod --audit-level=high` stays clean.
 - Knowledge base source cards no longer show "undefined document · undefined
   folder": the source list API now returns each source's document and folder
   counts.

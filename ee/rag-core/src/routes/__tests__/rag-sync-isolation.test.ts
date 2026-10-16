@@ -424,6 +424,23 @@ describe('runSyncJob — sync report and final status', () => {
     assertConsistent(h.db);
   });
 
+  it('reports the walk and read phases to the benchmark timing hook', async () => {
+    const files = new Map<string, FakeFile>([
+      ['a.txt', { body: 'alpha', etag: 'a1' }],
+      ['b.txt', { body: 'bravo', etag: 'b1' }],
+    ]);
+    const h = makeHarness(files);
+    const phases: string[] = [];
+    h.deps.onSyncPhaseTiming = (phase) => phases.push(phase);
+    await h.sync();
+    expect(phases).toEqual(['walk', 'read', 'read']);
+
+    // Unchanged resync: listing only, the etag fast-path reads nothing.
+    phases.length = 0;
+    await h.sync();
+    expect(phases).toEqual(['walk']);
+  });
+
   it('reports an embedding engine outage as a global infrastructure failure', async () => {
     const files = new Map<string, FakeFile>([
       ['a.txt', { body: 'alpha', etag: 'a1' }],

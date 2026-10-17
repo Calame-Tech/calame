@@ -57,7 +57,7 @@ function periodLabel(p: 'month' | 'week' | 'all'): string {
  */
 function Sparkline({ values }: { values: number[] }) {
   if (values.length === 0) {
-    return <div className="text-xs text-gray-600 italic">{S.noRecentActivity}</div>;
+    return <div className="text-xs text-gray-400 italic">{S.noRecentActivity}</div>;
   }
   const max = Math.max(1, ...values);
   return (
@@ -121,7 +121,7 @@ export default function EmbeddingUsageCard({
   if (loading && !usage) {
     return (
       <div className="card-primary p-4">
-        <p className="text-sm text-gray-500 italic">{S.usageLoading}</p>
+        <p className="text-sm text-gray-400 italic">{S.usageLoading}</p>
       </div>
     );
   }
@@ -162,12 +162,12 @@ export default function EmbeddingUsageCard({
       <div className="flex items-baseline justify-between gap-2">
         <div>
           <h3 className="text-sm font-semibold text-gray-200">{S.usageTitle}</h3>
-          <p className="text-xs text-gray-500 mt-0.5">{periodLabel(usage.period)}</p>
+          <p className="text-xs text-gray-400 mt-0.5">{periodLabel(usage.period)}</p>
         </div>
         <div className="text-right">
           <div className="text-2xl font-semibold text-os-300">
             {compactNumber(usage.totalTokens)}
-            <span className="text-sm text-gray-500 ml-1" title={S.tokensHelp}>
+            <span className="text-sm text-gray-400 ml-1" title={S.tokensHelp}>
               {S.tokens(usage.totalTokens)}
             </span>
           </div>
@@ -182,7 +182,7 @@ export default function EmbeddingUsageCard({
             <div className="text-xs text-gray-400">
               {cap.currentMonthTokens.toLocaleString(S.locale)} /{' '}
               {cap.monthlyTokenCap.toLocaleString(S.locale)}
-              <span className="text-gray-500 ml-1">({(fractionUsed * 100).toFixed(1)}%)</span>
+              <span className="text-gray-400 ml-1">({(fractionUsed * 100).toFixed(1)}%)</span>
             </div>
           </div>
           <div
@@ -211,7 +211,7 @@ export default function EmbeddingUsageCard({
           )}
         </div>
       )}
-      {!capActive && <p className="text-[11px] text-gray-500 italic">{S.capNotConfigured}</p>}
+      {!capActive && <p className="text-[11px] text-gray-400 italic">{S.capNotConfigured}</p>}
 
       {usage.perProvider.length > 0 && (
         <div className="space-y-1.5">
@@ -237,7 +237,7 @@ export default function EmbeddingUsageCard({
                       {S.localFree}
                     </span>
                   ) : (
-                    <span className="text-gray-500">({formatUsd(p.costUsd)})</span>
+                    <span className="text-gray-400">({formatUsd(p.costUsd)})</span>
                   )}
                 </span>
               </li>
@@ -270,7 +270,7 @@ export default function EmbeddingUsageCard({
       )}
 
       {usage.totalTokens === 0 && (
-        <p className="text-xs text-gray-500 italic">{S.noBilledEmbeddings}</p>
+        <p className="text-xs text-gray-400 italic">{S.noBilledEmbeddings}</p>
       )}
     </div>
   );

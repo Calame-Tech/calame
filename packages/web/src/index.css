@@ -67,8 +67,9 @@
     font-family: 'IBM Plex Mono', monospace;
     text-transform: uppercase;
     letter-spacing: 0.25em;
-    font-size: 10px;
-    color: rgb(107 114 128); /* gray-500 */
+    font-size: 11px;
+    /* gray-400: 6.4:1+ on the gray-900/950 surfaces (WCAG AA), gray-500 was 3.8:1. */
+    color: rgb(156 163 175);
   }
   .eyebrow-accent {
     font-family: 'IBM Plex Mono', monospace;

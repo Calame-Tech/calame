@@ -391,7 +391,7 @@ function McpDetailView({
 
   if (!profile) {
     return (
-      <div className="text-center text-gray-500 py-12">
+      <div className="text-center text-gray-400 py-12">
         <p>{t('notFound.message', { name: profileName })}</p>
         <button
           onClick={onNavigateBack}
@@ -688,7 +688,7 @@ function McpDetailView({
                   </button>
                   <button
                     onClick={() => setEditingLabel(false)}
-                    className="text-xs text-gray-500 hover:text-gray-300"
+                    className="text-xs text-gray-400 hover:text-gray-300"
                   >
                     {tCommon('cancel')}
                   </button>
@@ -703,7 +703,7 @@ function McpDetailView({
                 >
                   {profile.label || profile.name}
                   <svg
-                    className="inline-block w-3.5 h-3.5 ml-2 text-gray-600 group-hover:text-os-400"
+                    className="inline-block w-3.5 h-3.5 ml-2 text-gray-400 group-hover:text-os-400"
                     fill="none"
                     viewBox="0 0 24 24"
                     stroke="currentColor"
@@ -716,14 +716,14 @@ function McpDetailView({
                     />
                   </svg>
                   {profile.name !== profile.label && (
-                    <span className="ml-2 text-sm font-normal text-gray-500 font-mono">
+                    <span className="ml-2 text-sm font-normal text-gray-400 font-mono">
                       {profile.name}
                     </span>
                   )}
                   <HelpTip content={t('header.renameTooltip')} position="right" size="xs" />
                 </h2>
               )}
-              <p className="text-sm text-gray-500 mt-1">
+              <p className="text-sm text-gray-400 mt-1">
                 {isActive ? t('header.statusActive') : t('header.statusInactive')} &middot;{' '}
                 {t('header.dataConfigCount', { count: profileConfigurations.length })} &middot;{' '}
                 {t('header.tableCount', { count: effectiveTableCount })}
@@ -834,7 +834,7 @@ function McpDetailView({
               <button
                 onClick={() => setConfirmDelete(true)}
                 title={t('header.deleteTooltip')}
-                className="p-2 text-gray-500 hover:text-red-400 transition-all duration-200 rounded-lg hover:bg-red-500/10"
+                className="p-2 text-gray-400 hover:text-red-400 transition-all duration-200 rounded-lg hover:bg-red-500/10"
               >
                 <svg
                   className="w-4 h-4"
@@ -859,7 +859,7 @@ function McpDetailView({
         {/* Endpoint + Chat URLs (copiable, side by side) */}
         <div className="mt-3 flex flex-wrap gap-4">
           <div>
-            <p className="text-xs text-gray-500 mb-1 flex items-center gap-1">
+            <p className="text-xs text-gray-400 mb-1 flex items-center gap-1">
               {t('endpoint.label')}
               <HelpTip content={t('endpoint.tooltip')} position="bottom" size="xs" />
             </p>
@@ -868,13 +868,13 @@ function McpDetailView({
               className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-900/60 border border-gray-700 hover:border-os-600 transition-all duration-200 group"
             >
               <code className="text-sm text-os-400 font-mono">{endpoint}</code>
-              <span className="text-xs text-gray-500 group-hover:text-os-400 transition-all duration-200">
+              <span className="text-xs text-gray-400 group-hover:text-os-400 transition-all duration-200">
                 {copied === 'endpoint' ? t('copy.copied') : t('copy.copy')}
               </span>
             </button>
           </div>
           <div>
-            <p className="text-xs text-gray-500 mb-1 flex items-center gap-1">
+            <p className="text-xs text-gray-400 mb-1 flex items-center gap-1">
               {t('chat.label')}
               <HelpTip content={t('chat.tooltip')} position="bottom" size="xs" />
             </p>
@@ -891,7 +891,7 @@ function McpDetailView({
               <code className="text-sm text-os-400 font-mono">
                 {window.location.origin}/chat/{encodeURIComponent(profile.name)}
               </code>
-              <span className="text-xs text-gray-500 group-hover:text-os-400 transition-all duration-200">
+              <span className="text-xs text-gray-400 group-hover:text-os-400 transition-all duration-200">
                 {copied === 'chat' ? t('copy.copied') : t('copy.copy')}
               </span>
             </button>
@@ -901,8 +901,8 @@ function McpDetailView({
         {/* Response mode */}
         <div className="mt-4 flex items-center justify-between pt-3 border-t border-gray-700/50">
           <div>
-            <span className="text-xs text-gray-400">{t('responseMode.label')}</span>
-            <p className="text-xs text-gray-500 mt-0.5">{t('responseMode.hint')}</p>
+            <span className="text-xs text-gray-300">{t('responseMode.label')}</span>
+            <p className="text-xs text-gray-400 mt-0.5">{t('responseMode.hint')}</p>
             {responseModeError && (
               <p className="text-xs text-red-400 mt-0.5">{responseModeError}</p>
             )}
@@ -966,7 +966,7 @@ function McpDetailView({
               </svg>
             </button>
           </div>
-          {!showAdvanced && <p className="text-xs text-gray-500 mt-0.5">{t('advanced.hint')}</p>}
+          {!showAdvanced && <p className="text-xs text-gray-400 mt-0.5">{t('advanced.hint')}</p>}
           {(profile.authMode ?? 'token') === 'open' && (
             <p className="mt-2 text-xs text-yellow-500/80 bg-yellow-900/10 border border-yellow-700/30 rounded px-2 py-1">
               {t('authMode.openWarning')}
@@ -983,8 +983,8 @@ function McpDetailView({
             >
               <div className="flex items-center justify-between">
                 <div>
-                  <span className="text-xs text-gray-400">{t('documentWrite.label')}</span>
-                  <p className="text-xs text-gray-500 mt-0.5">{t('documentWrite.hint')}</p>
+                  <span className="text-xs text-gray-300">{t('documentWrite.label')}</span>
+                  <p className="text-xs text-gray-400 mt-0.5">{t('documentWrite.hint')}</p>
                   {documentWriteError && (
                     <p className="text-xs text-red-400 mt-0.5">{documentWriteError}</p>
                   )}
@@ -1011,9 +1011,9 @@ function McpDetailView({
               </div>
               {documentWrite.enabled && (
                 <div className="mt-2 space-y-1">
-                  <p className="text-xs text-gray-500">{t('documentWrite.enabledHint')}</p>
+                  <p className="text-xs text-gray-400">{t('documentWrite.enabledHint')}</p>
                   {localSources.length === 0 ? (
-                    <p className="text-xs text-gray-500">{t('documentWrite.noLocalSources')}</p>
+                    <p className="text-xs text-gray-400">{t('documentWrite.noLocalSources')}</p>
                   ) : (
                     localSources.map((s) => (
                       <label key={s.id} className="flex items-center gap-2 text-xs text-gray-300">
@@ -1028,15 +1028,15 @@ function McpDetailView({
                       </label>
                     ))
                   )}
-                  <p className="text-xs text-gray-500">{t('documentWrite.scopeNote')}</p>
+                  <p className="text-xs text-gray-400">{t('documentWrite.scopeNote')}</p>
                 </div>
               )}
             </div>
 
             {/* Chat authentication mode selector */}
             <div className="mt-4">
-              <label className="block text-xs text-gray-500">{t('authMode.label')}</label>
-              <p className="text-xs text-gray-500 mt-0.5 mb-2">{t('authMode.hint')}</p>
+              <label className="block text-xs text-gray-300">{t('authMode.label')}</label>
+              <p className="text-xs text-gray-400 mt-0.5 mb-2">{t('authMode.hint')}</p>
               <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
                 {(
                   [
@@ -1092,7 +1092,7 @@ function McpDetailView({
                       aria-pressed={currentMode === mode.value}
                     >
                       <p className="text-xs font-medium text-gray-200">{mode.label}</p>
-                      <p className="text-[10px] text-gray-500 mt-0.5">{mode.desc}</p>
+                      <p className="text-[11px] text-gray-400 mt-0.5">{mode.desc}</p>
                       <HelpTip content={mode.tooltip} position="bottom" maxWidth={300} size="xs" />
                     </button>
                   );
@@ -1124,9 +1124,9 @@ function McpDetailView({
                         handleExternalAuthConfigChange({ validationUrl: e.target.value })
                       }
                       placeholder={t('external.validationUrlPlaceholder')}
-                      className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
+                      className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
                     />
-                    <p className="text-xs text-gray-600 mt-1">{t('external.validationUrlHelp')}</p>
+                    <p className="text-xs text-gray-400 mt-1">{t('external.validationUrlHelp')}</p>
                   </div>
 
                   <div>
@@ -1144,7 +1144,7 @@ function McpDetailView({
                         handleExternalAuthConfigChange({ headerName: e.target.value })
                       }
                       placeholder={t('external.headerNamePlaceholder')}
-                      className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
+                      className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
                     />
                   </div>
 
@@ -1163,9 +1163,9 @@ function McpDetailView({
                         handleExternalAuthConfigChange({ headerTemplate: e.target.value })
                       }
                       placeholder={t('external.headerTemplatePlaceholder')}
-                      className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
+                      className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
                     />
-                    <p className="text-xs text-gray-600 mt-1">{t('external.headerTemplateHelp')}</p>
+                    <p className="text-xs text-gray-400 mt-1">{t('external.headerTemplateHelp')}</p>
                   </div>
 
                   <div className="grid grid-cols-2 gap-2">
@@ -1175,7 +1175,7 @@ function McpDetailView({
                         htmlFor={`external-email-field-${profile.name}`}
                       >
                         {t('external.emailFieldLabel')}{' '}
-                        <span className="text-gray-600">{t('external.optionalSuffix')}</span>
+                        <span className="text-gray-400">{t('external.optionalSuffix')}</span>
                       </label>
                       <input
                         id={`external-email-field-${profile.name}`}
@@ -1185,7 +1185,7 @@ function McpDetailView({
                           handleExternalAuthConfigChange({ emailField: e.target.value })
                         }
                         placeholder={t('external.emailFieldPlaceholder')}
-                        className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
+                        className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
                       />
                     </div>
                     <div>
@@ -1194,7 +1194,7 @@ function McpDetailView({
                         htmlFor={`external-name-field-${profile.name}`}
                       >
                         {t('external.nameFieldLabel')}{' '}
-                        <span className="text-gray-600">{t('external.optionalSuffix')}</span>
+                        <span className="text-gray-400">{t('external.optionalSuffix')}</span>
                       </label>
                       <input
                         id={`external-name-field-${profile.name}`}
@@ -1204,11 +1204,11 @@ function McpDetailView({
                           handleExternalAuthConfigChange({ nameField: e.target.value })
                         }
                         placeholder={t('external.nameFieldPlaceholder')}
-                        className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
+                        className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
                       />
                     </div>
                   </div>
-                  <p className="text-xs text-gray-600">{t('external.dotNotationHelp')}</p>
+                  <p className="text-xs text-gray-400">{t('external.dotNotationHelp')}</p>
 
                   {/* Auto-create users toggle */}
                   <label className="flex items-center gap-2 cursor-pointer mt-2">
@@ -1224,7 +1224,7 @@ function McpDetailView({
                       {t('external.autoCreateUsersLabel')}
                     </span>
                   </label>
-                  <p className="text-xs text-gray-600">
+                  <p className="text-xs text-gray-400">
                     {profile.externalAuthConfig?.autoCreateUsers !== false
                       ? t('external.autoCreateEnabled')
                       : t('external.autoCreateDisabled')}
@@ -1271,7 +1271,7 @@ function McpDetailView({
                       value={profile.oauthConfig?.clientId ?? ''}
                       onChange={(e) => handleOAuthConfigChange({ clientId: e.target.value })}
                       placeholder={t('oauth.clientIdPlaceholder')}
-                      className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
+                      className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
                     />
                   </div>
                   <div>
@@ -1287,7 +1287,7 @@ function McpDetailView({
                       value={profile.oauthConfig?.clientSecret ?? ''}
                       onChange={(e) => handleOAuthConfigChange({ clientSecret: e.target.value })}
                       placeholder={t('oauth.clientSecretPlaceholder')}
-                      className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
+                      className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
                     />
                   </div>
                   {((profile.oauthConfig?.provider ?? 'github') === 'custom' ||
@@ -1308,7 +1308,7 @@ function McpDetailView({
                             handleOAuthConfigChange({ authorizationUrl: e.target.value })
                           }
                           placeholder={t('oauth.urlPlaceholder')}
-                          className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
+                          className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
                         />
                       </div>
                       <div>
@@ -1324,7 +1324,7 @@ function McpDetailView({
                           value={profile.oauthConfig?.tokenUrl ?? ''}
                           onChange={(e) => handleOAuthConfigChange({ tokenUrl: e.target.value })}
                           placeholder={t('oauth.urlPlaceholder')}
-                          className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
+                          className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
                         />
                       </div>
                       <div>
@@ -1340,7 +1340,7 @@ function McpDetailView({
                           value={profile.oauthConfig?.userinfoUrl ?? ''}
                           onChange={(e) => handleOAuthConfigChange({ userinfoUrl: e.target.value })}
                           placeholder={t('oauth.urlPlaceholder')}
-                          className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
+                          className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700 text-gray-100 text-sm placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-os-500/30 focus:border-os-500"
                         />
                       </div>
                     </>
@@ -1368,7 +1368,7 @@ function McpDetailView({
               className={`px-5 py-3 text-sm font-medium border-b-2 transition-all duration-200 inline-flex items-center gap-1 ${
                 activeSection === tab.id
                   ? 'border-os-500 text-os-400'
-                  : 'border-transparent text-gray-500 hover:text-gray-300 hover:border-gray-600'
+                  : 'border-transparent text-gray-400 hover:text-gray-300 hover:border-gray-600'
               }`}
             >
               {tab.label}
@@ -1438,7 +1438,7 @@ function McpDetailView({
               </div>
             </div>
             {configurations.length === 0 ? (
-              <p className="text-sm text-gray-500">{t('tables.emptyState')}</p>
+              <p className="text-sm text-gray-400">{t('tables.emptyState')}</p>
             ) : (
               <div className="flex flex-wrap gap-2">
                 {configurations.map((cfg) => {
@@ -1452,7 +1452,7 @@ function McpDetailView({
                         className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border transition-all duration-200 ${
                           isSelected
                             ? 'border-os-600/60 bg-os-700/20 text-os-400'
-                            : 'border-gray-700 bg-gray-900/40 text-gray-500 hover:border-gray-600 hover:text-gray-300'
+                            : 'border-gray-700 bg-gray-900/40 text-gray-400 hover:border-gray-600 hover:text-gray-300'
                         }`}
                       >
                         <div
@@ -1461,14 +1461,14 @@ function McpDetailView({
                           }`}
                         />
                         {cfg.label}
-                        <span className="text-xs text-gray-500">
+                        <span className="text-xs text-gray-400">
                           {t('tables.configSummary', { tableCount, sourceCount })}
                         </span>
                       </button>
                       <button
                         onClick={() => onNavigateToConfig(cfg.name)}
                         title={t('tables.editTooltip')}
-                        className="p-1 text-gray-500 hover:text-os-400 transition-all duration-200"
+                        className="p-1 text-gray-400 hover:text-os-400 transition-all duration-200"
                       >
                         <svg
                           className="w-3.5 h-3.5"
@@ -1520,7 +1520,7 @@ function McpDetailView({
                 }
                 const tableNames = Object.keys(mergedTables);
                 if (tableNames.length === 0) {
-                  return <p className="text-sm text-gray-500">{t('tables.noTablesSelected')}</p>;
+                  return <p className="text-sm text-gray-400">{t('tables.noTablesSelected')}</p>;
                 }
                 return (
                   <div className="flex flex-wrap gap-2">
@@ -1536,7 +1536,7 @@ function McpDetailView({
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-blue-600/30 bg-blue-700/10 text-sm text-blue-300"
                         >
                           {tableName}
-                          <span className="text-xs text-gray-500">
+                          <span className="text-xs text-gray-400">
                             {t('tables.colsLabel', { count: mergedTables[tableName].length })}
                           </span>
                           <span className="flex items-center gap-1">
@@ -1544,7 +1544,7 @@ function McpDetailView({
                               <span
                                 key={tool}
                                 title={t('tables.toolTitle', { tool })}
-                                className={`text-[9px] px-1 py-0.5 rounded font-bold ${
+                                className={`text-[11px] px-1 py-0.5 rounded font-bold ${
                                   tool === 'write'
                                     ? 'bg-amber-500/20 text-amber-400'
                                     : 'bg-gray-700/60 text-gray-400'
@@ -1593,7 +1593,7 @@ function McpDetailView({
 
       {activeSection === 'scoping' && (
         <Suspense
-          fallback={<div className="p-6 text-sm text-gray-500 italic">{tCommon('loading')}</div>}
+          fallback={<div className="p-6 text-sm text-gray-400 italic">{tCommon('loading')}</div>}
         >
           <DataScopingSection
             profile={profile}

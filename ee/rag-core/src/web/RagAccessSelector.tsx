@@ -223,10 +223,10 @@ function FolderIcon({ open }: { open: boolean }) {
   );
 }
 
-function FileIcon({ deleted }: { deleted: boolean }) {
+function FileIcon() {
   return (
     <svg
-      className={`w-4 h-4 flex-shrink-0 ${deleted ? 'text-gray-600' : 'text-gray-500'}`}
+      className="w-4 h-4 flex-shrink-0 text-gray-400"
       fill="none"
       stroke="currentColor"
       strokeWidth={1.5}
@@ -245,7 +245,7 @@ function FileIcon({ deleted }: { deleted: boolean }) {
 function SpinnerIcon() {
   return (
     <svg
-      className="w-3 h-3 text-gray-500 animate-spin flex-shrink-0"
+      className="w-3 h-3 text-gray-400 animate-spin flex-shrink-0"
       fill="none"
       viewBox="0 0 24 24"
       aria-hidden="true"
@@ -315,7 +315,7 @@ interface FolderModeBadgeProps {
 function FolderModeBadge({ mode, onForceAutoInclude }: FolderModeBadgeProps) {
   if (mode === 'auto-include') {
     return (
-      <span className="text-[10px] px-1.5 py-0.5 rounded bg-os-900/40 text-os-400 border border-os-700/40 flex-shrink-0">
+      <span className="text-[11px] px-1.5 py-0.5 rounded bg-os-900/40 text-os-400 border border-os-700/40 flex-shrink-0">
         auto-include
       </span>
     );
@@ -325,7 +325,7 @@ function FolderModeBadge({ mode, onForceAutoInclude }: FolderModeBadgeProps) {
       type="button"
       onClick={onForceAutoInclude}
       title={T.forceAutoIncludeTitle}
-      className="text-[10px] px-1.5 py-0.5 rounded bg-amber-900/30 text-amber-400 border border-amber-700/40 flex-shrink-0 hover:bg-amber-800/30 transition-colors"
+      className="text-[11px] px-1.5 py-0.5 rounded bg-amber-900/30 text-amber-400 border border-amber-700/40 flex-shrink-0 hover:bg-amber-800/30 transition-colors"
     >
       strict
     </button>
@@ -348,9 +348,11 @@ function DocumentRow({ doc, checked, disabled, depth, onToggle }: DocumentRowPro
   const isDeleted = doc.deletedAt !== null;
   const notIndexed = !doc.lastIndexedAt;
 
+  // Both dimmed states share opacity-70, the lowest level keeping AA contrast;
+  // they stay distinct by their badge and by strikethrough vs italic.
   return (
     <li
-      className={`flex items-center gap-2 py-1 pr-2 rounded ${isDeleted ? 'opacity-40' : notIndexed ? 'opacity-60' : ''}`}
+      className={`flex items-center gap-2 py-1 pr-2 rounded ${isDeleted || notIndexed ? 'opacity-70' : ''}`}
       style={{ paddingLeft: `${depth * 16 + 8}px` }}
     >
       <TriStateCheckbox
@@ -359,21 +361,21 @@ function DocumentRow({ doc, checked, disabled, depth, onToggle }: DocumentRowPro
         label={T.includeDoc(doc.name)}
         disabled={disabled || isDeleted}
       />
-      <FileIcon deleted={isDeleted} />
+      <FileIcon />
       <span
-        className={`text-xs text-gray-300 truncate flex-1 ${isDeleted ? 'line-through text-gray-500' : ''}`}
+        className={`text-xs text-gray-300 truncate flex-1 ${isDeleted ? 'line-through' : notIndexed ? 'italic' : ''}`}
         title={doc.path}
       >
         {doc.name}
       </span>
       {isDeleted && (
-        <span className="text-[10px] px-1 py-0.5 rounded bg-red-950/40 text-red-400 border border-red-800/40 flex-shrink-0">
+        <span className="text-[11px] px-1 py-0.5 rounded bg-red-950/40 text-red-300 border border-red-800/40 flex-shrink-0">
           {T.deleted}
         </span>
       )}
       {!isDeleted && notIndexed && (
         <span
-          className="text-[10px] px-1 py-0.5 rounded bg-gray-800/60 text-gray-500 flex-shrink-0"
+          className="text-[11px] px-1 py-0.5 rounded bg-gray-800/60 text-gray-300 flex-shrink-0"
           title={T.notIndexedTitle}
         >
           {T.notIndexed}
@@ -457,7 +459,7 @@ function FolderRow({
         >
           <span className="text-sm text-gray-200 truncate">{node.folder.name}</span>
           {node.loaded && (
-            <span className="text-xs text-gray-600 flex-shrink-0">
+            <span className="text-xs text-gray-400 flex-shrink-0">
               {T.itemCount(node.documents.length + node.childFolderIds.length)}
             </span>
           )}
@@ -522,7 +524,7 @@ function FolderRow({
           })}
           {node.childFolderIds.length === 0 && node.documents.length === 0 && (
             <li
-              className="text-xs text-gray-600 italic py-1"
+              className="text-xs text-gray-400 italic py-1"
               style={{ paddingLeft: `${depth * 16 + 36}px` }}
             >
               {T.emptyFolder}
@@ -639,13 +641,13 @@ function SourceRow({
           className="flex-1 text-left flex items-center gap-2 min-w-0"
         >
           <span className="text-sm font-medium text-gray-200 truncate">{node.source.name}</span>
-          <span className="text-xs text-gray-500 flex-shrink-0">{node.source.type}</span>
+          <span className="text-xs text-gray-400 flex-shrink-0">{node.source.type}</span>
         </button>
 
         {/* Status badges — the source's real status, independent of its
             inclusion in this configuration (checkbox above). */}
         {activeJob && (
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-os-900/40 text-os-300 border border-os-700/40 flex-shrink-0 flex items-center gap-1">
+          <span className="text-[11px] px-1.5 py-0.5 rounded bg-os-900/40 text-os-300 border border-os-700/40 flex-shrink-0 flex items-center gap-1">
             <SpinnerIcon />
             {jobProgressState(activeJob) === 'progress'
               ? T.indexing(activeJob.processedDocuments, activeJob.totalDocuments)
@@ -654,7 +656,7 @@ function SourceRow({
         )}
         {lastFailedJob && !activeJob && (
           <span
-            className="text-[10px] px-1.5 py-0.5 rounded bg-red-950/40 text-red-400 border border-red-800/40 flex-shrink-0"
+            className="text-[11px] px-1.5 py-0.5 rounded bg-red-950/40 text-red-400 border border-red-800/40 flex-shrink-0"
             title={lastFailedJob.error ?? undefined}
           >
             {T.syncFailed}
@@ -669,7 +671,7 @@ function SourceRow({
       {node.expanded && node.loaded && (
         <div className="bg-gray-900/20 border-t border-white/5 px-2 py-1.5">
           {node.rootFolderIds.length === 0 && node.rootDocuments.length === 0 ? (
-            <p className="text-xs text-gray-600 italic py-1 px-2">{T.noIndexedContent}</p>
+            <p className="text-xs text-gray-400 italic py-1 px-2">{T.noIndexedContent}</p>
           ) : (
             <ul className="space-y-0.5">
               {node.rootFolderIds.map((fid) => (
@@ -724,12 +726,12 @@ function SaveFooter({ counts, saving, onCancel, onSave }: SaveFooterProps) {
 
   return (
     <div className="flex items-center justify-between pt-1 border-t border-white/5">
-      <p className="text-xs text-gray-500">
+      <p className="text-xs text-gray-400">
         {total > 0 ? (
           <>
             {counts.folders > 0 && <span>{T.folderCount(counts.folders)}</span>}
             {counts.folders > 0 && counts.documents > 0 && (
-              <span className="mx-1 text-gray-600">·</span>
+              <span className="mx-1 text-gray-400">·</span>
             )}
             {counts.documents > 0 && <span>{T.documentCount(counts.documents)}</span>}
             <span>{` ${T.selected(total)}`}</span>
@@ -1182,7 +1184,7 @@ export default function RagAccessSelector({
 
   if (!sourcesLoaded && !loadError) {
     return (
-      <div className="p-6 text-sm text-gray-500 italic flex items-center gap-2">
+      <div className="p-6 text-sm text-gray-400 italic flex items-center gap-2">
         <SpinnerIcon />
         {T.loadingKbs}
       </div>
@@ -1205,7 +1207,7 @@ export default function RagAccessSelector({
           {T.headingPrefix}
           <span className="text-os-400 font-mono">"{profileName}"</span>
         </h3>
-        <p className="text-xs text-gray-500 mt-0.5">
+        <p className="text-xs text-gray-400 mt-0.5">
           {T.introBeforeArrow}
           <span className="text-gray-400">▸</span>
           {T.introAfterArrow}
@@ -1269,7 +1271,7 @@ export default function RagAccessSelector({
         </p>
       ) : (
         refreshing && (
-          <p role="status" className="text-xs text-gray-500 italic flex items-center gap-2">
+          <p role="status" className="text-xs text-gray-400 italic flex items-center gap-2">
             <SpinnerIcon />
             {RAG_STRINGS.sourcesRefreshing}
           </p>
@@ -1278,7 +1280,7 @@ export default function RagAccessSelector({
 
       {/* Source tree */}
       {documentSources.length === 0 ? (
-        <div className="text-sm text-gray-500 italic px-3 py-6 text-center border border-dashed border-white/5 rounded-lg">
+        <div className="text-sm text-gray-400 italic px-3 py-6 text-center border border-dashed border-white/5 rounded-lg">
           {T.noKnowledgeBase}
         </div>
       ) : (

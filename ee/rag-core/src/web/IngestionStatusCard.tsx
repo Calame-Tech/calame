@@ -102,7 +102,7 @@ export default function IngestionStatusCard({
   if (loading) {
     return (
       <div className="card-primary p-4">
-        <p className="text-sm text-gray-500">{S.ingestionLoading}</p>
+        <p className="text-sm text-gray-400">{S.ingestionLoading}</p>
       </div>
     );
   }
@@ -118,7 +118,7 @@ export default function IngestionStatusCard({
   if (jobs.length === 0) {
     return (
       <div className="card-primary p-4">
-        <p className="text-sm text-gray-500">{S.ingestionNone}</p>
+        <p className="text-sm text-gray-400">{S.ingestionNone}</p>
       </div>
     );
   }
@@ -127,7 +127,7 @@ export default function IngestionStatusCard({
     <div className="card-primary p-4 space-y-3">
       <div className="flex items-center justify-between">
         <h3 className="eyebrow">{S.ingestionTitle}</h3>
-        <span className="text-xs text-gray-500">{S.jobsCount(jobs.length)}</span>
+        <span className="text-xs text-gray-400">{S.jobsCount(jobs.length)}</span>
       </div>
       <ul className="space-y-2">
         {jobs.map((job) => {
@@ -153,7 +153,7 @@ export default function IngestionStatusCard({
                   style={{ width: `${percent}%` }}
                 />
               </div>
-              <div className="flex items-center justify-between text-xs text-gray-500">
+              <div className="flex items-center justify-between text-xs text-gray-400">
                 <span>
                   {state === 'preparing'
                     ? S.documentsDiscovering
@@ -166,7 +166,7 @@ export default function IngestionStatusCard({
                 <span>{percent}%</span>
               </div>
               {job.currentDocument && isActive(job) && (
-                <p className="text-xs text-gray-500 truncate" title={job.currentDocument}>
+                <p className="text-xs text-gray-400 truncate" title={job.currentDocument}>
                   {S.currentDocument(job.currentDocument, null)}
                 </p>
               )}

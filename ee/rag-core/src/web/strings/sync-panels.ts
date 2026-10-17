@@ -46,6 +46,8 @@ const FR = {
   finishedAt: (when: string) => `Terminé : ${when}`,
   jobInProgress: 'Synchronisation en cours',
   documentsCount: (done: number, total: number) => `${done} / ${total} documents`,
+  documentsDiscovering: 'Recherche des documents…',
+  documentsNone: 'Aucun document trouvé',
   skippedEtag: (n: number) => `${n} skipped (etag)`,
   // Per-file sync report (CALAME-5)
   statusCompletedWithSkipped: (n: number) => `Terminé · ${n} ignoré${n > 1 ? 's' : ''}`,
@@ -171,6 +173,8 @@ const EN: typeof FR = {
   finishedAt: (when: string) => `Finished: ${when}`,
   jobInProgress: 'Job in progress',
   documentsCount: (done: number, total: number) => `${done} / ${total} documents`,
+  documentsDiscovering: 'Discovering documents…',
+  documentsNone: 'No documents found',
   skippedEtag: (n: number) => `${n} skipped (etag)`,
   statusCompletedWithSkipped: (n: number) => `Completed · ${n} skipped`,
   syncReport: (indexed: number, unchanged: number, rejected: number) =>

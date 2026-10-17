@@ -28,6 +28,7 @@ import {
   type FolderMap,
   type FolderMode,
 } from '../rag-access-state.js';
+import { jobProgressState } from './job-progress.js';
 import { RAG_ACCESS_STRINGS as T } from './strings/rag-access.js';
 import { RAG_STRINGS } from './onboarding-strings.js';
 import { useActiveSyncJobs, type SourceJobInfo } from './useActiveSyncJobs.js';
@@ -645,7 +646,9 @@ function SourceRow({
         {activeJob && (
           <span className="text-[10px] px-1.5 py-0.5 rounded bg-os-900/40 text-os-300 border border-os-700/40 flex-shrink-0 flex items-center gap-1">
             <SpinnerIcon />
-            {T.indexing(activeJob.processedDocuments, activeJob.totalDocuments)}
+            {jobProgressState(activeJob) === 'progress'
+              ? T.indexing(activeJob.processedDocuments, activeJob.totalDocuments)
+              : T.indexingPreparing}
           </span>
         )}
         {lastFailedJob && !activeJob && (

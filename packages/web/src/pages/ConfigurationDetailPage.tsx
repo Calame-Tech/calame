@@ -18,7 +18,12 @@ import {
   getConfigurationColumnMasking,
 } from '../lib/configuration-accessors.js';
 import { isConfigurationDirty } from '../lib/configuration-dirty.js';
-import { buildConfigurationToSave } from '../lib/configuration-save.js';
+import {
+  buildConfigurationToSave,
+  getConfigurationDocumentSelection,
+  isConfigurationEmpty,
+  omitTables,
+} from '../lib/configuration-save.js';
 import { guardedNavigate } from '../lib/guarded-navigate.js';
 import type {
   DatabaseSchema,
@@ -296,6 +301,10 @@ function ConfigurationDetailView({
   // Knowledge selection restored from the draft: seeds the selector instead
   // of the saved one until the next successful save.
   const [restoredDocSelection, setRestoredDocSelection] = useState(draft?.docSelection ?? null);
+  // Bumped on each successful save to remount the Knowledge selector: once
+  // edited, it re-reports its selection whenever its initial props change,
+  // which would flag the just-saved selection as unsaved again.
+  const [selectorGeneration, setSelectorGeneration] = useState(0);
 
   // Dirty-state tracking (Lot D3) — compares the local edit state above
   // against the last-saved `config` prop so navigation away can warn before
@@ -370,24 +379,8 @@ function ConfigurationDetailView({
       const connSchema = connectionSchemas[connName];
       if (connSchema) {
         const connTableNames = new Set(connSchema.tables.map((t) => t.name));
-        setLocalSelectedTables((prev) => {
-          const cleaned: Record<string, Set<string>> = {};
-          for (const [tableName, cols] of Object.entries(prev)) {
-            if (!connTableNames.has(tableName)) {
-              cleaned[tableName] = cols;
-            }
-          }
-          return cleaned;
-        });
-        setLocalColumnMasking((prev) => {
-          const cleaned: Record<string, Record<string, ColumnMasking>> = {};
-          for (const [tableName, masking] of Object.entries(prev)) {
-            if (!connTableNames.has(tableName)) {
-              cleaned[tableName] = masking;
-            }
-          }
-          return cleaned;
-        });
+        setLocalSelectedTables((prev) => omitTables(prev, connTableNames));
+        setLocalColumnMasking((prev) => omitTables(prev, connTableNames));
       }
     } else {
       next.add(connName);
@@ -412,35 +405,22 @@ function ConfigurationDetailView({
 
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  // A save error (e.g. empty selection) is stale as soon as the selection changes.
+  useEffect(() => {
+    setSaveError(null);
+  }, [selectedConns, localSelectedTables, pendingDocSelection]);
+
   // ---------------------------------------------------------------------------
   // RAG scope helpers — extract document-kind entries from the current config.
   // Saved as-is by the single header Save unless the Knowledge tab reported
   // an edited selection (see `pendingDocSelection`).
   // ---------------------------------------------------------------------------
 
-  /**
-   * Returns a Record of only the `kind: 'document'` scopes in the config.
-   * Used to seed RagAccessSelector with the existing document scopes.
-   */
-  const configDocumentScopes = useMemo<Record<string, ScopeSelection>>(() => {
-    if (!config?.scopes) return {};
-    const result: Record<string, ScopeSelection> = {};
-    for (const [id, scope] of Object.entries(config.scopes)) {
-      if (scope.kind === 'document') result[id] = scope;
-    }
-    return result;
-  }, [config]);
-
-  /**
-   * Returns the list of sourceIds whose scope kind is 'document'.
-   * Used to seed RagAccessSelector#initialSources.
-   */
-  const configDocumentSources = useMemo<string[]>(() => {
-    if (!config?.sources || !config?.scopes) return [];
-    return config.sources.filter(
-      (id) => config.scopes !== undefined && config.scopes[id]?.kind === 'document',
-    );
-  }, [config]);
+  // Saved knowledge-base selection, used to seed RagAccessSelector.
+  const { scopes: configDocumentScopes, sources: configDocumentSources } = useMemo(
+    () => getConfigurationDocumentSelection(config),
+    [config],
+  );
 
   const handleSave = async () => {
     setSaveError(null);
@@ -460,6 +440,11 @@ function ConfigurationDetailView({
         documentSources: pendingDocSelection?.sources ?? configDocumentSources,
         documentScopes: pendingDocSelection?.scopes ?? configDocumentScopes,
       });
+    // The API refuses a configuration with no data at all: say so up front.
+    if (isConfigurationEmpty(configToSave)) {
+      setSaveError(t('header.emptySelection'));
+      return;
+    }
     const success = await onSave(configToSave);
     if (success) {
       // Mirror exactly what was saved: no unsaved changes, so no draft.
@@ -469,6 +454,7 @@ function ConfigurationDetailView({
       setLocalColumnMasking(cleanedColumnMasking);
       setPendingDocSelection(null);
       setRestoredDocSelection(null);
+      setSelectorGeneration((n) => n + 1);
       setConfigurationDraft(draftKey, null);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
@@ -590,7 +576,11 @@ function ConfigurationDetailView({
             </p>
           </div>
           <div className="flex items-center gap-3">
-            {saveError && <span className="text-sm text-rose-400">{saveError}</span>}
+            {saveError && (
+              <span role="alert" className="text-sm text-rose-400">
+                {saveError}
+              </span>
+            )}
             <Button
               onClick={handleSave}
               disabled={!isDirty}
@@ -881,7 +871,7 @@ function ConfigurationDetailView({
             }
           >
             <RagAccessSelector
-              key={ragSourcesCache?.scope}
+              key={`${ragSourcesCache?.scope ?? ''}:${selectorGeneration}`}
               profileName={configName}
               initialScopes={restoredDocSelection?.scopes ?? configDocumentScopes}
               initialSources={restoredDocSelection?.sources ?? configDocumentSources}

@@ -143,7 +143,7 @@ function SyncStatusBadge({ source, jobInfo }: SyncStatusBadgeProps) {
   if (!source.lastSyncAt) {
     return (
       <span
-        className="inline-flex items-center gap-1.5 text-xs text-gray-500"
+        className="inline-flex items-center gap-1.5 text-xs text-gray-400"
         aria-label={RAG_STRINGS.neverSynced}
       >
         <span className="inline-block w-2 h-2 rounded-full bg-gray-600 flex-shrink-0" />
@@ -500,7 +500,7 @@ export default function KnowledgeBaseManager({
         <div className="flex items-center justify-between">
           <div>
             <h2 className="heading-md">{RAG_STRINGS.trash}</h2>
-            <p className="text-sm text-gray-500 mt-1">{T.trashDescription(RETENTION_DAYS)}</p>
+            <p className="text-sm text-gray-400 mt-1">{T.trashDescription(RETENTION_DAYS)}</p>
           </div>
           <button
             type="button"
@@ -532,7 +532,7 @@ export default function KnowledgeBaseManager({
         )}
 
         {deletedSources.length === 0 ? (
-          <div className="text-sm text-gray-500 italic px-3 py-6 text-center border border-dashed border-white/5 rounded-lg">
+          <div className="text-sm text-gray-400 italic px-3 py-6 text-center border border-dashed border-white/5 rounded-lg">
             {T.trashEmpty}
           </div>
         ) : (
@@ -557,14 +557,14 @@ export default function KnowledgeBaseManager({
                         <span className="text-sm font-medium text-gray-200 truncate">
                           {source.name}
                         </span>
-                        <span className="text-xs text-gray-500">·</span>
-                        <span className="text-xs text-gray-500">{source.type}</span>
+                        <span className="text-xs text-gray-400">·</span>
+                        <span className="text-xs text-gray-400">{source.type}</span>
                       </div>
-                      <div className="text-xs text-gray-500 mt-0.5">
+                      <div className="text-xs text-gray-400 mt-0.5">
                         {T.deletedOn(formatDate(source.deletedAt ?? undefined))}
                       </div>
                       <div
-                        className={`text-xs mt-0.5 ${urgent ? 'text-yellow-500' : 'text-gray-500'}`}
+                        className={`text-xs mt-0.5 ${urgent ? 'text-yellow-500' : 'text-gray-400'}`}
                       >
                         {remainingLabel}
                       </div>
@@ -601,7 +601,7 @@ export default function KnowledgeBaseManager({
       <div className="flex items-center justify-between">
         <div>
           <h2 className="heading-md">{RAG_STRINGS.kbTitle}</h2>
-          <p className="text-sm text-gray-500 mt-1">{RAG_STRINGS.kbDescription}</p>
+          <p className="text-sm text-gray-400 mt-1">{RAG_STRINGS.kbDescription}</p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -707,14 +707,14 @@ export default function KnowledgeBaseManager({
         {/* Source list */}
         <div className="space-y-2">
           {loading && !sourcesLoaded && (
-            <p role="status" className="text-sm text-gray-500 italic">
+            <p role="status" className="text-sm text-gray-400 italic">
               {RAG_STRINGS.sourcesLoading}
             </p>
           )}
           {sourcesLoaded && refreshing && (
             <p
               role="status"
-              className="inline-flex items-center gap-1.5 text-xs text-gray-500 italic"
+              className="inline-flex items-center gap-1.5 text-xs text-gray-400 italic"
             >
               <RefreshIcon spinning />
               {RAG_STRINGS.sourcesRefreshing}
@@ -733,7 +733,7 @@ export default function KnowledgeBaseManager({
             </div>
           )}
           {!loading && sourcesLoaded && sources.length === 0 && !showCreateForm && (
-            <div className="text-sm text-gray-500 italic px-3 py-6 text-center border border-dashed border-white/5 rounded-lg">
+            <div className="text-sm text-gray-400 italic px-3 py-6 text-center border border-dashed border-white/5 rounded-lg">
               {T.noSourcePrefix}
               <span className="text-os-400">{T.newSourceButton}</span>
               {T.noSourceSuffix}
@@ -801,8 +801,8 @@ export default function KnowledgeBaseManager({
                       <span className="text-sm font-medium text-gray-200 truncate">
                         {source.name}
                       </span>
-                      <span className="text-xs text-gray-500">·</span>
-                      <span className="text-xs text-gray-500">{source.type}</span>
+                      <span className="text-xs text-gray-400">·</span>
+                      <span className="text-xs text-gray-400">{source.type}</span>
                       {source.configError && (
                         <span
                           className="text-xs bg-red-900/40 text-red-400 px-1.5 py-0.5 rounded border border-red-800/40"
@@ -815,7 +815,7 @@ export default function KnowledgeBaseManager({
 
                     {/* Local source path */}
                     {source.type === 'local' && source.config && !source.configError && (
-                      <div className="text-xs text-gray-600 mt-0.5 font-mono-plex truncate">
+                      <div className="text-xs text-gray-400 mt-0.5 font-mono-plex truncate">
                         {typeof source.config.rootPath === 'string'
                           ? T.folderPath(source.config.rootPath)
                           : null}
@@ -826,7 +826,7 @@ export default function KnowledgeBaseManager({
                         if the server did not send them. */}
                     {typeof source.documentCount === 'number' &&
                       typeof source.folderCount === 'number' && (
-                        <div className="text-xs text-gray-500 mt-0.5">
+                        <div className="text-xs text-gray-400 mt-0.5">
                           {T.counts(source.documentCount, source.folderCount)}
                         </div>
                       )}
@@ -837,7 +837,7 @@ export default function KnowledgeBaseManager({
                 <div className="flex items-center gap-3 mt-2 flex-wrap">
                   <SyncStatusBadge source={source} jobInfo={mergedJobInfo} />
                   <span
-                    className="text-xs text-gray-600 border border-white/5 bg-gray-800/40 px-1.5 py-0.5 rounded"
+                    className="text-xs text-gray-400 border border-white/5 bg-gray-800/40 px-1.5 py-0.5 rounded"
                     title={T.syncModeTitle}
                   >
                     {syncModeLabel(source)}
@@ -915,7 +915,7 @@ export default function KnowledgeBaseManager({
               <div className="flex items-center justify-between gap-2">
                 <div>
                   <h3 className="text-sm font-semibold text-gray-200">{selectedSource.name}</h3>
-                  <p className="text-xs text-gray-500 mt-0.5">
+                  <p className="text-xs text-gray-400 mt-0.5">
                     {syncModeLabel(selectedSource)} · {T.lastSync}{' '}
                     {formatDate(selectedSource.lastSyncAt)}
                   </p>
@@ -955,7 +955,7 @@ export default function KnowledgeBaseManager({
               <IngestionStatusCard sourceId={selectedSource.id} />
             </>
           ) : (
-            <div className="card-primary p-6 text-center text-sm text-gray-500 italic">
+            <div className="card-primary p-6 text-center text-sm text-gray-400 italic">
               {T.selectSource}
             </div>
           )}

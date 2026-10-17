@@ -81,6 +81,8 @@
     "errors": {
       "startFailed": "Échec du démarrage du serveur MCP « {name} ».",
       "noDataSource": "Ce serveur MCP n’a pas encore de données. Rattachez-le d’abord à un profil de données qui contient vos données (base de données ou base de connaissances).",
+      "noConfiguration": "Ce serveur MCP n’a pas encore de configuration de données. Associez-lui une configuration de données (tables d’une base de données ou base de connaissances) dans l’onglet « Données exposées », puis redémarrez-le.",
+      "attachConfiguration": "Associer une configuration de données",
       "startNetworkError": "Erreur réseau lors du démarrage du serveur MCP « {name} ».",
       "stopFailed": "Échec de l’arrêt du serveur MCP « {name} ».",
       "stopNetworkError": "Erreur réseau lors de l’arrêt du serveur MCP « {name} ».",
@@ -270,7 +272,8 @@
       "saved": "Enregistré !",
       "error": "Erreur",
       "noChanges": "Aucune modification",
-      "saveFailed": "Échec de l’enregistrement — consultez la console pour plus de détails.",
+      "saveFailed": "Échec de l’enregistrement. Vérifiez que Calame est toujours lancé, puis réessayez.",
+      "emptySelection": "Sélectionnez au moins une table de base de données ou un dossier de base de connaissances avant d’enregistrer : une configuration de données ne peut pas être vide.",
       "confirmDeleteQuestion": "Êtes-vous sûr ?",
       "deleting": "Suppression...",
       "yesDelete": "Oui, supprimer",
@@ -659,6 +662,7 @@
     "providers": {
       "local": {
         "label": "Local (inclus)",
+        "defaultName": "Embeddings locaux (inclus)",
         "desc": "S’exécute sur ce PC — aucune clé API, rien ne quitte votre machine"
       },
       "anthropic": {
@@ -789,7 +793,7 @@
     "assignment": {
       "help": "Sélectionnez les paramètres IA que les clients de chat de ce MCP peuvent utiliser. Utilisez ↑/↓ pour réordonner ; la première entrée est celle par défaut. Laissez vide pour revenir au paramètre par défaut global.",
       "noSettingDefault": "Aucun paramètre · défaut global",
-      "selectedCount": "{count} sélectionné(s)",
+      "selectedCount": "{count, plural, one {# sélectionné} other {# sélectionnés}}",
       "manageButton": "Gérer les paramètres IA →",
       "manageButtonTitle": "Ouvrir la page Paramètres IA (vous pourrez revenir via le fil d’Ariane)",
       "emptyState": "Aucun paramètre IA défini pour le moment. Créez-en un depuis le panneau Paramètres IA.",
@@ -918,7 +922,7 @@
       ]
     },
     "usage": {
-      "tokens": "{count} jetons",
+      "tokens": "{count, plural, one {# jeton} other {# jetons}}",
       "cacheSuffix": " · cache {percent} %"
     },
     "aiSelector": {
@@ -1019,7 +1023,7 @@
         "description": "Une source, ce sont les données que votre serveur MCP pourra lire : une base de données, ou une base de connaissances faite de documents.",
         "knowledgeBase": {
           "title": "Base de connaissances (documents)",
-          "description": "Indexez un dossier, des fichiers envoyés ou une autre source de documents. Vous continuez dans l’écran Base de connaissances ; le guide de démarrage affiche ensuite les étapes suivantes.",
+          "description": "Indexez un dossier, des fichiers envoyés ou une autre source de documents. Vous continuez dans l’écran Bases de connaissances ; le guide de démarrage affiche ensuite les étapes suivantes.",
           "button": "Ajouter une base de connaissances"
         },
         "quickStart": {
@@ -1266,9 +1270,9 @@
       "configurationCount": "{count, plural, one {# configuration} other {# configurations}}",
       "serverCount": "{count, plural, one {# serveur} other {# serveurs}}",
       "tableCount": "{count, plural, one {# table} other {# tables}}",
-      "writeToolTitle": "Outil d’écriture activé sur {count} table(s)",
+      "writeToolTitle": "Outil d’écriture activé sur {count, plural, one {# table} other {# tables}}",
       "writeBadge": "écriture sur {count, plural, one {# table} other {# tables}}",
-      "maskedColumnsTitle": "{count} colonne(s) masquée(s)",
+      "maskedColumnsTitle": "{count, plural, one {# colonne masquée} other {# colonnes masquées}}",
       "maskedColumnsBadge": "{count, plural, one {# colonne masquée} other {# colonnes masquées}}",
       "mountedByPrefix": "Monté par",
       "stopped": "(arrêté)",
@@ -1282,7 +1286,7 @@
       "title": "Sources",
       "description": "Gérez les connexions aux bases de données et les bases de connaissances utilisées par vos serveurs MCP.",
       "addSource": "Ajouter une source",
-      "itemsAriaLabel": "{count} éléments",
+      "itemsAriaLabel": "{count, plural, one {# élément} other {# éléments}}",
       "loadingKnowledgeBases": "Chargement des bases de connaissances…",
       "kbUnavailableTitle": "Bases de connaissances indisponibles",
       "kbUnavailableDescription": "La fonctionnalité RAG (génération augmentée par récupération) n’est pas disponible sur cette instance."
@@ -1465,7 +1469,7 @@
       "sources": {
         "eyebrow": "SOURCES",
         "help": "Gérer les sources connectées aux bases PostgreSQL, MySQL, SQLite ou SQL Server et aux bases de connaissances",
-        "connected": "{count} connectée(s)",
+        "connected": "{count, plural, one {# connectée} other {# connectées}}",
         "knowledgeBaseCount": "{count, plural, one {# base de connaissances} other {# bases de connaissances}}",
         "connectedTooltip": "Connectée, schéma chargé",
         "notConnectedTooltip": "Non connectée",
@@ -1487,12 +1491,12 @@
       "mcpServers": {
         "eyebrow": "SERVEURS MCP",
         "help": "Démarrer, arrêter et gérer vos serveurs MCP exposés aux clients IA",
-        "activeSuffix": "· {count} actif(s)",
+        "activeSuffix": "· {count, plural, one {# actif} other {# actifs}}",
         "servingAt": "en service sur {address}",
         "servingAddressUnknown": "en service (adresse pas encore disponible)",
         "noServerRunning": "aucun serveur en cours d’exécution",
-        "on": "ON",
-        "off": "OFF",
+        "on": "Actif",
+        "off": "Arrêté",
         "empty": "Aucun serveur"
       }
     },
@@ -1512,11 +1516,10 @@
       "emptyTitle": "Aucun serveur MCP",
       "emptyDescription": "Créez un serveur pour exposer vos configurations de données aux clients IA.",
       "table": {
-        "headers": ["Serveur", "Statut", "Auth", "Activité 24h", "Tendance"]
+        "headers": ["Serveur", "Statut", "Accès", "Activité 24h", "Tendance"]
       },
       "statusActive": "ACTIF",
-      "statusStopped": "ARRÊTÉ",
-      "authOpenFallback": "ouvert"
+      "statusStopped": "ARRÊTÉ"
     }
   },
   "mcpList": {
@@ -2372,7 +2375,7 @@
     },
     "notificationsBell": {
       "bellAriaLabel": "Notifications",
-      "ariaUnreadCount": "{count} notification(s) non lue(s)",
+      "ariaUnreadCount": "{count, plural, one {# notification non lue} other {# notifications non lues}}",
       "panel": {
         "title": "Notifications",
         "markAllRead": "Tout marquer comme lu",

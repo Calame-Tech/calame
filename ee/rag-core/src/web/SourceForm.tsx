@@ -304,7 +304,7 @@ interface HelperTextProps {
 }
 
 function HelperText({ children }: HelperTextProps) {
-  return <p className="text-xs text-gray-600 mt-1">{children}</p>;
+  return <p className="text-xs text-gray-400 mt-1">{children}</p>;
 }
 
 // ---------------------------------------------------------------------------
@@ -1016,7 +1016,7 @@ export default function SourceForm({
             </option>
           ))}
         </select>
-        {isEditing && <p className="text-xs text-gray-600 mt-1">{RAG_STRINGS.typeImmutable}</p>}
+        {isEditing && <p className="text-xs text-gray-400 mt-1">{RAG_STRINGS.typeImmutable}</p>}
       </div>
 
       {/* ------------------------------------------------------------------ */}
@@ -1196,7 +1196,7 @@ export default function SourceForm({
               aria-expanded={s3ShowAdvanced}
             >
               <span className="font-medium">{RAG_STRINGS.advancedOptional}</span>
-              <span aria-hidden="true" className="text-gray-600">
+              <span aria-hidden="true" className="text-gray-400">
                 {s3ShowAdvanced ? '▲' : '▼'}
               </span>
             </button>
@@ -1424,7 +1424,7 @@ export default function SourceForm({
               aria-expanded={httpShowAdvanced}
             >
               <span className="font-medium">{SF.httpAdvanced}</span>
-              <span aria-hidden="true" className="text-gray-600">
+              <span aria-hidden="true" className="text-gray-400">
                 {httpShowAdvanced ? '▲' : '▼'}
               </span>
             </button>
@@ -1592,7 +1592,7 @@ export default function SourceForm({
               aria-expanded={gdriveShowAdvanced}
             >
               <span className="font-medium">{SF.gdriveAdvanced}</span>
-              <span aria-hidden="true" className="text-gray-600">
+              <span aria-hidden="true" className="text-gray-400">
                 {gdriveShowAdvanced ? '▲' : '▼'}
               </span>
             </button>
@@ -1816,7 +1816,7 @@ export default function SourceForm({
               aria-expanded={gsheetsShowAdvanced}
             >
               <span className="font-medium">{SF.gsheetsAdvanced}</span>
-              <span aria-hidden="true" className="text-gray-600">
+              <span aria-hidden="true" className="text-gray-400">
                 {gsheetsShowAdvanced ? '▲' : '▼'}
               </span>
             </button>
@@ -2086,7 +2086,7 @@ export default function SourceForm({
               aria-expanded={spShowAdvanced}
             >
               <span className="font-medium">{SF.spAdvanced}</span>
-              <span aria-hidden="true" className="text-gray-600">
+              <span aria-hidden="true" className="text-gray-400">
                 {spShowAdvanced ? '▲' : '▼'}
               </span>
             </button>
@@ -2199,7 +2199,7 @@ export default function SourceForm({
               )}
             </div>
           ) : (
-            <p role="status" className="text-xs text-gray-500 italic mt-1">
+            <p role="status" className="text-xs text-gray-400 italic mt-1">
               {SF.aiSettingsLoading}
             </p>
           )
@@ -2259,7 +2259,7 @@ export default function SourceForm({
         {selectedSetting && selectedSettingSupportsEmbeddings && (
           <>
             <div className="flex items-center gap-4 mt-1">
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-gray-400">
                 {RAG_STRINGS.modelLabel}{' '}
                 <span className="font-mono-plex text-gray-400">
                   {selectedSetting.embeddingModel ?? SF.notSpecified}
@@ -2267,7 +2267,7 @@ export default function SourceForm({
               </p>
               {(selectedSetting.embeddingDimensions ?? initial?.embeddingDimensions) !==
                 undefined && (
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-gray-400">
                   {RAG_STRINGS.dimensionsLabel}{' '}
                   <span className="font-mono-plex text-gray-400">
                     {selectedSetting.embeddingDimensions ?? initial?.embeddingDimensions}
@@ -2284,14 +2284,14 @@ export default function SourceForm({
                   href="https://ai.google.dev/gemma/terms"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-xs text-gray-600 hover:text-gray-400 underline underline-offset-2 mt-1 inline-block"
+                  className="text-xs text-gray-400 hover:text-gray-200 underline underline-offset-2 mt-1 inline-block"
                   title={SF.thirdPartyLicensesTitle}
                 >
                   {SF.thirdPartyLicenses}
                 </a>
               </>
             ) : (
-              <p className="text-xs text-gray-500 mt-1">{SF.remoteEmbeddingsNotice}</p>
+              <p className="text-xs text-gray-400 mt-1">{SF.remoteEmbeddingsNotice}</p>
             )}
           </>
         )}
@@ -2385,7 +2385,7 @@ export default function SourceForm({
           {RAG_STRINGS.cancel}
         </button>
       </div>
-      {saving && <p className="text-xs text-gray-500">{RAG_STRINGS.savingHint}</p>}
+      {saving && <p className="text-xs text-gray-400">{RAG_STRINGS.savingHint}</p>}
 
       {showReindexDialog && (
         <ReindexDialog

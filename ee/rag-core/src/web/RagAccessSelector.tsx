@@ -15,18 +15,24 @@ import {
   type RagSourcePublic,
 } from './api.js';
 import {
+  applyIncludeWholeSource,
+  applyLoadedChildren,
   applyToggleDocument,
   applyToggleFolder,
   buildDocumentScope,
   countSelected,
   deriveFolderCheckState,
   isCoveredByAncestorAutoInclude,
+  makeUnloadedFolderNode,
+  preserveUnloadedScope,
   type CheckState,
   type FolderMap,
   type FolderMode,
 } from '../rag-access-state.js';
+import { jobProgressState } from './job-progress.js';
 import { RAG_ACCESS_STRINGS as T } from './strings/rag-access.js';
 import { RAG_STRINGS } from './onboarding-strings.js';
+import HelpTip from '../../../../packages/web/src/components/HelpTip.js';
 import { useActiveSyncJobs, type SourceJobInfo } from './useActiveSyncJobs.js';
 import {
   useRefreshWhenSyncFinishes,
@@ -218,10 +224,10 @@ function FolderIcon({ open }: { open: boolean }) {
   );
 }
 
-function FileIcon({ deleted }: { deleted: boolean }) {
+function FileIcon() {
   return (
     <svg
-      className={`w-4 h-4 flex-shrink-0 ${deleted ? 'text-gray-600' : 'text-gray-500'}`}
+      className="w-4 h-4 flex-shrink-0 text-gray-400"
       fill="none"
       stroke="currentColor"
       strokeWidth={1.5}
@@ -240,7 +246,7 @@ function FileIcon({ deleted }: { deleted: boolean }) {
 function SpinnerIcon() {
   return (
     <svg
-      className="w-3 h-3 text-gray-500 animate-spin flex-shrink-0"
+      className="w-3 h-3 text-gray-400 animate-spin flex-shrink-0"
       fill="none"
       viewBox="0 0 24 24"
       aria-hidden="true"
@@ -310,8 +316,8 @@ interface FolderModeBadgeProps {
 function FolderModeBadge({ mode, onForceAutoInclude }: FolderModeBadgeProps) {
   if (mode === 'auto-include') {
     return (
-      <span className="text-[10px] px-1.5 py-0.5 rounded bg-os-900/40 text-os-400 border border-os-700/40 flex-shrink-0">
-        auto-include
+      <span className="text-[11px] px-1.5 py-0.5 rounded bg-os-900/40 text-os-400 border border-os-700/40 flex-shrink-0">
+        {T.modeAutoInclude}
       </span>
     );
   }
@@ -320,9 +326,9 @@ function FolderModeBadge({ mode, onForceAutoInclude }: FolderModeBadgeProps) {
       type="button"
       onClick={onForceAutoInclude}
       title={T.forceAutoIncludeTitle}
-      className="text-[10px] px-1.5 py-0.5 rounded bg-amber-900/30 text-amber-400 border border-amber-700/40 flex-shrink-0 hover:bg-amber-800/30 transition-colors"
+      className="text-[11px] px-1.5 py-0.5 rounded bg-amber-900/30 text-amber-400 border border-amber-700/40 flex-shrink-0 hover:bg-amber-800/30 transition-colors"
     >
-      strict
+      {T.modeStrict}
     </button>
   );
 }
@@ -343,9 +349,11 @@ function DocumentRow({ doc, checked, disabled, depth, onToggle }: DocumentRowPro
   const isDeleted = doc.deletedAt !== null;
   const notIndexed = !doc.lastIndexedAt;
 
+  // Both dimmed states share opacity-70, the lowest level keeping AA contrast;
+  // they stay distinct by their badge and by strikethrough vs italic.
   return (
     <li
-      className={`flex items-center gap-2 py-1 pr-2 rounded ${isDeleted ? 'opacity-40' : notIndexed ? 'opacity-60' : ''}`}
+      className={`flex items-center gap-2 py-1 pr-2 rounded ${isDeleted || notIndexed ? 'opacity-70' : ''}`}
       style={{ paddingLeft: `${depth * 16 + 8}px` }}
     >
       <TriStateCheckbox
@@ -354,21 +362,21 @@ function DocumentRow({ doc, checked, disabled, depth, onToggle }: DocumentRowPro
         label={T.includeDoc(doc.name)}
         disabled={disabled || isDeleted}
       />
-      <FileIcon deleted={isDeleted} />
+      <FileIcon />
       <span
-        className={`text-xs text-gray-300 truncate flex-1 ${isDeleted ? 'line-through text-gray-500' : ''}`}
+        className={`text-xs text-gray-300 truncate flex-1 ${isDeleted ? 'line-through' : notIndexed ? 'italic' : ''}`}
         title={doc.path}
       >
         {doc.name}
       </span>
       {isDeleted && (
-        <span className="text-[10px] px-1 py-0.5 rounded bg-red-950/40 text-red-400 border border-red-800/40 flex-shrink-0">
+        <span className="text-[11px] px-1 py-0.5 rounded bg-red-950/40 text-red-300 border border-red-800/40 flex-shrink-0">
           {T.deleted}
         </span>
       )}
       {!isDeleted && notIndexed && (
         <span
-          className="text-[10px] px-1 py-0.5 rounded bg-gray-800/60 text-gray-500 flex-shrink-0"
+          className="text-[11px] px-1 py-0.5 rounded bg-gray-800/60 text-gray-300 flex-shrink-0"
           title={T.notIndexedTitle}
         >
           {T.notIndexed}
@@ -452,7 +460,7 @@ function FolderRow({
         >
           <span className="text-sm text-gray-200 truncate">{node.folder.name}</span>
           {node.loaded && (
-            <span className="text-xs text-gray-600 flex-shrink-0">
+            <span className="text-xs text-gray-400 flex-shrink-0">
               {T.itemCount(node.documents.length + node.childFolderIds.length)}
             </span>
           )}
@@ -517,7 +525,7 @@ function FolderRow({
           })}
           {node.childFolderIds.length === 0 && node.documents.length === 0 && (
             <li
-              className="text-xs text-gray-600 italic py-1"
+              className="text-xs text-gray-400 italic py-1"
               style={{ paddingLeft: `${depth * 16 + 36}px` }}
             >
               {T.emptyFolder}
@@ -634,20 +642,22 @@ function SourceRow({
           className="flex-1 text-left flex items-center gap-2 min-w-0"
         >
           <span className="text-sm font-medium text-gray-200 truncate">{node.source.name}</span>
-          <span className="text-xs text-gray-500 flex-shrink-0">{node.source.type}</span>
+          <span className="text-xs text-gray-400 flex-shrink-0">{node.source.type}</span>
         </button>
 
         {/* Status badges — the source's real status, independent of its
             inclusion in this configuration (checkbox above). */}
         {activeJob && (
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-os-900/40 text-os-300 border border-os-700/40 flex-shrink-0 flex items-center gap-1">
+          <span className="text-[11px] px-1.5 py-0.5 rounded bg-os-900/40 text-os-300 border border-os-700/40 flex-shrink-0 flex items-center gap-1">
             <SpinnerIcon />
-            {T.indexing(activeJob.processedDocuments, activeJob.totalDocuments)}
+            {jobProgressState(activeJob) === 'progress'
+              ? T.indexing(activeJob.processedDocuments, activeJob.totalDocuments)
+              : T.indexingPreparing}
           </span>
         )}
         {lastFailedJob && !activeJob && (
           <span
-            className="text-[10px] px-1.5 py-0.5 rounded bg-red-950/40 text-red-400 border border-red-800/40 flex-shrink-0"
+            className="text-[11px] px-1.5 py-0.5 rounded bg-red-950/40 text-red-400 border border-red-800/40 flex-shrink-0"
             title={lastFailedJob.error ?? undefined}
           >
             {T.syncFailed}
@@ -662,7 +672,7 @@ function SourceRow({
       {node.expanded && node.loaded && (
         <div className="bg-gray-900/20 border-t border-white/5 px-2 py-1.5">
           {node.rootFolderIds.length === 0 && node.rootDocuments.length === 0 ? (
-            <p className="text-xs text-gray-600 italic py-1 px-2">{T.noIndexedContent}</p>
+            <p className="text-xs text-gray-400 italic py-1 px-2">{T.noIndexedContent}</p>
           ) : (
             <ul className="space-y-0.5">
               {node.rootFolderIds.map((fid) => (
@@ -717,12 +727,12 @@ function SaveFooter({ counts, saving, onCancel, onSave }: SaveFooterProps) {
 
   return (
     <div className="flex items-center justify-between pt-1 border-t border-white/5">
-      <p className="text-xs text-gray-500">
+      <p className="text-xs text-gray-400">
         {total > 0 ? (
           <>
             {counts.folders > 0 && <span>{T.folderCount(counts.folders)}</span>}
             {counts.folders > 0 && counts.documents > 0 && (
-              <span className="mx-1 text-gray-600">·</span>
+              <span className="mx-1 text-gray-400">·</span>
             )}
             {counts.documents > 0 && <span>{T.documentCount(counts.documents)}</span>}
             <span>{` ${T.selected(total)}`}</span>
@@ -898,8 +908,14 @@ export default function RagAccessSelector({
   // Lazy load root folders + documents for a source
   // ---------------------------------------------------------------------------
 
+  // Source checked or unchecked while its contents are loading: the latest
+  // intent wins over the `includeAll` the load was started with.
+  const pendingIncludeAllRef = useRef(new Map<string, boolean>());
+
+  // `includeAll`: the whole source is selected (just checked, or included
+  // with an `allowAll` scope), so its root folders load fully included.
   const loadSourceContents = useCallback(
-    async (sourceId: string) => {
+    async (sourceId: string, includeAll: boolean) => {
       setSourceNodes((prev) =>
         prev.map((n) => (n.source.id === sourceId ? { ...n, loading: true, loadError: null } : n)),
       );
@@ -918,28 +934,21 @@ export default function RagAccessSelector({
 
         const existingScope = initialScopes[sourceId];
         const docScope = existingScope?.kind === 'document' ? existingScope : null;
+        const saved = {
+          folders: [...(docScope?.allowedFolders ?? [])],
+          documents: [...(docScope?.allowedDocuments ?? [])],
+        };
+
+        const pendingIncludeAll = pendingIncludeAllRef.current.get(sourceId);
+        pendingIncludeAllRef.current.delete(sourceId);
+        const applyAll = pendingIncludeAll ?? includeAll;
 
         setFolderMap((prev) => {
           const next = { ...prev };
           for (const folder of rootFolders) {
-            if (!next[folder.id]) {
-              const mode: FolderMode = docScope?.allowedFolders.includes(folder.path)
-                ? 'auto-include'
-                : 'strict';
-              next[folder.id] = {
-                folder,
-                loaded: false,
-                loading: false,
-                loadError: null,
-                expanded: false,
-                mode,
-                checkedDocIds: new Set(),
-                childFolderIds: [],
-                documents: [],
-              };
-            }
+            if (!next[folder.id]) next[folder.id] = makeUnloadedFolderNode(folder, saved);
           }
-          return next;
+          return applyAll ? applyIncludeWholeSource(rootFolderIds, next) : next;
         });
 
         setSourceNodes((prev) =>
@@ -970,88 +979,36 @@ export default function RagAccessSelector({
   // Lazy load folder children
   // ---------------------------------------------------------------------------
 
-  const loadFolderChildren = useCallback(
-    async (sourceId: string, folderId: string) => {
+  const loadFolderChildren = useCallback(async (sourceId: string, folderId: string) => {
+    setFolderMap((prev) => ({
+      ...prev,
+      [folderId]: { ...prev[folderId]!, loading: true, loadError: null },
+    }));
+
+    try {
+      const [foldersRes, documentsRes] = await Promise.all([
+        apiGet<RagFolderListResponse>(
+          `/api/rag/sources/${encodeURIComponent(sourceId)}/folders?folder=${encodeURIComponent(folderId)}`,
+        ),
+        apiGet<RagDocumentListResponse>(
+          `/api/rag/sources/${encodeURIComponent(sourceId)}/documents?folder=${encodeURIComponent(folderId)}`,
+        ),
+      ]);
+
+      // Seeded from the selection still pending on the folder (not from the
+      // saved scope) so clicks made before the load are not overridden.
+      setFolderMap((prev) =>
+        applyLoadedChildren(folderId, foldersRes.folders ?? [], documentsRes.documents ?? [], prev),
+      );
+    } catch (err) {
+      const msg =
+        err instanceof ApiError ? err.message : err instanceof Error ? err.message : T.genericError;
       setFolderMap((prev) => ({
         ...prev,
-        [folderId]: { ...prev[folderId]!, loading: true, loadError: null },
+        [folderId]: { ...prev[folderId]!, loading: false, loadError: msg },
       }));
-
-      try {
-        const [foldersRes, documentsRes] = await Promise.all([
-          apiGet<RagFolderListResponse>(
-            `/api/rag/sources/${encodeURIComponent(sourceId)}/folders?folder=${encodeURIComponent(folderId)}`,
-          ),
-          apiGet<RagDocumentListResponse>(
-            `/api/rag/sources/${encodeURIComponent(sourceId)}/documents?folder=${encodeURIComponent(folderId)}`,
-          ),
-        ]);
-
-        const childFolders = foldersRes.folders ?? [];
-        const documents = documentsRes.documents ?? [];
-        const childFolderIds = childFolders.map((f) => f.id);
-
-        const existingScope = initialScopes[sourceId];
-        const docScope = existingScope?.kind === 'document' ? existingScope : null;
-
-        setFolderMap((prev) => {
-          const next = { ...prev };
-
-          for (const folder of childFolders) {
-            if (!next[folder.id]) {
-              const mode: FolderMode = docScope?.allowedFolders.includes(folder.path)
-                ? 'auto-include'
-                : 'strict';
-              next[folder.id] = {
-                folder,
-                loaded: false,
-                loading: false,
-                loadError: null,
-                expanded: false,
-                mode,
-                checkedDocIds: new Set<string>(),
-                childFolderIds: [],
-                documents: [],
-              };
-            }
-          }
-
-          const checkedDocIds = new Set<string>();
-          if (docScope) {
-            for (const doc of documents) {
-              if (docScope.allowedDocuments.includes(doc.path)) {
-                checkedDocIds.add(doc.id);
-              }
-            }
-          }
-
-          next[folderId] = {
-            ...next[folderId]!,
-            loaded: true,
-            loading: false,
-            loadError: null,
-            childFolderIds,
-            documents,
-            checkedDocIds,
-          };
-
-          return next;
-        });
-      } catch (err) {
-        const msg =
-          err instanceof ApiError
-            ? err.message
-            : err instanceof Error
-              ? err.message
-              : T.genericError;
-        setFolderMap((prev) => ({
-          ...prev,
-          [folderId]: { ...prev[folderId]!, loading: false, loadError: msg },
-        }));
-      }
-    },
-    [initialScopes],
-  );
+    }
+  }, []);
 
   // ---------------------------------------------------------------------------
   // Event handlers
@@ -1062,7 +1019,9 @@ export default function RagAccessSelector({
     if (!node) return;
 
     if (!node.loaded && !node.loading) {
-      void loadSourceContents(sourceId);
+      const saved = initialScopes[sourceId];
+      const savedAllowList = saved?.kind === 'document' && saved.mode === 'allowList';
+      void loadSourceContents(sourceId, node.included && !savedAllowList);
     }
 
     setSourceNodes((prev) =>
@@ -1072,15 +1031,22 @@ export default function RagAccessSelector({
 
   const handleToggleSourceIncluded = (sourceId: string, next: CheckState) => {
     markEdited();
+    const node = sourceNodes.find((n) => n.source.id === sourceId);
+    if (!node) return;
+    const included = next === 'checked';
+    // Checking a source includes all of it, like checking a folder: its
+    // folders and their descendants (loaded now or later) included too.
+    if (node.loading) {
+      pendingIncludeAllRef.current.set(sourceId, included);
+    } else if (included && node.loaded) {
+      setFolderMap((prev) => applyIncludeWholeSource(node.rootFolderIds, prev));
+    } else if (included) {
+      void loadSourceContents(sourceId, true);
+    }
     setSourceNodes((prev) =>
-      prev.map((n) => {
-        if (n.source.id !== sourceId) return n;
-        const included = next === 'checked';
-        if (included && !n.loaded && !n.loading) {
-          void loadSourceContents(sourceId);
-        }
-        return { ...n, included, expanded: included || n.expanded };
-      }),
+      prev.map((n) =>
+        n.source.id === sourceId ? { ...n, included, expanded: included || n.expanded } : n,
+      ),
     );
   };
 
@@ -1150,6 +1116,17 @@ export default function RagAccessSelector({
 
       if (!updatedSources.includes(sid)) {
         updatedSources.push(sid);
+      }
+
+      // Tree never loaded: nothing was edited in it, keep its saved scope.
+      const saved = initialScopes[sid];
+      if (!sourceNode.loaded && saved?.kind === 'document') {
+        updatedScopes[sid] = preserveUnloadedScope(
+          saved,
+          piiMaskingDisabled ? 'off' : 'inherit',
+          directFetchDisabled,
+        );
+        continue;
       }
 
       updatedScopes[sid] = buildDocumentScope(
@@ -1227,7 +1204,7 @@ export default function RagAccessSelector({
 
   if (!sourcesLoaded && !loadError) {
     return (
-      <div className="p-6 text-sm text-gray-500 italic flex items-center gap-2">
+      <div className="p-6 text-sm text-gray-400 italic flex items-center gap-2">
         <SpinnerIcon />
         {T.loadingKbs}
       </div>
@@ -1250,45 +1227,59 @@ export default function RagAccessSelector({
           {T.headingPrefix}
           <span className="text-os-400 font-mono">"{profileName}"</span>
         </h3>
-        <p className="text-xs text-gray-500 mt-0.5">
+        <p className="text-xs text-gray-400 mt-0.5">
           {T.introBeforeArrow}
           <span className="text-gray-400">▸</span>
           {T.introAfterArrow}
         </p>
-        <label className="flex items-start gap-2 mt-2 cursor-pointer group">
-          <input
-            type="checkbox"
-            checked={piiMaskingDisabled}
-            onChange={(e) => {
-              markEdited();
-              setPiiMaskingDisabled(e.target.checked);
-            }}
-            className="mt-0.5 w-4 h-4 rounded border border-gray-600 bg-gray-800 accent-os-600 cursor-pointer flex-shrink-0"
-          />
-          <span className="flex flex-col gap-0.5">
+        {/* Long explanation folded behind a "?" (same HelpTip as the source form). */}
+        <div className="flex items-start gap-1.5 mt-2">
+          <label className="flex items-start gap-2 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={piiMaskingDisabled}
+              onChange={(e) => {
+                markEdited();
+                setPiiMaskingDisabled(e.target.checked);
+              }}
+              className="mt-0.5 w-4 h-4 rounded border border-gray-600 bg-gray-800 accent-os-600 cursor-pointer flex-shrink-0"
+            />
             <span className="text-xs text-gray-300 group-hover:text-gray-100 transition-colors">
               {T.piiOffLabel}
             </span>
-            <span className="text-[11px] text-gray-500">{T.piiOffHint}</span>
-          </span>
-        </label>
-        <label className="flex items-start gap-2 mt-2 cursor-pointer group">
-          <input
-            type="checkbox"
-            checked={directFetchDisabled}
-            onChange={(e) => {
-              markEdited();
-              setDirectFetchDisabled(e.target.checked);
-            }}
-            className="mt-0.5 w-4 h-4 rounded border border-gray-600 bg-gray-800 accent-os-600 cursor-pointer flex-shrink-0"
+          </label>
+          <HelpTip
+            content={T.piiOffHint}
+            label={T.piiOffLabel}
+            position="right"
+            maxWidth={320}
+            size="xs"
           />
-          <span className="flex flex-col gap-0.5">
+        </div>
+        {/* Long explanation folded behind a "?" (same HelpTip as the source form). */}
+        <div className="flex items-start gap-1.5 mt-2">
+          <label className="flex items-start gap-2 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={directFetchDisabled}
+              onChange={(e) => {
+                markEdited();
+                setDirectFetchDisabled(e.target.checked);
+              }}
+              className="mt-0.5 w-4 h-4 rounded border border-gray-600 bg-gray-800 accent-os-600 cursor-pointer flex-shrink-0"
+            />
             <span className="text-xs text-gray-300 group-hover:text-gray-100 transition-colors">
               {T.directFetchOffLabel}
             </span>
-            <span className="text-[11px] text-gray-500">{T.directFetchOffHint}</span>
-          </span>
-        </label>
+          </label>
+          <HelpTip
+            content={T.directFetchOffHint}
+            label={T.directFetchOffLabel}
+            position="right"
+            maxWidth={320}
+            size="xs"
+          />
+        </div>
       </div>
 
       <ToastList toasts={toasts} onDismiss={dismissToast} />
@@ -1300,7 +1291,7 @@ export default function RagAccessSelector({
         </p>
       ) : (
         refreshing && (
-          <p role="status" className="text-xs text-gray-500 italic flex items-center gap-2">
+          <p role="status" className="text-xs text-gray-400 italic flex items-center gap-2">
             <SpinnerIcon />
             {RAG_STRINGS.sourcesRefreshing}
           </p>
@@ -1309,7 +1300,7 @@ export default function RagAccessSelector({
 
       {/* Source tree */}
       {documentSources.length === 0 ? (
-        <div className="text-sm text-gray-500 italic px-3 py-6 text-center border border-dashed border-white/5 rounded-lg">
+        <div className="text-sm text-gray-400 italic px-3 py-6 text-center border border-dashed border-white/5 rounded-lg">
           {T.noKnowledgeBase}
         </div>
       ) : (

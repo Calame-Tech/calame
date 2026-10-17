@@ -3,9 +3,16 @@
  * heading and the selection summary ("10 documents sélectionnés" used to be
  * rendered without the space before the participle).
  */
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render as rtlRender, screen, fireEvent } from '@testing-library/react';
+import type { ReactElement } from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { RagAccessSelector } from '@calame-ee/rag-core/web';
+import { I18nProvider } from '../i18n/I18nProvider.js';
+
+// The selector's "?" help tips use the host app's translations.
+function render(ui: ReactElement) {
+  return rtlRender(ui, { wrapper: I18nProvider });
+}
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {

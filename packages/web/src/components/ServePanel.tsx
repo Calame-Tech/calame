@@ -61,6 +61,7 @@ export default function ServePanel({
 }: ServePanelProps) {
   const t = useTranslations('serveTunnel.servePanel');
   const tCommon = useTranslations('common');
+  const tDetail = useTranslations('mcpDetail');
   // Coming from a data configuration: the form is open with it preselected;
   // the server is only created on an explicit "Create". A draft left on
   // another page reopens the form as it was.
@@ -77,6 +78,9 @@ export default function ServePanel({
   const [togglingProfile, setTogglingProfile] = useState<string | null>(null);
   const [stoppingAll, setStoppingAll] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Server whose start was refused for lack of data: the error links to its
+  // detail page, where a data configuration is attached (same as the detail page).
+  const [errorConfigurationProfile, setErrorConfigurationProfile] = useState<string | null>(null);
   const [copiedChatLink, setCopiedChatLink] = useState<string | null>(null);
 
   // Keep the draft in sync while the form is open. Create and Cancel discard
@@ -102,6 +106,7 @@ export default function ServePanel({
     async (profileName: string) => {
       setTogglingProfile(profileName);
       setError(null);
+      setErrorConfigurationProfile(null);
       try {
         const res = await apiFetch('/api/serve/start', {
           method: 'POST',
@@ -113,7 +118,15 @@ export default function ServePanel({
         });
         const data = await res.json();
         if (data.success === false) {
-          setError(data.message || t('errors.startFailed', { name: profileName }));
+          const needsConfiguration = data.code === 'no_profiles' || data.code === 'no_data_source';
+          setErrorConfigurationProfile(needsConfiguration ? profileName : null);
+          setError(
+            data.code === 'no_profiles'
+              ? tDetail('errors.noConfiguration')
+              : data.code === 'no_data_source'
+                ? tDetail('errors.noDataSource')
+                : data.message || t('errors.startFailed', { name: profileName }),
+          );
         } else {
           // Trigger an immediate status refresh in App.tsx instead of polling locally
           onServeAction?.();
@@ -124,7 +137,7 @@ export default function ServePanel({
         setTogglingProfile(null);
       }
     },
-    [onServeAction, config.serverName, t],
+    [onServeAction, config.serverName, t, tDetail],
   );
 
   // Stop a single profile
@@ -132,6 +145,7 @@ export default function ServePanel({
     async (profileName: string) => {
       setTogglingProfile(profileName);
       setError(null);
+      setErrorConfigurationProfile(null);
       try {
         const res = await apiFetch('/api/serve/stop', {
           method: 'POST',
@@ -157,6 +171,7 @@ export default function ServePanel({
   const handleStopAll = useCallback(async () => {
     setStoppingAll(true);
     setError(null);
+    setErrorConfigurationProfile(null);
     try {
       const res = await apiFetch('/api/serve/stop', { method: 'POST' });
       const data = await res.json();
@@ -209,6 +224,15 @@ export default function ServePanel({
       {error && (
         <div className="p-3 rounded-lg bg-red-950/30 border border-red-800/50 text-red-400 text-sm">
           {error}
+          {errorConfigurationProfile && (
+            <button
+              type="button"
+              onClick={() => onSelectProfile(errorConfigurationProfile)}
+              className="ml-2 underline text-red-300 hover:text-red-200"
+            >
+              {tDetail('errors.attachConfiguration')}
+            </button>
+          )}
         </div>
       )}
 

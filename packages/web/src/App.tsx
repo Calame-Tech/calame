@@ -243,7 +243,9 @@ export default function App() {
         onLogout={logout}
       />
 
-      {/* Main content column, beside or below the getting-started guide */}
+      {/* Main content column, beside or below the getting-started guide. On a
+          narrow window the Sidebar's sticky menu bar sits above it, so the
+          floating menu button never covers the guide or a title. */}
       <div
         className={`flex-1 flex min-w-0 ${setupGuideLayout === 'column' ? 'flex-row' : 'flex-col'}`}
       >
@@ -259,7 +261,7 @@ export default function App() {
         {/* Page content */}
         <main
           className={`flex-1 min-w-0 p-6 md:p-8 animate-fade-in-up overflow-x-hidden ${
-            setupGuideLayout === 'top' ? 'pt-6 md:pt-6' : 'pt-16 md:pt-8'
+            setupGuideLayout === 'top' ? 'pt-6 md:pt-6' : 'pt-6 md:pt-8'
           } ${setupGuideLayout === 'column' ? 'order-first' : ''}`}
           key={`${view.page}-${activeProfile.name}`}
         >

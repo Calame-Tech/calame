@@ -6,6 +6,8 @@
     "rowCount": "{count, plural, one {# ligne} other {# lignes}}",
     "dashboard": "Tableau de bord",
     "loading": "Chargement…",
+    "serverUnreachable": "Impossible de joindre le serveur Calame. Votre session est conservée.",
+    "retry": "Réessayer",
     "breadcrumbAriaLabel": "Fil d’Ariane",
     "noOptionAvailable": "Aucune option disponible",
     "selectPlaceholder": "Sélectionner…"
@@ -249,6 +251,11 @@
     "notFound": "Configuration « {name} » introuvable.",
     "ragUnavailable": "Les fonctionnalités RAG ne sont pas disponibles sur cette instance.",
     "unsavedChangesConfirm": "Vous avez des modifications non enregistrées. Quitter sans enregistrer ?",
+    "unsavedChanges": {
+      "message": "Modifications non enregistrées — elles sont conservées si vous changez de page, jusqu'à l'enregistrement ou l'abandon.",
+      "save": "Enregistrer",
+      "discard": "Abandonner les modifications"
+    },
     "breadcrumb": {
       "mcpServers": "Serveurs MCP",
       "server": "Serveur",

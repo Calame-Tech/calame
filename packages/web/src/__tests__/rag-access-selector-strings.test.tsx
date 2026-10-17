@@ -73,7 +73,8 @@ describe('RagAccessSelector — French wording', () => {
       await screen.findByText(/Bases de connaissances accessibles — profil/),
     ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Développer la source' }));
+    // The source list loads asynchronously (shared with the Sources page): wait for it.
+    fireEvent.click(await screen.findByRole('button', { name: 'Développer la source' }));
 
     await screen.findByText('doc0.md');
     expect(container.textContent).toContain('10 documents sélectionnés');

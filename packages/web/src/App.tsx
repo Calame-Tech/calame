@@ -35,6 +35,8 @@ export default function App() {
   // Session / auth state — owned by SessionProvider (context/SessionContext).
   const {
     authChecked,
+    authCheckFailed,
+    retryAuthCheck,
     authenticated,
     authRequired,
     needsSetup,
@@ -119,6 +121,25 @@ export default function App() {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
         <div className="text-gray-400">{tCommon('loading')}</div>
+      </div>
+    );
+  }
+
+  // Server unreachable: the session may still be valid, so offer a retry
+  // instead of the login page.
+  if (authCheckFailed) {
+    return (
+      <div className="min-h-screen bg-gray-900 flex flex-col items-center justify-center gap-4">
+        <div role="alert" className="text-gray-300">
+          {tCommon('serverUnreachable')}
+        </div>
+        <button
+          type="button"
+          onClick={retryAuthCheck}
+          className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-500"
+        >
+          {tCommon('retry')}
+        </button>
       </div>
     );
   }
@@ -318,6 +339,7 @@ export default function App() {
             {view.page === 'mcp-list' && (
               <McpListPage
                 prefillConfiguration={view.prefillConfiguration}
+                draftAccount={currentUser?.email ?? ''}
                 configurations={configurations}
                 setView={setView}
                 configWithProfileOptions={configWithProfileOptions}

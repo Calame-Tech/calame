@@ -2,9 +2,9 @@
 // Copyright (c) 2026 Calame Tech inc. Licensed under the Business Source License 1.1.
 // See ee/LICENSE.BUSL at the root of the ee/ directory for terms.
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ScopeSelection } from '@calame/core';
-import type { RagDocument, RagJob } from '../types.js';
+import type { RagDocument } from '../types.js';
 import {
   ApiError,
   apiGet,
@@ -12,8 +12,6 @@ import {
   apiPost,
   type RagDocumentListResponse,
   type RagFolderListResponse,
-  type RagJobListResponse,
-  type RagSourceListResponse,
   type RagSourcePublic,
 } from './api.js';
 import {
@@ -28,6 +26,13 @@ import {
   type FolderMode,
 } from '../rag-access-state.js';
 import { RAG_ACCESS_STRINGS as T } from './strings/rag-access.js';
+import { RAG_STRINGS } from './onboarding-strings.js';
+import { useActiveSyncJobs, type SourceJobInfo } from './useActiveSyncJobs.js';
+import {
+  useRefreshWhenSyncFinishes,
+  useSourceList,
+  type KnownSourcesCache,
+} from './useSourceList.js';
 
 // ---------------------------------------------------------------------------
 // Public props interface
@@ -70,6 +75,11 @@ interface RagAccessSelectorProps {
     sources: string[];
     scopes: Record<string, ScopeSelection>;
   }) => void;
+  /**
+   * Last known source list shared with the Sources page (same account and
+   * workspace), so both views start from — and refresh — the same list.
+   */
+  sourcesCache?: KnownSourcesCache;
 }
 
 // ---------------------------------------------------------------------------
@@ -92,8 +102,6 @@ interface SourceNode {
   rootDocuments: RagDocument[];
   /** True when source is fully included (allowAll mode). */
   included: boolean;
-  activeJob: RagJob | null;
-  syncError: string | null;
 }
 
 interface Toast {
@@ -103,6 +111,18 @@ interface Toast {
 }
 
 let toastSeq = 0;
+
+/** Source types whose access this selector edits (see `documentSources`). */
+const DOCUMENT_SOURCE_TYPES: ReadonlySet<string> = new Set([
+  'local',
+  's3',
+  'http',
+  'gdrive',
+  'gsheets',
+  'sharepoint',
+  'notion',
+  'git',
+]);
 
 // ---------------------------------------------------------------------------
 // Source-level check state helper
@@ -553,6 +573,8 @@ function ToastList({ toasts, onDismiss }: ToastListProps) {
 
 interface SourceRowProps {
   node: SourceNode;
+  /** Real sync status of the source, shared with the Sources page. */
+  jobInfo: SourceJobInfo | undefined;
   checkState: CheckState;
   saving: boolean;
   folderMap: FolderMap;
@@ -567,6 +589,7 @@ interface SourceRowProps {
 
 function SourceRow({
   node,
+  jobInfo,
   checkState,
   saving,
   folderMap,
@@ -578,6 +601,8 @@ function SourceRow({
   onForceAutoInclude,
   pushToast,
 }: SourceRowProps) {
+  const activeJob = jobInfo?.activeJob ?? null;
+  const lastFailedJob = jobInfo?.lastFailedJob ?? null;
   return (
     <li className="bg-gray-900/30">
       {/* Source header */}
@@ -612,17 +637,18 @@ function SourceRow({
           <span className="text-xs text-gray-500 flex-shrink-0">{node.source.type}</span>
         </button>
 
-        {/* Status badges */}
-        {node.activeJob && (
+        {/* Status badges — the source's real status, independent of its
+            inclusion in this configuration (checkbox above). */}
+        {activeJob && (
           <span className="text-[10px] px-1.5 py-0.5 rounded bg-os-900/40 text-os-300 border border-os-700/40 flex-shrink-0 flex items-center gap-1">
             <SpinnerIcon />
-            {T.indexing(node.activeJob.processedDocuments, node.activeJob.totalDocuments)}
+            {T.indexing(activeJob.processedDocuments, activeJob.totalDocuments)}
           </span>
         )}
-        {node.syncError && !node.activeJob && (
+        {lastFailedJob && !activeJob && (
           <span
             className="text-[10px] px-1.5 py-0.5 rounded bg-red-950/40 text-red-400 border border-red-800/40 flex-shrink-0"
-            title={node.syncError}
+            title={lastFailedJob.error ?? undefined}
           >
             {T.syncFailed}
           </span>
@@ -746,6 +772,7 @@ export default function RagAccessSelector({
   saveMethod = 'POST',
   saveBodyTransform,
   onSelectionChange,
+  sourcesCache,
 }: RagAccessSelectorProps) {
   // Defensive: a profile with no scopes yet passes `undefined` from the host.
   // Coerce to {} so `initialScopes[source.id]` lookups never throw.
@@ -753,7 +780,6 @@ export default function RagAccessSelector({
 
   const [sourceNodes, setSourceNodes] = useState<SourceNode[]>([]);
   const [folderMap, setFolderMap] = useState<FolderMap>({});
-  const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -789,49 +815,52 @@ export default function RagAccessSelector({
   }, []);
 
   // ---------------------------------------------------------------------------
-  // Initial load: fetch all sources + their jobs
+  // Source list + real sync status (tester feedback #12)
   // ---------------------------------------------------------------------------
 
-  const loadSources = useCallback(async () => {
-    setLoading(true);
-    setLoadError(null);
-    try {
-      const [sourcesRes, jobsRes] = await Promise.all([
-        apiGet<RagSourceListResponse>('/api/rag/sources'),
-        apiGet<RagJobListResponse>('/api/rag/jobs').catch(() => ({ jobs: [] })),
-      ]);
+  // Same list, cache and refresh rules as the Sources page (useSourceList),
+  // and the same job-status rule (useActiveSyncJobs: latest terminal job,
+  // polled while a sync runs). This selector used to fetch its own copy once
+  // on mount and flag a source as failed as soon as ANY past job had failed,
+  // so a source re-synced successfully still showed "sync failed" here while
+  // Sources showed it synced.
+  const { sources, sourcesLoaded, refreshing, refreshSources } = useSourceList(
+    sourcesCache,
+    undefined,
+    setLoadError,
+  );
+  useEffect(() => {
+    void refreshSources();
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, [refreshSources]);
 
-      const allJobs: RagJob[] = jobsRes.jobs ?? [];
+  // This selector edits DOCUMENT access only, but /api/rag/sources may
+  // list rows of other types stored in the same table (e.g. 'mcp' proxy
+  // sources ride rag_sources for now). Those must never become source
+  // nodes: handleSave rebuilds the scope of every listed node with
+  // buildDocumentScope (or deletes it when unchecked), which would
+  // silently destroy a kind:'mcp' scope. Filtering here keeps unknown
+  // types out of the save loop entirely, so their scopes pass through
+  // handleSave untouched via the initialScopes spread.
+  const documentSources = useMemo(
+    () => sources.filter((source) => DOCUMENT_SOURCE_TYPES.has(source.type)),
+    [sources],
+  );
 
-      // This selector edits DOCUMENT access only, but /api/rag/sources may
-      // list rows of other types stored in the same table (e.g. 'mcp' proxy
-      // sources ride rag_sources for now). Those must never become source
-      // nodes: handleSave rebuilds the scope of every listed node with
-      // buildDocumentScope (or deletes it when unchecked), which would
-      // silently destroy a kind:'mcp' scope. Filtering here keeps unknown
-      // types out of the save loop entirely, so their scopes pass through
-      // handleSave untouched via the initialScopes spread.
-      const DOCUMENT_SOURCE_TYPES: ReadonlySet<string> = new Set([
-        'local',
-        's3',
-        'http',
-        'gdrive',
-        'gsheets',
-        'sharepoint',
-        'notion',
-        'git',
-      ]);
-      const documentSources = (sourcesRes.sources ?? []).filter((source) =>
-        DOCUMENT_SOURCE_TYPES.has(source.type),
-      );
-
-      const nodes: SourceNode[] = documentSources.map((source) => {
-        const activeJob =
-          allJobs.find(
-            (j) => j.sourceId === source.id && (j.status === 'running' || j.status === 'pending'),
-          ) ?? null;
-        const failedJob =
-          allJobs.find((j) => j.sourceId === source.id && j.status === 'failed') ?? null;
+  // Each refreshed list replaces the nodes, keeping the tree and selection
+  // state of the sources still present. `included` is this configuration's
+  // own setting: seeded from `initialSources` for a source seen for the first
+  // time, never derived from the source's status.
+  const initialSourcesRef = useRef(initialSources);
+  initialSourcesRef.current = initialSources;
+  useEffect(() => {
+    setSourceNodes((prev) => {
+      const previous = new Map(prev.map((n) => [n.source.id, n]));
+      return documentSources.map((source) => {
+        const existing = previous.get(source.id);
+        if (existing) return { ...existing, source };
         return {
           source,
           loaded: false,
@@ -840,33 +869,15 @@ export default function RagAccessSelector({
           expanded: false,
           rootFolderIds: [],
           rootDocuments: [],
-          included: initialSources.includes(source.id),
-          activeJob,
-          syncError: failedJob?.error ?? null,
+          included: initialSourcesRef.current.includes(source.id),
         };
       });
-      setSourceNodes(nodes);
-    } catch (err) {
-      const msg =
-        err instanceof ApiError ? err.message : err instanceof Error ? err.message : T.genericError;
-      setLoadError(msg);
-    } finally {
-      setLoading(false);
-    }
-    // Initial mount only — see the dedicated effect below for keeping `included`
-    // in sync with `initialSources` without re-fetching. `initialSources` is read
-    // here only to seed the first render; the eslint dep-exhaustive warning is
-    // intentionally silenced because re-fetching on every save round-trip
-    // (`initialSources` changes reference every time the parent rebuilds the
-    // memoised array) would flash the loading spinner and wipe UI state.
-  }, []);
+    });
+  }, [documentSources]);
 
-  useEffect(() => {
-    void loadSources();
-    return () => {
-      abortRef.current?.abort();
-    };
-  }, [loadSources]);
+  const sourceIds = useMemo(() => documentSources.map((s) => s.id), [documentSources]);
+  const { jobMap } = useActiveSyncJobs(sourceIds);
+  useRefreshWhenSyncFinishes(jobMap, refreshSources);
 
   // Keep `included` in sync with `initialSources` WITHOUT triggering a refetch
   // of `/api/rag/sources`. After a save the parent always passes a new array
@@ -1214,7 +1225,7 @@ export default function RagAccessSelector({
   // Render
   // ---------------------------------------------------------------------------
 
-  if (loading) {
+  if (!sourcesLoaded && !loadError) {
     return (
       <div className="p-6 text-sm text-gray-500 italic flex items-center gap-2">
         <SpinnerIcon />
@@ -1223,7 +1234,7 @@ export default function RagAccessSelector({
     );
   }
 
-  if (loadError) {
+  if (!sourcesLoaded) {
     return (
       <div className="p-4 rounded-lg bg-red-950/30 border border-red-800/50 text-sm text-red-400">
         {loadError}
@@ -1282,8 +1293,22 @@ export default function RagAccessSelector({
 
       <ToastList toasts={toasts} onDismiss={dismissToast} />
 
+      {/* Known list kept on screen while it is re-read or when a refresh fails. */}
+      {loadError ? (
+        <p role="alert" className="text-xs text-red-400">
+          {loadError}
+        </p>
+      ) : (
+        refreshing && (
+          <p role="status" className="text-xs text-gray-500 italic flex items-center gap-2">
+            <SpinnerIcon />
+            {RAG_STRINGS.sourcesRefreshing}
+          </p>
+        )
+      )}
+
       {/* Source tree */}
-      {sourceNodes.length === 0 ? (
+      {documentSources.length === 0 ? (
         <div className="text-sm text-gray-500 italic px-3 py-6 text-center border border-dashed border-white/5 rounded-lg">
           {T.noKnowledgeBase}
         </div>
@@ -1294,6 +1319,7 @@ export default function RagAccessSelector({
               <SourceRow
                 key={node.source.id}
                 node={node}
+                jobInfo={jobMap.get(node.source.id)}
                 checkState={deriveSourceCheckState(node, folderMap)}
                 saving={saving}
                 folderMap={folderMap}

@@ -5,6 +5,7 @@ import { screen, fireEvent } from '@testing-library/react';
 import ConfigurationDetailPage from '../ConfigurationDetailPage.js';
 import { useSession } from '../../context/SessionContext.js';
 import { render, makeSession, installFetchMock, flushEffects } from './testUtils.js';
+import { clearConfigurationDrafts } from '../../lib/configuration-draft.js';
 import type { Configuration } from '../../types/schema.js';
 
 vi.mock('../../context/SessionContext.js', () => ({
@@ -71,6 +72,7 @@ function renderPage(setView = vi.fn(), handleConfigurationSave = vi.fn(async () 
 
 describe('ConfigurationDetailPage', () => {
   beforeEach(() => {
+    clearConfigurationDrafts();
     installFetchMock();
     vi.mocked(useSession).mockReturnValue(makeSession());
   });

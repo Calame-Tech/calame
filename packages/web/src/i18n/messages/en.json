@@ -6,6 +6,8 @@
     "rowCount": "{count, plural, one {# row} other {# rows}}",
     "dashboard": "Dashboard",
     "loading": "Loading…",
+    "serverUnreachable": "Cannot reach the Calame server. Your session is kept.",
+    "retry": "Retry",
     "breadcrumbAriaLabel": "Breadcrumb",
     "noOptionAvailable": "No option available",
     "selectPlaceholder": "Select…"
@@ -249,6 +251,11 @@
     "notFound": "Configuration \"{name}\" not found.",
     "ragUnavailable": "RAG features are not available on this instance.",
     "unsavedChangesConfirm": "You have unsaved changes. Leave without saving?",
+    "unsavedChanges": {
+      "message": "Unsaved changes — they are kept if you switch pages, until you save or discard them.",
+      "save": "Save",
+      "discard": "Discard changes"
+    },
     "breadcrumb": {
       "mcpServers": "MCP Servers",
       "server": "Server",

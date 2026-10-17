@@ -152,6 +152,10 @@ const FR = {
   // Embeddings
   localProviderUnavailable:
     "Le fournisseur local intégré est indisponible — vérifiez l'installation ou configurez un fournisseur distant dans la section « Paramètres IA ».",
+  aiSettingsLoading: 'Chargement des paramètres IA…',
+  aiSettingsLoadError:
+    'Impossible de charger les paramètres IA (fournisseurs, embeddings). Vérifiez la connexion puis réessayez.',
+  aiSettingsRetry: 'Réessayer',
   embeddingsUnsupportedSuffix: ' — embeddings non supportés',
   embeddingsUnsupportedTitle: 'Cette config IA ne supporte pas les embeddings',
   dims: (n: number) => ` (${n} dims)`,
@@ -302,6 +306,10 @@ const EN: typeof FR = {
 
   localProviderUnavailable:
     'The built-in local provider is unavailable — check the installation or configure a remote provider in the “AI Settings” section.',
+  aiSettingsLoading: 'Loading AI settings…',
+  aiSettingsLoadError:
+    'Could not load the AI settings (providers, embeddings). Check the connection and retry.',
+  aiSettingsRetry: 'Retry',
   embeddingsUnsupportedSuffix: ' — embeddings not supported',
   embeddingsUnsupportedTitle: 'This AI configuration does not support embeddings',
   dims: (n: number) => ` (${n} dims)`,

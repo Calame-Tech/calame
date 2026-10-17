@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, Suspense } from 'react';
 import { useTranslations } from 'use-intl/react';
 import { apiFetch } from '../lib/api.js';
+import { useKnownRagSourcesCache, type KnownListCache } from '../lib/known-rag-sources.js';
 import type { NamedConnection, DatabaseSchema } from '../types/schema.js';
 import ConnectionManager from './ConnectionManager.js';
 import AddSourceModal from './AddSourceModal.js';
@@ -33,20 +34,32 @@ export interface SourcesPageProps {
   KnowledgeBaseManagerComponent: React.ComponentType<{
     onSourcesChange?: (count: number) => void;
     onCreateProfileFromSource?: (source: { id: string; name: string }) => void;
+    // Opaque to this package: the list items are EE types.
+    sourcesCache?: KnownListCache<never>;
   }>;
+  /**
+   * Signed-in admin account ('' when auth is off). Scopes the last known
+   * knowledge-base list, which is kept across remounts and never shown to
+   * another account or workspace.
+   */
+  account?: string;
   /** Guided next step: open the data-configuration creation with this source preselected. */
   onCreateProfileFromSource?: (source: { id: string; name: string }) => void;
 }
 
-/** Fetch count of RAG sources so the KB tab badge stays accurate */
-async function fetchRagSourceCount(): Promise<number> {
+/**
+ * Fetch count of RAG sources so the KB tab badge stays accurate. Null when
+ * the count is unknown (error) — the badge then keeps its last value instead
+ * of dropping to 0.
+ */
+async function fetchRagSourceCount(): Promise<number | null> {
   try {
     const res = await apiFetch('/api/rag/sources', { credentials: 'include' });
-    if (!res.ok) return 0;
+    if (!res.ok) return null;
     const data = (await res.json()) as { sources?: unknown[] };
     return data.sources?.length ?? 0;
   } catch {
-    return 0;
+    return null;
   }
 }
 
@@ -62,10 +75,12 @@ export default function SourcesPage({
   ragDisabledReason,
   KnowledgeBaseManagerComponent,
   onCreateProfileFromSource,
+  account = '',
 }: SourcesPageProps) {
   const t = useTranslations('sources.sourcesPage');
   const [showAddModal, setShowAddModal] = useState(false);
-  const [ragSourceCount, setRagSourceCount] = useState(0);
+  const sourcesCache = useKnownRagSourcesCache<never>(account);
+  const [ragSourceCount, setRagSourceCount] = useState(() => sourcesCache.get()?.length ?? 0);
   // On every knowledge-base list refresh, the floating setup guide re-reads
   // the sources' sync state (a new source is saved before it is indexed).
   const handleRagSourcesChange = useCallback((count: number) => {
@@ -76,7 +91,9 @@ export default function SourcesPage({
   // Fetch RAG source count when the component mounts and when ragEnabled changes.
   useEffect(() => {
     if (!ragEnabled) return;
-    fetchRagSourceCount().then(setRagSourceCount);
+    void fetchRagSourceCount().then((count) => {
+      if (count !== null) setRagSourceCount(count);
+    });
   }, [ragEnabled]);
 
   const handleAddSourceSelect = (kind: 'databases' | 'knowledge') => {
@@ -216,9 +233,13 @@ export default function SourcesPage({
                 </div>
               }
             >
+              {/* Keyed by account/workspace: switching remounts the manager
+                  with that scope's own list, never the previous one. */}
               <KnowledgeBaseManagerComponent
+                key={sourcesCache.scope}
                 onSourcesChange={handleRagSourcesChange}
                 onCreateProfileFromSource={onCreateProfileFromSource}
+                sourcesCache={sourcesCache}
               />
             </Suspense>
           ) : (

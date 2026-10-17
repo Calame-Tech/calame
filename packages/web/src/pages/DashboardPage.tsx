@@ -150,7 +150,7 @@ export default function DashboardPage({
             style={{ animationDelay: '160ms' }}
           >
             <h2 className="text-sm font-semibold text-gray-100">{t('attention.title')}</h2>
-            <p className="font-mono-plex text-[11px] text-gray-500 mb-2">
+            <p className="font-mono-plex text-xs text-gray-400 mb-2">
               {t('attention.itemCount', { count: attentionCount })}
             </p>
             {failedRagSources.map((source) => (
@@ -207,7 +207,7 @@ export default function DashboardPage({
                 </button>
               </div>
             ) : attentionCount > 0 ? null : (
-              <div className="flex items-center gap-2 py-1 text-sm text-gray-500">
+              <div className="flex items-center gap-2 py-1 text-sm text-gray-400">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" aria-hidden="true" />
                 {t('attention.allClear')}
               </div>
@@ -217,14 +217,14 @@ export default function DashboardPage({
           {/* PII protection */}
           <div className="card-primary p-4 anim-rise-in" style={{ animationDelay: '220ms' }}>
             <h2 className="text-sm font-semibold text-gray-100">{t('pii.title')}</h2>
-            <p className="font-mono-plex text-[11px] text-gray-500 mb-2">{t('pii.subtitle')}</p>
+            <p className="font-mono-plex text-xs text-gray-400 mb-2">{t('pii.subtitle')}</p>
             {configurations.length > 0 ? (
               <>
                 <div className="flex items-baseline justify-between gap-3">
                   <span className="font-display font-light text-4xl tracking-tight text-gray-100 tabular-nums">
                     {totalMaskedColumns}
                   </span>
-                  <span className="text-xs text-gray-500 text-right leading-relaxed">
+                  <span className="text-xs text-gray-400 text-right leading-relaxed">
                     {t('pii.maskedColumnsLabel', { count: totalMaskedColumns })}
                     <br />
                     {t('pii.configShare', {
@@ -248,7 +248,7 @@ export default function DashboardPage({
                 </div>
               </>
             ) : (
-              <p className="text-sm text-gray-500">{t('pii.empty')}</p>
+              <p className="text-sm text-gray-400">{t('pii.empty')}</p>
             )}
           </div>
 
@@ -257,11 +257,11 @@ export default function DashboardPage({
             <div className="card-primary p-4 anim-rise-in" style={{ animationDelay: '280ms' }}>
               <div className="flex items-baseline justify-between">
                 <h2 className="text-sm font-semibold text-gray-100">{t('recentActivity.title')}</h2>
-                <span className="font-mono-plex text-[11px] text-gray-500">
+                <span className="font-mono-plex text-xs text-gray-400">
                   {t('recentActivity.eventsCount', { count: recentActivity.length })}
                 </span>
               </div>
-              <p className="font-mono-plex text-[11px] text-gray-500 mb-1.5">
+              <p className="font-mono-plex text-xs text-gray-400 mb-1.5">
                 {t('recentActivity.auditLogCaption')}
               </p>
               <div>
@@ -285,17 +285,17 @@ export default function DashboardPage({
                         <span className="font-mono-plex text-xs text-gray-200 truncate">
                           {entry.toolName}
                         </span>
-                        <span className="font-mono-plex text-[10px] px-2 py-0.5 rounded-full bg-os-500/10 text-os-300 ring-1 ring-os-500/20 flex-shrink-0">
+                        <span className="font-mono-plex text-[11px] px-2 py-0.5 rounded-full bg-os-500/10 text-os-300 ring-1 ring-os-500/20 flex-shrink-0">
                           {entry.profileName}
                         </span>
                       </div>
                       {entry.resultSummary && (
-                        <p className="text-xs text-gray-500 truncate mt-0.5">
+                        <p className="text-xs text-gray-400 truncate mt-0.5">
                           {entry.resultSummary}
                         </p>
                       )}
                     </div>
-                    <span className="font-mono-plex text-[11px] text-gray-600 flex-shrink-0 whitespace-nowrap">
+                    <span className="font-mono-plex text-[11px] text-gray-400 flex-shrink-0 whitespace-nowrap">
                       {timeAgo(entry.timestamp, locale, { justNow: tCommon('justNow') })}
                     </span>
                   </div>
@@ -332,7 +332,7 @@ export default function DashboardPage({
                 {t(`quickNav.${tile.key}.description`)}
               </p>
             </div>
-            <span className="font-mono-plex text-sm text-gray-600 group-hover:text-os-400 transition-colors flex-shrink-0">
+            <span className="font-mono-plex text-sm text-gray-400 group-hover:text-os-400 transition-colors flex-shrink-0">
               &rarr;
             </span>
           </button>

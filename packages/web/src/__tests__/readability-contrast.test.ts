@@ -13,6 +13,11 @@ const SCREENS = [
   'packages/web/src/components/SourcesPage.tsx',
   'packages/web/src/components/AddSourceModal.tsx',
   'packages/web/src/pages/McpDetailPage.tsx',
+  // Dashboard (dark): Servers table headers, activity subtitles, card hints.
+  'packages/web/src/pages/DashboardPage.tsx',
+  'packages/web/src/components/dashboard/ServersTable.tsx',
+  'packages/web/src/components/dashboard/PipelineStrip.tsx',
+  'packages/web/src/components/dashboard/QueriesCard.tsx',
   'ee/rag-core/src/web/DocumentUploader.tsx',
   'ee/rag-core/src/web/EmbeddingUsageCard.tsx',
   'ee/rag-core/src/web/FolderTreeView.tsx',

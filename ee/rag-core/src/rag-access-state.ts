@@ -176,6 +176,23 @@ export function buildDocumentScope(
     return { kind: 'document', mode: 'allowAll', allowedFolders: [], allowedDocuments: [] };
   }
 
+  const flags = {
+    ...(piiMaskingMode === 'off' ? { piiMaskingMode: 'off' as const } : {}),
+    ...(directFetchDisabled === true ? { directFetchDisabled: true } : {}),
+  };
+
+  // Whole source selected (root documents are always included): keep it open
+  // to everything, including folders and documents added later.
+  if (rootFolderIds.every((fid) => folderMap[fid]?.mode === 'auto-include')) {
+    return {
+      kind: 'document',
+      mode: 'allowAll',
+      allowedFolders: [],
+      allowedDocuments: [],
+      ...flags,
+    };
+  }
+
   const allowedFolders: string[] = [];
   const allowedDocuments: string[] = [];
 
@@ -218,8 +235,7 @@ export function buildDocumentScope(
     mode,
     allowedFolders,
     allowedDocuments,
-    ...(piiMaskingMode === 'off' ? { piiMaskingMode: 'off' } : {}),
-    ...(directFetchDisabled === true ? { directFetchDisabled: true } : {}),
+    ...flags,
   };
 }
 
@@ -347,6 +363,17 @@ export function applyToggleFolder(
     checkedDocIds: new Set(),
     pending: undefined,
   };
+  return next;
+}
+
+/**
+ * Compute the new `FolderMap` after a user checks a whole source: every root
+ * folder switches to `auto-include` (its loaded and not-yet-loaded descendants
+ * follow), exactly as if each root folder had been checked.
+ */
+export function applyIncludeWholeSource(rootFolderIds: string[], folderMap: FolderMap): FolderMap {
+  let next = folderMap;
+  for (const fid of rootFolderIds) next = applyToggleFolder(fid, 'checked', next);
   return next;
 }
 

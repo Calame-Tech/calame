@@ -194,8 +194,12 @@ describe('buildDocumentScope', () => {
         folder: makeFolder({ id: 'folder-1', path: 'docs/faq' }),
         mode: 'auto-include',
       }),
+      'folder-2': makeFolderNode({
+        folder: makeFolder({ id: 'folder-2', path: 'docs/other' }),
+        mode: 'strict',
+      }),
     };
-    const scope = buildDocumentScope(true, ['folder-1'], [], folderMap);
+    const scope = buildDocumentScope(true, ['folder-1', 'folder-2'], [], folderMap);
     expect(scope.kind).toBe('document');
     expect(scope.allowedFolders).toContain('docs/faq');
     expect(scope.allowedDocuments).toHaveLength(0);
@@ -234,11 +238,32 @@ describe('buildDocumentScope', () => {
         documents: [makeDocument({ id: 'doc-1' })],
         checkedDocIds: new Set(['doc-1']),
       }),
+      other: makeFolderNode({
+        folder: makeFolder({ id: 'other', path: 'other' }),
+        mode: 'strict',
+      }),
     };
-    const scope = buildDocumentScope(true, ['parent'], [], folderMap);
+    const scope = buildDocumentScope(true, ['parent', 'other'], [], folderMap);
     // Only parent is in allowedFolders, child docs NOT in allowedDocuments
     expect(scope.allowedFolders).toEqual(['docs']);
     expect(scope.allowedDocuments).toHaveLength(0);
+  });
+
+  it('returns allowAll when every root folder is fully included (whole source checked)', () => {
+    const folderMap: FolderMap = {
+      a: makeFolderNode({ folder: makeFolder({ id: 'a', path: 'a' }), mode: 'auto-include' }),
+      b: makeFolderNode({ folder: makeFolder({ id: 'b', path: 'b' }), mode: 'auto-include' }),
+    };
+    const rootDocs = [makeDocument({ id: 'r1', folderId: null, path: 'r1.md' })];
+    const scope = buildDocumentScope(true, ['a', 'b'], rootDocs, folderMap, 'off');
+    // Not a frozen list of today's folders/files: content added later stays covered.
+    expect(scope).toEqual({
+      kind: 'document',
+      mode: 'allowAll',
+      allowedFolders: [],
+      allowedDocuments: [],
+      piiMaskingMode: 'off',
+    });
   });
 });
 
@@ -377,7 +402,8 @@ describe('applyToggleFolder', () => {
   it('checking a folder selects its whole content, sub-folders and files included', () => {
     const next = applyToggleFolder('root', 'checked', tree());
     for (const id of ['root', 'a', 'a-sub', 'b']) expect(stateOf(id, next)).toBe('checked');
-    expect(buildDocumentScope(true, ['root'], [], next).allowedFolders).toEqual(['root']);
+    // 'other' is an unchecked sibling root folder, so the scope stays an allowlist.
+    expect(buildDocumentScope(true, ['root', 'other'], [], next).allowedFolders).toEqual(['root']);
   });
 
   it('unchecking a folder deselects everything below it, even a previously checked child', () => {
@@ -571,7 +597,8 @@ describe('selection of descendants loaded on demand', () => {
       applyToggleFolder('root', 'checked', initial({ folders: [], documents: [] })),
     );
     for (const id of ['root', 'a', 'sub']) expect(stateOf(id, map)).toBe('checked');
-    const scope = scopeOf(map);
+    // 'other' is an unchecked sibling root folder, so the scope stays an allowlist.
+    const scope = buildDocumentScope(true, ['root', 'other'], [], map);
     expect(scope.allowedFolders).toEqual(['root']);
     expect(scope.allowedDocuments).toEqual([]);
   });

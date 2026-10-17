@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Calame Tech inc. Licensed under the Business Source License 1.1.
 // See ee/LICENSE.BUSL at the root of the ee/ directory for terms.
 
-import { localized } from '../onboarding-strings.js';
+import { enPlural, frPlural, localized } from '../onboarding-strings.js';
 
 const FR = {
   locale: 'fr-CA',
@@ -45,12 +45,13 @@ const FR = {
   colError: 'Erreur',
   finishedAt: (when: string) => `Terminé : ${when}`,
   jobInProgress: 'Synchronisation en cours',
-  documentsCount: (done: number, total: number) => `${done} / ${total} documents`,
+  documentsCount: (done: number, total: number) => `${done} / ${total} document${frPlural(total)}`,
   documentsDiscovering: 'Recherche des documents…',
   documentsNone: 'Aucun document trouvé',
-  skippedEtag: (n: number) => `${n} skipped (etag)`,
+  skippedEtag: (n: number) =>
+    `${n} inchangé${frPlural(n)} depuis la dernière synchronisation, non réindexé${frPlural(n)}`,
   // Per-file sync report (CALAME-5)
-  statusCompletedWithSkipped: (n: number) => `Terminé · ${n} ignoré${n > 1 ? 's' : ''}`,
+  statusCompletedWithSkipped: (n: number) => `Terminé · ${n} ignoré${frPlural(n)}`,
   syncReport: (indexed: number, unchanged: number, rejected: number) =>
     `${indexed} indexé${indexed > 1 ? 's' : ''} · ${unchanged} inchangé${unchanged > 1 ? 's' : ''} · ${rejected} ignoré${rejected > 1 ? 's' : ''} / en erreur`,
   currentDocument: (path: string, seconds: number | null) =>
@@ -58,7 +59,7 @@ const FR = {
       ? `En cours : ${path} (depuis ${seconds} s)`
       : `En cours : ${path}`,
   rejectedFilesToggle: (n: number) =>
-    `Voir les ${n} fichier${n > 1 ? 's' : ''} ignoré${n > 1 ? 's' : ''}`,
+    n >= 2 ? `Voir les ${n} fichiers ignorés` : 'Voir le fichier ignoré',
   rejectedFilesTruncated: (shown: number, total: number) =>
     `${shown} premiers fichiers affichés sur ${total} (liste complète dans le journal).`,
   failureKindInfrastructure: "Échec global : stockage ou moteur d'embeddings indisponible",
@@ -174,10 +175,10 @@ const EN: typeof FR = {
   colError: 'Error',
   finishedAt: (when: string) => `Finished: ${when}`,
   jobInProgress: 'Job in progress',
-  documentsCount: (done: number, total: number) => `${done} / ${total} documents`,
+  documentsCount: (done: number, total: number) => `${done} / ${total} document${enPlural(total)}`,
   documentsDiscovering: 'Discovering documents…',
   documentsNone: 'No documents found',
-  skippedEtag: (n: number) => `${n} skipped (etag)`,
+  skippedEtag: (n: number) => `${n} unchanged since the last sync, not re-indexed`,
   statusCompletedWithSkipped: (n: number) => `Completed · ${n} skipped`,
   syncReport: (indexed: number, unchanged: number, rejected: number) =>
     `${indexed} indexed · ${unchanged} unchanged · ${rejected} skipped / failed`,
@@ -185,7 +186,8 @@ const EN: typeof FR = {
     seconds !== null && seconds >= 5
       ? `Processing: ${path} (for ${seconds} s)`
       : `Processing: ${path}`,
-  rejectedFilesToggle: (n: number) => `Show ${n} skipped file${n > 1 ? 's' : ''}`,
+  rejectedFilesToggle: (n: number) =>
+    n === 1 ? 'Show the skipped file' : `Show ${n} skipped files`,
   rejectedFilesTruncated: (shown: number, total: number) =>
     `First ${shown} of ${total} files shown (full list in the log).`,
   failureKindInfrastructure: 'Global failure: storage or embedding engine unavailable',

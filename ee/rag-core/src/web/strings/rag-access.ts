@@ -2,10 +2,13 @@
 // Copyright (c) 2026 Calame Tech inc. Licensed under the Business Source License 1.1.
 // See ee/LICENSE.BUSL at the root of the ee/ directory for terms.
 
-import { localized } from '../onboarding-strings.js';
+import { enPlural, frPlural, localized } from '../onboarding-strings.js';
 
 const FR = {
-  forceAutoIncludeTitle: 'Basculer en mode auto-include pour ce dossier',
+  forceAutoIncludeTitle:
+    'Sélection manuelle : cliquez pour inclure tout le dossier, y compris les fichiers ajoutés plus tard',
+  modeAutoInclude: 'tout inclus',
+  modeStrict: 'sélection manuelle',
   includeDoc: (name: string) => `Inclure ${name}`,
   deleted: 'supprimé',
   notIndexedTitle: 'Pas encore indexé — sera disponible après la prochaine sync',
@@ -15,7 +18,7 @@ const FR = {
   coveredByParent: (name: string) =>
     `Inclus par un dossier parent — décochez le parent pour gérer ${name}`,
   includeFolder: (name: string) => `Inclure le dossier ${name}`,
-  itemCount: (n: number) => `(${n} éléments)`,
+  itemCount: (n: number) => `(${n} élément${frPlural(n)})`,
   emptyFolder: 'Dossier vide.',
   closeNotification: 'Fermer la notification',
   collapseSource: 'Réduire la source',
@@ -56,7 +59,10 @@ const FR = {
 };
 
 const EN: typeof FR = {
-  forceAutoIncludeTitle: 'Switch this folder to auto-include mode',
+  forceAutoIncludeTitle:
+    'Manual selection: click to include the whole folder, including files added later',
+  modeAutoInclude: 'all included',
+  modeStrict: 'manual selection',
   includeDoc: (name: string) => `Include ${name}`,
   deleted: 'deleted',
   notIndexedTitle: 'Not indexed yet — will be available after the next sync',
@@ -66,7 +72,7 @@ const EN: typeof FR = {
   coveredByParent: (name: string) =>
     `Included by a parent folder — uncheck the parent to manage ${name}`,
   includeFolder: (name: string) => `Include folder ${name}`,
-  itemCount: (n: number) => `(${n} item${n === 1 ? '' : 's'})`,
+  itemCount: (n: number) => `(${n} item${enPlural(n)})`,
   emptyFolder: 'Empty folder.',
   closeNotification: 'Close notification',
   collapseSource: 'Collapse source',

@@ -15,6 +15,7 @@ import {
   type RagSourcePublic,
 } from './api.js';
 import {
+  applyIncludeWholeSource,
   applyLoadedChildren,
   applyToggleDocument,
   applyToggleFolder,
@@ -316,7 +317,7 @@ function FolderModeBadge({ mode, onForceAutoInclude }: FolderModeBadgeProps) {
   if (mode === 'auto-include') {
     return (
       <span className="text-[11px] px-1.5 py-0.5 rounded bg-os-900/40 text-os-400 border border-os-700/40 flex-shrink-0">
-        auto-include
+        {T.modeAutoInclude}
       </span>
     );
   }
@@ -327,7 +328,7 @@ function FolderModeBadge({ mode, onForceAutoInclude }: FolderModeBadgeProps) {
       title={T.forceAutoIncludeTitle}
       className="text-[11px] px-1.5 py-0.5 rounded bg-amber-900/30 text-amber-400 border border-amber-700/40 flex-shrink-0 hover:bg-amber-800/30 transition-colors"
     >
-      strict
+      {T.modeStrict}
     </button>
   );
 }
@@ -907,8 +908,14 @@ export default function RagAccessSelector({
   // Lazy load root folders + documents for a source
   // ---------------------------------------------------------------------------
 
+  // Source checked or unchecked while its contents are loading: the latest
+  // intent wins over the `includeAll` the load was started with.
+  const pendingIncludeAllRef = useRef(new Map<string, boolean>());
+
+  // `includeAll`: the whole source is selected (just checked, or included
+  // with an `allowAll` scope), so its root folders load fully included.
   const loadSourceContents = useCallback(
-    async (sourceId: string) => {
+    async (sourceId: string, includeAll: boolean) => {
       setSourceNodes((prev) =>
         prev.map((n) => (n.source.id === sourceId ? { ...n, loading: true, loadError: null } : n)),
       );
@@ -932,12 +939,16 @@ export default function RagAccessSelector({
           documents: [...(docScope?.allowedDocuments ?? [])],
         };
 
+        const pendingIncludeAll = pendingIncludeAllRef.current.get(sourceId);
+        pendingIncludeAllRef.current.delete(sourceId);
+        const applyAll = pendingIncludeAll ?? includeAll;
+
         setFolderMap((prev) => {
           const next = { ...prev };
           for (const folder of rootFolders) {
             if (!next[folder.id]) next[folder.id] = makeUnloadedFolderNode(folder, saved);
           }
-          return next;
+          return applyAll ? applyIncludeWholeSource(rootFolderIds, next) : next;
         });
 
         setSourceNodes((prev) =>
@@ -1008,7 +1019,9 @@ export default function RagAccessSelector({
     if (!node) return;
 
     if (!node.loaded && !node.loading) {
-      void loadSourceContents(sourceId);
+      const saved = initialScopes[sourceId];
+      const savedAllowList = saved?.kind === 'document' && saved.mode === 'allowList';
+      void loadSourceContents(sourceId, node.included && !savedAllowList);
     }
 
     setSourceNodes((prev) =>
@@ -1018,15 +1031,22 @@ export default function RagAccessSelector({
 
   const handleToggleSourceIncluded = (sourceId: string, next: CheckState) => {
     markEdited();
+    const node = sourceNodes.find((n) => n.source.id === sourceId);
+    if (!node) return;
+    const included = next === 'checked';
+    // Checking a source includes all of it, like checking a folder: its
+    // folders and their descendants (loaded now or later) included too.
+    if (node.loading) {
+      pendingIncludeAllRef.current.set(sourceId, included);
+    } else if (included && node.loaded) {
+      setFolderMap((prev) => applyIncludeWholeSource(node.rootFolderIds, prev));
+    } else if (included) {
+      void loadSourceContents(sourceId, true);
+    }
     setSourceNodes((prev) =>
-      prev.map((n) => {
-        if (n.source.id !== sourceId) return n;
-        const included = next === 'checked';
-        if (included && !n.loaded && !n.loading) {
-          void loadSourceContents(sourceId);
-        }
-        return { ...n, included, expanded: included || n.expanded };
-      }),
+      prev.map((n) =>
+        n.source.id === sourceId ? { ...n, included, expanded: included || n.expanded } : n,
+      ),
     );
   };
 

@@ -48,9 +48,9 @@ const folder = (id: string, parentId: string | null, path: string) => ({
   createdAt: '2026-01-01T00:00:00.000Z',
 });
 
-// root ─ a ─ sub (s1.md)
+// root ─ a ─ sub (s1.md), plus an empty sibling root folder `other`
 const FOLDERS: Record<string, unknown[]> = {
-  '': [folder('root', null, 'root')],
+  '': [folder('root', null, 'root'), folder('other', null, 'other')],
   root: [folder('a', 'root', 'root/a')],
   a: [folder('sub', 'a', 'root/a/sub')],
   sub: [],
@@ -198,6 +198,117 @@ describe('RagAccessSelector — folders loaded on demand', () => {
       mode: 'allowList',
       allowedFolders: ['root'],
       allowedDocuments: [],
+    });
+  });
+
+  it('checking a whole source before expanding it includes all its folders and descendants', async () => {
+    const onSelectionChange = vi.fn();
+    render(
+      <RagAccessSelector
+        profileName="demo"
+        initialScopes={{}}
+        initialSources={[]}
+        onSelectionChange={onSelectionChange}
+      />,
+    );
+    const sourceBox = await screen.findByRole('checkbox', { name: 'Include source Docs' });
+    expect(sourceBox).toHaveAttribute('aria-checked', 'false');
+
+    fireEvent.click(sourceBox);
+    expect(await folderBox('root')).toHaveAttribute('aria-checked', 'true');
+    await expandFolder('root');
+    await expandFolder('a');
+    await expandFolder('sub');
+    await screen.findByText('s1.md');
+    for (const name of ['root', 'a', 'sub']) {
+      expect(await folderBox(name)).toHaveAttribute('aria-checked', 'true');
+    }
+    expect(sourceBox).toHaveAttribute('aria-checked', 'true');
+
+    const last = onSelectionChange.mock.calls.at(-1)![0] as Selection;
+    expect(last.sources).toEqual(['src_1']);
+    // The whole source, not a frozen list of today's folders: later additions stay covered.
+    expect(last.scopes['src_1']).toEqual({
+      kind: 'document',
+      mode: 'allowAll',
+      allowedFolders: [],
+      allowedDocuments: [],
+    });
+  });
+
+  it('checking a source while its contents are loading includes all its folders', async () => {
+    let releaseRoot!: () => void;
+    const rootHeld = new Promise<void>((resolve) => (releaseRoot = resolve));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = new URL(String(input), 'http://localhost');
+        if (url.pathname.endsWith('/folders') && !url.searchParams.has('folder')) await rootHeld;
+        return route(String(input));
+      }),
+    );
+    const onSelectionChange = vi.fn();
+    render(
+      <RagAccessSelector
+        profileName="demo"
+        initialScopes={{}}
+        initialSources={[]}
+        onSelectionChange={onSelectionChange}
+      />,
+    );
+    const sourceBox = await screen.findByRole('checkbox', { name: 'Include source Docs' });
+
+    // Expanded unchecked (load starts without "include all"), then checked mid-load.
+    fireEvent.click(screen.getByRole('button', { name: 'Expand source' }));
+    fireEvent.click(sourceBox);
+    releaseRoot();
+
+    expect(await folderBox('root')).toHaveAttribute('aria-checked', 'true');
+    await expandFolder('root');
+    await expandFolder('a');
+    expect(await folderBox('sub')).toHaveAttribute('aria-checked', 'true');
+    expect(sourceBox).toHaveAttribute('aria-checked', 'true');
+
+    const last = onSelectionChange.mock.calls.at(-1)![0] as Selection;
+    expect(last.sources).toEqual(['src_1']);
+    expect(last.scopes['src_1']).toMatchObject({
+      mode: 'allowAll',
+      allowedFolders: [],
+      allowedDocuments: [],
+    });
+  });
+
+  it('expanding a source included with an allowAll scope shows its folders checked and keeps allowAll', async () => {
+    const onSelectionChange = vi.fn();
+    render(
+      <RagAccessSelector
+        profileName="demo"
+        initialScopes={{
+          src_1: { kind: 'document', mode: 'allowAll', allowedFolders: [], allowedDocuments: [] },
+        }}
+        initialSources={['src_1']}
+        onSelectionChange={onSelectionChange}
+      />,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Expand source' }));
+    expect(await folderBox('root')).toHaveAttribute('aria-checked', 'true');
+    expect(await folderBox('other')).toHaveAttribute('aria-checked', 'true');
+    expect(await screen.findByRole('checkbox', { name: 'Include source Docs' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
+
+    // Saving after the expand must not freeze the scope into today's folders.
+    const piiToggle = screen.getAllByRole('checkbox').find((el) => el.tagName === 'INPUT')!;
+    fireEvent.click(piiToggle);
+    await waitFor(() => expect(onSelectionChange).toHaveBeenCalled());
+    const last = onSelectionChange.mock.calls.at(-1)![0] as Selection;
+    expect(last.scopes['src_1']).toEqual({
+      kind: 'document',
+      mode: 'allowAll',
+      allowedFolders: [],
+      allowedDocuments: [],
+      piiMaskingMode: 'off',
     });
   });
 });

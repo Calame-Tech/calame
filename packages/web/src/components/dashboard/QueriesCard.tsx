@@ -64,7 +64,7 @@ export default function QueriesCard({ recentActivity, profiles, serveStatus }: Q
   return (
     <div className="card-primary p-4 anim-rise-in" style={{ animationDelay: '120ms' }}>
       <h2 className="text-sm font-semibold text-gray-100">{t('title')}</h2>
-      <p className="font-mono-plex text-[11px] text-gray-500 mb-3">{t('caption')}</p>
+      <p className="font-mono-plex text-xs text-gray-400 mb-3">{t('caption')}</p>
 
       {showChart ? (
         <div className="relative">
@@ -200,20 +200,20 @@ export default function QueriesCard({ recentActivity, profiles, serveStatus }: Q
           )}
         </div>
       ) : (
-        <p className="text-sm text-gray-500 py-8 text-center">{t('emptyState')}</p>
+        <p className="text-sm text-gray-400 py-8 text-center">{t('emptyState')}</p>
       )}
 
       {/* Per-server bars, last 24h */}
       {barRows.length > 0 && (
         <div className="mt-4 flex flex-col gap-2" aria-label={t('byServerAriaLabel')}>
-          <p className="font-mono-plex text-[11px] text-gray-500">{t('byServerCaption')}</p>
+          <p className="font-mono-plex text-xs text-gray-400">{t('byServerCaption')}</p>
           {barRows.map((row, i) => (
             <div
               key={row.name}
               className="grid grid-cols-[118px_1fr_52px] items-center gap-3 text-xs"
             >
               <span
-                className={`truncate ${row.active || row.count > 0 ? 'text-gray-400' : 'text-gray-600'}`}
+                className={`truncate ${row.active || row.count > 0 ? 'text-gray-300' : 'text-gray-400'}`}
               >
                 {row.label}
               </span>

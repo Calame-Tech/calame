@@ -31,6 +31,16 @@ describe('rag-core strings', () => {
     expect(RAG_STRINGS.polling.daily).toBe('Every day');
   });
 
+  it('pluralizes the running sync progress on the total', () => {
+    localStorage.setItem('calame-locale', 'fr');
+    expect(RAG_STRINGS.syncProgress(1, 1)).toBe(' (1 / 1 document)');
+    expect(RAG_STRINGS.syncProgress(0, 1)).toBe(' (0 / 1 document)');
+    expect(RAG_STRINGS.syncProgress(3, 21)).toBe(' (3 / 21 documents)');
+    localStorage.setItem('calame-locale', 'en');
+    expect(RAG_STRINGS.syncProgress(1, 1)).toBe(' (1 / 1 document)');
+    expect(RAG_STRINGS.syncProgress(3, 21)).toBe(' (3 / 21 documents)');
+  });
+
   it('translates the known sync-job errors and keeps unknown ones verbatim', () => {
     localStorage.setItem('calame-locale', 'fr');
     expect(translateJobError('2/5 failed; last: ENOENT')).toBe(

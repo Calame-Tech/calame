@@ -45,7 +45,7 @@ const ENGINE_BADGE: Record<NamedConnection['databaseType'], { label: string; cla
 
 function FlowArrow() {
   return (
-    <span className="hidden md:flex items-center justify-center text-gray-600" aria-hidden="true">
+    <span className="hidden md:flex items-center justify-center text-gray-400" aria-hidden="true">
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
         <path
           d="M3 8h9M9 4.5L12.5 8 9 11.5"
@@ -83,7 +83,7 @@ function StageCard({ eyebrow, value, sub, footer, onClick, delayMs }: StageCardP
         <div className="font-display font-light text-3xl leading-tight tracking-tight text-gray-100 tabular-nums">
           {value}
         </div>
-        <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-gray-500">{sub}</div>
+        <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-sm text-gray-400">{sub}</div>
       </button>
       <div className="hairline px-2 py-1.5 mt-auto">{footer}</div>
     </div>
@@ -165,7 +165,7 @@ export default function PipelineStrip({
                     </span>
                   </div>
                   <span
-                    className={`font-mono-plex text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 ${badge.classes}`}
+                    className={`font-mono-plex text-[11px] px-1.5 py-0.5 rounded flex-shrink-0 ${badge.classes}`}
                   >
                     {badge.label}
                   </span>
@@ -195,13 +195,13 @@ export default function PipelineStrip({
                     {source.name}
                   </span>
                 </div>
-                <span className="font-mono-plex text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 bg-purple-500/10 text-purple-300">
+                <span className="font-mono-plex text-[11px] px-1.5 py-0.5 rounded flex-shrink-0 bg-purple-500/10 text-purple-300">
                   {t('sources.kbBadge')}
                 </span>
               </div>
             ))}
             {sourceCount === 0 && (
-              <p className="text-[10px] text-gray-600 text-center py-2 eyebrow">
+              <p className="text-[11px] text-gray-400 text-center py-2 eyebrow">
                 {t('sources.empty')}
               </p>
             )}
@@ -248,14 +248,14 @@ export default function PipelineStrip({
                   className="w-full flex items-center justify-between px-2 py-1 rounded-md hover:bg-white/[0.02] transition-colors duration-200 text-left"
                 >
                   <span className="font-mono-plex text-xs text-gray-300 truncate">{cfg.label}</span>
-                  <span className="font-mono-plex text-[10px] text-gray-500 flex-shrink-0">
+                  <span className="font-mono-plex text-[11px] text-gray-400 flex-shrink-0">
                     {t('dataConfigurations.tableCount', { count: tableCount })}
                   </span>
                 </button>
               );
             })}
             {configurations.length === 0 && (
-              <p className="text-[10px] text-gray-600 text-center py-2 eyebrow">
+              <p className="text-[11px] text-gray-400 text-center py-2 eyebrow">
                 {t('dataConfigurations.empty')}
               </p>
             )}
@@ -279,7 +279,7 @@ export default function PipelineStrip({
         value={
           <>
             {totalMcpCount}{' '}
-            <span className="text-base text-gray-500 font-normal tracking-normal">
+            <span className="text-base text-gray-400 font-normal tracking-normal">
               {t('mcpServers.activeSuffix', { count: activeMcpCount })}
             </span>
           </>
@@ -316,7 +316,7 @@ export default function PipelineStrip({
                     </span>
                   </div>
                   <span
-                    className={`font-mono-plex text-[10px] px-2 py-0.5 rounded-full flex-shrink-0 ${pillClasses}`}
+                    className={`font-mono-plex text-[11px] px-2 py-0.5 rounded-full flex-shrink-0 ${pillClasses}`}
                   >
                     {pActive ? t('mcpServers.on') : t('mcpServers.off')}
                   </span>
@@ -324,7 +324,7 @@ export default function PipelineStrip({
               );
             })}
             {profiles.length === 0 && (
-              <p className="text-[10px] text-gray-600 text-center py-2 eyebrow">
+              <p className="text-[11px] text-gray-400 text-center py-2 eyebrow">
                 {t('mcpServers.empty')}
               </p>
             )}

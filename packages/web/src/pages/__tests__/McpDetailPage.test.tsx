@@ -136,6 +136,44 @@ describe('McpDetailPage', () => {
     }
   });
 
+  it('starting an MCP without a data configuration shows a translated message and a link to attach one', async () => {
+    const base = installFetchMock();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request) => {
+        const url =
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (url.includes('/api/serve/start')) {
+          return new Response(
+            JSON.stringify({
+              success: false,
+              code: 'no_profiles',
+              message: 'No profiles found. Create profiles first.',
+            }),
+            { status: 400, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        return base(input);
+      }),
+    );
+    renderPage();
+    await flushEffects();
+    fireEvent.click(screen.getByText('Connect'));
+    await flushEffects();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Start' }));
+    });
+    await flushEffects();
+    expect(screen.queryByText(/No profiles found/)).toBeNull();
+    expect(screen.getByText(/has no data configuration yet/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Attach a data configuration' }));
+    await flushEffects();
+    expect(screen.queryByText(/has no data configuration yet/)).toBeNull();
+    expect(screen.queryByText('AI Settings')).toBeNull(); // back on "Exposed Data"
+  });
+
   it('shows a not-found message for an unknown profile', async () => {
     renderPage({ profileName: 'ghost' });
     expect(screen.getByText('MCP Server "ghost" not found.')).toBeTruthy();

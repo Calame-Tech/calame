@@ -62,3 +62,31 @@ screens it lists.
   color; a custom accent from the branding settings is not covered.
 - Windows contrast themes are not specifically supported by the app and were
   not tested.
+
+## Second tester pass (captain review)
+
+Check on the Windows desktop app, in French then English:
+
+1. Configuration → Knowledge bases: with a source not yet expanded, check the
+   source itself. Expand it and its folders: every folder and file is checked,
+   the source is not "partial". Save, reopen: still fully checked.
+2. Sources → Sync history after a sync with no change: the progress cell
+   reads "21 / 21 documents · 21 inchangés depuis la dernière synchronisation,
+   non réindexés" (EN: "unchanged since the last sync, not re-indexed"); a
+   single document reads "1 / 1 document", "Voir le fichier ignoré".
+3. Start an MCP that has no data configuration: the message is translated and
+   offers "Associer une configuration de données", which opens the "Données
+   exposées" tab.
+4. Narrow window (< 768 px, navigation collapsed): the menu button sits above
+   the page title ("Tableau de bord"), never over it.
+5. Sources tabs: the screen reader name reads "1 élément" / "1 item".
+6. English UI → Settings → AI Provider: the bundled setting reads "Local
+   embeddings (included)"; in a configuration's folder tree the badges read
+   "all included" / "manual selection" (FR: "tout inclus" / "sélection
+   manuelle").
+7. Dark dashboard: Servers table headers (12 px), activity subtitles and card
+   hints are gray-400 (≥ 6.4:1 on the cards, WCAG AA) and no longer 10–11 px
+   gray-500/600.
+
+None of these were run on Windows; they were checked by automated tests on
+macOS only (jsdom), without visual inspection.

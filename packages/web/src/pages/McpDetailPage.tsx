@@ -226,6 +226,9 @@ function McpDetailView({
   const [togglingProfile, setTogglingProfile] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Start refused for lack of data: the error offers a link to the tab where
+  // a data configuration is attached.
+  const [errorNeedsConfiguration, setErrorNeedsConfiguration] = useState(false);
   const [copied, setCopied] = useState<'endpoint' | 'chat' | null>(null);
   const [activeSection, setActiveSection] = useState<
     'tables' | 'connect' | 'config' | 'tokens' | 'audit' | 'users' | 'scoping'
@@ -425,6 +428,7 @@ function McpDetailView({
   const handleStartProfile = async () => {
     setTogglingProfile(true);
     setError(null);
+    setErrorNeedsConfiguration(false);
     try {
       // Save profiles first so the backend knows about new profiles
       await saveProfiles();
@@ -439,10 +443,14 @@ function McpDetailView({
       });
       const data = await res.json();
       if (data.success === false) {
+        const needsConfiguration = data.code === 'no_profiles' || data.code === 'no_data_source';
+        setErrorNeedsConfiguration(needsConfiguration);
         setError(
-          data.code === 'no_data_source'
-            ? t('errors.noDataSource')
-            : data.message || t('errors.startFailed', { name: profile.name }),
+          data.code === 'no_profiles'
+            ? t('errors.noConfiguration')
+            : data.code === 'no_data_source'
+              ? t('errors.noDataSource')
+              : data.message || t('errors.startFailed', { name: profile.name }),
         );
       }
     } catch {
@@ -458,6 +466,7 @@ function McpDetailView({
   const handleStopProfile = async () => {
     setTogglingProfile(true);
     setError(null);
+    setErrorNeedsConfiguration(false);
     try {
       const res = await apiFetch('/api/serve/stop', {
         method: 'POST',
@@ -486,6 +495,7 @@ function McpDetailView({
   const handleRefresh = async () => {
     setRefreshing(true);
     setError(null);
+    setErrorNeedsConfiguration(false);
     try {
       const res = await apiFetch('/api/serve/refresh', { method: 'POST' });
       const data = await res.json();
@@ -1354,6 +1364,19 @@ function McpDetailView({
         {error && (
           <div className="mt-3 p-3 rounded-lg bg-red-950/30 border border-red-800/50 text-red-400 text-sm">
             {error}
+            {errorNeedsConfiguration && (
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveSection('tables');
+                  setError(null);
+                  setErrorNeedsConfiguration(false);
+                }}
+                className="ml-2 underline text-red-300 hover:text-red-200"
+              >
+                {t('errors.attachConfiguration')}
+              </button>
+            )}
           </div>
         )}
       </div>

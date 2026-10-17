@@ -81,6 +81,8 @@
     "errors": {
       "startFailed": "Échec du démarrage du serveur MCP « {name} ».",
       "noDataSource": "Ce serveur MCP n’a pas encore de données. Rattachez-le d’abord à un profil de données qui contient vos données (base de données ou base de connaissances).",
+      "noConfiguration": "Ce serveur MCP n’a pas encore de configuration de données. Associez-lui une configuration de données (tables d’une base de données ou base de connaissances) dans l’onglet « Données exposées », puis redémarrez-le.",
+      "attachConfiguration": "Associer une configuration de données",
       "startNetworkError": "Erreur réseau lors du démarrage du serveur MCP « {name} ».",
       "stopFailed": "Échec de l’arrêt du serveur MCP « {name} ».",
       "stopNetworkError": "Erreur réseau lors de l’arrêt du serveur MCP « {name} ».",
@@ -659,6 +661,7 @@
     "providers": {
       "local": {
         "label": "Local (inclus)",
+        "defaultName": "Embeddings locaux (inclus)",
         "desc": "S’exécute sur ce PC — aucune clé API, rien ne quitte votre machine"
       },
       "anthropic": {
@@ -789,7 +792,7 @@
     "assignment": {
       "help": "Sélectionnez les paramètres IA que les clients de chat de ce MCP peuvent utiliser. Utilisez ↑/↓ pour réordonner ; la première entrée est celle par défaut. Laissez vide pour revenir au paramètre par défaut global.",
       "noSettingDefault": "Aucun paramètre · défaut global",
-      "selectedCount": "{count} sélectionné(s)",
+      "selectedCount": "{count, plural, one {# sélectionné} other {# sélectionnés}}",
       "manageButton": "Gérer les paramètres IA →",
       "manageButtonTitle": "Ouvrir la page Paramètres IA (vous pourrez revenir via le fil d’Ariane)",
       "emptyState": "Aucun paramètre IA défini pour le moment. Créez-en un depuis le panneau Paramètres IA.",
@@ -1266,9 +1269,9 @@
       "configurationCount": "{count, plural, one {# configuration} other {# configurations}}",
       "serverCount": "{count, plural, one {# serveur} other {# serveurs}}",
       "tableCount": "{count, plural, one {# table} other {# tables}}",
-      "writeToolTitle": "Outil d’écriture activé sur {count} table(s)",
+      "writeToolTitle": "Outil d’écriture activé sur {count, plural, one {# table} other {# tables}}",
       "writeBadge": "écriture sur {count, plural, one {# table} other {# tables}}",
-      "maskedColumnsTitle": "{count} colonne(s) masquée(s)",
+      "maskedColumnsTitle": "{count, plural, one {# colonne masquée} other {# colonnes masquées}}",
       "maskedColumnsBadge": "{count, plural, one {# colonne masquée} other {# colonnes masquées}}",
       "mountedByPrefix": "Monté par",
       "stopped": "(arrêté)",
@@ -1282,7 +1285,7 @@
       "title": "Sources",
       "description": "Gérez les connexions aux bases de données et les bases de connaissances utilisées par vos serveurs MCP.",
       "addSource": "Ajouter une source",
-      "itemsAriaLabel": "{count} éléments",
+      "itemsAriaLabel": "{count, plural, one {# élément} other {# éléments}}",
       "loadingKnowledgeBases": "Chargement des bases de connaissances…",
       "kbUnavailableTitle": "Bases de connaissances indisponibles",
       "kbUnavailableDescription": "La fonctionnalité RAG (génération augmentée par récupération) n’est pas disponible sur cette instance."
@@ -1465,7 +1468,7 @@
       "sources": {
         "eyebrow": "SOURCES",
         "help": "Gérer les sources connectées aux bases PostgreSQL, MySQL, SQLite ou SQL Server et aux bases de connaissances",
-        "connected": "{count} connectée(s)",
+        "connected": "{count, plural, one {# connectée} other {# connectées}}",
         "knowledgeBaseCount": "{count, plural, one {# base de connaissances} other {# bases de connaissances}}",
         "connectedTooltip": "Connectée, schéma chargé",
         "notConnectedTooltip": "Non connectée",
@@ -2371,7 +2374,7 @@
     },
     "notificationsBell": {
       "bellAriaLabel": "Notifications",
-      "ariaUnreadCount": "{count} notification(s) non lue(s)",
+      "ariaUnreadCount": "{count, plural, one {# notification non lue} other {# notifications non lues}}",
       "panel": {
         "title": "Notifications",
         "markAllRead": "Tout marquer comme lu",

@@ -18,8 +18,8 @@
 type Locale = 'en' | 'fr';
 
 /** Plural suffix for a count (string or number): French treats 0 and 1 as singular. */
-const frPlural = (n: string | number): string => (Number(n) >= 2 ? 's' : '');
-const enPlural = (n: string | number): string => (Number(n) === 1 ? '' : 's');
+export const frPlural = (n: string | number): string => (Number(n) >= 2 ? 's' : '');
+export const enPlural = (n: string | number): string => (Number(n) === 1 ? '' : 's');
 
 /** Mirrors resolveInitialLocale() in packages/web/src/i18n/locale.ts. */
 export function ragLocale(): Locale {
@@ -137,7 +137,8 @@ const FR = {
   sourcesRefreshing: 'Synchronisation de la liste des sources…',
   sourcesRefreshError: (detail: string) =>
     `Impossible de rafraîchir la liste des sources (${detail}). Dernière liste connue affichée.`,
-  syncProgress: (processed: number, total: number) => ` (${processed} / ${total} documents)`,
+  syncProgress: (processed: number, total: number) =>
+    ` (${processed} / ${total} document${frPlural(total)})`,
 
   // SourceForm — save / test outcomes
   saveMissingSource: "Le serveur n'a pas renvoyé la source enregistrée. Rechargez la liste.",
@@ -283,7 +284,8 @@ const EN: typeof FR = {
   sourcesRefreshing: 'Syncing the source list…',
   sourcesRefreshError: (detail: string) =>
     `Could not refresh the source list (${detail}). Showing the last known list.`,
-  syncProgress: (processed: number, total: number) => ` (${processed} / ${total} documents)`,
+  syncProgress: (processed: number, total: number) =>
+    ` (${processed} / ${total} document${enPlural(total)})`,
 
   saveMissingSource: 'The server did not return the saved source. Reload the list.',
   saveTimeout: (seconds: number) =>

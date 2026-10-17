@@ -114,3 +114,36 @@ describe('knowledge-base flow labels', () => {
     consoleError.mockRestore();
   });
 });
+
+describe('sync history and selector counts (second tester pass)', () => {
+  const { fr: SF, en: SE } = SYNC_PANELS_STRING_TABLES;
+  const { fr: AF, en: AE } = RAG_ACCESS_STRING_TABLES;
+
+  it('explains documents skipped by etag instead of the raw "(etag)" mark', () => {
+    expect(SF.skippedEtag(21)).toBe(
+      '21 inchangés depuis la dernière synchronisation, non réindexés',
+    );
+    expect(SF.skippedEtag(1)).toBe('1 inchangé depuis la dernière synchronisation, non réindexé');
+    expect(SE.skippedEtag(21)).toBe('21 unchanged since the last sync, not re-indexed');
+    for (const s of [SF.skippedEtag(2), SE.skippedEtag(2)]) expect(s).not.toMatch(/etag|skipped/i);
+  });
+
+  it('agrees counts with their noun', () => {
+    expect(SF.documentsCount(1, 1)).toBe('1 / 1 document');
+    expect(SF.documentsCount(1, 21)).toBe('1 / 21 documents');
+    expect(SE.documentsCount(1, 1)).toBe('1 / 1 document');
+    expect(SE.documentsCount(0, 2)).toBe('0 / 2 documents');
+    expect(SF.rejectedFilesToggle(1)).toBe('Voir le fichier ignoré');
+    expect(SF.rejectedFilesToggle(3)).toBe('Voir les 3 fichiers ignorés');
+    expect(SE.rejectedFilesToggle(1)).toBe('Show the skipped file');
+    expect(AF.itemCount(1)).toBe('(1 élément)');
+    expect(AF.itemCount(2)).toBe('(2 éléments)');
+    expect(AE.itemCount(1)).toBe('(1 item)');
+    expect(AE.itemCount(2)).toBe('(2 items)');
+  });
+
+  it('names the folder modes in the UI language', () => {
+    expect([AF.modeAutoInclude, AF.modeStrict]).toEqual(['tout inclus', 'sélection manuelle']);
+    expect([AE.modeAutoInclude, AE.modeStrict]).toEqual(['all included', 'manual selection']);
+  });
+});

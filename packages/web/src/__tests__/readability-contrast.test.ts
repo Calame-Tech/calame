@@ -99,10 +99,34 @@ describe('readability of the Sources / knowledge base / MCP screens', () => {
     }
   });
 
-  it('shared eyebrow labels are 11px gray-400', () => {
+  it('shared eyebrow labels are 12px gray-400, accent eyebrows 12px os-300', () => {
     const css = readFileSync(resolve(REPO, 'packages/web/src/index.css'), 'utf8');
     const eyebrow = css.match(/\.eyebrow \{[^}]*\}/)?.[0] ?? '';
-    expect(eyebrow).toContain('font-size: 11px');
+    expect(eyebrow).toContain('font-size: 12px');
     expect(eyebrow).toContain('color: rgb(156 163 175)');
+    const accent = css.match(/\.eyebrow-accent \{[^}]*\}/)?.[0] ?? '';
+    expect(accent).toContain('font-size: 12px');
+    expect(accent).toContain('color: rgb(var(--color-os-300));');
+  });
+
+  it('dark dashboard captions and secondary texts are >= 12px and >= 4.5:1', () => {
+    // « statut · activité 24h · tendance 7j », « par serveur · dernières 24h »,
+    // stage-card sub-lines (« exposition en lecture seule »), list metadata.
+    const dashboard = [
+      'packages/web/src/pages/DashboardPage.tsx',
+      'packages/web/src/components/dashboard/ServersTable.tsx',
+      'packages/web/src/components/dashboard/PipelineStrip.tsx',
+      'packages/web/src/components/dashboard/QueriesCard.tsx',
+    ].map((file) => readFileSync(resolve(REPO, file), 'utf8'));
+    const [page, servers, pipeline, queries] = dashboard;
+    const caption = (key: string) =>
+      new RegExp(`font-mono-plex text-\\[13px\\] text-gray-300[^"]*">\\{t\\('${key}'\\)`);
+    expect(servers).toMatch(caption('caption'));
+    expect(queries).toMatch(caption('caption'));
+    expect(queries).toMatch(caption('byServerCaption'));
+    expect(page).toMatch(caption('pii.subtitle'));
+    expect(pipeline).toContain('text-sm text-gray-300">{sub}');
+    for (const src of dashboard) expect(src).not.toMatch(/text-\[(8|9|10|11)px\]/);
+    expect(contrast(GRAY_300, CARD)).toBeGreaterThanOrEqual(4.5);
   });
 });

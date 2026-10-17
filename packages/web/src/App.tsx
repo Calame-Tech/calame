@@ -244,10 +244,10 @@ export default function App() {
       />
 
       {/* Main content column, beside or below the getting-started guide. On a
-          narrow window it starts below the floating menu button (fixed at
-          top-4, ~40px tall) so the button never covers the guide or a title. */}
+          narrow window the Sidebar's sticky menu bar sits above it, so the
+          floating menu button never covers the guide or a title. */}
       <div
-        className={`flex-1 flex min-w-0 pt-14 md:pt-0 ${setupGuideLayout === 'column' ? 'flex-row' : 'flex-col'}`}
+        className={`flex-1 flex min-w-0 ${setupGuideLayout === 'column' ? 'flex-row' : 'flex-col'}`}
       >
         {/* Guided first-run path, on every page until the first MCP is used */}
         <SetupChecklist

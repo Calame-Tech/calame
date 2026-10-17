@@ -64,7 +64,7 @@ export default function QueriesCard({ recentActivity, profiles, serveStatus }: Q
   return (
     <div className="card-primary p-4 anim-rise-in" style={{ animationDelay: '120ms' }}>
       <h2 className="text-sm font-semibold text-gray-100">{t('title')}</h2>
-      <p className="font-mono-plex text-xs text-gray-400 mb-3">{t('caption')}</p>
+      <p className="font-mono-plex text-[13px] text-gray-300 mb-3">{t('caption')}</p>
 
       {showChart ? (
         <div className="relative">
@@ -185,7 +185,7 @@ export default function QueriesCard({ recentActivity, profiles, serveStatus }: Q
           </svg>
           {hover !== null && (
             <div
-              className="absolute pointer-events-none -translate-x-1/2 -translate-y-[115%] bg-gray-900 border border-white/10 rounded-lg px-2.5 py-1.5 font-mono-plex text-[11px] text-gray-400 whitespace-nowrap z-10"
+              className="absolute pointer-events-none -translate-x-1/2 -translate-y-[115%] bg-gray-900 border border-white/10 rounded-lg px-2.5 py-1.5 font-mono-plex text-xs text-gray-300 whitespace-nowrap z-10"
               style={{
                 left: `${(x(hover) / W) * 100}%`,
                 top: `${(y(series[hover].count) / H) * 100}%`,
@@ -206,7 +206,7 @@ export default function QueriesCard({ recentActivity, profiles, serveStatus }: Q
       {/* Per-server bars, last 24h */}
       {barRows.length > 0 && (
         <div className="mt-4 flex flex-col gap-2" aria-label={t('byServerAriaLabel')}>
-          <p className="font-mono-plex text-xs text-gray-400">{t('byServerCaption')}</p>
+          <p className="font-mono-plex text-[13px] text-gray-300">{t('byServerCaption')}</p>
           {barRows.map((row, i) => (
             <div
               key={row.name}
@@ -231,7 +231,7 @@ export default function QueriesCard({ recentActivity, profiles, serveStatus }: Q
                   />
                 )}
               </div>
-              <span className="font-mono-plex text-[11px] text-gray-400 text-right tabular-nums">
+              <span className="font-mono-plex text-xs text-gray-300 text-right tabular-nums">
                 {row.count > 0 ? row.count : '—'}
               </span>
             </div>

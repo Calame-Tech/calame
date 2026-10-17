@@ -94,3 +94,32 @@ export function buildConfigurationToSave(input: ConfigurationSaveInput): {
   };
   return { configToSave, cleanedTables, cleanedTableOptions, cleanedColumnMasking };
 }
+
+/**
+ * The saved knowledge-base (document) selection of a configuration: its
+ * `kind: 'document'` scopes and the sources carrying one, in source order.
+ */
+export function getConfigurationDocumentSelection(config: Configuration | undefined): {
+  sources: string[];
+  scopes: Record<string, ScopeSelection>;
+} {
+  const scopes: Record<string, ScopeSelection> = {};
+  for (const [id, scope] of Object.entries(config?.scopes ?? {})) {
+    if (scope.kind === 'document') scopes[id] = scope;
+  }
+  const sources = (config?.scopes ? (config.sources ?? []) : []).filter((id) => id in scopes);
+  return { sources, scopes };
+}
+
+/**
+ * True when a configuration exposes no data at all (no source, no scope):
+ * `POST /api/configurations` refuses it.
+ */
+export function isConfigurationEmpty(config: Configuration): boolean {
+  return (config.sources ?? []).length === 0 && Object.keys(config.scopes ?? {}).length === 0;
+}
+
+/** `byTable` without the entries of `tables` (a removed connection's tables). */
+export function omitTables<T>(byTable: Record<string, T>, tables: Set<string>): Record<string, T> {
+  return Object.fromEntries(Object.entries(byTable).filter(([table]) => !tables.has(table)));
+}

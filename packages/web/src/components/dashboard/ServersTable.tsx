@@ -39,6 +39,8 @@ export default function ServersTable({
   recentActivity,
 }: ServersTableProps) {
   const t = useTranslations('dashboard.serversTable');
+  // Same auth-mode names as the configuration graph, instead of raw enum values.
+  const tAuth = useTranslations('configGraph.authModeLabels');
   const counts24h = useMemo(() => countByProfile24h(recentActivity), [recentActivity]);
   const headers = t.raw('table.headers') as string[];
 
@@ -99,7 +101,7 @@ export default function ServersTable({
                       </span>
                     </td>
                     <td className="px-2.5 py-2 border-b border-white/[0.035] font-mono-plex text-xs text-gray-400">
-                      {p.authMode ?? t('authOpenFallback')}
+                      {tAuth(p.authMode ?? 'open')}
                     </td>
                     <td className="px-2.5 py-2 border-b border-white/[0.035] font-mono-plex text-xs text-gray-300 text-right tabular-nums">
                       {count}

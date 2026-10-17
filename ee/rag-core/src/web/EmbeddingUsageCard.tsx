@@ -3,7 +3,7 @@
 // See ee/LICENSE.BUSL at the root of the ee/ directory for terms.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { apiGet, ApiError, type RagUsageResponse } from './api.js';
+import { apiGet, userFacingApiError, type RagUsageResponse } from './api.js';
 import { SYNC_PANELS_STRINGS as S } from './strings/sync-panels.js';
 
 interface EmbeddingUsageCardProps {
@@ -72,7 +72,7 @@ function Sparkline({ values }: { values: number[] }) {
             key={i}
             className="flex-1 bg-os-600/60 rounded-sm transition-all"
             style={{ height: `${pct}%` }}
-            title={`${compactNumber(v)} ${S.tokens}`}
+            title={`${compactNumber(v)} ${S.tokens(v)}`}
           />
         );
       })}
@@ -100,9 +100,7 @@ export default function EmbeddingUsageCard({
       setError(null);
     } catch (err) {
       if (cancelledRef.current) return;
-      const message =
-        err instanceof ApiError ? err.message : err instanceof Error ? err.message : S.loadError;
-      setError(message);
+      setError(userFacingApiError(err, S.loadError));
     } finally {
       if (!cancelledRef.current) setLoading(false);
     }
@@ -169,7 +167,9 @@ export default function EmbeddingUsageCard({
         <div className="text-right">
           <div className="text-2xl font-semibold text-os-300">
             {compactNumber(usage.totalTokens)}
-            <span className="text-sm text-gray-500 ml-1">{S.tokens}</span>
+            <span className="text-sm text-gray-500 ml-1" title={S.tokensHelp}>
+              {S.tokens(usage.totalTokens)}
+            </span>
           </div>
           <div className="text-xs text-gray-400">≈ {formatUsd(usage.totalCostUsd)}</div>
         </div>

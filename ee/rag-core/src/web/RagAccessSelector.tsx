@@ -31,6 +31,7 @@ import {
 import { jobProgressState } from './job-progress.js';
 import { RAG_ACCESS_STRINGS as T } from './strings/rag-access.js';
 import { RAG_STRINGS } from './onboarding-strings.js';
+import HelpTip from '../../../../packages/web/src/components/HelpTip.js';
 import { useActiveSyncJobs, type SourceJobInfo } from './useActiveSyncJobs.js';
 import {
   useRefreshWhenSyncFinishes,
@@ -1209,40 +1210,54 @@ export default function RagAccessSelector({
           <span className="text-gray-400">▸</span>
           {T.introAfterArrow}
         </p>
-        <label className="flex items-start gap-2 mt-2 cursor-pointer group">
-          <input
-            type="checkbox"
-            checked={piiMaskingDisabled}
-            onChange={(e) => {
-              markEdited();
-              setPiiMaskingDisabled(e.target.checked);
-            }}
-            className="mt-0.5 w-4 h-4 rounded border border-gray-600 bg-gray-800 accent-os-600 cursor-pointer flex-shrink-0"
-          />
-          <span className="flex flex-col gap-0.5">
+        {/* Long explanation folded behind a "?" (same HelpTip as the source form). */}
+        <div className="flex items-start gap-1.5 mt-2">
+          <label className="flex items-start gap-2 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={piiMaskingDisabled}
+              onChange={(e) => {
+                markEdited();
+                setPiiMaskingDisabled(e.target.checked);
+              }}
+              className="mt-0.5 w-4 h-4 rounded border border-gray-600 bg-gray-800 accent-os-600 cursor-pointer flex-shrink-0"
+            />
             <span className="text-xs text-gray-300 group-hover:text-gray-100 transition-colors">
               {T.piiOffLabel}
             </span>
-            <span className="text-[11px] text-gray-500">{T.piiOffHint}</span>
-          </span>
-        </label>
-        <label className="flex items-start gap-2 mt-2 cursor-pointer group">
-          <input
-            type="checkbox"
-            checked={directFetchDisabled}
-            onChange={(e) => {
-              markEdited();
-              setDirectFetchDisabled(e.target.checked);
-            }}
-            className="mt-0.5 w-4 h-4 rounded border border-gray-600 bg-gray-800 accent-os-600 cursor-pointer flex-shrink-0"
+          </label>
+          <HelpTip
+            content={T.piiOffHint}
+            label={T.piiOffLabel}
+            position="right"
+            maxWidth={320}
+            size="xs"
           />
-          <span className="flex flex-col gap-0.5">
+        </div>
+        {/* Long explanation folded behind a "?" (same HelpTip as the source form). */}
+        <div className="flex items-start gap-1.5 mt-2">
+          <label className="flex items-start gap-2 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={directFetchDisabled}
+              onChange={(e) => {
+                markEdited();
+                setDirectFetchDisabled(e.target.checked);
+              }}
+              className="mt-0.5 w-4 h-4 rounded border border-gray-600 bg-gray-800 accent-os-600 cursor-pointer flex-shrink-0"
+            />
             <span className="text-xs text-gray-300 group-hover:text-gray-100 transition-colors">
               {T.directFetchOffLabel}
             </span>
-            <span className="text-[11px] text-gray-500">{T.directFetchOffHint}</span>
-          </span>
-        </label>
+          </label>
+          <HelpTip
+            content={T.directFetchOffHint}
+            label={T.directFetchOffLabel}
+            position="right"
+            maxWidth={320}
+            size="xs"
+          />
+        </div>
       </div>
 
       <ToastList toasts={toasts} onDismiss={dismissToast} />

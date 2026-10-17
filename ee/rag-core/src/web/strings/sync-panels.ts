@@ -87,15 +87,17 @@ const FR = {
   activityPerDayAria: 'Activité par jour',
   usageLoading: 'Chargement de la consommation…',
   usageLoadFailed: 'Impossible de charger la consommation :',
-  usageTitle: 'Consommation embeddings',
-  tokens: 'tokens',
-  monthlyCap: 'Cap mensuel',
+  usageTitle: 'Consommation d’embeddings (analyse des documents)',
+  tokens: (n: number): string => (n >= 2 ? 'jetons' : 'jeton'),
+  tokensHelp:
+    "Jeton (token) : petit morceau de texte, environ trois quarts de mot. C'est l'unité qui mesure et facture l'analyse des documents.",
+  monthlyCap: 'Plafond mensuel',
   monthlyUsageAria: "Consommation mensuelle d'embeddings",
   capReached:
-    "Cap mensuel atteint. Les synchronisations vont échouer jusqu'à la fin du mois ou jusqu'à ce que le cap soit relevé.",
-  capNearing: 'Approche du cap mensuel',
+    "Plafond mensuel atteint. Les synchronisations vont échouer jusqu'à la fin du mois ou jusqu'à ce que le plafond soit relevé.",
+  capNearing: 'Approche du plafond mensuel',
   capThreshold: (pct: number) => `(seuil ${pct}%)`,
-  capNotConfigured: 'Pas de cap mensuel configuré (CALAME_RAG_MONTHLY_TOKEN_CAP).',
+  capNotConfigured: 'Aucun plafond mensuel configuré : la consommation n’est pas limitée.',
   perProvider: 'Par fournisseur',
   unknownModel: '(modèle inconnu)',
   unknownPrice: 'Tarif inconnu — coût non estimé',
@@ -128,7 +130,7 @@ const FR = {
   reindexRestartDetail:
     'Les sources ont été reconfigurées et leur contenu purgé. La ré-indexation reprendra automatiquement au prochain démarrage.',
   reindexProgress: (done: number, total: number) =>
-    `${done} / ${total} source(s) purgée(s) et reconfigurée(s).`,
+    `${done} / ${total} source${total > 1 ? 's' : ''} purgée${total > 1 ? 's' : ''} et reconfigurée${total > 1 ? 's' : ''}.`,
   reindexTenantLimit:
     "Il s'agit d'une limitation de l'index vectoriel partagé entre tenants — cette migration ne peut pas la contourner seule.",
   retry: 'Réessayer',
@@ -210,15 +212,17 @@ const EN: typeof FR = {
   activityPerDayAria: 'Activity per day',
   usageLoading: 'Loading usage…',
   usageLoadFailed: 'Unable to load usage:',
-  usageTitle: 'Embedding usage',
-  tokens: 'tokens',
+  usageTitle: 'Embedding usage (document analysis)',
+  tokens: (n: number) => (n === 1 ? 'token' : 'tokens'),
+  tokensHelp:
+    'Token: a small piece of text, about three quarters of a word. It is the unit used to measure and bill document analysis.',
   monthlyCap: 'Monthly cap',
   monthlyUsageAria: 'Monthly embedding usage',
   capReached:
     'Monthly cap reached. Syncs will fail until the end of the month or until the cap is raised.',
   capNearing: 'Approaching the monthly cap',
   capThreshold: (pct: number) => `(threshold ${pct}%)`,
-  capNotConfigured: 'No monthly cap configured (CALAME_RAG_MONTHLY_TOKEN_CAP).',
+  capNotConfigured: 'No monthly cap configured: usage is not limited.',
   perProvider: 'By provider',
   unknownModel: '(unknown model)',
   unknownPrice: 'Unknown pricing — cost not estimated',
@@ -250,7 +254,7 @@ const EN: typeof FR = {
   reindexRestartDetail:
     'Sources have been reconfigured and their content purged. Re-indexing will resume automatically on next startup.',
   reindexProgress: (done: number, total: number) =>
-    `${done} / ${total} source(s) purged and reconfigured.`,
+    `${done} / ${total} source${total === 1 ? '' : 's'} purged and reconfigured.`,
   reindexTenantLimit:
     'This is a limitation of the vector index shared across tenants — this migration cannot work around it on its own.',
   retry: 'Retry',

@@ -37,20 +37,22 @@ const FR = {
   savedToast: (profile: string) =>
     `Accès aux bases de connaissances mis à jour pour le profil « ${profile} ».`,
   saveFailed: (msg: string) => `Échec de la sauvegarde : ${msg}`,
-  loadingKbs: 'Chargement des bases de connaissance…',
+  loadingKbs: 'Chargement des bases de connaissances…',
   headingPrefix: 'Bases de connaissances accessibles — profil ',
   introBeforeArrow:
-    'Sélectionnez les bases de connaissance et dossiers accessibles pour ce profil. Cliquez sur ',
+    'Sélectionnez les bases de connaissances et dossiers accessibles pour ce profil. Cliquez sur ',
   introAfterArrow:
     " pour parcourir le contenu d'une base et choisir des dossiers ou fichiers précis plutôt que tout inclure.",
-  piiOffLabel: "Désactiver le masquage PII (le contenu sensible reste visible par l'IA)",
+  piiOffLabel: 'Désactiver le masquage des données personnelles (PII)',
   piiOffHint:
-    'Désactivez si votre contenu contient des numéros qui ne sont pas du vrai PII (codes secrets, IDs internes, etc.).',
-  directFetchOffLabel:
-    'Désactiver la lecture directe des documents (le LLM ne pourra utiliser que la recherche sémantique)',
+    "Par défaut, les données personnelles (PII : e-mails, numéros…) sont masquées avant d'être transmises à l'IA. " +
+    "Une fois le masquage désactivé, le contenu sensible reste visible par l'IA. " +
+    'Désactivez-le seulement si votre contenu contient des numéros qui ne sont pas des données personnelles (codes secrets, identifiants internes, etc.).',
+  directFetchOffLabel: 'Désactiver la lecture directe des documents',
   directFetchOffHint:
-    'Recommandé pour les bases de connaissances volumineuses : limite le coût des questions du type "résume tous mes fichiers".',
-  noKnowledgeBase: 'Aucune base de connaissance configurée.',
+    "L'IA ne pourra plus ouvrir un document en entier : elle utilisera uniquement la recherche sémantique (par le sens). " +
+    'Recommandé pour les bases de connaissances volumineuses : limite le coût des questions du type « résume tous mes fichiers ».',
+  noKnowledgeBase: 'Aucune base de connaissances configurée.',
 };
 
 const EN: typeof FR = {
@@ -83,19 +85,21 @@ const EN: typeof FR = {
   saving: 'Saving…',
   save: 'Save',
   genericError: 'Error.',
-  savedToast: (profile: string) => `RAG access updated for profile "${profile}".`,
+  savedToast: (profile: string) => `Knowledge base access updated for profile "${profile}".`,
   saveFailed: (msg: string) => `Save failed: ${msg}`,
   loadingKbs: 'Loading knowledge bases…',
-  headingPrefix: 'RAG scopes — profile ',
+  headingPrefix: 'Accessible knowledge bases — profile ',
   introBeforeArrow: 'Select the knowledge bases and folders accessible to this profile. Click ',
   introAfterArrow:
     ' to browse the contents of a knowledge base and pick specific folders or files instead of including everything.',
-  piiOffLabel: 'Disable PII masking (sensitive content stays visible to the AI)',
+  piiOffLabel: 'Disable personal data (PII) masking',
   piiOffHint:
-    'Disable if your content contains numbers that are not real PII (secret codes, internal IDs, etc.).',
-  directFetchOffLabel:
-    'Disable direct document reading (the LLM will only be able to use semantic search)',
+    'By default, personal data (PII: emails, numbers…) is masked before it is sent to the AI. ' +
+    'Once masking is disabled, sensitive content stays visible to the AI. ' +
+    'Only disable it if your content contains numbers that are not personal data (secret codes, internal IDs, etc.).',
+  directFetchOffLabel: 'Disable direct document reading',
   directFetchOffHint:
+    'The AI will no longer open a whole document: it will only use semantic search (search by meaning). ' +
     'Recommended for large knowledge bases: limits the cost of questions like "summarize all my files".',
   noKnowledgeBase: 'No knowledge base configured.',
 };

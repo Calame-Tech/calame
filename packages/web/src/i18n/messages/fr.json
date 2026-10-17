@@ -918,7 +918,7 @@
       ]
     },
     "usage": {
-      "tokens": "{count} jetons",
+      "tokens": "{count, plural, one {# jeton} other {# jetons}}",
       "cacheSuffix": " · cache {percent} %"
     },
     "aiSelector": {
@@ -1019,7 +1019,7 @@
         "description": "Une source, ce sont les données que votre serveur MCP pourra lire : une base de données, ou une base de connaissances faite de documents.",
         "knowledgeBase": {
           "title": "Base de connaissances (documents)",
-          "description": "Indexez un dossier, des fichiers envoyés ou une autre source de documents. Vous continuez dans l’écran Base de connaissances ; le guide de démarrage affiche ensuite les étapes suivantes.",
+          "description": "Indexez un dossier, des fichiers envoyés ou une autre source de documents. Vous continuez dans l’écran Bases de connaissances ; le guide de démarrage affiche ensuite les étapes suivantes.",
           "button": "Ajouter une base de connaissances"
         },
         "quickStart": {
@@ -1487,12 +1487,12 @@
       "mcpServers": {
         "eyebrow": "SERVEURS MCP",
         "help": "Démarrer, arrêter et gérer vos serveurs MCP exposés aux clients IA",
-        "activeSuffix": "· {count} actif(s)",
+        "activeSuffix": "· {count, plural, one {# actif} other {# actifs}}",
         "servingAt": "en service sur {address}",
         "servingAddressUnknown": "en service (adresse pas encore disponible)",
         "noServerRunning": "aucun serveur en cours d’exécution",
-        "on": "ON",
-        "off": "OFF",
+        "on": "Actif",
+        "off": "Arrêté",
         "empty": "Aucun serveur"
       }
     },
@@ -1512,11 +1512,10 @@
       "emptyTitle": "Aucun serveur MCP",
       "emptyDescription": "Créez un serveur pour exposer vos configurations de données aux clients IA.",
       "table": {
-        "headers": ["Serveur", "Statut", "Auth", "Activité 24h", "Tendance"]
+        "headers": ["Serveur", "Statut", "Accès", "Activité 24h", "Tendance"]
       },
       "statusActive": "ACTIF",
-      "statusStopped": "ARRÊTÉ",
-      "authOpenFallback": "ouvert"
+      "statusStopped": "ARRÊTÉ"
     }
   },
   "mcpList": {

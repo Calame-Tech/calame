@@ -918,7 +918,7 @@
       ]
     },
     "usage": {
-      "tokens": "{count} tokens",
+      "tokens": "{count, plural, one {# token} other {# tokens}}",
       "cacheSuffix": " · cache {percent}%"
     },
     "aiSelector": {
@@ -1019,7 +1019,7 @@
         "description": "A source is the data your MCP server will read: a database, or a knowledge base made of documents.",
         "knowledgeBase": {
           "title": "Knowledge base (documents)",
-          "description": "Index a folder, uploaded files or another document source. You continue on the Knowledge base screen; the getting-started guide then shows the next steps.",
+          "description": "Index a folder, uploaded files or another document source. You continue on the Knowledge bases screen; the getting-started guide then shows the next steps.",
           "button": "Add a knowledge base"
         },
         "quickStart": {
@@ -1491,8 +1491,8 @@
         "servingAt": "serving at {address}",
         "servingAddressUnknown": "serving (address not available yet)",
         "noServerRunning": "no server running",
-        "on": "ON",
-        "off": "OFF",
+        "on": "Running",
+        "off": "Stopped",
         "empty": "No servers"
       }
     },
@@ -1512,11 +1512,10 @@
       "emptyTitle": "No MCP servers",
       "emptyDescription": "Create a server to expose your data configurations to AI clients.",
       "table": {
-        "headers": ["Server", "Status", "Auth", "Activity 24h", "Trend"]
+        "headers": ["Server", "Status", "Access", "Activity 24h", "Trend"]
       },
       "statusActive": "ACTIVE",
-      "statusStopped": "STOPPED",
-      "authOpenFallback": "open"
+      "statusStopped": "STOPPED"
     }
   },
   "mcpList": {

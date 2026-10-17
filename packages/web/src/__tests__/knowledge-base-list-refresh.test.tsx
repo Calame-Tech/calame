@@ -131,7 +131,7 @@ describe('KnowledgeBaseManager — list refresh', () => {
     });
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Impossible de rafraîchir la liste des sources (Failed to fetch). Dernière liste connue affichée.',
+      'Impossible de rafraîchir la liste des sources (le serveur Calame ne répond pas). Dernière liste connue affichée.',
     );
     expect(screen.getByText('Alpha')).toBeInTheDocument();
     expect(screen.queryByText('Impossible de charger les sources.')).not.toBeInTheDocument();

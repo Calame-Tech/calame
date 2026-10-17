@@ -529,7 +529,7 @@ describe('schema migration — v7 tokens_embedded', () => {
     const ver = db.prepare(`SELECT version FROM rag_schema_version WHERE key = 'rag'`).get() as {
       version: number;
     };
-    expect(ver.version).toBe(10);
+    expect(ver.version).toBe(11);
   });
 });
 

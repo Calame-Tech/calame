@@ -175,11 +175,50 @@ export interface RagJob {
    * `runSyncJob` / `rag-upload`). Defaults to 0 for pre-v7 rows.
    */
   tokensEmbedded: number;
+  /** Files (re)indexed by this job (parsed, chunked, embedded, written). */
+  indexedDocuments: number;
+  /** Files skipped as unchanged — etag fast-path OR content-hash match. */
+  unchangedDocuments: number;
+  /** Files ignored / in error for a reason of their own (see `rejectedFiles`). */
+  rejectedDocuments: number;
+  /**
+   * The rejected files with a readable reason. Capped server-side (the count
+   * in `rejectedDocuments` stays exact). Empty for pre-v11 rows.
+   */
+  rejectedFiles: RagJobRejectedFile[];
+  /**
+   * Set only when the job failed GLOBALLY — never because of individual
+   * files: `infrastructure` (storage or embedding engine down, or too many
+   * consecutive such errors), `cap_exceeded` (monthly embedding cap) or
+   * `source` (source missing, connector missing, listing failed). `null` for
+   * a job that ran to the end, even with rejected files.
+   */
+  failureKind: RagJobFailureKind | null;
+  /** File being processed right now (running jobs only), else `null`. */
+  currentDocument: string | null;
+  /** ISO timestamp at which `currentDocument` started, else `null`. */
+  currentDocumentStartedAt: string | null;
   error: string | null;
   startedAt: string;
   finishedAt: string | null;
   /** Multi-tenancy (Phase A) — inherited from the parent source. Optional. */
   tenantId?: string;
+}
+
+/** Why a sync job failed as a whole — see {@link RagJob.failureKind}. */
+export type RagJobFailureKind = 'infrastructure' | 'cap_exceeded' | 'source';
+
+/** One file the sync ignored, with the reason shown in the history panel. */
+export interface RagJobRejectedFile {
+  /** Source-relative path of the file. */
+  path: string;
+  /**
+   * `parse_failed` | `parse_timeout` | `too_large` | `locked` | `unreadable`
+   * (see DocumentRejectionKind) or `unsupported` (no parser for the format).
+   */
+  kind: string;
+  /** Human-readable reason (server message, English). */
+  reason: string;
 }
 
 /**
@@ -209,6 +248,16 @@ export interface VectorStore {
  * Embedding client abstraction. Implementations wrap an `AiSetting` from
  * `packages/cli/src/ai-config.ts` whose `capabilities` includes `embeddings`.
  */
+/** Optional per-call settings for {@link EmbeddingClient.embed}. */
+export interface EmbedOptions {
+  /**
+   * Fired after each internal batch with the number of texts embedded so
+   * far, so a long document reports progress while it is being embedded.
+   * Clients that embed in one call may never fire it.
+   */
+  onProgress?: (done: number, total: number) => void;
+}
+
 export interface EmbeddingClient {
   /** Number of dimensions produced by the underlying model. */
   dimensions: number;
@@ -217,7 +266,7 @@ export interface EmbeddingClient {
   /** Embed DOCUMENT / passage text. This IS the document path — models with
    * asymmetric query/document prompts (e.g. EmbeddingGemma) apply their
    * document prefix here. */
-  embed(texts: string[]): Promise<number[][]>;
+  embed(texts: string[], options?: EmbedOptions): Promise<number[][]>;
   /**
    * Embed SEARCH QUERIES. Optional — only implemented by clients whose
    * underlying model needs an asymmetric query prefix. Every OpenAI-

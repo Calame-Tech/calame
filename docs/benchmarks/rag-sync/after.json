@@ -1,0 +1,376 @@
+{
+  "label": "after",
+  "date": "2026-10-16T18:24:09.064Z",
+  "git": {
+    "commit": "4b95431",
+    "dirty": true
+  },
+  "environment": {
+    "platform": "Darwin 25.4.0 (darwin/arm64)",
+    "cpu": "Apple M1 Max",
+    "cores": 10,
+    "memoryGB": 64,
+    "node": "v22.22.3",
+    "nativeWindows": false
+  },
+  "config": {
+    "docs": 300,
+    "seed": 42,
+    "files": 310,
+    "corpusMB": 9.2,
+    "byFormat": {
+      "docx": 74,
+      "pdf": 9,
+      "md": 116,
+      "html": 29,
+      "txt": 62,
+      "csv": 10
+    },
+    "embedder": "local ONNX embeddinggemma-300m q4 (batch 4)",
+    "maxFileSizeBytes": 5242880,
+    "parseTimeoutMs": "default (120000)",
+    "docTimeoutMs": "default (300000)",
+    "onnxThreads": "default (4)"
+  },
+  "scenarios": [
+    {
+      "scenario": "initial",
+      "job": {
+        "status": "completed",
+        "failureKind": null,
+        "total": 309,
+        "processed": 309,
+        "indexed": 302,
+        "unchanged": 0,
+        "skippedByEtag": 0,
+        "rejected": 7,
+        "gcDeleted": 0,
+        "tokensEmbedded": 675951,
+        "rejectedFiles": [
+          "parse_failed: Divers/Contrat tronqué.docx",
+          "unsupported: Divers/Données brutes.bin",
+          "too_large: Divers/Export complet.txt",
+          "unsupported: Divers/Présentation client.pptx",
+          "parse_failed: Divers/Rapport corrompu.docx",
+          "parse_failed: Divers/Sans contenu Word.docx",
+          "parse_failed: Divers/Scan illisible.pdf"
+        ]
+      },
+      "db": {
+        "chunks": 2901,
+        "vectors": 2901,
+        "fts": 2901,
+        "liveDocuments": 304
+      },
+      "phases": {
+        "walk": {
+          "count": 1,
+          "totalMs": 36.46,
+          "maxMs": 36.46,
+          "pctOfWall": 0.01
+        },
+        "read": {
+          "count": 308,
+          "totalMs": 394.08,
+          "maxMs": 33.85,
+          "pctOfWall": 0.09
+        },
+        "hash": {
+          "count": 308,
+          "totalMs": 18.23,
+          "maxMs": 0.14,
+          "pctOfWall": 0
+        },
+        "parse": {
+          "count": 306,
+          "totalMs": 633.11,
+          "maxMs": 95.32,
+          "pctOfWall": 0.14
+        },
+        "chunk": {
+          "count": 302,
+          "totalMs": 346.38,
+          "maxMs": 30.65,
+          "pctOfWall": 0.08
+        },
+        "embed": {
+          "count": 301,
+          "totalMs": 457178.07,
+          "maxMs": 46853.45,
+          "pctOfWall": 99.58
+        },
+        "write": {
+          "count": 302,
+          "totalMs": 462.64,
+          "maxMs": 25.42,
+          "pctOfWall": 0.1
+        }
+      },
+      "otherMs": 58.93,
+      "throughput": {
+        "docsPerSec": 0.67,
+        "indexedDocsPerSec": 0.66,
+        "chunksEmbedded": 2901,
+        "chunksEmbeddedPerSec": 6.32
+      },
+      "wallMs": 459127.885,
+      "cpu": {
+        "userMs": 1826545.251,
+        "systemMs": 4055.841,
+        "avgCoresBusy": 3.987126793660115,
+        "avgMachinePct": 39.87126793660114,
+        "peakLoadAvg1m": 9.13134765625
+      },
+      "memory": {
+        "peakRssMB": 909.0625,
+        "peakHeapUsedMB": 261.61204528808594
+      },
+      "responsiveness": {
+        "eventLoopDelayMs": {
+          "p50": 461.373439,
+          "p99": 1211.105279,
+          "max": 1303.379967
+        },
+        "jobsPollLatencyMs": {
+          "samples": 738,
+          "p50": 325.9190830000007,
+          "p95": 855.901125000004,
+          "max": 1139.1957919999986
+        },
+        "longestProgressStallMs": 999.1068340000056
+      }
+    },
+    {
+      "scenario": "unchanged",
+      "job": {
+        "status": "completed",
+        "failureKind": null,
+        "total": 309,
+        "processed": 309,
+        "indexed": 0,
+        "unchanged": 304,
+        "skippedByEtag": 304,
+        "rejected": 5,
+        "gcDeleted": 0,
+        "tokensEmbedded": 0,
+        "rejectedFiles": [
+          "parse_failed: Divers/Contrat tronqué.docx",
+          "too_large: Divers/Export complet.txt",
+          "parse_failed: Divers/Rapport corrompu.docx",
+          "parse_failed: Divers/Sans contenu Word.docx",
+          "parse_failed: Divers/Scan illisible.pdf"
+        ]
+      },
+      "db": {
+        "chunks": 2901,
+        "vectors": 2901,
+        "fts": 2901,
+        "liveDocuments": 304
+      },
+      "phases": {
+        "walk": {
+          "count": 1,
+          "totalMs": 17.42,
+          "maxMs": 17.42,
+          "pctOfWall": 73.9
+        },
+        "read": {
+          "count": 0,
+          "totalMs": 0,
+          "maxMs": 0,
+          "pctOfWall": 0
+        },
+        "hash": {
+          "count": 0,
+          "totalMs": 0,
+          "maxMs": 0,
+          "pctOfWall": 0
+        },
+        "parse": {
+          "count": 0,
+          "totalMs": 0,
+          "maxMs": 0,
+          "pctOfWall": 0
+        },
+        "chunk": {
+          "count": 0,
+          "totalMs": 0,
+          "maxMs": 0,
+          "pctOfWall": 0
+        },
+        "embed": {
+          "count": 0,
+          "totalMs": 0,
+          "maxMs": 0,
+          "pctOfWall": 0
+        },
+        "write": {
+          "count": 0,
+          "totalMs": 0,
+          "maxMs": 0,
+          "pctOfWall": 0
+        }
+      },
+      "otherMs": 6.15,
+      "throughput": {
+        "docsPerSec": 13110.88,
+        "indexedDocsPerSec": 0,
+        "chunksEmbedded": 0,
+        "chunksEmbeddedPerSec": 0
+      },
+      "wallMs": 23.568208000040613,
+      "cpu": {
+        "userMs": 39.141,
+        "systemMs": 7.992,
+        "avgCoresBusy": 1.999855058981098,
+        "avgMachinePct": 19.99855058981098,
+        "peakLoadAvg1m": 4.39013671875
+      },
+      "memory": {
+        "peakRssMB": 858.359375,
+        "peakHeapUsedMB": 175.67151641845703
+      },
+      "responsiveness": {
+        "eventLoopDelayMs": {
+          "p50": 10.043391,
+          "p99": 10.043391,
+          "max": 10.043391
+        },
+        "jobsPollLatencyMs": {
+          "samples": 0,
+          "p50": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "longestProgressStallMs": 0
+      }
+    },
+    {
+      "scenario": "partial",
+      "job": {
+        "status": "completed",
+        "failureKind": null,
+        "total": 309,
+        "processed": 309,
+        "indexed": 18,
+        "unchanged": 286,
+        "skippedByEtag": 280,
+        "rejected": 5,
+        "gcDeleted": 3,
+        "tokensEmbedded": 10556,
+        "rejectedFiles": [
+          "parse_failed: Divers/Contrat tronqué.docx",
+          "too_large: Divers/Export complet.txt",
+          "parse_failed: Divers/Rapport corrompu.docx",
+          "parse_failed: Divers/Sans contenu Word.docx",
+          "parse_failed: Divers/Scan illisible.pdf"
+        ]
+      },
+      "db": {
+        "chunks": 2875,
+        "vectors": 2875,
+        "fts": 2875,
+        "liveDocuments": 304
+      },
+      "phases": {
+        "walk": {
+          "count": 1,
+          "totalMs": 21.54,
+          "maxMs": 21.54,
+          "pctOfWall": 0.28
+        },
+        "read": {
+          "count": 24,
+          "totalMs": 10.15,
+          "maxMs": 0.94,
+          "pctOfWall": 0.13
+        },
+        "hash": {
+          "count": 24,
+          "totalMs": 1.33,
+          "maxMs": 0.09,
+          "pctOfWall": 0.02
+        },
+        "parse": {
+          "count": 18,
+          "totalMs": 13.19,
+          "maxMs": 3.35,
+          "pctOfWall": 0.17
+        },
+        "chunk": {
+          "count": 18,
+          "totalMs": 8,
+          "maxMs": 1.81,
+          "pctOfWall": 0.1
+        },
+        "embed": {
+          "count": 18,
+          "totalMs": 7655.07,
+          "maxMs": 1392.6,
+          "pctOfWall": 98.39
+        },
+        "write": {
+          "count": 18,
+          "totalMs": 41.49,
+          "maxMs": 4.58,
+          "pctOfWall": 0.53
+        }
+      },
+      "otherMs": 29.84,
+      "throughput": {
+        "docsPerSec": 39.71,
+        "indexedDocsPerSec": 2.31,
+        "chunksEmbedded": 52,
+        "chunksEmbeddedPerSec": 6.68
+      },
+      "wallMs": 7780.6119160000235,
+      "cpu": {
+        "userMs": 30935.38,
+        "systemMs": 110.536,
+        "avgCoresBusy": 3.9901637988340335,
+        "avgMachinePct": 39.90163798834033,
+        "peakLoadAvg1m": 3.89404296875
+      },
+      "memory": {
+        "peakRssMB": 861.046875,
+        "peakHeapUsedMB": 183.0047836303711
+      },
+      "responsiveness": {
+        "eventLoopDelayMs": {
+          "p50": 353.894399,
+          "p99": 1089.470463,
+          "max": 1089.470463
+        },
+        "jobsPollLatencyMs": {
+          "samples": 13,
+          "p50": 320.44820799998706,
+          "p95": 838.8467079999973,
+          "max": 838.8467079999973
+        },
+        "longestProgressStallMs": 0
+      }
+    }
+  ],
+  "onnxWarmupMs": 966.65,
+  "onnx": {
+    "batchSize": 4,
+    "intraOpNumThreads": 4
+  },
+  "mutation": {
+    "edited": 15,
+    "touched": 6,
+    "deleted": 3,
+    "added": 3
+  },
+  "watcher": {
+    "settleMs": 3000,
+    "setupCpuMs": 104.22,
+    "totalCpuMs": 178.34,
+    "wallMs": 10575.4,
+    "events": 27,
+    "firstEventAfterMs": 117.07,
+    "lastEventAfterMs": 529.2,
+    "syncTriggers": 1,
+    "firstTriggerAfterMs": 5532.23
+  }
+}

@@ -24,6 +24,7 @@ import { InitialSyncAlert, useInitialSync } from './SyncRetryAlert.js';
 import SourceDetailNotices from './SourceDetailNotices.js';
 import {
   useActiveSyncJobs,
+  EMPTY_JOB_REPORT,
   formatRelativeTime,
   isSyncStale,
   type SourceJobInfo,
@@ -779,6 +780,7 @@ export default function KnowledgeBaseManager({
                           skippedByEtag: 0,
                           gcDeleted: 0,
                           tokensEmbedded: 0,
+                          ...EMPTY_JOB_REPORT,
                           error: null,
                           startedAt: new Date().toISOString(),
                           finishedAt: null,

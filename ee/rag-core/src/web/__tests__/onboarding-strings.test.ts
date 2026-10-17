@@ -37,6 +37,16 @@ describe('rag-core strings', () => {
     expect(translateJobError('3 doc(s) skipped — unsupported format. Convert …')).toMatch(
       /^3 document\(s\) ignoré\(s\) — format non pris en charge/,
     );
+    expect(
+      translateJobError(
+        '2 doc(s) skipped; last: Dossier\\Rapport.docx: The file could not be parsed',
+      ),
+    ).toBe(
+      '2 fichier(s) ignoré(s) (illisible, corrompu, trop gros ou verrouillé) ; dernier : Dossier\\Rapport.docx: The file could not be parsed',
+    );
+    expect(translateJobError('1 doc(s) skipped so far; last: a.docx: locked')).toMatch(
+      /^1 fichier\(s\) ignoré\(s\)/,
+    );
     expect(translateJobError('connector exploded')).toBe('connector exploded');
   });
 });

@@ -9,8 +9,11 @@ import type { Database as BetterSqlite3Database } from 'better-sqlite3';
 import type { EmbeddingClient, RagDocument, RagFolder, RagSource, VectorStore } from '../types.js';
 import { pickChunker } from '../chunker/index.js';
 import type { ChunkOptions } from '../chunker/types.js';
-import { getParserForMimeType } from '../parsers/index.js';
+import { getParserForMimeType, UnsupportedMimeTypeError } from '../parsers/index.js';
+import type { ParsedDocument } from '../parsers/types.js';
+import { DocumentRejectedError } from './document-errors.js';
 import { assertWithinCap, type EmbeddingCapConfig } from '../jobs/embedding-cap.js';
+import { timePhase, timePhaseSync, type PhaseTimingSink } from './phase-timings.js';
 
 /** @deprecated Kept for backwards compatibility. Prefer `ChunkOptions`. */
 export type TokenChunkOptions = ChunkOptions;
@@ -72,6 +75,20 @@ export interface IngestionPipelineDeps {
    * pre-cap behaviour (unbounded).
    */
   capConfig?: EmbeddingCapConfig;
+  /**
+   * Optional out-of-process parser runner (in production: an
+   * {@link IsolatedParser} worker with a hard per-file timeout). When absent
+   * the parser runs in-process — used by tests and as a fallback when the
+   * compiled worker script cannot be found. The MIME type is still resolved
+   * in-process first so unsupported formats fail fast without a worker trip.
+   */
+  parseDocument?: (mimeType: string, buffer: Buffer, filename: string) => Promise<ParsedDocument>;
+  /**
+   * Optional per-phase timing hook (`hash`, `parse`, `chunk`, `embed`,
+   * `write`), fired once per phase actually run for a document. Used by the
+   * sync benchmark; absent in production, where it costs nothing.
+   */
+  onPhaseTiming?: PhaseTimingSink;
 }
 
 /** Inputs to {@link IngestionPipeline.ingestDocument}. */
@@ -91,6 +108,18 @@ export interface IngestDocumentInput {
    * fast-path documents (hash match) do NOT fire the hook.
    */
   onTokensEmbedded?: (count: number) => void;
+  /**
+   * Fired when the content hash matches the indexed copy and nothing is
+   * re-parsed or re-embedded (fast path). Lets the sync report count the
+   * file as "unchanged" rather than "indexed".
+   */
+  onUnchanged?: () => void;
+  /**
+   * Fired while the document's chunks are being embedded (texts embedded so
+   * far / total), for clients that embed in several batches. Lets the sync
+   * keep its progress moving inside one long document.
+   */
+  onEmbedProgress?: (done: number, total: number) => void;
 }
 
 interface DocumentRow {
@@ -151,6 +180,8 @@ export class IngestionPipeline {
   private readonly chunkOptions: ChunkOptions | undefined;
   private readonly onTokensEmbedded: ((count: number) => void) | undefined;
   private readonly capConfig: EmbeddingCapConfig | undefined;
+  private readonly parseDocument: IngestionPipelineDeps['parseDocument'];
+  private readonly onPhaseTiming: PhaseTimingSink | undefined;
 
   constructor(deps: IngestionPipelineDeps) {
     this.db = deps.db;
@@ -160,6 +191,8 @@ export class IngestionPipeline {
     this.chunkOptions = deps.chunkOptions;
     this.onTokensEmbedded = deps.onTokensEmbedded;
     this.capConfig = deps.capConfig;
+    this.parseDocument = deps.parseDocument;
+    this.onPhaseTiming = deps.onPhaseTiming;
   }
 
   /**
@@ -185,20 +218,30 @@ export class IngestionPipeline {
    * Ingest (or refresh) a single document. Returns the resulting
    * {@link RagDocument} row. If the content hash matches the previously
    * indexed copy, no work is performed.
+   *
+   * Failure semantics — last valid version is kept: parsing, chunking and
+   * embedding all happen BEFORE any write, and the write itself (document
+   * row + chunks + vectors) is one SQLite transaction. If anything throws, the
+   * previously indexed version (row, chunks, vectors, hash, etag) is left
+   * exactly as it was and stays searchable; because its stored etag/hash
+   * still describe the OLD content, the next sync retries the new content.
+   * A brand-new document that fails leaves no row at all.
    */
   async ingestDocument(input: IngestDocumentInput): Promise<RagDocument> {
-    const hash = sha256Hex(input.buffer);
     const name = deriveDocumentName(input.path);
     const size = input.buffer.byteLength;
     const folderId = input.folder?.id ?? null;
     const sourceId = input.source.id;
 
-    const existing = this.db
-      .prepare<
-        [string, string],
-        DocumentRow
-      >(`SELECT * FROM rag_documents WHERE source_id = ? AND path = ?`)
-      .get(sourceId, input.path);
+    const { hash, existing } = timePhaseSync(this.onPhaseTiming, 'hash', () => ({
+      hash: sha256Hex(input.buffer),
+      existing: this.db
+        .prepare<
+          [string, string],
+          DocumentRow
+        >(`SELECT * FROM rag_documents WHERE source_id = ? AND path = ?`)
+        .get(sourceId, input.path),
+    }));
 
     // Fast path — same content. Still refresh the stored etag when the
     // caller supplied a different one: for stat-based etags (local connector,
@@ -216,6 +259,7 @@ export class IngestionPipeline {
           .run(nextEtag, existing.id);
         existing.etag = nextEtag;
       }
+      input.onUnchanged?.();
       return rowToDocument(existing);
     }
 
@@ -223,7 +267,26 @@ export class IngestionPipeline {
     // Pass the source-relative path so the dispatcher can route generic
     // `text/plain` to the code parser when the extension is recognized.
     const parser = getParserForMimeType(input.mimeType, input.path);
-    const parsed = await parser(input.buffer, input.path);
+    let parsed: ParsedDocument;
+    try {
+      parsed = await timePhase(this.onPhaseTiming, 'parse', () =>
+        this.parseDocument
+          ? this.parseDocument(input.mimeType, input.buffer, input.path)
+          : parser(input.buffer, input.path),
+      );
+    } catch (err: unknown) {
+      // A parser failure is a property of THIS file (corrupt DOCX, …): tag it
+      // so the sync worker isolates it instead of counting it towards the
+      // infrastructure circuit-breaker. Nothing has been written yet, so a
+      // previously indexed version of the document stays intact.
+      if (err instanceof DocumentRejectedError || err instanceof UnsupportedMimeTypeError) {
+        throw err;
+      }
+      const detail = err instanceof Error ? err.message : String(err);
+      throw new DocumentRejectedError('parse_failed', `The file could not be parsed: ${detail}`, {
+        cause: err,
+      });
+    }
     // Pick the chunker that matches the parser's declared format. Falls
     // back to the plain chunker when the parser omits a format hint.
     // For `code`, the chunker also needs the detected language and the
@@ -232,7 +295,9 @@ export class IngestionPipeline {
       language: parsed.language,
       filename: parsed.filename ?? deriveDocumentName(input.path),
     });
-    const chunks = chunker(parsed.text, this.chunkOptions);
+    const chunks = timePhaseSync(this.onPhaseTiming, 'chunk', () =>
+      chunker(parsed.text, this.chunkOptions),
+    );
 
     // Resolve the client for THIS source before the cap gate — the gate
     // itself is conditional on billability (below), and the client is also
@@ -278,7 +343,14 @@ export class IngestionPipeline {
     }
 
     const embeddings: number[][] =
-      chunks.length > 0 ? await client.embed(chunks.map((c) => c.text)) : [];
+      chunks.length > 0
+        ? await timePhase(this.onPhaseTiming, 'embed', () =>
+            client.embed(
+              chunks.map((c) => c.text),
+              input.onEmbedProgress ? { onProgress: input.onEmbedProgress } : undefined,
+            ),
+          )
+        : [];
 
     if (embeddings.length !== chunks.length) {
       throw new Error(
@@ -366,7 +438,7 @@ export class IngestionPipeline {
       }
     });
 
-    persist();
+    timePhaseSync(this.onPhaseTiming, 'write', persist);
 
     // Fire the tokens-embedded hook after persistence succeeds, so a thrown
     // transaction doesn't credit tokens we never actually used. Counts come

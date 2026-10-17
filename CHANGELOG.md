@@ -9,6 +9,18 @@ root `package.json` version flows to the Docker image and `create-calame`).
 
 ### Fixed
 
+- Knowledge base sync uses less of the machine: local ONNX embeddings run on
+  at most half the CPUs (1–4 threads, `CALAME_LOCAL_EMBEDDING_THREADS` to
+  override, `0` for the onnxruntime default) in batches of 4 that yield to
+  pending requests between batches. Progress also moves while one long
+  document is embedded (the per-document timeout now counts inactivity), an
+  unchanged file rejected as corrupt / too large / parser timeout is not
+  re-parsed on every sync, and a watcher event during an active sync triggers
+  one follow-up sync instead of being dropped.
+- DOCX files are read again: the `@xmldom/xmldom` override is pinned to
+  `^0.8.15` (the `>=0.8.15` range resolved to 0.9.x, which mammoth cannot
+  use). 0.8.15 is the patched 0.8.x release for the high advisory that motivated
+  the override, and `pnpm audit --prod --audit-level=high` stays clean.
 - Knowledge base source cards no longer show "undefined document · undefined
   folder": the source list API now returns each source's document and folder
   counts.

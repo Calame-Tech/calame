@@ -297,6 +297,28 @@ async function main() {
     logLevel: 'info',
   });
 
+  // 3a. Bundle the RAG parser worker (ee/rag-core/src/parsers/parse-worker.ts)
+  // as a sibling of server.mjs. The worker runs document parsers in their own
+  // thread so a hung or crashing parser can be terminated per file;
+  // rag-core's resolveParseWorkerUrl() looks for `parse-worker.mjs` next to
+  // the module that inlined it (server.mjs). Without this file the server
+  // falls back to in-process parsing (soft timeout only).
+  log('\nBundling the RAG parser worker with esbuild...');
+  await esbuild.build({
+    entryPoints: [path.join(RAG_CORE_DIR, 'src/parsers/parse-worker.ts')],
+    outfile: path.join(OUT_DIR, 'parse-worker.mjs'),
+    bundle: true,
+    platform: 'node',
+    format: 'esm',
+    target: 'node20',
+    sourcemap: false,
+    external: ESBUILD_EXTERNAL,
+    banner: {
+      js: "import { createRequire } from 'node:module';\nconst require = createRequire(import.meta.url);",
+    },
+    logLevel: 'info',
+  });
+
   // 3b. Bundle mcp-remote's CLI proxy entry (`mcp-remote/dist/proxy.js`) —
   // the process Claude Desktop actually launches to bridge its stdio MCP
   // transport to Calame's HTTP endpoint. Pure JS (express/open/undici/

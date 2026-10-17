@@ -10,6 +10,7 @@ import type { SyncQueue } from '../jobs/sync-queue.js';
 import type { PollScheduler } from '../jobs/poll-scheduler.js';
 import type { WatchManager } from '../jobs/watch-manager.js';
 import type { EmbeddingCapConfig } from '../jobs/embedding-cap.js';
+import type { PhaseTimingSink } from '../pipeline/phase-timings.js';
 
 /** Audit hook entry — matches the shape used by the host's audit log. */
 export interface RagAuditEntry {
@@ -172,4 +173,11 @@ export interface RagRouteDeps {
     info: (msg: string, meta?: Record<string, unknown>) => void;
     warn: (msg: string, meta?: Record<string, unknown>) => void;
   };
+  /**
+   * Optional per-phase timing hook for the sync worker's own phases (`walk`
+   * = connector listing, `read` = fetching one document's bytes). The
+   * pipeline's phases are reported by `IngestionPipelineDeps.onPhaseTiming`.
+   * Used by the sync benchmark (scripts/rag-sync-bench); absent in production.
+   */
+  onSyncPhaseTiming?: PhaseTimingSink;
 }

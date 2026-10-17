@@ -7,6 +7,8 @@ root `package.json` version flows to the Docker image and `create-calame`).
 
 ## [Unreleased]
 
+## [0.8.5] - 2026-10-17
+
 ### Fixed
 
 - Knowledge base sync uses less of the machine: local ONNX embeddings run on

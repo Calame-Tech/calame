@@ -34,6 +34,34 @@ export interface FolderNode {
   checkedDocIds: Set<string>;
   childFolderIds: string[];
   documents: RagDocument[];
+  /**
+   * Saved selection lying below this folder while its content is not loaded
+   * yet (children are fetched on expand). Kept so a save does not drop it and
+   * handed down to the children when they load; cleared by a folder click.
+   */
+  pending?: PendingSelection;
+}
+
+/** Saved scope entries (paths) below a folder whose content is not loaded. */
+export interface PendingSelection {
+  folders: string[];
+  documents: string[];
+}
+
+/** Entries of `selection` strictly below `folderPath`. */
+export function pendingSelectionUnder(
+  folderPath: string,
+  selection: { allowedFolders: readonly string[]; allowedDocuments: readonly string[] } | null,
+): PendingSelection {
+  const under = (entry: string) => entry.startsWith(folderPath + '/');
+  return {
+    folders: (selection?.allowedFolders ?? []).filter(under),
+    documents: (selection?.allowedDocuments ?? []).filter(under),
+  };
+}
+
+function hasPending(node: FolderNode): boolean {
+  return (node.pending?.folders.length ?? 0) + (node.pending?.documents.length ?? 0) > 0;
 }
 
 /** Flat map of all folder nodes, keyed by folder.id. */
@@ -96,6 +124,9 @@ export function deriveFolderCheckState(
   }
 
   // strict mode
+  // Content not loaded yet but part of it is selected: partial, never empty.
+  if (hasPending(node)) return 'partial';
+
   const docCount = node.documents.length;
   const checkedDocs = node.checkedDocIds.size;
 
@@ -156,7 +187,10 @@ export function buildDocumentScope(
       allowedFolders.push(node.folder.path);
       // Do not recurse — folder inclusion is recursive server-side
     } else {
-      // strict: collect individually checked docs
+      // strict: keep the saved selection of a not-yet-loaded content
+      allowedFolders.push(...(node.pending?.folders ?? []));
+      allowedDocuments.push(...(node.pending?.documents ?? []));
+      // collect individually checked docs
       for (const doc of node.documents) {
         if (node.checkedDocIds.has(doc.id)) {
           allowedDocuments.push(doc.path);
@@ -187,6 +221,85 @@ export function buildDocumentScope(
     ...(piiMaskingMode === 'off' ? { piiMaskingMode: 'off' } : {}),
     ...(directFetchDisabled === true ? { directFetchDisabled: true } : {}),
   };
+}
+
+/**
+ * Scope of an included source whose tree was never loaded in this session:
+ * the saved scope is kept as is (only the profile-wide flags follow the
+ * current toggles). Rebuilding it from the empty tree would turn an allowlist
+ * into `allowAll` and silently widen access.
+ */
+export function preserveUnloadedScope(
+  saved: Extract<ScopeSelection, { kind: 'document' }>,
+  piiMaskingMode?: 'inherit' | 'off',
+  directFetchDisabled?: boolean,
+): Extract<ScopeSelection, { kind: 'document' }> {
+  return {
+    kind: 'document',
+    mode: saved.mode,
+    allowedFolders: [...saved.allowedFolders],
+    allowedDocuments: [...saved.allowedDocuments],
+    ...(piiMaskingMode === 'off' ? { piiMaskingMode: 'off' } : {}),
+    ...(directFetchDisabled === true ? { directFetchDisabled: true } : {}),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Lazy loading
+// ---------------------------------------------------------------------------
+
+/** Fresh, not-yet-loaded node seeded from the selection saved below its parent. */
+export function makeUnloadedFolderNode(folder: RagFolder, saved: PendingSelection): FolderNode {
+  return {
+    folder,
+    loaded: false,
+    loading: false,
+    loadError: null,
+    expanded: false,
+    mode: saved.folders.includes(folder.path) ? 'auto-include' : 'strict',
+    checkedDocIds: new Set(),
+    childFolderIds: [],
+    documents: [],
+    pending: pendingSelectionUnder(folder.path, {
+      allowedFolders: saved.folders,
+      allowedDocuments: saved.documents,
+    }),
+  };
+}
+
+/**
+ * Compute the new `FolderMap` once the children of `folderId` are fetched.
+ * The selection still pending on the folder (saved scope, minus whatever the
+ * user cleared by clicking the folder meanwhile) is handed down to the new
+ * children and documents, so loading never re-checks something the user
+ * unchecked nor loses something still selected.
+ */
+export function applyLoadedChildren(
+  folderId: string,
+  childFolders: RagFolder[],
+  documents: RagDocument[],
+  folderMap: FolderMap,
+): FolderMap {
+  const node = folderMap[folderId];
+  if (!node) return folderMap;
+  const pending = node.pending ?? { folders: [], documents: [] };
+  const next: FolderMap = { ...folderMap };
+  for (const folder of childFolders) {
+    if (!next[folder.id]) next[folder.id] = makeUnloadedFolderNode(folder, pending);
+  }
+  next[folderId] = {
+    ...node,
+    loaded: true,
+    loading: false,
+    loadError: null,
+    childFolderIds: childFolders.map((f) => f.id),
+    documents,
+    checkedDocIds: new Set(
+      documents.filter((d) => pending.documents.includes(d.path)).map((d) => d.id),
+    ),
+    pending: undefined,
+  };
+  return next;
 }
 
 // ---------------------------------------------------------------------------
@@ -228,7 +341,12 @@ export function applyToggleFolder(
   // loaded descendant so no stale sub-selection survives (an unchecked parent
   // must not stay partially selected through a previously checked child).
   resetDescendants(folderId, next);
-  next[folderId] = { ...next[folderId]!, mode: nextMode, checkedDocIds: new Set() };
+  next[folderId] = {
+    ...next[folderId]!,
+    mode: nextMode,
+    checkedDocIds: new Set(),
+    pending: undefined,
+  };
   return next;
 }
 
@@ -237,7 +355,7 @@ function resetDescendants(folderId: string, map: FolderMap): void {
   for (const cid of map[folderId]?.childFolderIds ?? []) {
     const child = map[cid];
     if (!child) continue;
-    map[cid] = { ...child, mode: 'strict', checkedDocIds: new Set() };
+    map[cid] = { ...child, mode: 'strict', checkedDocIds: new Set(), pending: undefined };
     resetDescendants(cid, map);
   }
 }
@@ -370,7 +488,8 @@ export function countSelected(
     if (node.mode === 'auto-include') {
       folders += 1;
     } else {
-      documents += node.checkedDocIds.size;
+      folders += node.pending?.folders.length ?? 0;
+      documents += node.checkedDocIds.size + (node.pending?.documents.length ?? 0);
       for (const cid of node.childFolderIds) walkFolder(cid);
     }
   };

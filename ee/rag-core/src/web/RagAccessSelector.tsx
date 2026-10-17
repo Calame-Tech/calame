@@ -15,12 +15,15 @@ import {
   type RagSourcePublic,
 } from './api.js';
 import {
+  applyLoadedChildren,
   applyToggleDocument,
   applyToggleFolder,
   buildDocumentScope,
   countSelected,
   deriveFolderCheckState,
   isCoveredByAncestorAutoInclude,
+  makeUnloadedFolderNode,
+  preserveUnloadedScope,
   type CheckState,
   type FolderMap,
   type FolderMode,
@@ -918,26 +921,15 @@ export default function RagAccessSelector({
 
         const existingScope = initialScopes[sourceId];
         const docScope = existingScope?.kind === 'document' ? existingScope : null;
+        const saved = {
+          folders: [...(docScope?.allowedFolders ?? [])],
+          documents: [...(docScope?.allowedDocuments ?? [])],
+        };
 
         setFolderMap((prev) => {
           const next = { ...prev };
           for (const folder of rootFolders) {
-            if (!next[folder.id]) {
-              const mode: FolderMode = docScope?.allowedFolders.includes(folder.path)
-                ? 'auto-include'
-                : 'strict';
-              next[folder.id] = {
-                folder,
-                loaded: false,
-                loading: false,
-                loadError: null,
-                expanded: false,
-                mode,
-                checkedDocIds: new Set(),
-                childFolderIds: [],
-                documents: [],
-              };
-            }
+            if (!next[folder.id]) next[folder.id] = makeUnloadedFolderNode(folder, saved);
           }
           return next;
         });
@@ -970,88 +962,36 @@ export default function RagAccessSelector({
   // Lazy load folder children
   // ---------------------------------------------------------------------------
 
-  const loadFolderChildren = useCallback(
-    async (sourceId: string, folderId: string) => {
+  const loadFolderChildren = useCallback(async (sourceId: string, folderId: string) => {
+    setFolderMap((prev) => ({
+      ...prev,
+      [folderId]: { ...prev[folderId]!, loading: true, loadError: null },
+    }));
+
+    try {
+      const [foldersRes, documentsRes] = await Promise.all([
+        apiGet<RagFolderListResponse>(
+          `/api/rag/sources/${encodeURIComponent(sourceId)}/folders?folder=${encodeURIComponent(folderId)}`,
+        ),
+        apiGet<RagDocumentListResponse>(
+          `/api/rag/sources/${encodeURIComponent(sourceId)}/documents?folder=${encodeURIComponent(folderId)}`,
+        ),
+      ]);
+
+      // Seeded from the selection still pending on the folder (not from the
+      // saved scope) so clicks made before the load are not overridden.
+      setFolderMap((prev) =>
+        applyLoadedChildren(folderId, foldersRes.folders ?? [], documentsRes.documents ?? [], prev),
+      );
+    } catch (err) {
+      const msg =
+        err instanceof ApiError ? err.message : err instanceof Error ? err.message : T.genericError;
       setFolderMap((prev) => ({
         ...prev,
-        [folderId]: { ...prev[folderId]!, loading: true, loadError: null },
+        [folderId]: { ...prev[folderId]!, loading: false, loadError: msg },
       }));
-
-      try {
-        const [foldersRes, documentsRes] = await Promise.all([
-          apiGet<RagFolderListResponse>(
-            `/api/rag/sources/${encodeURIComponent(sourceId)}/folders?folder=${encodeURIComponent(folderId)}`,
-          ),
-          apiGet<RagDocumentListResponse>(
-            `/api/rag/sources/${encodeURIComponent(sourceId)}/documents?folder=${encodeURIComponent(folderId)}`,
-          ),
-        ]);
-
-        const childFolders = foldersRes.folders ?? [];
-        const documents = documentsRes.documents ?? [];
-        const childFolderIds = childFolders.map((f) => f.id);
-
-        const existingScope = initialScopes[sourceId];
-        const docScope = existingScope?.kind === 'document' ? existingScope : null;
-
-        setFolderMap((prev) => {
-          const next = { ...prev };
-
-          for (const folder of childFolders) {
-            if (!next[folder.id]) {
-              const mode: FolderMode = docScope?.allowedFolders.includes(folder.path)
-                ? 'auto-include'
-                : 'strict';
-              next[folder.id] = {
-                folder,
-                loaded: false,
-                loading: false,
-                loadError: null,
-                expanded: false,
-                mode,
-                checkedDocIds: new Set<string>(),
-                childFolderIds: [],
-                documents: [],
-              };
-            }
-          }
-
-          const checkedDocIds = new Set<string>();
-          if (docScope) {
-            for (const doc of documents) {
-              if (docScope.allowedDocuments.includes(doc.path)) {
-                checkedDocIds.add(doc.id);
-              }
-            }
-          }
-
-          next[folderId] = {
-            ...next[folderId]!,
-            loaded: true,
-            loading: false,
-            loadError: null,
-            childFolderIds,
-            documents,
-            checkedDocIds,
-          };
-
-          return next;
-        });
-      } catch (err) {
-        const msg =
-          err instanceof ApiError
-            ? err.message
-            : err instanceof Error
-              ? err.message
-              : T.genericError;
-        setFolderMap((prev) => ({
-          ...prev,
-          [folderId]: { ...prev[folderId]!, loading: false, loadError: msg },
-        }));
-      }
-    },
-    [initialScopes],
-  );
+    }
+  }, []);
 
   // ---------------------------------------------------------------------------
   // Event handlers
@@ -1150,6 +1090,17 @@ export default function RagAccessSelector({
 
       if (!updatedSources.includes(sid)) {
         updatedSources.push(sid);
+      }
+
+      // Tree never loaded: nothing was edited in it, keep its saved scope.
+      const saved = initialScopes[sid];
+      if (!sourceNode.loaded && saved?.kind === 'document') {
+        updatedScopes[sid] = preserveUnloadedScope(
+          saved,
+          piiMaskingDisabled ? 'off' : 'inherit',
+          directFetchDisabled,
+        );
+        continue;
       }
 
       updatedScopes[sid] = buildDocumentScope(

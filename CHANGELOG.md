@@ -7,6 +7,28 @@ root `package.json` version flows to the Docker image and `create-calame`).
 
 ## [Unreleased]
 
+## [0.8.4] - 2026-10-13
+
+### Security
+
+- Note writes (`rag_write_document`) on macOS and Linux go through a small
+  native helper that holds every folder open from the source root and creates,
+  replaces and cleans up files relative to those handles (`openat` with
+  `O_NOFOLLOW`, then a kernel create-only rename or atomic exchange:
+  `renameatx_np` on macOS, `renameat2` on Linux). A folder swapped for a
+  symbolic link while a write is in flight can no longer redirect it outside
+  the source. If the helper is missing on macOS or Linux, writes are refused
+  (`unsupported_platform`) rather than silently falling back.
+- Windows keeps the 0.8.3 path-based checks (no directory-handle API is
+  reachable from Node), now re-run right before publishing. See the honest
+  limits in `docs/rag-write-tool.md`.
+
+### Added
+
+- `published_unverified` error: the write was published but the folder was
+  modified concurrently and the result could not be verified. Nothing is rolled
+  back; re-read the file before retrying.
+
 ## [0.8.3] - 2026-10-09
 
 ### Added

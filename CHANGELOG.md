@@ -67,11 +67,34 @@ root `package.json` version flows to the Docker image and `create-calame`).
 
 ### Added
 
-- Getting-started checklist (connect a source → create the MCP → use it from a
-  client) on the dashboard and sources page. Its state comes from the server
-  (sources, saved profiles, audit log); the client step is only marked done
-  after a successful audited call. It can be hidden and disappears for good
-  once a client call succeeds.
+- "Getting started" guide in four steps, following the real model: connect
+  data → create a data profile that contains it → create an MCP server attached
+  to that profile → connect a client. Each step is derived from what the server
+  reports (sources, data profiles, saved MCP servers, audit log), so it shows
+  the same state after a reload and refreshes after each action. It stays
+  available on every page (a column beside the content, a block above it on
+  narrow windows) without covering page actions, and ends on a success screen
+  (4/4) that only closes when you close it.
+- "Test the MCP", without any AI provider: connects to the running server,
+  performs the MCP handshake and lists the discovered tools, or explains why it
+  failed (server stopped, unreachable, auth refused, timeout…) and what to do.
+  Available on the MCP list cards and on the MCP page; a successful test shows
+  as "Connection verified" in the guide, which still waits for a real client
+  call to complete step 4.
+- New sources start their first sync automatically, and the next step is
+  offered in place: from a freshly indexed source, create a data profile that
+  contains it; from a data profile, create or attach an MCP server (nothing is
+  attached without confirmation).
+- MCP "Connection" tab: the snippets use the server's real address, and an API
+  key can be created there and inserted into the snippet (shown once).
+- Unsaved work is kept when you move between pages: the new-MCP form and data
+  profile edits are restored as drafts ("Unsaved changes", with Save and
+  Discard), per account, and cleared on save, discard or sign-out.
+- Sync history lists every skipped or failed file with its reason, and a
+  summary of indexed / unchanged / skipped files; a sync that completed with
+  skipped files is told apart from a global failure (storage, embeddings).
+- Sync benchmark (`scripts/rag-sync-bench`) and before/after measurements in
+  `docs/benchmarks/rag-sync/`.
 - `GET /api/audit` accepts an optional `result=success|error` filter.
 - The onboarding wizard's first screen offers a knowledge base next to
   databases, and shows which getting-started step each screen belongs to.
@@ -87,6 +110,24 @@ root `package.json` version flows to the Docker image and `create-calame`).
   under "Advanced options".
 - The source form's secondary explanations are folded behind "?" help tips
   (keyboard accessible; clicking pins a tip open).
+- You stay signed in when the app restarts: sessions are stored server-side
+  (only a SHA-256 hash of the session id), renewed while in use within a 7-day
+  limit, and revoked on password change, account deactivation or deletion.
+- One file can no longer stop a whole sync: each file is parsed in an
+  interruptible worker with a size limit and a per-file timeout; unreadable,
+  corrupt or too-large files (e.g. a broken `.docx`) are skipped and reported,
+  Word lock files (`~$*.docx`) are ignored, and locked files are retried a
+  bounded number of times.
+- Ticking a folder (or a whole source) in a data profile selects everything
+  inside it, including folders loaded later; a partial selection shows as such.
+- Data profile page: a single save action.
+- Knowledge base lists keep showing the last known sources during a resync or
+  a network error ("Last known list shown") instead of emptying.
+- The dashboard shows the MCP server's real address instead of "port 0".
+- Wording and readability: plurals follow the count, technical messages
+  ("Failed to fetch", internal variable names, "skipped (etag)", "No profiles
+  found…") are replaced by translated explanations with an action, and small
+  secondary texts on the dark dashboard are larger and higher-contrast.
 
 ## [0.8.4] - 2026-10-13
 

@@ -51,6 +51,7 @@ import {
 } from '../session.js';
 import { createMcpChatTools, executeChatTurn, getDefaultSystemPrompt } from '../chat-engine.js';
 import { resolveAiSetting } from '../ai-resolver.js';
+import { getPackagedDataDir, getPackagedDataDirLabel } from '../config.js';
 
 export function registerAuthRoute(app: Express, state: AppState): void {
   /**
@@ -323,6 +324,25 @@ export function registerAuthRoute(app: Express, state: AppState): void {
         name: user.name,
         email: user.email,
       },
+    });
+  });
+
+  /**
+   * GET /api/auth/recovery-help — Read-only facts for the login page's
+   * "forgotten admin account" help. Never mutates anything: there is
+   * deliberately no HTTP route that resets the admin account or the data
+   * directory, authenticated or not (localhost is not proof of ownership).
+   * `dataDirLabel` is only given for the packaged desktop app using its
+   * default per-user folder, as an unexpanded placeholder (no OS username).
+   */
+  app.get('/api/auth/recovery-help', (_req, res) => {
+    const config = state.config;
+    const desktop = config?.packaged ?? false;
+    const usesDefaultDir = desktop && config?.dataDir === getPackagedDataDir();
+    res.json({
+      success: true,
+      desktop,
+      dataDirLabel: usesDefaultDir ? getPackagedDataDirLabel() : null,
     });
   });
 

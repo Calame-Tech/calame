@@ -1,4 +1,4 @@
-import { useState, lazy, Suspense } from 'react';
+import { useEffect, useState, lazy, Suspense } from 'react';
 import { useTranslations } from 'use-intl/react';
 import { apiFetch } from '../lib/api.js';
 import { useBranding, DEFAULT_LOGO_SRC } from '../lib/branding.js';
@@ -20,6 +20,89 @@ const SsoLoginButton = lazy(() =>
     })),
 );
 
+/** Read-only facts from GET /api/auth/recovery-help (null until loaded). */
+interface RecoveryHelp {
+  desktop: boolean;
+  dataDirLabel: string | null;
+}
+
+/**
+ * "Forgotten admin account" help. Purely informational: there is no reset
+ * action here (native or HTTP) — the data folder is only ever changed by hand,
+ * with Calame stopped. The folder path comes from the server, and is only
+ * shown for the packaged desktop app; any other deployment gets generic help.
+ */
+function RecoveryHelpPanel({ onClose }: { onClose: () => void }) {
+  const t = useTranslations('setupLogin.loginPage.recovery');
+  const [help, setHelp] = useState<RecoveryHelp | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch('/api/auth/recovery-help')
+      .then((res) => (res.ok ? res.json() : null))
+      .catch(() => null)
+      .then((data: (RecoveryHelp & { success?: boolean }) | null) => {
+        if (cancelled) return;
+        setHelp({
+          desktop: data?.desktop === true,
+          dataDirLabel: typeof data?.dataDirLabel === 'string' ? data.dataDirLabel : null,
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return (
+    <section
+      aria-labelledby="login-recovery-title"
+      className="mt-6 rounded-lg border border-gray-700 bg-gray-900/60 p-4 text-sm text-gray-300 space-y-3"
+    >
+      <h2 id="login-recovery-title" className="text-base font-medium text-gray-100">
+        {t('title')}
+      </h2>
+      <p>{t('intro')}</p>
+      {!help ? (
+        <p>{t('loading')}</p>
+      ) : help.desktop ? (
+        <>
+          {help.dataDirLabel ? (
+            <p>
+              {t('desktopFolder')}{' '}
+              <code className="break-all rounded bg-gray-800 px-1 py-0.5 text-gray-100">
+                {help.dataDirLabel}
+              </code>
+            </p>
+          ) : (
+            <p>{t('desktopFolderCustom')}</p>
+          )}
+          <p className="font-medium text-gray-200">{t('desktopStepsTitle')}</p>
+          <ol className="list-decimal space-y-1 pl-5">
+            <li>{t('desktopStep1')}</li>
+            <li>{t('desktopStep2')}</li>
+            <li>{t('desktopStep3')}</li>
+            <li>{t('desktopStep4')}</li>
+          </ol>
+        </>
+      ) : (
+        <>
+          <p>{t('serverText')}</p>
+          <p className="font-medium text-gray-200">{t('serverStepsTitle')}</p>
+          <ol className="list-decimal space-y-1 pl-5">
+            <li>{t('serverStep1')}</li>
+            <li>{t('serverStep2')}</li>
+            <li>{t('serverStep3')}</li>
+          </ol>
+        </>
+      )}
+      <p className="text-amber-300">{t('losses')}</p>
+      <button type="button" onClick={onClose} className="text-os-400 hover:text-os-300 underline">
+        {t('close')}
+      </button>
+    </section>
+  );
+}
+
 interface LoginPageProps {
   onAdminLogin: () => void;
   onUserLogin: () => void;
@@ -32,6 +115,7 @@ export default function LoginPage({ onAdminLogin, onUserLogin }: LoginPageProps)
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showRecovery, setShowRecovery] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -146,6 +230,20 @@ export default function LoginPage({ onAdminLogin, onUserLogin }: LoginPageProps)
             {loading ? t('form.submitLoading') : t('form.submitButton')}
           </button>
         </form>
+
+        {showRecovery ? (
+          <RecoveryHelpPanel onClose={() => setShowRecovery(false)} />
+        ) : (
+          <div className="mt-4 text-center">
+            <button
+              type="button"
+              onClick={() => setShowRecovery(true)}
+              className="text-sm text-os-400 hover:text-os-300 underline"
+            >
+              {t('recovery.toggle')}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

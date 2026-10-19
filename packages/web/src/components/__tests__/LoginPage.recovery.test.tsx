@@ -55,6 +55,8 @@ describe('LoginPage — forgotten admin account help', () => {
 
     expect(await screen.findByText('%APPDATA%\\Calame')).toBeInTheDocument();
     const help = screen.getByRole('region', { name: 'Compte administrateur oublié' });
+    expect(help).toHaveTextContent('« Réinitialiser le compte administrateur… »');
+    expect(help).toHaveTextContent('rien n’est effacé');
     expect(help).toHaveTextContent('Quittez complètement Calame');
     expect(help).toHaveTextContent('copiez le dossier entier');
     expect(help).toHaveTextContent('calame.db et .calame-secret ensemble');
@@ -72,6 +74,8 @@ describe('LoginPage — forgotten admin account help', () => {
       await screen.findByText(/in the folder set by the CALAME_DATA_DIR variable/),
     ).toBeInTheDocument();
     expect(screen.queryByText(/%APPDATA%/)).not.toBeInTheDocument();
+    // The tray reset never moves a custom folder, so it is not offered here.
+    expect(screen.queryByText(/Réinitialiser le compte administrateur/)).not.toBeInTheDocument();
   });
 
   it('browser / server: generic help with no local path and no reset action', async () => {
@@ -84,6 +88,7 @@ describe('LoginPage — forgotten admin account help', () => {
     await waitFor(() => expect(help).toHaveTextContent('Ask the person who administers it'));
     expect(help).not.toHaveTextContent('%APPDATA%');
     expect(help).not.toHaveTextContent('Application Support');
+    expect(help).not.toHaveTextContent('Réinitialiser le compte administrateur');
     // The only action in the help is closing it.
     expect(Array.from(help.querySelectorAll('button')).map((b) => b.textContent)).toEqual([
       'Close the help',

@@ -4,10 +4,12 @@
 //!   - the sidecar lifecycle in [`server`] (spawn on startup, poll for
 //!     health, navigate the splash window over once ready),
 //!   - the tray icon in [`tray`],
+//!   - the tray-only administrator account reset in [`recovery`],
 //!   - the silent startup update check in [`updater`],
 //!   - hide-instead-of-quit window behaviour, and
 //!   - killing the sidecar on every exit path.
 
+mod recovery;
 mod server;
 mod state;
 mod tray;

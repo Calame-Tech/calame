@@ -137,3 +137,46 @@ with an MSI built by CI.**
 | M13 | Major upgrade: install a newer `.msi` over this one | No page, no deletion, same account after upgrade | Windows required |
 | M14 | In-app update (updater runs the MSI in `/passive`) | No page, no deletion, same account after restart | Windows required |
 | M15 | Page layout at 100 % and 150 % scaling | Texts and checkbox fully visible, not overlapping | Windows required |
+
+## Native administrator reset (tray menu)
+
+Decision: a native reset can be offered safely, but only from the tray menu, not from the login
+page. The main window shows the Calame server at `http://127.0.0.1:<port>`, a remote origin for
+Tauri: the capability in `apps/desktop/src-tauri/capabilities/default.json` has no `remote` entry
+and the app registers no Tauri command (`invoke_handler`), so neither that page, a browser nor
+another local process can reach native code. The tray menu is only reachable by the person using
+the Windows session that runs Calame, i.e. the owner of `%APPDATA%\Calame`. The login page help
+only describes the tray item (and the manual steps); it triggers nothing.
+
+`apps/desktop/src-tauri/src/recovery.rs` (tray item **« Réinitialiser le compte administrateur… »**):
+
+- resolves the folder like `getPackagedDataDir()` from the process's own environment (inherited by
+  the Node sidecar); does nothing for a custom `CALAME_DATA_DIR` (help text only) or a missing folder;
+- asks for confirmation (buttons « Réinitialiser » / « Annuler ») listing what disappears from
+  Calame, that nothing is erased, where the backup goes and how to undo;
+- stops the Node sidecar, then renames the whole folder to a sibling
+  `Calame-sauvegarde-<AAAAMMJJ-HHMMSS>` (UTC) in a single `rename`, retried for ~5 s while Windows
+  releases the database handles: `calame.db`, `-wal`/`-shm` and `.calame-secret` move together or
+  not at all; a symlink/junction is refused;
+- restarts the sidecar in every case: on an empty folder (first-run administrator creation, new
+  `.calame-secret`, all sessions gone with the old `auth_sessions` table and the old process) or,
+  if the rename failed, on the untouched data with an error dialog saying nothing changed.
+
+The backup folder is not removed by the uninstallers' data option (which only deletes
+`%APPDATA%\Calame`); it is deleted by hand once no longer needed.
+
+Executed on macOS (no Rust toolchain on this machine, no Windows): the static tests in
+`packages/cli/src/__tests__/desktop-native-recovery.test.ts` and the login help tests. The Rust
+unit tests in `recovery.rs` (folder resolution, timestamp, move, failed move) need `cargo test` in
+`apps/desktop/src-tauri`. **None of the rows below has been run yet.**
+
+| # | Scenario | Expected | Status |
+| --- | --- | --- | --- |
+| R1 | `cargo test` and `tauri build` with `recovery.rs` | Compiles; unit tests pass | Rust toolchain required |
+| R2 | Tray item, « Annuler » (or closing the dialog) | Nothing changes; server keeps running; same session | Windows required |
+| R3 | Tray item, « Réinitialiser », with a session open | Server restarts; first-run admin creation; old session rejected; `%APPDATA%\Calame-sauvegarde-*` contains `calame.db` and `.calame-secret` | Windows required |
+| R4 | After R3: quit, put the backup back as `%APPDATA%\Calame`, relaunch | Old administrator can sign in again | Windows required |
+| R5 | R3 while another process keeps `calame.db` open | Error dialog "aucune donnée n'a été modifiée"; server back up on the old data | Windows required |
+| R6 | `CALAME_DATA_DIR` set for the user | Info dialog only; folder untouched | Windows required |
+| R7 | Second Windows user with their own Calame data; first user resets | Second user's `%APPDATA%\Calame` untouched | Windows required |
+| R8 | Wrong password several times on the login page | No data change (no reset is ever triggered by a failed sign-in) | Windows required |

@@ -28,9 +28,10 @@ interface RecoveryHelp {
 
 /**
  * "Forgotten admin account" help. Purely informational: there is no reset
- * action here (native or HTTP) — the data folder is only ever changed by hand,
- * with Calame stopped. The folder path comes from the server, and is only
- * shown for the packaged desktop app; any other deployment gets generic help.
+ * action here (native or HTTP). The folder path comes from the server, and is
+ * only shown for the packaged desktop app, along with its tray-only native
+ * reset (apps/desktop/src-tauri/src/recovery.rs, which leaves a custom
+ * CALAME_DATA_DIR alone); any other deployment gets generic help.
  */
 function RecoveryHelpPanel({ onClose }: { onClose: () => void }) {
   const t = useTranslations('setupLogin.loginPage.recovery');
@@ -76,6 +77,7 @@ function RecoveryHelpPanel({ onClose }: { onClose: () => void }) {
           ) : (
             <p>{t('desktopFolderCustom')}</p>
           )}
+          {help.dataDirLabel && <p>{t('desktopTray')}</p>}
           <p className="font-medium text-gray-200">{t('desktopStepsTitle')}</p>
           <ol className="list-decimal space-y-1 pl-5">
             <li>{t('desktopStep1')}</li>

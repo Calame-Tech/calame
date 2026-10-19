@@ -69,4 +69,71 @@ they need a Windows 10/11 machine with an installer built by CI.**
 | N12 | Silent uninstall `uninstall.exe /S` | Data kept | Windows required |
 | N13 | Page layout at 100 % and 150 % scaling, French and English Windows | Page text and checkbox fully visible, not overlapping | Windows required |
 
-The MSI uninstaller is a separate WiX package and is not covered by these hooks.
+The MSI uninstaller is a separate WiX package and is not covered by these hooks:
+see the next section.
+
+## MSI (`*.msi`, per-machine install)
+
+Tauri's default WiX template is kept; `apps/desktop/src-tauri/windows/wix/calame-uninstall-data.wxs`
+(wired through `bundle.windows.wix.fragmentPaths` and `componentRefs` in
+`tauri.conf.json`) installs `calame-uninstall-data.ps1` next to the app and:
+
+- adds a **« Vos données Calame »** page to the full-UI removal path: run the
+  `.msi` again (or `msiexec /i <fichier>.msi`), choose **Remove**, then this page
+  shows the folder and Windows account concerned
+  (`[AppDataFolder]Calame`, `[LogonUser]`), says that data is kept by default
+  and that reinstalling brings back the same administrator account, and offers
+  the unchecked box **« Supprimer aussi mes données Calame (compte et
+  contenus) »** with the list of what is lost; the box is disabled when that
+  account has no `%APPDATA%\Calame`;
+- has no page, so always keeps the data, when the uninstall runs without full
+  UI: **« Désinstaller » in Windows Settings / Programs and Features** (basic UI,
+  where Windows Installer shows no custom dialog), `/passive`, `/quiet`, the
+  in-app updater and the old product removed by a major upgrade;
+- resolves the folder in the UI, which runs as the user who launched the
+  uninstall, not as the account typing UAC credentials;
+- deletes through a deferred custom action that impersonates that same user,
+  conditioned on `REMOVE~="ALL" AND NOT UPGRADINGPRODUCTCODE`, the ticked box
+  and the folder fixed by the page, scheduled before `RemoveFiles`
+  (`Return="ignore"`: a failure never blocks the uninstall and keeps the data);
+- in the script, checks that the folder is the running account's own
+  `%APPDATA%\Calame` (otherwise exits), refuses a junction, stops only that
+  account's `calame-desktop.exe` / `node.exe` started from the install dir,
+  renames the folder then deletes it (if the rename fails, `calame.db` and
+  `.calame-secret` are both kept), then removes the account's
+  `tech.calame.desktop` folders in `%APPDATA%` and `%LOCALAPPDATA%`.
+
+Known limits: the page text is French only (the rest of the MSI UI is the
+template's English); the option exists only in MSIs built from this version on
+(an uninstall uses the installed product's own MSI); a group policy forcing the
+PowerShell execution policy can prevent the script from running, which keeps
+the data; the deletion runs before the files are removed, so if the uninstall
+then fails and rolls back, the app stays installed with its data deleted (a new
+administrator bootstrap, never a half-deleted state).
+
+## MSI verification matrix
+
+Executed on macOS (no Windows machine, no WiX): the static tests in
+`packages/cli/src/__tests__/desktop-msi-uninstall.test.ts` (wiring, dataDir
+name, unchecked default, upgrade/removal guards, impersonation, owner check,
+rename-then-delete, texts) and an XML well-formedness check of the fragment.
+**None of the rows below has been run yet; they need a Windows 10/11 machine
+with an MSI built by CI.**
+
+| # | Scenario | Expected | Status |
+| --- | --- | --- | --- |
+| M1 | `tauri build` on Windows with the fragment | candle/light succeed (no unresolved reference, ICE errors) and the MSI contains `calame-uninstall-data.ps1` | Windows required |
+| M2 | Uninstall from Windows Settings (« Désinstaller ») | No Calame page; `%APPDATA%\Calame` (db + secret) and `tech.calame.desktop` folders kept | Windows required |
+| M3 | Reinstall after M2 | Login page; the existing admin can sign in | Windows required |
+| M4 | Run the `.msi` again, Remove, box left unchecked | Page shown with the right path and account; everything kept | Windows required |
+| M5 | Same, box ticked, app open with a session | App and `node.exe` stopped; `%APPDATA%\Calame` and both `tech.calame.desktop` folders gone; product removed | Windows required |
+| M6 | Reinstall after M5 | First-run admin creation (new bootstrap), new `.calame-secret` | Windows required |
+| M7 | M5 while another process keeps `calame.db` open | Uninstall completes; `calame.db` and `.calame-secret` both still present (MSI log: script exit code 5) | Windows required |
+| M8 | Box ticked, then Back, untick, Next, Remove | Everything kept | Windows required |
+| M9 | Account without `%APPDATA%\Calame` reaches the page | Box disabled, « rien ne sera supprimé » shown, nothing deleted | Windows required |
+| M10 | Standard user launches the `.msi`, Remove, box ticked, UAC credentials of an admin account | Only the standard user's folders deleted; admin's profile untouched | Windows required |
+| M11 | Second Windows user with their own Calame data; first user removes with deletion | Second user's `%APPDATA%\Calame` untouched | Windows required |
+| M12 | `msiexec /x <code> /qn CALAME_DELETE_DATA=1 CALAME_DATA_DIR=<other user's folder>` from an elevated prompt | Script exits (code 3), nothing deleted | Windows required |
+| M13 | Major upgrade: install a newer `.msi` over this one | No page, no deletion, same account after upgrade | Windows required |
+| M14 | In-app update (updater runs the MSI in `/passive`) | No page, no deletion, same account after restart | Windows required |
+| M15 | Page layout at 100 % and 150 % scaling | Texts and checkbox fully visible, not overlapping | Windows required |

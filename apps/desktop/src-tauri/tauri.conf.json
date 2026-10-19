@@ -48,6 +48,10 @@
           "French": "windows/nsis/French.nsh",
           "English": "windows/nsis/English.nsh"
         }
+      },
+      "wix": {
+        "fragmentPaths": ["windows/wix/calame-uninstall-data.wxs"],
+        "componentRefs": ["CalameUninstallDataScript"]
       }
     }
   },

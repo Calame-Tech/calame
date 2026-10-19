@@ -180,3 +180,33 @@ unit tests in `recovery.rs` (folder resolution, timestamp, move, failed move) ne
 | R6 | `CALAME_DATA_DIR` set for the user | Info dialog only; folder untouched | Windows required |
 | R7 | Second Windows user with their own Calame data; first user resets | Second user's `%APPDATA%\Calame` untouched | Windows required |
 | R8 | Wrong password several times on the login page | No data change (no reset is ever triggered by a failed sign-in) | Windows required |
+
+## Final verification summary (2026-10-19)
+
+Executed on macOS (Darwin, Node, no Windows, no Rust toolchain, no `makensis`, no WiX):
+
+| Check | Result |
+| --- | --- |
+| `pnpm format:check` | Passed |
+| `pnpm lint` | Passed (0 errors; 4 existing warnings in files this change does not touch) |
+| `pnpm typecheck` | Passed |
+| `pnpm build` | Passed (TypeScript packages and web UI; not the Tauri app) |
+| `pnpm test:coverage` | Passed: 3089 tests, 19 skipped. A first run had one failure in `routes/__tests__/profiles.test.ts`, unrelated to this change and passing on rerun (flaky) |
+| CALAME-7 tests: `desktop-nsis-uninstall`, `desktop-msi-uninstall`, `desktop-native-recovery`, `auth-recovery-help` (help endpoint, no HTTP reset route even from localhost, failed sign-in changes nothing), `LoginPage.recovery` (help reachable without sign-in, no action button in the browser) | 40 passed |
+| `xmllint --noout windows/wix/calame-uninstall-data.wxs` | Well-formed |
+
+**Not executed, Windows or Rust toolchain required:** every row of the NSIS (N1–N13), MSI
+(M1–M15) and native reset (R1–R8) matrices above, including the `tauri build` of both installers
+and `cargo test`. None of the Windows installers has been validated by this change; it must be
+done on a Windows 10/11 machine with the CI-built `*-setup.exe` and `*.msi` before release.
+
+Cross-reference by scenario:
+
+| Scenario | NSIS | MSI | Native reset |
+| --- | --- | --- | --- |
+| Data kept by default, same admin after reinstall | N2, N3, N4, N12 | M2, M3, M4, M8 | R2 |
+| Voluntary deletion, new admin bootstrap after reinstall | N5, N6 | M5, M6 | R3, R4 |
+| Database in use: `calame.db` and `.calame-secret` kept together | N7 | M7 | R5 |
+| Only the owner's profile: other users and elevation account untouched | N8, N9 | M10, M11, M12 | R6, R7 |
+| Upgrade / update never deletes | N10, N11, N11b, N11c | M13, M14 | — |
+| Failed sign-in changes nothing | — | — | R8 |

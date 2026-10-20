@@ -59,7 +59,7 @@ Same target: http://localhost:4567.
 |---|---|---|
 | `CALAME_PORT` | `4567` | Port to bind |
 | `CALAME_BIND_ADDRESS` | `127.0.0.1` (Compose) | Host address used by Docker Compose port publishing |
-| `CALAME_DATA_DIR` | `/data` (Docker) / cwd (dev) | Where SQLite state + secret live |
+| `CALAME_DATA_DIR` | `/data` (Docker) / cwd (dev) / per-user folder (desktop, see [§3](#lost-the-administrator-account)) | Where SQLite state (`calame.db`) + secret (`.calame-secret`) live |
 | `CALAME_LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` |
 | `CALAME_LOG_FORMAT` | `text` | `text` / `json` |
 | `CALAME_CORS_ORIGINS` | `*` | Comma-separated origins for the API |
@@ -95,7 +95,51 @@ On first launch you land on the **Setup** page:
 
 The admin can manage everything: connections, profiles, users, tokens, audit, settings.
 
-> Lost the password? Stop the server, delete the `users` table inside `calame.db` (or remove the entire DB file in `CALAME_DATA_DIR` to reset everything), restart.
+### Lost the administrator account?
+
+The login page has a **« Compte administrateur oublié ? »** link that opens a help panel
+without signing in. It never changes anything, a failed sign-in never changes data, and the
+HTTP API has no reset route (not even from `localhost`).
+
+Starting from scratch means a new administrator bootstrap and loses the administrator account,
+users, connections, profiles, MCP tokens, settings and audit log (your source databases and
+documents are not affected). `calame.db` (with its `-wal`/`-shm` files) and `.calame-secret` (the
+key that encrypts stored credentials) always go together: one without the other is unusable.
+
+**Server (Docker / Node.js):**
+1. Stop Calame.
+2. Back up the whole data directory (`CALAME_DATA_DIR`, `/data` with Docker).
+3. Move `calame.db`, `calame.db-wal`, `calame.db-shm` and `.calame-secret` out of it, then restart:
+   the Setup page comes back. To undo, stop Calame and put the files back.
+
+**Desktop app (Windows, macOS, Linux):** the data lives in a per-user folder, `%APPDATA%\Calame`
+on Windows (`~/Library/Application Support/Calame` on macOS, `$XDG_DATA_HOME/calame` or
+`~/.local/share/calame` on Linux), unless `CALAME_DATA_DIR` is set. The login help shows the folder
+actually used. The folders named after the Tauri identifier (`tech.calame.desktop`) only hold the
+window cache, not the account.
+
+- **Tray menu → « Réinitialiser le compte administrateur… »**: after a confirmation listing what
+  is lost, Calame stops its server, moves the whole folder aside to `Calame-sauvegarde-<date>`
+  next to it (nothing is erased; `calame.db` and `.calame-secret` move together or not at all)
+  and restarts empty for a new administrator; existing sessions stop working. If the move fails,
+  nothing changes. To undo, quit Calame and rename the backup back to `Calame`. Nothing happens
+  with a custom `CALAME_DATA_DIR`. Only the person using the desktop session can reach this menu.
+- **By hand:** quit Calame (tray → « Quitter »), copy the folder elsewhere, rename or move it,
+  relaunch.
+
+**Uninstalling on Windows keeps the data by default**, so reinstalling brings back the same
+administrator account. Both uninstallers offer an unchecked box **« Supprimer aussi mes données
+Calame (compte et contenus) »** that deletes only the current Windows user's `%APPDATA%\Calame`
+(and its `tech.calame.desktop` cache folders), after stopping the app, and never during an update:
+
+- `*-setup.exe` (NSIS): on the uninstall confirm page, then a second confirmation;
+- `*.msi`: only when removing by running the `.msi` again and choosing **Remove** (the
+  « Désinstaller » button in Windows Settings shows no custom page and keeps the data); if
+  the deletion cannot be done (for example a file still open), the uninstall stops with an
+  error and both `calame.db` and `.calame-secret` are kept.
+
+Details, limits and the Windows verification matrix:
+[windows-uninstall-data-validation.md](windows-uninstall-data-validation.md).
 
 ---
 
@@ -284,7 +328,7 @@ Try `docker compose build --no-cache` to invalidate cached layers. If it persist
 
 ### "I broke something, how do I reset?"
 ```bash
-docker compose down -v   # removes the volume too — full reset
+docker compose down -v   # removes the volume too — full reset (admin account, calame.db and .calame-secret included)
 docker compose up        # fresh state
 ```
 

@@ -2371,6 +2371,27 @@
       "errors": {
         "invalidCredentials": "E-mail ou mot de passe invalide.",
         "connectionError": "Erreur de connexion. Veuillez réessayer."
+      },
+      "recovery": {
+        "toggle": "Compte administrateur oublié ?",
+        "title": "Compte administrateur oublié",
+        "intro": "Calame ne peut pas réinitialiser le compte administrateur depuis cette page, et une connexion ratée ne modifie jamais vos données. Le compte est enregistré avec le reste de vos données : réinstaller Calame sans supprimer ces données ramène donc le même compte.",
+        "loading": "Chargement de l’aide…",
+        "desktopFolder": "Sur cet ordinateur, les données de Calame sont dans le dossier :",
+        "desktopFolderCustom": "Sur cet ordinateur, les données de Calame sont dans le dossier défini par la variable CALAME_DATA_DIR.",
+        "desktopTray": "Le plus simple : clic droit sur l’icône Calame près de l’horloge, puis « Réinitialiser le compte administrateur… ». Après votre confirmation, Calame met tout le dossier de côté dans un dossier de sauvegarde voisin (rien n’est effacé) et redémarre vide pour créer un nouveau compte administrateur.",
+        "desktopStepsTitle": "Ou bien, à la main :",
+        "desktopStep1": "Quittez complètement Calame : clic droit sur l’icône Calame près de l’horloge, puis « Quitter ».",
+        "desktopStep2": "Sauvegardez : copiez le dossier entier ailleurs (par exemple dans vos Documents).",
+        "desktopStep3": "Renommez ou déplacez le dossier. Gardez toujours calame.db et .calame-secret ensemble : l’un sans l’autre est inutilisable.",
+        "desktopStep4": "Relancez Calame : il vous proposera de créer un nouveau compte administrateur.",
+        "serverText": "Ce Calame est géré par un serveur. Adressez-vous à la personne qui l’administre : les données sont sur le serveur, dans le dossier défini par CALAME_DATA_DIR (/data avec Docker).",
+        "serverStepsTitle": "Pour l’administrateur du serveur, repartir de zéro :",
+        "serverStep1": "Arrêtez Calame.",
+        "serverStep2": "Sauvegardez le dossier de données entier.",
+        "serverStep3": "Sortez ensemble calame.db et .calame-secret du dossier, puis redémarrez Calame pour créer un nouveau compte administrateur.",
+        "losses": "Repartir de zéro fait perdre le compte administrateur, les utilisateurs, les connexions, les profils, les jetons MCP, les réglages et le journal d’audit. Vos bases de données et documents d’origine ne sont pas touchés. Pour tout retrouver, quittez Calame et remettez le dossier sauvegardé à sa place.",
+        "close": "Fermer l’aide"
       }
     },
     "notificationsBell": {

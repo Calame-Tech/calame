@@ -2371,6 +2371,27 @@
       "errors": {
         "invalidCredentials": "Invalid email or password.",
         "connectionError": "Connection error. Please try again."
+      },
+      "recovery": {
+        "toggle": "Forgot the administrator account?",
+        "title": "Administrator account forgotten",
+        "intro": "Calame cannot reset the administrator account from this page, and a failed sign-in never changes your data. The account is stored with the rest of your data, so reinstalling Calame without deleting this data brings the same account back.",
+        "loading": "Loading the help…",
+        "desktopFolder": "On this computer, Calame's data is in the folder:",
+        "desktopFolderCustom": "On this computer, Calame's data is in the folder set by the CALAME_DATA_DIR variable.",
+        "desktopTray": "The simplest way: right-click the Calame icon near the clock, then « Réinitialiser le compte administrateur… ». Once you confirm, Calame moves the whole folder aside into a backup folder next to it (nothing is erased) and restarts empty so you can create a new administrator account.",
+        "desktopStepsTitle": "Or, by hand:",
+        "desktopStep1": "Quit Calame completely: right-click the Calame icon near the clock, then \"Quitter\".",
+        "desktopStep2": "Back up: copy the whole folder somewhere else (for example to your Documents).",
+        "desktopStep3": "Rename or move the folder. Always keep calame.db and .calame-secret together: one without the other cannot be used.",
+        "desktopStep4": "Start Calame again: it will ask you to create a new administrator account.",
+        "serverText": "This Calame is run by a server. Ask the person who administers it: the data lives on the server, in the folder set by CALAME_DATA_DIR (/data with Docker).",
+        "serverStepsTitle": "For the server administrator, to start again from scratch:",
+        "serverStep1": "Stop Calame.",
+        "serverStep2": "Back up the whole data folder.",
+        "serverStep3": "Move calame.db and .calame-secret together out of the folder, then restart Calame to create a new administrator account.",
+        "losses": "Starting from scratch loses the administrator account, users, connections, profiles, MCP tokens, settings and audit log. Your original databases and documents are not affected. To get everything back, quit Calame and put the backed-up folder back in place.",
+        "close": "Close the help"
       }
     },
     "notificationsBell": {

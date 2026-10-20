@@ -41,7 +41,17 @@
     "createUpdaterArtifacts": true,
     "windows": {
       "nsis": {
-        "installMode": "currentUser"
+        "installMode": "currentUser",
+        "installerHooks": "windows/installer-hooks.nsh",
+        "languages": ["French", "English"],
+        "customLanguageFiles": {
+          "French": "windows/nsis/French.nsh",
+          "English": "windows/nsis/English.nsh"
+        }
+      },
+      "wix": {
+        "fragmentPaths": ["windows/wix/calame-uninstall-data.wxs"],
+        "componentRefs": ["CalameUninstallDataScript"]
       }
     }
   },

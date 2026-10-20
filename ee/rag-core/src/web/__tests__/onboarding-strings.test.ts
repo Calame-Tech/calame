@@ -62,6 +62,25 @@ describe('rag-core strings', () => {
     expect(translateJobError('connector exploded')).toBe('connector exploded');
   });
 
+  it('does not show the raw English parser error for an unsupported file (fr)', () => {
+    localStorage.setItem('calame-locale', 'fr');
+    const message = translateJobError(
+      '1 doc(s) skipped so far; last: Caddyfile: No RAG parser is registered for MIME type "application/octet-stream".',
+    );
+    expect(message).toBe(
+      '1 fichier ignoré (illisible, corrompu, trop gros ou verrouillé) ; dernier : Caddyfile : format non pris en charge (application/octet-stream)',
+    );
+    expect(message).not.toMatch(/No RAG parser/);
+    localStorage.setItem('calame-locale', 'en');
+    expect(
+      translateJobError(
+        '2 doc(s) skipped; last: a\\b.bin: No RAG parser is registered for MIME type "application/x-foo".',
+      ),
+    ).toBe(
+      '2 files skipped (unreadable, corrupt, too large or locked); last: a\\b.bin: unsupported format (application/x-foo)',
+    );
+  });
+
   it('agrees job-error counts with their number instead of printing "(s)"', () => {
     localStorage.setItem('calame-locale', 'fr');
     expect(translateJobError('1 doc(s) skipped — unsupported format. Convert …')).toMatch(

@@ -194,6 +194,19 @@ export function getPackagedDataDir(): string {
   return path.join(os.homedir(), '.local', 'share', 'calame');
 }
 
+/**
+ * Display form of {@link getPackagedDataDir}, with the per-user part kept as the platform
+ * placeholder (`%APPDATA%`, `~`) rather than expanded. Shown on the unauthenticated login
+ * help, so it must not leak the OS account name of the machine.
+ */
+export function getPackagedDataDirLabel(): string {
+  const platform = process.platform;
+  if (platform === 'win32') return '%APPDATA%\\Calame';
+  if (platform === 'darwin') return '~/Library/Application Support/Calame';
+  if (process.env.XDG_DATA_HOME) return '$XDG_DATA_HOME/calame';
+  return '~/.local/share/calame';
+}
+
 export function loadConfig(overrides?: Partial<AppConfig>): AppConfig {
   const packaged = isPackagedMode();
   const defaultDataDir = packaged ? getPackagedDataDir() : process.cwd();

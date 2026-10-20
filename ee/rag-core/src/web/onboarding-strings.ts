@@ -119,6 +119,7 @@ const FR = {
     `${count} document${frPlural(count)} ignoré${frPlural(count)} — plus gros que la taille maximale de la source. Augmentez la limite ou découpez le fichier.`,
   jobSkipped: (count: string, last: string) =>
     `${count} fichier${frPlural(count)} ignoré${frPlural(count)} (illisible, corrompu, trop gros ou verrouillé) ; dernier : ${last}`,
+  unsupportedFile: (file: string, mime: string) => `${file} : format non pris en charge (${mime})`,
   connectorValidationFailed: (detail: string) =>
     `La vérification de la source a échoué : ${detail}`,
   localRootMissing: (root: string) =>
@@ -268,6 +269,7 @@ const EN: typeof FR = {
     `${count} document${enPlural(count)} skipped — larger than the source's max file size. Raise the limit or split the file.`,
   jobSkipped: (count: string, last: string) =>
     `${count} file${enPlural(count)} skipped (unreadable, corrupt, too large or locked); last: ${last}`,
+  unsupportedFile: (file: string, mime: string) => `${file}: unsupported format (${mime})`,
   connectorValidationFailed: (detail: string) => `Source check failed: ${detail}`,
   localRootMissing: (root: string) =>
     `Folder "${root}" was not found. Check the path (drive letter, network share) and that the ` +
@@ -365,6 +367,11 @@ export function translateJobError(error: string): string {
   const tooLarge = /^(\d+) doc\(s\) skipped — larger than the source's max file size\./.exec(error);
   if (tooLarge) return RAG_STRINGS.jobTooLarge(tooLarge[1]);
   const skipped = /^(\d+) doc\(s\) skipped(?: so far)?; last: ([\s\S]*)$/.exec(error);
-  if (skipped) return RAG_STRINGS.jobSkipped(skipped[1], skipped[2]);
+  if (skipped) return RAG_STRINGS.jobSkipped(skipped[1], translateJobError(skipped[2]));
+  // Per-file UnsupportedMimeTypeError (rag-core/src/parsers/index.ts), prefixed with the file.
+  const unsupportedFile = /^([\s\S]+): No RAG parser is registered for MIME type "([^"]*)"\.$/.exec(
+    error,
+  );
+  if (unsupportedFile) return RAG_STRINGS.unsupportedFile(unsupportedFile[1], unsupportedFile[2]);
   return error;
 }

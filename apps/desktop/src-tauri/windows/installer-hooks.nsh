@@ -11,6 +11,7 @@
 ;   - run in place by a setup.exe (reinstall/upgrade page, `_?=$INSTDIR`, so $EXEDIR is
 ;     the install dir instead of the %TEMP% copy of a normal uninstall): nothing is
 ;     deleted either, although the template shows the box there without /UPDATE;
+;   - a junction, symbolic link or other reparse point is never followed nor deleted;
 ;   - the user confirms a second time, after reading what is lost (default answer: No);
 ;   - only the profile of the Windows account that installed Calame (per-user HKCU
 ;     uninstall key present) is targeted, never an elevation account's profile;
@@ -25,6 +26,7 @@
 
 !define CALAME_DATA_DIRNAME "Calame"
 !define CALAME_SIDECAR_EXE "node.exe"
+!define CALAME_FILE_ATTRIBUTE_REPARSE_POINT 0x400
 
 Var CalameDataTrash
 
@@ -76,18 +78,35 @@ Var CalameDataTrash
   ${AndIf} $EXEDIR != $INSTDIR
     SetShellVarContext current
     ${If} ${FileExists} "$APPDATA\${CALAME_DATA_DIRNAME}\*.*"
-      System::Call 'kernel32::GetTickCount() i .r1'
-      StrCpy $CalameDataTrash "$APPDATA\${CALAME_DATA_DIRNAME}.uninstall-$1"
-      ; Renaming fails while any file inside is still open: the data is then left
-      ; untouched instead of half-deleted (e.g. the secret gone but not the database).
-      ClearErrors
-      Rename "$APPDATA\${CALAME_DATA_DIRNAME}" "$CalameDataTrash"
-      ${If} ${Errors}
-        MessageBox MB_OK|MB_ICONEXCLAMATION "$(calameDeleteDataLocked)" /SD IDOK
+      ; A junction, symbolic link or any other reparse point leads somewhere else: it is
+      ; left intact, like calame-uninstall-data.ps1 does (exit 4). Unreadable attributes
+      ; (-1) have the bit set too, so they are treated the same way.
+      StrCpy $CalameDataTrash "$APPDATA\${CALAME_DATA_DIRNAME}"
+      System::Call 'kernel32::GetFileAttributes(t "$CalameDataTrash") i .r2'
+      IntOp $2 $2 & ${CALAME_FILE_ATTRIBUTE_REPARSE_POINT}
+      ${If} $2 <> 0
+        MessageBox MB_OK|MB_ICONEXCLAMATION "$(calameDeleteDataReparsePoint)" /SD IDOK
       ${Else}
-        RMDir /r "$CalameDataTrash"
-        ${If} ${FileExists} "$CalameDataTrash\*.*"
-          MessageBox MB_OK|MB_ICONINFORMATION "$(calameDeleteDataLeftover)" /SD IDOK
+        System::Call 'kernel32::GetTickCount() i .r1'
+        StrCpy $CalameDataTrash "$APPDATA\${CALAME_DATA_DIRNAME}.uninstall-$1"
+        ; Renaming fails while any file inside is still open: the data is then left
+        ; untouched instead of half-deleted (e.g. the secret gone but not the database).
+        ClearErrors
+        Rename "$APPDATA\${CALAME_DATA_DIRNAME}" "$CalameDataTrash"
+        ${If} ${Errors}
+          MessageBox MB_OK|MB_ICONEXCLAMATION "$(calameDeleteDataLocked)" /SD IDOK
+        ${Else}
+          ; Checked again on the renamed folder, right before the recursive delete.
+          System::Call 'kernel32::GetFileAttributes(t "$CalameDataTrash") i .r2'
+          IntOp $2 $2 & ${CALAME_FILE_ATTRIBUTE_REPARSE_POINT}
+          ${If} $2 <> 0
+            MessageBox MB_OK|MB_ICONEXCLAMATION "$(calameDeleteDataReparsePoint)" /SD IDOK
+          ${Else}
+            RMDir /r "$CalameDataTrash"
+            ${If} ${FileExists} "$CalameDataTrash\*.*"
+              MessageBox MB_OK|MB_ICONINFORMATION "$(calameDeleteDataLeftover)" /SD IDOK
+            ${EndIf}
+          ${EndIf}
         ${EndIf}
       ${EndIf}
     ${EndIf}

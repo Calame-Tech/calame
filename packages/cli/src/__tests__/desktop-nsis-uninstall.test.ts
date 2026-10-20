@@ -125,6 +125,48 @@ describe('desktop NSIS uninstaller: optional data deletion', () => {
     expect(body.slice(errorsCheck, rmdir)).toContain('$(calameDeleteDataLocked)');
   });
 
+  it('never renames nor deletes a data folder that is a reparse point', () => {
+    // Same rule as calame-uninstall-data.ps1 (exit 4 on ReparsePoint): a junction or a
+    // symbolic link in place of %APPDATA%\Calame is left intact, before the rename and
+    // again on the renamed folder before the recursive delete.
+    expect(hooks).toContain('!define CALAME_FILE_ATTRIBUTE_REPARSE_POINT 0x400');
+    const check = [
+      `System::Call 'kernel32::GetFileAttributes(t "$CalameDataTrash") i .r2'`,
+      'IntOp $2 $2 & ${CALAME_FILE_ATTRIBUTE_REPARSE_POINT}',
+      '${If} $2 <> 0',
+      'MessageBox MB_OK|MB_ICONEXCLAMATION "$(calameDeleteDataReparsePoint)" /SD IDOK',
+      '${Else}',
+    ].join('\n');
+    const body = macroBody('NSIS_HOOK_POSTUNINSTALL').join('\n');
+    const original = body.indexOf('StrCpy $CalameDataTrash "$APPDATA\\${CALAME_DATA_DIRNAME}"\n');
+    const first = body.indexOf(check);
+    const rename = body.indexOf('Rename "$APPDATA\\${CALAME_DATA_DIRNAME}"');
+    const second = body.indexOf(check, first + 1);
+    const rmdir = body.indexOf('RMDir /r "$CalameDataTrash"');
+    expect(original).toBeGreaterThan(-1);
+    expect(first).toBeGreaterThan(original);
+    expect(rename).toBeGreaterThan(first);
+    expect(second).toBeGreaterThan(rename);
+    expect(rmdir).toBeGreaterThan(second);
+
+    for (const { line, conditions } of guardedLines(
+      'NSIS_HOOK_POSTUNINSTALL',
+      /^(Rename|RMDir \/r)\b/,
+    )) {
+      expect(conditions, line).toContain('${If} $2 <> 0');
+      expect(conditions, line).toContain('${Else}');
+    }
+
+    const fr = readLangStrings(nsisConf.customLanguageFiles.French);
+    const en = readLangStrings(nsisConf.customLanguageFiles.English);
+    expect(fr.get('calameDeleteDataReparsePoint')).toMatch(
+      /n'ont pas été supprimées.*\$CalameDataTrash.*jonction.*lien symbolique.*intact/,
+    );
+    expect(en.get('calameDeleteDataReparsePoint')).toMatch(
+      /was not deleted.*\$CalameDataTrash.*junction.*symbolic link.*intact/,
+    );
+  });
+
   it('stops the Node sidecar by its full path before the template deletes the install dir', () => {
     // PREUNINSTALL runs after the confirm page, before the template stops the app and
     // deletes $INSTDIR (node.exe included) and before POSTUNINSTALL touches the data.

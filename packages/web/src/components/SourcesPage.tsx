@@ -168,16 +168,16 @@ export default function SourcesPage({
                   disabled
                   title={kbDisabledTitle}
                   aria-disabled="true"
-                  className="px-5 py-3 text-sm font-medium border-b-2 border-transparent text-gray-600 cursor-not-allowed opacity-50 inline-flex items-center gap-1.5"
+                  className="px-5 py-3 text-sm font-medium border-b-2 border-transparent text-gray-400 cursor-not-allowed opacity-50 inline-flex items-center gap-1.5"
                 >
                   {tab.label}
                   <span
-                    className="ml-1 px-1.5 py-0.5 rounded-full bg-gray-800 text-gray-600 text-[10px] font-mono"
+                    className="ml-1 px-1.5 py-0.5 rounded-full bg-gray-800 text-gray-400 text-[11px] font-mono"
                     aria-label={t('itemsAriaLabel', { count: tab.count })}
                   >
                     {tab.count}
                   </span>
-                  <span className="text-gray-600 text-[10px] leading-none" aria-hidden="true">
+                  <span className="text-gray-400 text-[11px] leading-none" aria-hidden="true">
                     ⓘ
                   </span>
                 </button>
@@ -194,14 +194,14 @@ export default function SourcesPage({
                   'px-5 py-3 text-sm font-medium border-b-2 transition-all duration-200 inline-flex items-center gap-1.5',
                   isActive
                     ? 'border-os-500 text-os-400'
-                    : 'border-transparent text-gray-500 hover:text-gray-300 hover:border-gray-600',
+                    : 'border-transparent text-gray-400 hover:text-gray-300 hover:border-gray-600',
                 ].join(' ')}
               >
                 {tab.label}
                 <span
                   className={[
-                    'ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-mono',
-                    isActive ? 'bg-os-500/20 text-os-400' : 'bg-gray-800 text-gray-500',
+                    'ml-1 px-1.5 py-0.5 rounded-full text-[11px] font-mono',
+                    isActive ? 'bg-os-500/20 text-os-400' : 'bg-gray-800 text-gray-400',
                   ].join(' ')}
                   aria-label={t('itemsAriaLabel', { count: tab.count })}
                 >
@@ -228,7 +228,7 @@ export default function SourcesPage({
           (ragEnabled ? (
             <Suspense
               fallback={
-                <div className="text-sm text-gray-500 italic py-8 text-center">
+                <div className="text-sm text-gray-400 italic py-8 text-center">
                   {t('loadingKnowledgeBases')}
                 </div>
               }
@@ -246,7 +246,7 @@ export default function SourcesPage({
             /* Explanatory card when RAG is unavailable */
             <div className="card-primary p-8 text-center max-w-lg mx-auto mt-4">
               <div className="flex justify-center mb-4">
-                <span className="text-gray-600">
+                <span className="text-gray-400">
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
                     fill="none"
@@ -267,7 +267,7 @@ export default function SourcesPage({
               <h3 className="text-sm font-semibold text-gray-300 mb-2">
                 {t('kbUnavailableTitle')}
               </h3>
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-gray-400">
                 {ragDisabledReason ?? t('kbUnavailableDescription')}
               </p>
             </div>

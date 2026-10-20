@@ -230,7 +230,7 @@ describe('Sources and MCP configuration — shared source status', () => {
       />,
     );
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Failed to fetch');
+    expect(await screen.findByRole('alert')).toHaveTextContent('le serveur Calame ne répond pas');
     expect(screen.getByText('Alpha')).toBeInTheDocument();
     expect(cache.get()?.map((s) => s.id)).toEqual(['a']);
   });

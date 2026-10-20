@@ -18,7 +18,8 @@ const FR = {
   accessKeyIdRequired: "L'Access Key ID est requis.",
   secretAccessKeyRequired: 'Le Secret Access Key est requis.',
   urlRequired: 'Saisissez au moins une URL.',
-  invalidUrls: (n: number) => `${n} URL(s) invalide(s) — vérifiez le format http(s)://.`,
+  invalidUrls: (n: number) =>
+    `${n} URL${n > 1 ? 's' : ''} invalide${n > 1 ? 's' : ''} — vérifiez le format http(s)://.`,
   sitemapUrlRequired: "L'URL du sitemap est requise.",
   sitemapUrlInvalid: "L'URL du sitemap doit être une URL http(s):// valide.",
   gdriveFolderIdRequired: "L'ID du dossier Google Drive est requis.",
@@ -184,7 +185,8 @@ const EN: typeof FR = {
   accessKeyIdRequired: 'The Access Key ID is required.',
   secretAccessKeyRequired: 'The Secret Access Key is required.',
   urlRequired: 'Enter at least one URL.',
-  invalidUrls: (n: number) => `${n} invalid URL(s) — check the http(s):// format.`,
+  invalidUrls: (n: number) =>
+    `${n} invalid URL${n === 1 ? '' : 's'} — check the http(s):// format.`,
   sitemapUrlRequired: 'The sitemap URL is required.',
   sitemapUrlInvalid: 'The sitemap URL must be a valid http(s):// URL.',
   gdriveFolderIdRequired: 'The Google Drive folder ID is required.',

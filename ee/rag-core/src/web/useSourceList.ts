@@ -3,7 +3,12 @@
 // See ee/LICENSE.BUSL at the root of the ee/ directory for terms.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { apiGet, ApiError, type RagSourceListResponse, type RagSourceWithCounts } from './api.js';
+import {
+  apiGet,
+  userFacingApiError,
+  type RagSourceListResponse,
+  type RagSourceWithCounts,
+} from './api.js';
 import { RAG_STRINGS } from './onboarding-strings.js';
 import type { SourceJobInfo } from './useActiveSyncJobs.js';
 import { KB_MANAGER_STRINGS as T } from './strings/kb-manager.js';
@@ -89,8 +94,7 @@ export function useSourceList(
     } catch (err) {
       // Only reported when no newer request is pending or already answered.
       if (!mountedRef.current || seq < requestSeqRef.current) return;
-      const message =
-        err instanceof ApiError ? err.message : err instanceof Error ? err.message : T.loadError;
+      const message = userFacingApiError(err, T.loadError);
       reportErrorRef.current(
         sourcesLoadedRef.current ? RAG_STRINGS.sourcesRefreshError(message) : message,
       );

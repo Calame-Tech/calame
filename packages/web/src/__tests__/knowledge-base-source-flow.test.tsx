@@ -133,7 +133,8 @@ describe('KnowledgeBaseManager — first source flow', () => {
     render(<KnowledgeBaseManager />);
 
     expect(await screen.findByText('Impossible de charger les sources.')).toBeInTheDocument();
-    expect(screen.getByRole('alert')).toHaveTextContent('Failed to fetch');
+    expect(screen.getByRole('alert')).toHaveTextContent('le serveur Calame ne répond pas');
+    expect(screen.getByRole('alert')).not.toHaveTextContent('Failed to fetch');
     // A failed fetch must not be presented as an empty knowledge base.
     expect(screen.queryByText(/Aucune source\./)).not.toBeInTheDocument();
     expect(screen.queryByText('Chargement des sources…')).not.toBeInTheDocument();

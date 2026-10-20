@@ -107,7 +107,7 @@ export default function AddSourceModal({
             type="button"
             onClick={onClose}
             aria-label={t('closeAriaLabel')}
-            className="p-1.5 rounded-lg text-gray-500 hover:text-gray-200 hover:bg-gray-800 transition-colors focus:outline-none focus:ring-2 focus:ring-os-500"
+            className="p-1.5 rounded-lg text-gray-400 hover:text-gray-200 hover:bg-gray-800 transition-colors focus:outline-none focus:ring-2 focus:ring-os-500"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -140,7 +140,7 @@ export default function AddSourceModal({
               <p className="text-sm font-medium text-gray-200 group-hover:text-os-300 transition-colors">
                 {t('databaseLabel')}
               </p>
-              <p className="text-xs text-gray-500 mt-0.5">{t('databaseHint')}</p>
+              <p className="text-xs text-gray-400 mt-0.5">{t('databaseHint')}</p>
             </div>
           </button>
 
@@ -158,7 +158,7 @@ export default function AddSourceModal({
                 <p className="text-sm font-medium text-gray-200 group-hover:text-os-300 transition-colors">
                   {t('knowledgeBaseLabel')}
                 </p>
-                <p className="text-xs text-gray-500 mt-0.5">{t('knowledgeBaseHint')}</p>
+                <p className="text-xs text-gray-400 mt-0.5">{t('knowledgeBaseHint')}</p>
               </div>
             </button>
           ) : (
@@ -167,12 +167,12 @@ export default function AddSourceModal({
               aria-disabled="true"
               className="flex flex-col items-center gap-3 p-5 rounded-xl border border-gray-800 bg-gray-900/50 cursor-not-allowed opacity-50"
             >
-              <span className="text-gray-600">{IconBookOpen}</span>
+              <span className="text-gray-400">{IconBookOpen}</span>
               <div className="text-center">
-                <p className="text-sm font-medium text-gray-500">{t('knowledgeBaseLabel')}</p>
-                <p className="text-xs text-gray-600 mt-0.5">{t('knowledgeBaseHint')}</p>
+                <p className="text-sm font-medium text-gray-400">{t('knowledgeBaseLabel')}</p>
+                <p className="text-xs text-gray-400 mt-0.5">{t('knowledgeBaseHint')}</p>
               </div>
-              <span className="text-[10px] text-gray-600 select-none" aria-hidden="true">
+              <span className="text-[11px] text-gray-400 select-none" aria-hidden="true">
                 {t('notAvailable')}
               </span>
             </div>

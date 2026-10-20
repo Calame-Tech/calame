@@ -79,8 +79,12 @@ afterEach(async () => {
 });
 
 describe('rag_write_document', () => {
-  it('registers both tools', () => {
-    expect(Object.keys(handlers).sort()).toEqual(['rag_read_note', 'rag_write_document']);
+  it('registers the three note tools', () => {
+    expect(Object.keys(handlers).sort()).toEqual([
+      'rag_append_note',
+      'rag_read_note',
+      'rag_write_document',
+    ]);
   });
 
   it('creates a note, triggers indexing, reports saved vs indexing separately', async () => {

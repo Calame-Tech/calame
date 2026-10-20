@@ -7,6 +7,23 @@ root `package.json` version flows to the Docker image and `create-calame`).
 
 ## [Unreleased]
 
+### Added
+
+- New MCP tool `rag_append_note({ source, path, text })`: adds text verbatim at
+  the end of a `.md` / `.txt` note, or creates the note when it is absent, with
+  no `expectedVersion` to pass. It is registered with `rag_write_document` and
+  has the same opt-in and limits: write toggle on the profile, ticked source,
+  authorized folder and read scope, path protections. The server reads the
+  note, publishes `old + text` atomically and, if another writer got there
+  first (conflict or concurrent creation), retries up to 5 attempts. A refused
+  attempt never published anything, so no text is lost or duplicated by a
+  retry; `published_unverified` is never retried. Appends are limited to
+  64 KiB of UTF-8 per call, and the resulting file to the source's size limit;
+  oversized appends are refused and nothing is written. The tool description
+  tells AI clients to prefer append for adding a remark and write for
+  replacing the whole content. Audit and indexing work as for writes
+  (`saved` separate from `indexing`).
+
 ### Changed
 
 - `rag_write_document` refusals are now actionable by an AI client:

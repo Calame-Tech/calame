@@ -232,7 +232,8 @@ export function validateRelPath(relPath: unknown, limits: FsWriteLimits = {}): s
   return segments;
 }
 
-function effectiveMaxBytes(limits: FsWriteLimits): number {
+/** Final-file size limit applied by readTextFile / writeTextFile. */
+export function effectiveMaxBytes(limits: FsWriteLimits): number {
   const n = limits.maxBytes ?? DEFAULT_WRITE_MAX_BYTES;
   if (!Number.isFinite(n) || n <= 0) return DEFAULT_WRITE_MAX_BYTES;
   return Math.min(Math.floor(n), ABSOLUTE_WRITE_MAX_BYTES);

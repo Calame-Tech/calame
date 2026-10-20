@@ -48,6 +48,9 @@
  *   create  <root> <newLen> <tmpName> -- seg...    stdin=new   -> "OK\n" | "ERR <code>\n"
  *   replace <root> <newLen> <oldLen> <tmpName> -- seg...
  *                                                  stdin=new||old -> "OK\n" | "ERR <code>\n"
+ * replace may answer "ERR published_displaced_missing": our temp file is
+ * verified at the target name but the exchange returned no old entry (see the
+ * check after rename_exchange). fs-write.ts then re-reads the target.
  * `old` is the content the caller read and verified; replace re-checks it
  * against the file twice (before temp creation and right before the swap).
  */
@@ -522,12 +525,23 @@ int main(int argc, char **argv) {
     fail("io_error");
   }
 
+  hook("after_exchange");
   /* Published. Both sides of the swap must be what we expect: our temp file
      at `name`, and the validated old file (same dev/ino) in the staging dir.
      A missing or different old entry is NOT success: we may have replaced
      something we never checked. The displaced entry is left in the staging
      dir (never deleted), and nothing is rolled back. */
   if (!entry_is(dirfd, name, g_tmp_dev, g_tmp_ino)) fail("published_unverified");
+  /* Our temp file is at `name` but NOTHING came back into the staging dir:
+     the exchange behaved like a plain rename-over. Observed on Docker
+     Desktop (macOS) bind mounts (virtiofs, "fakeowner" in the container),
+     where RENAME_EXCHANGE succeeds without moving the old file. Reported
+     distinctly so the caller can confirm the published content by re-reading
+     it; still not a plain success. */
+  struct stat displaced;
+  if (fstatat(g_stage_fd, tmpName, &displaced, AT_SYMLINK_NOFOLLOW) != 0 && errno == ENOENT) {
+    fail("published_displaced_missing");
+  }
   if (!entry_is(g_stage_fd, tmpName, first.st_dev, first.st_ino)) fail("published_unverified");
 
   hook("before_cleanup");

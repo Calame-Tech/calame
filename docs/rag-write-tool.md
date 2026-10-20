@@ -5,12 +5,21 @@ fully replace text notes inside a **local folder** RAG source — e.g. an
 Obsidian-style vault of mission notes. It is **off by default**: nothing changes
 for existing profiles.
 
-Two tools are registered, only when the capability is enabled on the MCP profile:
+Three tools are registered, only when the capability is enabled on the MCP profile:
 
 | Tool                 | Purpose                                                                                                                                                                                   |
 | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `rag_read_note`      | Returns the exact text of a `.md`/`.txt` note (front-matter included, which `rag_get_document` strips) and its `version` (sha256 of the raw file). PII masking of the profile is applied. |
 | `rag_write_document` | Creates a note (omit `expectedVersion`) or replaces it (pass the `version` last read).                                                                                                    |
+| `rag_append_note`    | Adds text at the end of a note, or creates it with that text. No version to pass: the server handles concurrency.                                                                         |
+
+`rag_append_note` needs no extra setting: it is enabled by the same toggle and
+limited to the same sources, folders, read scopes, paths and extensions as
+`rag_write_document`.
+
+**Which one to use**: to add a remark, a log entry or a paragraph, use
+`rag_append_note`. Use `rag_write_document` only to create a note with its full
+content or to replace the whole content (read it first with `rag_read_note`).
 
 ## Enabling it
 
@@ -32,9 +41,11 @@ Stored in the profile as `documentWrite: { enabled, sources }`.
 
 - `source`: name of an authorized local source; `path`: relative, `/`-separated,
   e.g. `nationex/2026-10-09-standup.md`.
-- Create: omit `expectedVersion`; fails with `already_exists` if the file exists.
+- Create: omit `expectedVersion`; fails with `already_exists` if the file exists
+  (the error carries the current `version`, see below).
 - Replace: `expectedVersion` must equal the current version, else
-  `version_conflict` and nothing is modified (re-read, merge, retry).
+  `version_conflict` (with the current `version`) and nothing is modified
+  (re-read, merge, retry).
 - Result: `saved` (on disk, immediate) is reported separately from `indexing`
   (`queued` | `already_running` | `unavailable`, always `indexed: false` at return).
   Search results may lag until the re-index job completes.
@@ -46,9 +57,121 @@ Error codes: `not_permitted`, `outside_authorized_folder`, `invalid_path`,
 `unsupported_filesystem`, `unsupported_platform`, `published_unverified`, `io_error`.
 
 `published_unverified` means the publish step ran but the helper could not
-confirm its result (the folder was modified concurrently): the target may now
-hold something other than what was sent. Nothing is rolled back; re-read the
-file before retrying. All other errors mean nothing was published.
+confirm its result: **the write probably happened**, but the target may hold
+something other than what was sent (for example, the folder was modified
+concurrently). Nothing is rolled back. Re-read the file (`rag_read_note`)
+before retrying; never resend the same write blindly. The message says so:
+
+```json
+{
+  "error": "The write was probably published, but the result could not be verified. Re-read the file before retrying; do not repeat the write blindly.",
+  "code": "published_unverified"
+}
+```
+
+All other errors mean nothing was published.
+
+### `rag_append_note`
+
+`rag_append_note({ source, path, text })`
+
+- `source`, `path`: as for `rag_write_document` (parent folders must exist).
+- `text`: appended **verbatim** at the end of the file. No newline or separator
+  is added: start the text with `\n` if it must begin on a new line. The
+  existing bytes are kept exactly (BOM, line endings, missing final newline).
+- Limit: at most **64 KiB (65,536 bytes) of UTF-8** per call
+  (`APPEND_MAX_BYTES`; an `é` counts 2 bytes), and the resulting file must stay
+  within the source's file limit (default 256 KiB, hard cap 2 MiB). Either
+  excess returns `too_large` and nothing is written. Existing non-UTF-8 files
+  are refused (`invalid_content`) rather than rewritten.
+- Result: `{ saved: true, operation: "created" | "appended", path, version,
+bytes, appendedBytes, indexing }`, with `saved` (on disk) separate from
+  `indexing` as for `rag_write_document`. `version` and `bytes` describe the
+  whole file after the append.
+
+Concurrency, handled by the server:
+
+1. read the note through the confined helper (absent → create);
+2. publish `old + text` with the same atomic create-only / conditional replace
+   as `rag_write_document`, conditioned on the version just read;
+3. if that publish is refused **before anything was published**
+   (`version_conflict`, `already_exists` for a concurrent creation, `not_found`
+   for a concurrent delete), start again from step 1, up to **5 attempts** in
+   total (`APPEND_MAX_ATTEMPTS`).
+
+Appends made within one Calame process are queued, so they never conflict with
+each other; the retries cover other writers (`rag_write_document`, external
+editors, other processes). Each successful append contains the text exactly
+once, and a retry never re-sends text that might already be published. If
+5 attempts are all refused, the call returns `version_conflict` ("nothing was
+appended by this call", safe to call again). The audit log records the number
+of attempts and the sizes, never the text.
+
+An external editor that modifies the file in place between the helper's last
+check and the publish step can still be overwritten (see "Honest limits"):
+the retries do not change that limit.
+
+**After `published_unverified`, the append is never retried**, neither by the
+server nor, blindly, by the client: the text was probably added, and sending
+it again could add it twice. Re-read the note with `rag_read_note`, and append
+again only if the text is not there.
+
+### Recovering from `already_exists` and `version_conflict`
+
+Both refusals carry the file's current `version` (sha256 of the raw bytes, the
+same value `rag_read_note` returns) and an English recovery instruction aimed
+at the AI client. The version is only read and returned **after** every access
+check passed (profile allowed to write, source ticked, authorized folder, read
+scope, path and extension validation); a refusal such as `not_permitted`,
+`outside_authorized_folder` or `extension_not_allowed` never includes one. If
+the version cannot be read (file removed meanwhile, read error), the refusal is
+returned without it, with the short message.
+
+```json
+{
+  "error": "File already exists (current version <v>). To REPLACE it, call rag_write_document again with expectedVersion=\"<v>\" and the COMPLETE new content (read it first with rag_read_note if you need the current text). To ADD text at the end, use rag_append_note instead (no version needed). This version is a snapshot, not a reservation: if the file changes again, the replace is refused with version_conflict.",
+  "code": "already_exists",
+  "version": "<v>"
+}
+```
+
+```json
+{
+  "error": "The file changed since you read it (current version <v>); nothing was modified. Re-read it with rag_read_note, apply your change to the current text, then retry with the COMPLETE new content and expectedVersion set to the version you re-read. To ADD text at the end, use rag_append_note instead. This version is a snapshot, not a reservation: if the file changes again, the replace is refused with version_conflict.",
+  "code": "version_conflict",
+  "version": "<v>"
+}
+```
+
+`<v>` stands for the 64-character hex version. It is a snapshot: another
+writer can change the file right after, in which case the retry is refused
+again with `version_conflict` (and nothing is modified). After a
+`version_conflict`, re-read the note rather than reusing `<v>` blindly, so the
+other writer's change is merged instead of overwritten.
+
+### Docker Desktop bind mounts (macOS, virtiofs)
+
+On a Docker Desktop for macOS bind mount (virtiofs, shown as `fakeowner` inside
+the Linux container), `renameat2(RENAME_EXCHANGE)` returns success but behaves
+like a plain overwriting rename. The new file is at the target with the expected
+device/inode, but the old file never shows up in the staging folder, where the
+helper looks for it. Up to 0.8.5 every replace on such a mount was therefore
+reported as `published_unverified`, although the file had been written.
+
+The helper now reports this case separately: the new file is verified at the
+target by device/inode, but the exchange returned no old entry. The server then
+re-reads the target through the helper, using the same directory-fd-anchored,
+no-symlink walk. It reports success only if the content hashes (SHA-256) exactly
+to what was sent. Otherwise, including when the re-read fails, the result stays
+`published_unverified`. Other mismatches still give `published_unverified`
+even when the content matches: a different file at the target, or a displaced
+entry that is not the validated old file. Native macOS/Linux filesystems never
+reach this case because their exchange returns the old file.
+
+On such a mount the replace behaves like a rename-over, as on Windows. The
+validated old file is not checked again after the swap, so an external editor
+that replaces the file between the last check and the publish step is not
+detected.
 
 ## Safety guarantees
 
@@ -78,7 +201,7 @@ file before retrying. All other errors mean nothing was published.
     validated directory fd (temp file in a staging folder held by fd);
   - Linux: `renameat2` with `RENAME_NOREPLACE` / `RENAME_EXCHANGE`, same scheme;
   - Windows: sibling temp file, `link()` (create-only) or `rename()` (replace).
-- No delete, rename, append, patch or binary files.
+- No delete, rename, patch or binary files (append only through `rag_append_note`).
 - Each attempt (success or refusal) goes through the profile audit log.
 - Re-indexing uses the real sync queue (same path as a manual sync).
 
@@ -92,9 +215,10 @@ file before retrying. All other errors mean nothing was published.
 
 ## Honest limits
 
-- **Replace-whole-file only**: the client sends the full content. Concurrent edits
-  made by another tool between read and write are detected (`version_conflict`),
-  but there is no merge.
+- **Replace-whole-file or append only**: `rag_write_document` sends the full
+  content. Concurrent edits made by another tool between read and write are
+  detected (`version_conflict`), but there is no merge; `rag_append_note`
+  re-reads and retries instead.
 - The conflict check and the final swap are not a single atomic filesystem
   operation and this is not a multi-process compare-and-swap: an external editor
   writing between the final check and the swap can still be overwritten (if it
@@ -133,7 +257,8 @@ file before retrying. All other errors mean nothing was published.
   target. The helper checks device/inode before publishing (refusing with
   `io_error`, nothing published) and after publishing; a mismatch detected after
   the publish step is reported as `published_unverified`, never as a plain
-  refusal, because something was published. What this design achieves is
+  refusal, because something was published (only exception: the exchange that
+  returns no old entry, see "Docker Desktop bind mounts" above). What this design achieves is
   directory-fd confinement, not protection against a hostile same-user process.
 - **Concurrent local processes, Windows (weaker)**: Node offers no
   directory-handle-relative file API on Windows, so the helper is not used there.

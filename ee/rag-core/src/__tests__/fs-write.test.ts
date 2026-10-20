@@ -10,6 +10,7 @@ import { execFileSync } from 'node:child_process';
 import {
   FsWriteError,
   __setPathModeForTests,
+  readFileVersion,
   readTextFile,
   sha256Hex,
   writeTextFile,
@@ -52,6 +53,20 @@ const MODES = [
 describe.each(MODES.filter((m) => m.run))('$name mode', ({ path }) => {
   beforeEach(() => __setPathModeForTests(path));
   afterEach(() => __setPathModeForTests(false));
+
+  describe('readFileVersion', () => {
+    it('returns the raw-byte sha256, null when absent, and keeps path checks', async () => {
+      const raw = Buffer.from([0x61, 0xff]);
+      await writeFile(join(root, 'notes/v.md'), raw);
+      expect(await readFileVersion({ rootPath: root, relPath: 'notes/v.md' })).toBe(sha256Hex(raw));
+      expect(await readFileVersion({ rootPath: root, relPath: 'notes/none.md' })).toBeNull();
+      await writeFile(join(outside, 's.md'), 'secret');
+      await symlink(outside, join(root, 'link'));
+      for (const relPath of ['../outside/s.md', 'link/s.md', 'a.sh']) {
+        expect(await code(readFileVersion({ rootPath: root, relPath }))).not.toBe('ok');
+      }
+    });
+  });
 
   describe('writeTextFile', () => {
     it('creates a new file and returns its version', async () => {

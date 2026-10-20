@@ -167,6 +167,7 @@ describe('document writes through the real host registration', () => {
         const tools = await client.listTools();
         expect(tools.tools.map((tool) => tool.name)).toEqual([
           'rag_write_document',
+          'rag_append_note',
           'rag_read_note',
         ]);
         const savedReply = await client.callTool({
@@ -221,13 +222,18 @@ describe('document writes through the real host registration', () => {
       await register();
       expect([...handlers.keys()]).not.toContain('rag_write_document');
       expect([...handlers.keys()]).not.toContain('rag_read_note');
+      expect([...handlers.keys()]).not.toContain('rag_append_note');
       await expect(write()).rejects.toThrow('Tool is not registered');
     },
   );
 
   it('registers both tools only with an explicit local-source grant', async () => {
     await register();
-    expect([...handlers.keys()]).toEqual(['rag_write_document', 'rag_read_note']);
+    expect([...handlers.keys()]).toEqual([
+      'rag_write_document',
+      'rag_append_note',
+      'rag_read_note',
+    ]);
   });
 
   it('does not turn a readable source into a writable source', async () => {
@@ -288,6 +294,28 @@ describe('document writes through the real host registration', () => {
     // pipeline integration test is still required to prove indexed=true.
   });
 
+  it('rag_append_note uses the same grant: creates, appends verbatim, refuses ungranted access', async () => {
+    await register();
+    const append = (text: string, source = 'local', filename = 'journal.md') =>
+      call('rag_append_note', { source, path: filename, text });
+    expect(await append('# Journal\n')).toMatchObject({ saved: true, operation: 'created' });
+    expect(await append('- remark\n')).toMatchObject({
+      saved: true,
+      operation: 'appended',
+      indexing: { status: 'queued', indexed: false },
+    });
+    expect(await readFile(path.join(dir, 'journal.md'), 'utf8')).toBe('# Journal\n- remark\n');
+    expect(triggerSync).toHaveBeenCalledWith('local');
+    expect(await append('x', 'other')).toMatchObject({ isError: true, code: 'not_permitted' });
+    expect(await append('x', 'local', 'journal.pdf')).toMatchObject({
+      isError: true,
+      code: 'extension_not_allowed',
+    });
+    state.serveProfiles.notes = { ...profile, documentWrite: { enabled: false, sources: {} } };
+    expect(await append('denied\n')).toMatchObject({ isError: true, code: 'not_permitted' });
+    expect(await readFile(path.join(dir, 'journal.md'), 'utf8')).toBe('# Journal\n- remark\n');
+  });
+
   it('fails closed when the live profile is removed', async () => {
     await register();
     delete state.serveProfiles.notes;
@@ -340,7 +368,11 @@ describe('document writes through the real host registration', () => {
 
     handlers.clear();
     await register(tenantId);
-    expect([...handlers.keys()]).toEqual(['rag_write_document', 'rag_read_note']);
+    expect([...handlers.keys()]).toEqual([
+      'rag_write_document',
+      'rag_append_note',
+      'rag_read_note',
+    ]);
 
     // Create a file.
     const saved = await write();
@@ -398,7 +430,11 @@ describe('document writes through the real host registration', () => {
     // Initial registration: should succeed because config_json exists.
     handlers.clear();
     await register(tenantId);
-    expect([...handlers.keys()]).toEqual(['rag_write_document', 'rag_read_note']);
+    expect([...handlers.keys()]).toEqual([
+      'rag_write_document',
+      'rag_append_note',
+      'rag_read_note',
+    ]);
     const saved = await write();
     expect(saved.saved).toBe(true);
 
@@ -465,7 +501,11 @@ describe('document writes through the real host registration', () => {
     // Register with the non-default tenant.
     handlers.clear();
     await register(tenantId);
-    expect([...handlers.keys()]).toEqual(['rag_write_document', 'rag_read_note']);
+    expect([...handlers.keys()]).toEqual([
+      'rag_write_document',
+      'rag_append_note',
+      'rag_read_note',
+    ]);
 
     // Write a file inside the allowed folder.
     const saved = await call('rag_write_document', {
@@ -568,7 +608,11 @@ describe('document writes through the real host registration', () => {
 
     handlers.clear();
     await register(tenantId);
-    expect([...handlers.keys()]).toEqual(['rag_write_document', 'rag_read_note']);
+    expect([...handlers.keys()]).toEqual([
+      'rag_write_document',
+      'rag_append_note',
+      'rag_read_note',
+    ]);
 
     // Delete the configuration row.
     db.raw
@@ -597,7 +641,11 @@ describe('document writes through the real host registration', () => {
       allowedDocuments: [],
     } as never;
     await register();
-    expect([...handlers.keys()]).toEqual(['rag_write_document', 'rag_read_note']);
+    expect([...handlers.keys()]).toEqual([
+      'rag_write_document',
+      'rag_append_note',
+      'rag_read_note',
+    ]);
 
     // Create the notes folder first (write tool requires parent folders to exist).
     await mkdirp(path.join(dir, 'notes'));
@@ -665,7 +713,11 @@ describe('document writes through the real host registration', () => {
       directFetchDisabled: true,
     } as never;
     await register();
-    expect([...handlers.keys()]).toEqual(['rag_write_document', 'rag_read_note']);
+    expect([...handlers.keys()]).toEqual([
+      'rag_write_document',
+      'rag_append_note',
+      'rag_read_note',
+    ]);
 
     // Read must be denied because directFetchDisabled blocks the note tool.
     expect(await call('rag_read_note', { source: 'local', path: 'nationex.md' })).toMatchObject({
@@ -699,6 +751,10 @@ describe('document writes through the real host registration', () => {
     // sources: ['local', 'other'] and documentWrite enabled for 'local').
     handlers.clear();
     await register('default');
-    expect([...handlers.keys()]).toEqual(['rag_write_document', 'rag_read_note']);
+    expect([...handlers.keys()]).toEqual([
+      'rag_write_document',
+      'rag_append_note',
+      'rag_read_note',
+    ]);
   });
 });

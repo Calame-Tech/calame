@@ -7,6 +7,47 @@ root `package.json` version flows to the Docker image and `create-calame`).
 
 ## [Unreleased]
 
+### Added
+
+- New MCP tool `rag_append_note({ source, path, text })`: adds text verbatim at
+  the end of a `.md` / `.txt` note, or creates the note when it is absent, with
+  no `expectedVersion` to pass. It is registered with `rag_write_document` and
+  has the same opt-in and limits: write toggle on the profile, ticked source,
+  authorized folder and read scope, path protections. The server reads the
+  note, publishes `old + text` atomically and, if another writer got there
+  first (conflict or concurrent creation), retries up to 5 attempts. A refused
+  attempt never published anything, so no text is lost or duplicated by a
+  retry; `published_unverified` is never retried. Appends are limited to
+  64 KiB of UTF-8 per call, and the resulting file to the source's size limit;
+  oversized appends are refused and nothing is written. The tool description
+  tells AI clients to prefer append for adding a remark and write for
+  replacing the whole content. Audit and indexing work as for writes
+  (`saved` separate from `indexing`).
+
+### Changed
+
+- `rag_write_document` refusals are now actionable by an AI client:
+  `already_exists` and `version_conflict` include the file's current `version`
+  and an English instruction to recover (replace with `expectedVersion=<version>`
+  and the complete content, or use `rag_append_note` to add text; after a
+  conflict, re-read first). The version is only disclosed once every access
+  check passed, and it is a snapshot, not a guarantee that the retry succeeds.
+
+### Fixed
+
+- `rag_write_document` no longer reports a false `published_unverified` when
+  replacing a file on a Docker Desktop for macOS bind mount (virtiofs). There,
+  `RENAME_EXCHANGE` succeeds but acts as a plain rename and never returns the old
+  file to the staging folder, which failed the post-publish check (reproduced
+  with Calame 0.8.5's helper on Docker Desktop 29.4). When the new file is
+  verified at the target and only the old file is missing, the server re-reads
+  the target and reports success if its SHA-256 matches what was sent. Every
+  other post-publish mismatch still returns `published_unverified`. Native
+  macOS/Linux checks are unchanged, and so is the Windows path.
+- The `published_unverified` message now says the write probably happened and
+  asks to re-read the file before retrying. The `rag_write_document`
+  description says the same.
+
 ## [0.8.5] - 2026-10-17
 
 ### Fixed

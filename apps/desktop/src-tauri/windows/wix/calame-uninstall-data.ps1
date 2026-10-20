@@ -1,7 +1,8 @@
 # Removes the Calame data of the Windows account running it. Called only by the MSI
 # uninstaller (calame-uninstall-data.wxs), as a deferred custom action impersonating the
 # user who launched the uninstall, when that user ticked the data option. Any failure
-# exits without deleting anything (the MSI ignores the exit code).
+# exits non-zero without deleting anything, which makes the MSI stop and roll back the
+# uninstall with an error (Return="check") rather than hide it.
 param(
   [Parameter(Mandatory = $true)][string]$InstallDir,
   [Parameter(Mandatory = $true)][string]$DataDir

@@ -94,8 +94,13 @@ Tauri's default WiX template is kept; `apps/desktop/src-tauri/windows/wix/calame
   uninstall, not as the account typing UAC credentials;
 - deletes through a deferred custom action that impersonates that same user,
   conditioned on `REMOVE~="ALL" AND NOT UPGRADINGPRODUCTCODE`, the ticked box
-  and the folder fixed by the page, scheduled before `RemoveFiles`
-  (`Return="ignore"`: a failure never blocks the uninstall and keeps the data);
+  and the folder fixed by the page, scheduled before `RemoveFiles`, with the
+  script passed as `[INSTALLDIR]calame-uninstall-data.ps1` (a `[#CalameUninstallDataScript]`
+  file reference formats to an empty string once its component is being removed, i.e. always
+  with `REMOVE="ALL"`, so the script would never run) and `Return="check"`: if the script
+  fails (missing, wrong account, folder in use, PowerShell blocked), Windows Installer stops
+  and rolls back the uninstall with an error (1722 in the UI, 1603 for `msiexec`) instead of
+  reporting success while the data is still there;
 - in the script, checks that the folder is the running account's own
   `%APPDATA%\Calame` (otherwise exits), refuses a junction, stops only that
   account's `calame-desktop.exe` / `node.exe` started from the install dir,
@@ -106,8 +111,8 @@ Tauri's default WiX template is kept; `apps/desktop/src-tauri/windows/wix/calame
 Known limits: the page text is French only (the rest of the MSI UI is the
 template's English); the option exists only in MSIs built from this version on
 (an uninstall uses the installed product's own MSI); a group policy forcing the
-PowerShell execution policy can prevent the script from running, which keeps
-the data; the deletion runs before the files are removed, so if the uninstall
+PowerShell execution policy can prevent the script from running: the uninstall
+then fails with the data kept, and succeeds when retried with the box unchecked; the deletion runs before the files are removed, so if the uninstall
 then fails and rolls back, the app stays installed with its data deleted (a new
 administrator bootstrap, never a half-deleted state).
 
@@ -128,15 +133,17 @@ with an MSI built by CI.**
 | M4 | Run the `.msi` again, Remove, box left unchecked | Page shown with the right path and account; everything kept | Windows required |
 | M5 | Same, box ticked, app open with a session | App and `node.exe` stopped; `%APPDATA%\Calame` and both `tech.calame.desktop` folders gone; product removed | Windows required |
 | M6 | Reinstall after M5 | First-run admin creation (new bootstrap), new `.calame-secret` | Windows required |
-| M7 | M5 while another process keeps `calame.db` open | Uninstall completes; `calame.db` and `.calame-secret` both still present (MSI log: script exit code 5) | Windows required |
+| M7 | M5 while another process keeps `calame.db` open | Uninstall stops with an error and rolls back (product still installed); `calame.db` and `.calame-secret` both still present (MSI log: `CalameRemoveUserData` returned actual error code 5) | Windows required |
 | M8 | Box ticked, then Back, untick, Next, Remove | Everything kept | Windows required |
 | M9 | Account without `%APPDATA%\Calame` reaches the page | Box disabled, « rien ne sera supprimé » shown, nothing deleted | Windows required |
 | M10 | Standard user launches the `.msi`, Remove, box ticked, UAC credentials of an admin account | Only the standard user's folders deleted; admin's profile untouched | Windows required |
 | M11 | Second Windows user with their own Calame data; first user removes with deletion | Second user's `%APPDATA%\Calame` untouched | Windows required |
-| M12 | `msiexec /x <code> /qn CALAME_DELETE_DATA=1 CALAME_DATA_DIR=<other user's folder>` from an elevated prompt | Script exits (code 3), nothing deleted | Windows required |
+| M12 | `msiexec /x <code> /qn CALAME_DELETE_DATA=1 CALAME_DATA_DIR=<other user's folder>` from an elevated prompt | Script exits (code 3), nothing deleted; `msiexec` returns 1603 and the product stays installed | Windows required |
 | M13 | Major upgrade: install a newer `.msi` over this one | No page, no deletion, same account after upgrade | Windows required |
 | M14 | In-app update (updater runs the MSI in `/passive`) | No page, no deletion, same account after restart | Windows required |
 | M15 | Page layout at 100 % and 150 % scaling | Texts and checkbox fully visible, not overlapping | Windows required |
+| M16 | M5 run as `msiexec /x <fichier>.msi /l*v "%TEMP%\calame-msi.log"` (full UI, box ticked) | In the log: `Doing action: CalameRemoveUserData` during the execute sequence, before `RemoveFiles`; its `CustomActionData`/command line shows `-File "C:\…\Calame\calame-uninstall-data.ps1"` (never `-File ""`) and the user's `%APPDATA%\Calame`; no `returned actual error code` line; `%APPDATA%\Calame` gone afterwards. Since the action is `Return="check"`, a non-zero script exit must appear as `CustomAction CalameRemoveUserData returned actual error code N` followed by a rollback, never as a silent success (that was the risk of the former `Return="ignore"`) | Windows required |
+| M17 | M4 (box unchecked) with the same `/l*v` log | `CalameRemoveUserData` skipped (condition false: `Skipping action: CalameRemoveUserData (condition is false)`); data kept | Windows required |
 
 ## Native administrator reset (tray menu)
 
@@ -207,6 +214,25 @@ Cross-reference by scenario:
 | Data kept by default, same admin after reinstall | N2, N3, N4, N12 | M2, M3, M4, M8 | R2 |
 | Voluntary deletion, new admin bootstrap after reinstall | N5, N6 | M5, M6 | R3, R4 |
 | Database in use: `calame.db` and `.calame-secret` kept together | N7 | M7 | R5 |
+| Deletion script really runs, failures not hidden (MSI log) | — | M16, M17 | — |
 | Only the owner's profile: other users and elevation account untouched | N8, N9 | M10, M11, M12 | R6, R7 |
 | Upgrade / update never deletes | N10, N11, N11b, N11c | M13, M14 | — |
 | Failed sign-in changes nothing | — | — | R8 |
+
+## Follow-up verification (2026-10-20, review fixes)
+
+Changed: the MSI custom action now runs `-File "[INSTALLDIR]calame-uninstall-data.ps1"` instead
+of the `[#CalameUninstallDataScript]` reference (empty during `REMOVE="ALL"`, so the script never
+ran), and uses `Return="check"` instead of `Return="ignore"` so that a failure is reported and
+rolled back rather than hidden. Defaults, the upgrade/partial-removal guards and the owner check
+are unchanged.
+
+Executed on macOS (no Windows, no WiX, no Rust toolchain): `pnpm format`, `pnpm format:check`,
+`pnpm lint` (0 errors, the same 4 existing warnings), `pnpm build`, `pnpm typecheck`, `pnpm test`
+(3091 passed, 19 skipped), the static tests of `desktop-msi-uninstall.test.ts` (including the
+non-regression test rejecting any `[#…]` file reference in the command line) and
+`xmllint --noout` on the fragment.
+
+**Not executed:** M1–M17 (in particular M16/M17, the `msiexec /x … /l*v` log check of
+`CalameRemoveUserData`), N1–N13 and R1–R8 still need a Windows 10/11 machine (and `cargo test`
+for R1). The MSI fix is therefore not validated on Windows.

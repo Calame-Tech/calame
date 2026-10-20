@@ -18,6 +18,14 @@
       script checks again that the folder is the running account's own %APPDATA%\Calame,
       stops that account's app and Node server, and renames the folder before deleting it
       so that calame.db and .calame-secret go together or not at all.
+  The script is passed as [INSTALLDIR]calame-uninstall-data.ps1, not [#CalameUninstallDataScript]:
+  a [#file] reference formats to an empty string once its component is set to be removed, which
+  is the case for every component when REMOVE="ALL". INSTALLDIR is resolved by CostFinalize, the
+  deferred command line is formatted when the script is generated, and the action runs Before
+  RemoveFiles, so the file is still there. Return="check": if the script fails (missing file,
+  wrong account, folder in use...) the uninstall stops and rolls back with an error instead of
+  reporting success while the data is still there; the script never deletes anything before
+  its checks pass, so calame.db and .calame-secret are then both kept.
   The component below installs the script and makes the linker pull this fragment in.
 -->
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
@@ -36,7 +44,7 @@
       <DirectorySearch Id="CalameDataDirSearch" Path="[AppDataFolder]Calame" Depth="0" />
     </Property>
 
-    <CustomAction Id="CalameRemoveUserData" Directory="INSTALLDIR" Execute="deferred" Impersonate="yes" Return="ignore" ExeCommand="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[#CalameUninstallDataScript]&quot; -InstallDir &quot;[INSTALLDIR].&quot; -DataDir &quot;[CALAME_DATA_DIR]&quot;" />
+    <CustomAction Id="CalameRemoveUserData" Directory="INSTALLDIR" Execute="deferred" Impersonate="yes" Return="check" ExeCommand="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[INSTALLDIR]calame-uninstall-data.ps1&quot; -InstallDir &quot;[INSTALLDIR].&quot; -DataDir &quot;[CALAME_DATA_DIR]&quot;" />
 
     <InstallExecuteSequence>
       <Custom Action="CalameRemoveUserData" Before="RemoveFiles">REMOVE~="ALL" AND NOT UPGRADINGPRODUCTCODE AND CALAME_DELETE_DATA="1" AND CALAME_DATA_DIR</Custom>

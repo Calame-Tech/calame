@@ -134,7 +134,9 @@ Calame (compte et contenus) »** that deletes only the current Windows user's `%
 
 - `*-setup.exe` (NSIS): on the uninstall confirm page, then a second confirmation;
 - `*.msi`: only when removing by running the `.msi` again and choosing **Remove** (the
-  « Désinstaller » button in Windows Settings shows no custom page and keeps the data).
+  « Désinstaller » button in Windows Settings shows no custom page and keeps the data); if
+  the deletion cannot be done (for example a file still open), the uninstall stops with an
+  error and both `calame.db` and `.calame-secret` are kept.
 
 Details, limits and the Windows verification matrix:
 [windows-uninstall-data-validation.md](windows-uninstall-data-validation.md).

@@ -122,16 +122,36 @@ describe('desktop MSI uninstaller: optional data deletion', () => {
     expect(fragment).not.toMatch(/InstallUISequence|AdminExecuteSequence/);
   });
 
-  it('runs as the user who launched the uninstall, without failing it', () => {
+  it('runs as the user who launched the uninstall and reports its failures', () => {
     const action = deleteAction()!;
-    expect(action).toMatchObject({ Execute: 'deferred', Impersonate: 'yes', Return: 'ignore' });
+    // Return="check": a failing script stops the uninstall instead of hiding it.
+    expect(action).toMatchObject({ Execute: 'deferred', Impersonate: 'yes', Return: 'check' });
     expect(decode(action.ExeCommand)).toBe(
       '"[SystemFolder]WindowsPowerShell\\v1.0\\powershell.exe" -NoProfile -NonInteractive ' +
-        '-ExecutionPolicy Bypass -File "[#CalameUninstallDataScript]" ' +
+        '-ExecutionPolicy Bypass -File "[INSTALLDIR]calame-uninstall-data.ps1" ' +
         '-InstallDir "[INSTALLDIR]." -DataDir "[CALAME_DATA_DIR]"',
     );
     // Before RemoveFiles: the script and node.exe are still in the install dir.
     expect(fragment).toMatch(/<Custom Action="CalameRemoveUserData" Before="RemoveFiles">/);
+  });
+
+  it('passes the script by a path still resolved during a full removal', () => {
+    const action = deleteAction()!;
+    // [#file] formats to "" when its component is being removed (always, with REMOVE="ALL"):
+    // powershell would then get an empty -File and nothing would ever be deleted.
+    expect(action.ExeCommand).not.toMatch(/\[[#!$]/);
+    // The path names the file the fragment really installs, in the directory it installs it to.
+    const file = elements('File').find((f) => f.Id === 'CalameUninstallDataScript')!;
+    const fileName = path.basename(file.Source.replace('$(sys.SOURCEFILEDIR)', ''));
+    expect(fs.existsSync(path.join(path.dirname(fragmentPath), fileName))).toBe(true);
+    expect(fragment).toMatch(
+      /<DirectoryRef Id="INSTALLDIR">\s*<Component Id="CalameUninstallDataScript"/,
+    );
+    expect(decode(action.ExeCommand)).toContain(`-File "[INSTALLDIR]${fileName}"`);
+    expect(action.Directory).toBe('INSTALLDIR');
+    // Only one Custom scheduling, in the execute sequence, before the files are removed.
+    expect(fragment.match(/<Custom Action=/g)).toHaveLength(1);
+    expect(script).toMatch(/exits non-zero without deleting anything/);
   });
 
   it('checks again that the folder is the running account’s own data folder', () => {

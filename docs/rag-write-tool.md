@@ -32,9 +32,11 @@ Stored in the profile as `documentWrite: { enabled, sources }`.
 
 - `source`: name of an authorized local source; `path`: relative, `/`-separated,
   e.g. `nationex/2026-10-09-standup.md`.
-- Create: omit `expectedVersion`; fails with `already_exists` if the file exists.
+- Create: omit `expectedVersion`; fails with `already_exists` if the file exists
+  (the error carries the current `version`, see below).
 - Replace: `expectedVersion` must equal the current version, else
-  `version_conflict` and nothing is modified (re-read, merge, retry).
+  `version_conflict` (with the current `version`) and nothing is modified
+  (re-read, merge, retry).
 - Result: `saved` (on disk, immediate) is reported separately from `indexing`
   (`queued` | `already_running` | `unavailable`, always `indexed: false` at return).
   Search results may lag until the re-index job completes.
@@ -59,6 +61,39 @@ before retrying; never resend the same write blindly. The message says so:
 ```
 
 All other errors mean nothing was published.
+
+### Recovering from `already_exists` and `version_conflict`
+
+Both refusals carry the file's current `version` (sha256 of the raw bytes, the
+same value `rag_read_note` returns) and an English recovery instruction aimed
+at the AI client. The version is only read and returned **after** every access
+check passed (profile allowed to write, source ticked, authorized folder, read
+scope, path and extension validation); a refusal such as `not_permitted`,
+`outside_authorized_folder` or `extension_not_allowed` never includes one. If
+the version cannot be read (file removed meanwhile, read error), the refusal is
+returned without it, with the short message.
+
+```json
+{
+  "error": "File already exists (current version <v>). To REPLACE it, call rag_write_document again with expectedVersion=\"<v>\" and the COMPLETE new content (read it first with rag_read_note if you need the current text). To ADD text at the end, use rag_append_note instead (no version needed). This version is a snapshot, not a reservation: if the file changes again, the replace is refused with version_conflict.",
+  "code": "already_exists",
+  "version": "<v>"
+}
+```
+
+```json
+{
+  "error": "The file changed since you read it (current version <v>); nothing was modified. Re-read it with rag_read_note, apply your change to the current text, then retry with the COMPLETE new content and expectedVersion set to the version you re-read. To ADD text at the end, use rag_append_note instead. This version is a snapshot, not a reservation: if the file changes again, the replace is refused with version_conflict.",
+  "code": "version_conflict",
+  "version": "<v>"
+}
+```
+
+`<v>` stands for the 64-character hex version. It is a snapshot: another
+writer can change the file right after, in which case the retry is refused
+again with `version_conflict` (and nothing is modified). After a
+`version_conflict`, re-read the note rather than reusing `<v>` blindly, so the
+other writer's change is merged instead of overwritten.
 
 ### Docker Desktop bind mounts (macOS, virtiofs)
 

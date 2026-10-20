@@ -7,6 +7,15 @@ root `package.json` version flows to the Docker image and `create-calame`).
 
 ## [Unreleased]
 
+### Changed
+
+- `rag_write_document` refusals are now actionable by an AI client:
+  `already_exists` and `version_conflict` include the file's current `version`
+  and an English instruction to recover (replace with `expectedVersion=<version>`
+  and the complete content, or use `rag_append_note` to add text; after a
+  conflict, re-read first). The version is only disclosed once every access
+  check passed, and it is a snapshot, not a guarantee that the retry succeeds.
+
 ### Fixed
 
 - `rag_write_document` no longer reports a false `published_unverified` when

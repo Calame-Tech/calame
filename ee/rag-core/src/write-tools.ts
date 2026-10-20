@@ -20,7 +20,13 @@ import { z } from 'zod';
 import { nanoid } from 'nanoid';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { AuditLogEntry, ScopeSelection } from '@calame/core';
-import { FsWriteError, readTextFile, writeTextFile, sha256Hex } from './fs-write.js';
+import {
+  FsWriteError,
+  readFileVersion,
+  readTextFile,
+  writeTextFile,
+  sha256Hex,
+} from './fs-write.js';
 import { isDocumentAllowedByChain } from './merged-rag-tools.js';
 
 type DocumentScope = Extract<ScopeSelection, { kind: 'document' }>;
@@ -80,11 +86,29 @@ export interface RegisterDocumentWriteToolsOpts {
 
 export const WRITE_TOOL_NAME = 'rag_write_document';
 export const READ_NOTE_TOOL_NAME = 'rag_read_note';
+export const APPEND_NOTE_TOOL_NAME = 'rag_append_note';
 
 const json = (obj: unknown, isError = false) => ({
   content: [{ type: 'text' as const, text: JSON.stringify(obj) }],
   ...(isError ? { isError: true } : {}),
 });
+
+/**
+ * Recovery guidance for a refused write, built from the file's current version.
+ * Only called once the target passed every access check (resolveTarget, folder,
+ * read scope), so the version never leaks outside the authorized perimeter.
+ */
+function recoveryMessage(code: 'already_exists' | 'version_conflict', version: string): string {
+  const snapshot =
+    'This version is a snapshot, not a reservation: if the file changes again, the replace is refused with version_conflict.';
+  return code === 'already_exists'
+    ? `File already exists (current version ${version}). ` +
+        `To REPLACE it, call ${WRITE_TOOL_NAME} again with expectedVersion="${version}" and the COMPLETE new content (read it first with ${READ_NOTE_TOOL_NAME} if you need the current text). ` +
+        `To ADD text at the end, use ${APPEND_NOTE_TOOL_NAME} instead (no version needed). ${snapshot}`
+    : `The file changed since you read it (current version ${version}); nothing was modified. ` +
+        `Re-read it with ${READ_NOTE_TOOL_NAME}, apply your change to the current text, then retry with the COMPLETE new content and expectedVersion set to the version you re-read. ` +
+        `To ADD text at the end, use ${APPEND_NOTE_TOOL_NAME} instead. ${snapshot}`;
+}
 
 function insideFolder(relPath: string, folder: string | undefined): boolean {
   if (!folder) return true;
@@ -150,6 +174,7 @@ export function registerDocumentWriteTools(opts: RegisterDocumentWriteToolsOpts)
       `Only UTF-8 .md and .txt files are accepted (size-limited); no delete, rename, binary files, or new folders. ` +
       `Optimistic concurrency: to CREATE, omit expectedVersion (fails if the file already exists). To REPLACE, pass the "version" returned by rag_read_note (or a previous write); ` +
       `if the file changed since, the call is refused with version_conflict and nothing is modified — re-read and retry. ` +
+      `already_exists and version_conflict errors include the file's current "version" (a snapshot) and how to recover. ` +
       `If the call returns published_unverified, the write probably happened: re-read the file with rag_read_note before retrying, never resend blindly. ` +
       `The result separates "saved" (on disk, immediate) from "indexing" (search index updated asynchronously: queued / already_running / unavailable); search results may lag by a few seconds.` +
       hint,
@@ -177,6 +202,8 @@ export function registerDocumentWriteTools(opts: RegisterDocumentWriteToolsOpts)
       const t0 = Date.now();
       const op = args.expectedVersion === undefined ? 'create' : 'replace';
       const baseArgs = { source: args.source, path: args.path, op };
+      // Set only once every access check passed (gates version disclosure).
+      let authorized: ResolvedWriteTarget | undefined;
       try {
         const normalizedPath = args.path.normalize('NFC');
         const target = await resolveTarget(args.source, normalizedPath);
@@ -203,6 +230,7 @@ export function registerDocumentWriteTools(opts: RegisterDocumentWriteToolsOpts)
             true,
           );
         }
+        authorized = target;
         const res = await writeTextFile({
           rootPath: target.rootPath,
           relPath: args.path,
@@ -244,6 +272,31 @@ export function registerDocumentWriteTools(opts: RegisterDocumentWriteToolsOpts)
         });
       } catch (err) {
         if (err instanceof FsWriteError) {
+          if (authorized && (err.code === 'already_exists' || err.code === 'version_conflict')) {
+            let version: string | null = null;
+            try {
+              version = await readFileVersion({
+                rootPath: authorized.rootPath,
+                relPath: args.path,
+                allowedExtensions: authorized.allowedExtensions,
+              });
+            } catch {
+              version = null;
+            }
+            if (version) {
+              audit(
+                WRITE_TOOL_NAME,
+                { ...baseArgs, sourceId: authorized.sourceId, currentVersion: version },
+                `refused: ${err.code}`,
+                'error',
+                t0,
+              );
+              return json(
+                { error: recoveryMessage(err.code, version), code: err.code, version },
+                true,
+              );
+            }
+          }
           audit(WRITE_TOOL_NAME, baseArgs, `refused: ${err.code}`, 'error', t0);
           return json({ error: err.message, code: err.code }, true);
         }

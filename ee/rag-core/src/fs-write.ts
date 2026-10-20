@@ -561,16 +561,23 @@ async function withLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
 // Public API
 // ---------------------------------------------------------------------------
 
+/** Raw bytes of the target through the platform's confined read; null when absent. */
+async function readRaw(
+  rootPath: string,
+  segments: string[],
+  maxBytes: number,
+): Promise<Buffer | null> {
+  if (usePathMode()) {
+    const { target } = await resolveParents(rootPath, segments);
+    return (await readRegular(target, maxBytes))?.buf ?? null;
+  }
+  return helperRead(rootPath, segments, maxBytes);
+}
+
 export async function readTextFile(input: ReadTextFileInput): Promise<ReadTextFileResult> {
   const segments = validateRelPath(input.relPath, input);
   const maxBytes = effectiveMaxBytes(input);
-  let buf: Buffer | null;
-  if (usePathMode()) {
-    const { target } = await resolveParents(input.rootPath, segments);
-    buf = (await readRegular(target, maxBytes))?.buf ?? null;
-  } else {
-    buf = await helperRead(input.rootPath, segments, maxBytes);
-  }
+  const buf = await readRaw(input.rootPath, segments, maxBytes);
   if (!buf) throw new FsWriteError('not_found', 'File not found.');
   let content: string;
   try {
@@ -584,6 +591,18 @@ export async function readTextFile(input: ReadTextFileInput): Promise<ReadTextFi
     version: sha256Hex(buf),
     bytes: buf.length,
   };
+}
+
+/**
+ * Current version (sha256 of the raw bytes) of an existing file, with the same
+ * path validation and confined read as readTextFile, up to the hard size
+ * ceiling (like the replace path) and without requiring valid UTF-8. Null when
+ * the file does not exist. A snapshot only: the file may change right after.
+ */
+export async function readFileVersion(input: ReadTextFileInput): Promise<string | null> {
+  const segments = validateRelPath(input.relPath, input);
+  const buf = await readRaw(input.rootPath, segments, ABSOLUTE_WRITE_MAX_BYTES);
+  return buf ? sha256Hex(buf) : null;
 }
 
 export async function writeTextFile(input: WriteTextFileInput): Promise<WriteTextFileResult> {

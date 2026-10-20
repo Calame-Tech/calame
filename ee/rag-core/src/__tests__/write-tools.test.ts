@@ -131,6 +131,104 @@ describe('rag_write_document', () => {
     expect(await readFile(join(root, 'x.md'), 'utf8')).toBe('old');
   });
 
+  it('already_exists exposes the current version and both recovery options', async () => {
+    await writeFile(join(root, 'x.md'), 'old');
+    const v = sha256Hex('old');
+    const r = await call('rag_write_document', {
+      source: 'Nationex',
+      path: 'x.md',
+      content: 'new',
+    });
+    expect(r.isError).toBe(true);
+    expect(r.body).toMatchObject({ code: 'already_exists', version: v });
+    const msg = r.body.error as string;
+    expect(msg).toContain(`expectedVersion="${v}"`);
+    expect(msg).toContain('COMPLETE new content');
+    expect(msg).toContain('rag_append_note');
+    expect(msg).not.toContain(root);
+    expect(audits.at(-1)).toMatchObject({
+      result: 'error',
+      resultSummary: 'refused: already_exists',
+    });
+    expect(JSON.stringify(audits)).not.toContain('new');
+    // Following the instruction succeeds.
+    const retry = await call('rag_write_document', {
+      source: 'Nationex',
+      path: 'x.md',
+      content: 'new',
+      expectedVersion: r.body.version,
+    });
+    expect(retry.body).toMatchObject({ saved: true, operation: 'replaced' });
+    expect(await readFile(join(root, 'x.md'), 'utf8')).toBe('new');
+  });
+
+  it('already_exists reports the raw-byte version even for a non-UTF-8 file', async () => {
+    const raw = Buffer.from([0x68, 0xff, 0xfe]);
+    await writeFile(join(root, 'bin.md'), raw);
+    const r = await call('rag_write_document', {
+      source: 'Nationex',
+      path: 'bin.md',
+      content: 'x',
+    });
+    expect(r.body).toMatchObject({ code: 'already_exists', version: sha256Hex(raw) });
+  });
+
+  it('version_conflict exposes the current version and asks to re-read', async () => {
+    await writeFile(join(root, 'c.md'), 'v1');
+    const stale = sha256Hex('v1');
+    await writeFile(join(root, 'c.md'), 'v2 by someone else');
+    const r = await call('rag_write_document', {
+      source: 'Nationex',
+      path: 'c.md',
+      content: 'mine',
+      expectedVersion: stale,
+    });
+    expect(r.isError).toBe(true);
+    expect(r.body).toMatchObject({
+      code: 'version_conflict',
+      version: sha256Hex('v2 by someone else'),
+    });
+    expect(r.body.error as string).toContain('rag_read_note');
+    expect(r.body.error as string).toContain('rag_append_note');
+    expect(await readFile(join(root, 'c.md'), 'utf8')).toBe('v2 by someone else');
+  });
+
+  it('never discloses a version before the access checks pass', async () => {
+    await mkdir(join(root, 'private'));
+    await writeFile(join(root, 'private/s.md'), 'secret');
+    await writeFile(join(root, 'notes/n.md'), 'n');
+    const leaks = (b: Record<string, unknown>) =>
+      'version' in b || JSON.stringify(b).includes(sha256Hex('secret'));
+    folder = 'notes';
+    const outside = await call('rag_write_document', {
+      source: 'Nationex',
+      path: 'private/s.md',
+      content: 'x',
+    });
+    expect(outside.body.code).toBe('outside_authorized_folder');
+    expect(leaks(outside.body)).toBe(false);
+    folder = undefined;
+    allowed = false;
+    const denied = await call('rag_write_document', {
+      source: 'Nationex',
+      path: 'private/s.md',
+      content: 'x',
+    });
+    expect(denied.body.code).toBe('not_permitted');
+    expect(leaks(denied.body)).toBe(false);
+    allowed = true;
+    // Forbidden extension / hidden path: refused by validation, no version.
+    await writeFile(join(root, 'k.sh'), 'secret');
+    const ext = await call('rag_write_document', {
+      source: 'Nationex',
+      path: 'k.sh',
+      content: 'x',
+    });
+    expect(ext.isError).toBe(true);
+    expect(leaks(ext.body)).toBe(false);
+    expect(await readFile(join(root, 'private/s.md'), 'utf8')).toBe('secret');
+  });
+
   it('indexing status degrades honestly (already_running / throwing trigger)', async () => {
     trigger = { status: 'already_running' };
     const a = await call('rag_write_document', { source: 'Nationex', path: 'a.md', content: 'a' });

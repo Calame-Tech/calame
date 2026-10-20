@@ -7,8 +7,29 @@ root `package.json` version flows to the Docker image and `create-calame`).
 
 ## [Unreleased]
 
+## [0.8.6] - 2026-10-20
+
 ### Added
 
+- Windows uninstall can remove the user's Calame data. Both installers (NSIS
+  `.exe` and `.msi`) offer an unchecked "delete my Calame data" option; the NSIS
+  uninstaller asks a second confirmation (default: No). Only the
+  `%APPDATA%\Calame` folder of the Windows account that runs the uninstall is
+  targeted, never during an update or a reinstall, never another account's
+  profile, and never a junction, symbolic link or other reparse point (left
+  intact with an explanation). The folder is renamed before deletion, so
+  `calame.db` and `.calame-secret` go away together or not at all.
+- Desktop tray menu: "Réinitialiser le compte administrateur…" for a forgotten
+  administrator account. After an explicit confirmation (default: Cancel) it
+  stops the local server, moves the whole data folder to a dated backup next to
+  it (nothing is deleted, the backup can be put back) and restarts Calame empty
+  so a new administrator can be created. It is reachable only from the native
+  tray menu: no HTTP route or web command can trigger it. A folder chosen with
+  `CALAME_DATA_DIR` is never moved.
+- Login page: help for a forgotten administrator account, backed by the
+  read-only `GET /api/auth/recovery-help` (it never changes anything and only
+  shows the data folder as a placeholder such as `%APPDATA%\Calame`, without
+  the OS user name).
 - New MCP tool `rag_append_note({ source, path, text })`: adds text verbatim at
   the end of a `.md` / `.txt` note, or creates the note when it is absent, with
   no `expectedVersion` to pass. It is registered with `rag_write_document` and

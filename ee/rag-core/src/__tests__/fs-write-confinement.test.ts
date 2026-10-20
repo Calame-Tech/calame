@@ -466,11 +466,80 @@ describe.runIf(isPosix)('staging tampering (real filesystem)', () => {
         await rename(join(root, 'notes', 'other.md'), join(root, 'notes', 'a.md'));
       },
     );
+    // Even though the target now holds exactly what was sent: a foreign entry
+    // was displaced, so this must not read as success.
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.code).toBe('published_unverified');
     expect(await readFile(join(root, 'notes', 'a.md'), 'utf8')).toBe('new');
     // The foreign entry swapped out is never deleted.
     expect(await readFile(join(root, 'notes', names.stage, names.tmp), 'utf8')).toBe('THEIRS');
+  });
+});
+
+/**
+ * Docker Desktop (macOS) bind mounts (virtiofs, "fakeowner" in the container):
+ * RENAME_EXCHANGE returns 0 but acts as a rename-over, so the old file never
+ * comes back into the staging dir. Simulated here by deleting the displaced
+ * entry while the helper is paused right after the exchange.
+ */
+describe.runIf(isPosix)('replace: exchange returns no old entry (virtiofs-like)', () => {
+  async function replaceWithMissingDisplaced(after: (target: string) => Promise<void>) {
+    const target = join(root, 'notes', 'a.md');
+    await writeFile(target, 'old');
+    return withStagingNames(
+      'before_rename',
+      'after_exchange',
+      () =>
+        writeTextFile({
+          rootPath: root,
+          relPath: 'notes/a.md',
+          content: 'new',
+          expectedVersion: sha256Hex('old'),
+        }),
+      async ({ stage, tmp }) => {
+        await rm(join(root, 'notes', stage, tmp));
+        await after(target);
+      },
+    );
+  }
+
+  it('target re-read hashes to the content written → success', async () => {
+    const r = await replaceWithMissingDisplaced(async () => {});
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value).toMatchObject({ created: false, version: sha256Hex('new') });
+    expect(await readFile(join(root, 'notes', 'a.md'), 'utf8')).toBe('new');
+    expect(await readdir(join(root, 'notes'))).toEqual(['a.md']);
+  });
+
+  it('target content differs from what was sent → published_unverified', async () => {
+    // In place: same inode, so the helper's dev/ino check on the target passes.
+    const r = await replaceWithMissingDisplaced((t) => appendFile(t, ' + theirs'));
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('published_unverified');
+      expect(r.error.message).toMatch(/probably published/);
+      expect(r.error.message).toMatch(/Re-read the file before retrying/);
+    }
+    expect(await readFile(join(root, 'notes', 'a.md'), 'utf8')).toBe('new + theirs');
+  });
+
+  it('target cannot be re-read → published_unverified', async () => {
+    // Grown past the absolute read limit in place: the re-read is refused.
+    const r = await replaceWithMissingDisplaced((t) =>
+      appendFile(t, Buffer.alloc(2 * 1024 * 1024 + 1, 0x61)),
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('published_unverified');
+  });
+
+  it('target swapped for a file with the same content → still published_unverified', async () => {
+    // The dev/ino check on the target runs first and is not bypassed by content.
+    const r = await replaceWithMissingDisplaced(async (t) => {
+      await writeFile(join(root, 'notes', 'other.md'), 'new');
+      await rename(join(root, 'notes', 'other.md'), t);
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('published_unverified');
   });
 });
 

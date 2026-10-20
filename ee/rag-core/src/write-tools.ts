@@ -150,6 +150,7 @@ export function registerDocumentWriteTools(opts: RegisterDocumentWriteToolsOpts)
       `Only UTF-8 .md and .txt files are accepted (size-limited); no delete, rename, binary files, or new folders. ` +
       `Optimistic concurrency: to CREATE, omit expectedVersion (fails if the file already exists). To REPLACE, pass the "version" returned by rag_read_note (or a previous write); ` +
       `if the file changed since, the call is refused with version_conflict and nothing is modified — re-read and retry. ` +
+      `If the call returns published_unverified, the write probably happened: re-read the file with rag_read_note before retrying, never resend blindly. ` +
       `The result separates "saved" (on disk, immediate) from "indexing" (search index updated asynchronously: queued / already_running / unavailable); search results may lag by a few seconds.` +
       hint,
     {

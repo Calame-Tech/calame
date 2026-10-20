@@ -7,6 +7,21 @@ root `package.json` version flows to the Docker image and `create-calame`).
 
 ## [Unreleased]
 
+### Fixed
+
+- `rag_write_document` no longer reports a false `published_unverified` when
+  replacing a file on a Docker Desktop for macOS bind mount (virtiofs). There,
+  `RENAME_EXCHANGE` succeeds but acts as a plain rename and never returns the old
+  file to the staging folder, which failed the post-publish check (reproduced
+  with Calame 0.8.5's helper on Docker Desktop 29.4). When the new file is
+  verified at the target and only the old file is missing, the server re-reads
+  the target and reports success if its SHA-256 matches what was sent. Every
+  other post-publish mismatch still returns `published_unverified`. Native
+  macOS/Linux checks are unchanged, and so is the Windows path.
+- The `published_unverified` message now says the write probably happened and
+  asks to re-read the file before retrying. The `rag_write_document`
+  description says the same.
+
 ## [0.8.5] - 2026-10-17
 
 ### Fixed

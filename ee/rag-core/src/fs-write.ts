@@ -49,7 +49,10 @@
  *  - Symlinks are refused (parents, target); parents are NEVER created.
  *  - create -> RENAME_EXCL: kernel-enforced create-only (EEXIST).
  *  - replace -> compare-then-RENAME_SWAP, then the swapped-out entry must be
- *    the validated file (dev/ino) or the result is `published_unverified`. The
+ *    the validated file (dev/ino) or the result is `published_unverified`. If
+ *    the target is verified but the swap returned NO entry (exchange degraded
+ *    to rename-over, seen on Docker Desktop virtiofs bind mounts), success
+ *    requires a re-read of the target hashing to the content written. The
  *    content comparison cannot be atomic with the swap: this is not a
  *    multi-process CAS, an EXTERNAL writer can still change the file in that
  *    window (honest limit). In-process
@@ -92,7 +95,10 @@ export type FsWriteErrorCode =
   /**
    * The publish syscall ran, but the post-publish identity check failed: the
    * target name may now point at something this module did not write (or the
-   * replaced entry could not be identified). Not rolled back; inspect the file.
+   * replaced entry could not be identified). The write probably happened. Not
+   * rolled back; re-read the file before retrying. A replace whose exchange
+   * returned no old entry (virtiofs) is reported as success only when the
+   * re-read target hashes to the content written.
    */
   | 'published_unverified'
   | 'io_error';
@@ -391,6 +397,9 @@ const HELPER_ERROR_CODES: ReadonlySet<string> = new Set<FsWriteErrorCode>([
   'io_error',
 ]);
 
+const PUBLISHED_UNVERIFIED_MESSAGE =
+  'The write was probably published, but the result could not be verified. Re-read the file before retrying; do not repeat the write blindly.';
+
 const HELPER_MESSAGES: Partial<Record<FsWriteErrorCode, string>> = {
   symlink_refused: 'Symbolic links are not allowed in the path.',
   parent_missing: 'A parent folder does not exist (it is never created).',
@@ -402,9 +411,23 @@ const HELPER_MESSAGES: Partial<Record<FsWriteErrorCode, string>> = {
   not_found: 'File not found.',
   version_conflict: 'The file changed during the write. Re-read it and retry.',
   unsupported_filesystem: 'Filesystem does not support atomic create.',
-  published_unverified:
-    'The folder was modified concurrently: the write may have been published but could not be verified. Re-read the file before retrying.',
+  published_unverified: PUBLISHED_UNVERIFIED_MESSAGE,
 };
+
+/**
+ * Helper-only status (replace): our temp file is verified at the target name,
+ * but the exchange returned no old entry to the staging dir — it behaved like a
+ * plain rename-over (observed on Docker Desktop macOS bind mounts, virtiofs).
+ * writeTextFile re-reads the target and only reports success when it hashes to
+ * the content just written; otherwise `published_unverified`.
+ */
+const DISPLACED_MISSING = 'published_displaced_missing';
+
+class DisplacedMissingError extends FsWriteError {
+  constructor() {
+    super('published_unverified', PUBLISHED_UNVERIFIED_MESSAGE);
+  }
+}
 
 let helperOverride: string | undefined;
 let pathModeOverride = false;
@@ -482,6 +505,7 @@ function runHelper(args: string[], stdin: Buffer | undefined): Promise<Buffer> {
       const first = (nl < 0 ? out : out.subarray(0, nl)).toString('utf8');
       if (first.startsWith('ERR ')) {
         const raw = first.slice(4).trim();
+        if (raw === DISPLACED_MISSING) return done(() => reject(new DisplacedMissingError()));
         const code: FsWriteErrorCode = HELPER_ERROR_CODES.has(raw)
           ? (raw as FsWriteErrorCode)
           : 'io_error';
@@ -611,18 +635,23 @@ export async function writeTextFile(input: WriteTextFileInput): Promise<WriteTex
         }
         // The helper re-verifies `old` against the file before creating the
         // temp file and again right before renameat.
-        await runHelper(
-          [
-            'replace',
-            input.rootPath,
-            String(data.length),
-            String(old.length),
-            tmp,
-            '--',
-            ...segments,
-          ],
-          Buffer.concat([data, old]),
-        );
+        try {
+          await runHelper(
+            [
+              'replace',
+              input.rootPath,
+              String(data.length),
+              String(old.length),
+              tmp,
+              '--',
+              ...segments,
+            ],
+            Buffer.concat([data, old]),
+          );
+        } catch (err) {
+          if (!(err instanceof DisplacedMissingError)) throw err;
+          await confirmPublished(input.rootPath, segments, data);
+        }
       }
       return {
         relPath: segments.join('/'),
@@ -635,6 +664,24 @@ export async function writeTextFile(input: WriteTextFileInput): Promise<WriteTex
       throw new FsWriteError('io_error', 'Write failed.');
     }
   });
+}
+
+/**
+ * After `published_displaced_missing`: re-reads the target through the helper
+ * (same fd-anchored, no-symlink walk) and returns only if it hashes exactly to
+ * the content just written. Anything else, including a failed re-read, stays
+ * `published_unverified`.
+ */
+async function confirmPublished(rootPath: string, segments: string[], data: Buffer): Promise<void> {
+  let now: Buffer | null = null;
+  try {
+    now = await helperRead(rootPath, segments, ABSOLUTE_WRITE_MAX_BYTES);
+  } catch {
+    /* unverifiable */
+  }
+  if (!now || sha256Hex(now) !== sha256Hex(data)) {
+    throw new FsWriteError('published_unverified', PUBLISHED_UNVERIFIED_MESSAGE);
+  }
 }
 
 /**

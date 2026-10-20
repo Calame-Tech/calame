@@ -46,9 +46,43 @@ Error codes: `not_permitted`, `outside_authorized_folder`, `invalid_path`,
 `unsupported_filesystem`, `unsupported_platform`, `published_unverified`, `io_error`.
 
 `published_unverified` means the publish step ran but the helper could not
-confirm its result (the folder was modified concurrently): the target may now
-hold something other than what was sent. Nothing is rolled back; re-read the
-file before retrying. All other errors mean nothing was published.
+confirm its result: **the write probably happened**, but the target may hold
+something other than what was sent (for example, the folder was modified
+concurrently). Nothing is rolled back. Re-read the file (`rag_read_note`)
+before retrying; never resend the same write blindly. The message says so:
+
+```json
+{
+  "error": "The write was probably published, but the result could not be verified. Re-read the file before retrying; do not repeat the write blindly.",
+  "code": "published_unverified"
+}
+```
+
+All other errors mean nothing was published.
+
+### Docker Desktop bind mounts (macOS, virtiofs)
+
+On a Docker Desktop for macOS bind mount (virtiofs, shown as `fakeowner` inside
+the Linux container), `renameat2(RENAME_EXCHANGE)` returns success but behaves
+like a plain overwriting rename. The new file is at the target with the expected
+device/inode, but the old file never shows up in the staging folder, where the
+helper looks for it. Up to 0.8.5 every replace on such a mount was therefore
+reported as `published_unverified`, although the file had been written.
+
+The helper now reports this case separately: the new file is verified at the
+target by device/inode, but the exchange returned no old entry. The server then
+re-reads the target through the helper, using the same directory-fd-anchored,
+no-symlink walk. It reports success only if the content hashes (SHA-256) exactly
+to what was sent. Otherwise, including when the re-read fails, the result stays
+`published_unverified`. Other mismatches still give `published_unverified`
+even when the content matches: a different file at the target, or a displaced
+entry that is not the validated old file. Native macOS/Linux filesystems never
+reach this case because their exchange returns the old file.
+
+On such a mount the replace behaves like a rename-over, as on Windows. The
+validated old file is not checked again after the swap, so an external editor
+that replaces the file between the last check and the publish step is not
+detected.
 
 ## Safety guarantees
 
@@ -133,7 +167,8 @@ file before retrying. All other errors mean nothing was published.
   target. The helper checks device/inode before publishing (refusing with
   `io_error`, nothing published) and after publishing; a mismatch detected after
   the publish step is reported as `published_unverified`, never as a plain
-  refusal, because something was published. What this design achieves is
+  refusal, because something was published (only exception: the exchange that
+  returns no old entry, see "Docker Desktop bind mounts" above). What this design achieves is
   directory-fd confinement, not protection against a hostile same-user process.
 - **Concurrent local processes, Windows (weaker)**: Node offers no
   directory-handle-relative file API on Windows, so the helper is not used there.

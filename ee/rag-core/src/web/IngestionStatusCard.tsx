@@ -5,6 +5,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { RagJob } from '../types.js';
 import { apiGet, type RagJobListResponse } from './api.js';
+import { jobProgressState } from './job-progress.js';
 import { translateJobError } from './onboarding-strings.js';
 import { SYNC_PANELS_STRINGS as S } from './strings/sync-panels.js';
 
@@ -101,7 +102,7 @@ export default function IngestionStatusCard({
   if (loading) {
     return (
       <div className="card-primary p-4">
-        <p className="text-sm text-gray-500">{S.ingestionLoading}</p>
+        <p className="text-sm text-gray-400">{S.ingestionLoading}</p>
       </div>
     );
   }
@@ -117,7 +118,7 @@ export default function IngestionStatusCard({
   if (jobs.length === 0) {
     return (
       <div className="card-primary p-4">
-        <p className="text-sm text-gray-500">{S.ingestionNone}</p>
+        <p className="text-sm text-gray-400">{S.ingestionNone}</p>
       </div>
     );
   }
@@ -126,11 +127,11 @@ export default function IngestionStatusCard({
     <div className="card-primary p-4 space-y-3">
       <div className="flex items-center justify-between">
         <h3 className="eyebrow">{S.ingestionTitle}</h3>
-        <span className="text-xs text-gray-500">{S.jobsCount(jobs.length)}</span>
+        <span className="text-xs text-gray-400">{S.jobsCount(jobs.length)}</span>
       </div>
       <ul className="space-y-2">
         {jobs.map((job) => {
-          const total = Math.max(job.totalDocuments, 1);
+          const state = jobProgressState(job);
           const percent = Math.round(Math.min(Math.max(job.progress, 0), 1) * 100);
           return (
             <li key={job.id} className="card-nested p-3 space-y-2">
@@ -152,12 +153,20 @@ export default function IngestionStatusCard({
                   style={{ width: `${percent}%` }}
                 />
               </div>
-              <div className="flex items-center justify-between text-xs text-gray-500">
-                <span>{S.documentsCount(job.processedDocuments, total)}</span>
+              <div className="flex items-center justify-between text-xs text-gray-400">
+                <span>
+                  {state === 'preparing'
+                    ? S.documentsDiscovering
+                    : state === 'empty'
+                      ? S.documentsNone
+                      : job.totalDocuments > 0
+                        ? S.documentsCount(job.processedDocuments, job.totalDocuments)
+                        : null}
+                </span>
                 <span>{percent}%</span>
               </div>
               {job.currentDocument && isActive(job) && (
-                <p className="text-xs text-gray-500 truncate" title={job.currentDocument}>
+                <p className="text-xs text-gray-400 truncate" title={job.currentDocument}>
                   {S.currentDocument(job.currentDocument, null)}
                 </p>
               )}

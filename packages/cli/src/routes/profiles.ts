@@ -6,6 +6,7 @@ import { upgradeProfileShape } from '@calame/core';
 import type { ServeProfile } from '@calame/core';
 import { getTenantId, DEFAULT_TENANT_ID } from '../tenancy.js';
 import { lookupLiveRagSource } from '../rag-source-lookup.js';
+import { getProfileAiInstructions, validateAiInstructions } from '../profile-ai-instructions.js';
 
 export interface ProfileWarning {
   profile: string;
@@ -78,6 +79,32 @@ export function validateProfiles(
 }
 
 export function registerProfilesRoute(app: Express, state: AppState): void {
+  /**
+   * Audit a change of a profile's AI instructions. Records only the field name
+   * and the new length — never the instructions text itself.
+   */
+  async function auditAiInstructionsChange(
+    profileName: string,
+    tenantId: string,
+    before: string | undefined,
+    after: string | undefined,
+  ): Promise<void> {
+    if (!state.auditLog || before === after) return;
+    state.auditLog.addEntry({
+      profileName,
+      toolName: 'profile.updated',
+      toolArgs: { field: 'aiInstructions' },
+      result: 'success',
+      resultSummary: after
+        ? `AI instructions updated for profile "${profileName}"`
+        : `AI instructions cleared for profile "${profileName}"`,
+      resultData: JSON.stringify({ field: 'aiInstructions', length: after?.length ?? 0 }),
+      durationMs: 0,
+      tenantId,
+    });
+    await state.auditLog.save();
+  }
+
   async function getDb(): Promise<CalameDatabase> {
     if (!state.db) {
       const dataDir = state.config?.dataDir ?? process.cwd();
@@ -101,6 +128,29 @@ export function registerProfilesRoute(app: Express, state: AppState): void {
           message: 'Cannot save empty profiles. At least one profile is required.',
         });
         return;
+      }
+
+      // Validate AI instructions up front so an invalid value rejects the whole
+      // save (no partial write, no truncation). Present values are trimmed;
+      // null clears the field.
+      for (const [profileName, profile] of Object.entries(
+        data.profiles as Record<string, Record<string, unknown>>,
+      )) {
+        if (!profile || typeof profile !== 'object' || profile.aiInstructions === undefined) {
+          continue;
+        }
+        const check = validateAiInstructions(profile.aiInstructions);
+        if (!check.ok) {
+          res.status(400).json({
+            success: false,
+            code: check.code,
+            field: 'aiInstructions',
+            profile: profileName,
+            message: check.message,
+          });
+          return;
+        }
+        profile.aiInstructions = check.value;
       }
 
       // Ensure each profile has a connections field (default to ['default'])
@@ -194,6 +244,16 @@ export function registerProfilesRoute(app: Express, state: AppState): void {
         }
       }
 
+      // Empty AI instructions are stored as an absent field (same shape as a
+      // legacy profile).
+      for (const profile of Object.values(
+        data.profiles as Record<string, Record<string, unknown>>,
+      )) {
+        if (profile && typeof profile === 'object' && !getProfileAiInstructions(profile)) {
+          delete profile.aiInstructions;
+        }
+      }
+
       // Phase B multi-tenancy — bind `tenant_id` explicitly so the row lands
       // under the caller's tenant. The current `profiles` row is keyed by the
       // literal 'main' regardless of tenant; a future migration will reshape
@@ -201,6 +261,17 @@ export function registerProfilesRoute(app: Express, state: AppState): void {
       db.raw
         .prepare("INSERT OR REPLACE INTO profiles (key, data, tenant_id) VALUES ('main', ?, ?)")
         .run(JSON.stringify(data), tenantId);
+
+      for (const [profileName, savedProfile] of Object.entries(
+        data.profiles as Record<string, Record<string, unknown>>,
+      )) {
+        await auditAiInstructionsChange(
+          profileName,
+          tenantId,
+          getProfileAiInstructions(existingProfiles[profileName]),
+          getProfileAiInstructions(savedProfile),
+        );
+      }
 
       // Reflect in AppState for every profile currently loaded there.
       // `state.serveProfiles` is a process-wide cache populated once (see
@@ -479,6 +550,78 @@ export function registerProfilesRoute(app: Express, state: AppState): void {
       const message = error instanceof Error ? error.message : 'Unknown error';
       state.logger?.error('Document write update error', { component: 'profiles', error: message });
       res.status(500).json({ success: false, message: 'Failed to update file-write settings' });
+    }
+  });
+  // Optional per-profile AI instructions (plain text / Markdown, ≤ 4,000
+  // characters). Same admin-session protection as every other profile edit.
+  app.patch('/api/profiles/:name/ai-instructions', async (req, res) => {
+    const profileName = req.params.name as string;
+
+    const body = req.body as { aiInstructions?: unknown } | undefined;
+    if (!body || typeof body !== 'object' || !('aiInstructions' in body)) {
+      res.status(400).json({
+        success: false,
+        code: 'ai_instructions_invalid',
+        field: 'aiInstructions',
+        message: 'Missing aiInstructions.',
+      });
+      return;
+    }
+    const check = validateAiInstructions(body.aiInstructions);
+    if (!check.ok) {
+      res.status(400).json({
+        success: false,
+        code: check.code,
+        field: 'aiInstructions',
+        message: check.message,
+      });
+      return;
+    }
+
+    try {
+      const db = await getDb();
+      const tenantId = getTenantId(req);
+      const row = db.raw
+        .prepare("SELECT data FROM profiles WHERE key = 'main' AND tenant_id = ?")
+        .get(tenantId) as { data: string } | undefined;
+      const data = row
+        ? (JSON.parse(row.data) as { profiles?: Record<string, Record<string, unknown>> })
+        : undefined;
+      if (!data?.profiles?.[profileName]) {
+        res.status(404).json({ success: false, message: `Profile "${profileName}" not found.` });
+        return;
+      }
+
+      const before = getProfileAiInstructions(data.profiles[profileName]);
+      try {
+        data.profiles[profileName] = upgradeProfileShape(
+          data.profiles[profileName],
+        ) as unknown as Record<string, unknown>;
+      } catch {
+        /* keep as-is */
+      }
+      if (check.value) data.profiles[profileName].aiInstructions = check.value;
+      else delete data.profiles[profileName].aiInstructions;
+
+      db.raw
+        .prepare("INSERT OR REPLACE INTO profiles (key, data, tenant_id) VALUES ('main', ?, ?)")
+        .run(JSON.stringify(data), tenantId);
+
+      if (state.serveProfiles[profileName] && tenantId === DEFAULT_TENANT_ID) {
+        if (check.value) state.serveProfiles[profileName].aiInstructions = check.value;
+        else delete state.serveProfiles[profileName].aiInstructions;
+      }
+
+      await auditAiInstructionsChange(profileName, tenantId, before, check.value || undefined);
+
+      res.json({ success: true, profile: data.profiles[profileName] });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      state.logger?.error('AI instructions update error', {
+        component: 'profiles',
+        error: message,
+      });
+      res.status(500).json({ success: false, message: 'Failed to update AI instructions' });
     }
   });
 }

@@ -69,6 +69,52 @@ describe('McpDetailPage', () => {
     await flushEffects();
   });
 
+  it('shows the editable "AI instructions" field and updates the profile after saving', async () => {
+    const fetchMock = installFetchMock();
+    const base = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (input: string | URL | Request) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes('/ai-instructions')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ success: true, profile: { aiInstructions: 'New rule' } }),
+        } as unknown as Response;
+      }
+      return base(input);
+    });
+    const setProfiles = vi.fn();
+    render(
+      <McpDetailPage
+        view={{ page: 'mcp-detail', profileName: 'default' }}
+        setView={vi.fn()}
+        profiles={[makeProfile({ aiInstructions: 'Read 00-LISEZ-MOI.md' })]}
+        setProfiles={setProfiles}
+        serveStatus={makeServeStatus()}
+        configWithProfileOptions={makeConfig()}
+        configurations={[]}
+        setConfigurations={vi.fn()}
+        activeProfileIndex={0}
+        setActiveProfileIndex={vi.fn()}
+        handleProfileDelete={vi.fn(async () => {})}
+        handleConfigurationSave={vi.fn(async () => true)}
+      />,
+    );
+    await flushEffects();
+
+    const field = screen.getByLabelText('AI instructions') as HTMLTextAreaElement;
+    expect(field.value).toBe('Read 00-LISEZ-MOI.md');
+    fireEvent.change(field, { target: { value: 'New rule' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save instructions' }));
+    });
+
+    const updater = setProfiles.mock.calls.at(-1)?.[0] as (p: unknown[]) => unknown[];
+    expect(updater([makeProfile({ aiInstructions: 'Read 00-LISEZ-MOI.md' })])).toEqual([
+      makeProfile({ aiInstructions: 'New rule' }),
+    ]);
+  });
+
   it('moves the AI client/settings UI to its own "Connect" tab, out of "Exposed Data"', async () => {
     renderPage();
     await flushEffects();

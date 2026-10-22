@@ -193,6 +193,29 @@ describe('POST /api/profiles/:name/preview', () => {
     expect(ssnCol?.visible).toBe(false);
   });
 
+  it('includes the trimmed AI instructions, and omits them for legacy or blank profiles', async () => {
+    const profilesData = {
+      profiles: {
+        docs: { label: 'Docs', selectedTables: {}, aiInstructions: '  Read 00-LISEZ-MOI.md  ' },
+        legacy: { label: 'Legacy', selectedTables: {} },
+        blank: { label: 'Blank', selectedTables: {}, aiInstructions: '   ' },
+      },
+    };
+    db.raw
+      .prepare("INSERT OR REPLACE INTO profiles (key, data) VALUES ('main', ?)")
+      .run(JSON.stringify(profilesData));
+
+    const docs = await request(app).post('/api/profiles/docs/preview').set('Cookie', cookie);
+    expect(docs.status).toBe(200);
+    expect(docs.body.preview.aiInstructions).toBe('Read 00-LISEZ-MOI.md');
+
+    for (const name of ['legacy', 'blank']) {
+      const res = await request(app).post(`/api/profiles/${name}/preview`).set('Cookie', cookie);
+      expect(res.status).toBe(200);
+      expect(res.body.preview).not.toHaveProperty('aiInstructions');
+    }
+  });
+
   it('should require authentication', async () => {
     const res = await request(app).post('/api/profiles/test/preview').expect(401);
 

@@ -168,6 +168,7 @@ export function useAppData(isUserPage: boolean) {
             externalAuthConfig: p.externalAuthConfig,
             responseMode: p.responseMode,
             documentWrite: p.documentWrite,
+            aiInstructions: p.aiInstructions,
             dataScopeRules: p.dataScopeRules,
             sharedTables: p.sharedTables,
             aiSettingNames: p.aiSettingNames,

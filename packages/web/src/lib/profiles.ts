@@ -140,6 +140,7 @@ export function buildProfilesData(profiles: Profile[]): Record<string, Record<st
       externalAuthConfig: p.externalAuthConfig,
       responseMode: p.responseMode,
       documentWrite: p.documentWrite,
+      aiInstructions: p.aiInstructions,
       dataScopeRules: p.dataScopeRules,
       sharedTables: p.sharedTables,
       aiSettingNames: p.aiSettingNames,

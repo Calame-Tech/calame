@@ -158,6 +158,8 @@ export interface Profile {
   responseMode?: 'friendly' | 'raw';
   /** Opt-in "create and edit files" capability (off by default). */
   documentWrite?: { enabled: boolean; sources: Record<string, { folder?: string }> };
+  /** Optional AI instructions (plain text / Markdown, ≤ 4,000 chars) sent to MCP clients. */
+  aiInstructions?: string;
   /** Row-level data scoping rules. */
   dataScopeRules?: DataScopeRule[];
   /** Tables explicitly shared (no scoping) when dataScopeRules is non-empty. */

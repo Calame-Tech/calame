@@ -19,6 +19,7 @@ import {
 import { mergeConfigurations } from './serve.js';
 import { readConfigurationsFile } from './configurations.js';
 import { getTenantId } from '../tenancy.js';
+import { getProfileAiInstructions } from '../profile-ai-instructions.js';
 
 interface PreviewColumnInfo {
   name: string;
@@ -38,6 +39,8 @@ interface PreviewTableResult {
 interface PreviewResult {
   profileName: string;
   tables: PreviewTableResult[];
+  /** Effective AI instructions (trimmed); absent when none. */
+  aiInstructions?: string;
 }
 
 /** Apply column masking to a single row for preview. */
@@ -132,6 +135,7 @@ export function registerProfilePreviewRoute(app: Express, state: AppState): void
             // legacy fields above for profiles authored before the migration.
             sources?: string[];
             scopes?: Record<string, ScopeSelection>;
+            aiInstructions?: string;
           }
         >;
       };
@@ -283,7 +287,11 @@ export function registerProfilePreviewRoute(app: Express, state: AppState): void
         });
       }
 
-      const result: PreviewResult = { profileName, tables };
+      const result: PreviewResult = {
+        profileName,
+        tables,
+        aiInstructions: getProfileAiInstructions(profile),
+      };
       res.json({ success: true, preview: result });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown error';

@@ -10,6 +10,7 @@ import { apiFetch, getCurrentTenant } from '../lib/api.js';
 import { buildMcpPath } from '../lib/mcp-url.js';
 import { Breadcrumb } from '../components/ui/index.js';
 import HelpTip from '../components/HelpTip.js';
+import AiInstructionsEditor from '../components/AiInstructionsEditor.js';
 import AiSettingsAssignment from '../components/AiSettingsAssignment.js';
 import ConnectClaudeDesktop from '../components/ConnectClaudeDesktop.js';
 import ExposeTunnel from '../components/ExposeTunnel.js';
@@ -946,6 +947,20 @@ function McpDetailView({
             <HelpTip content={t('responseMode.tooltip')} position="left" size="xs" />
           </div>
         </div>
+
+        {/* Optional AI instructions sent to MCP clients at connection time */}
+        <AiInstructionsEditor
+          profileName={profileName}
+          value={profile.aiInstructions}
+          onSaved={(aiInstructions) =>
+            onProfilesChange((prev) => {
+              const updated = [...prev];
+              const i = updated.findIndex((p) => p.name === profileName);
+              if (i >= 0) updated[i] = { ...updated[i], aiInstructions };
+              return updated;
+            })
+          }
+        />
 
         {/* Current access mode + fold for the advanced options. The open-access
             warning stays outside the fold so it is always visible. */}

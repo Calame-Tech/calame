@@ -246,6 +246,20 @@
     },
     "users": {
       "heading": "Utilisateurs ayant accès à {name}"
+    },
+    "aiInstructions": {
+      "label": "Consignes pour l'IA",
+      "hint": "Facultatif. Texte brut ou Markdown envoyé aux clients IA à la connexion à ce MCP (ex. « Lis d'abord 00-LISEZ-MOI.md »). Laissez vide pour ne rien envoyer.",
+      "placeholder": "Ex. : Lis d'abord 00-LISEZ-MOI.md. Pour ajouter à une note, utilise rag_append_note ; rag_write_document seulement pour remplacer un fichier.",
+      "counter": "{count} / {max} caractères",
+      "save": "Enregistrer les consignes",
+      "saving": "Enregistrement...",
+      "saved": "Consignes enregistrées.",
+      "reconnectNote": "Les clients lisent les consignes à la connexion : relancez ou reconnectez une session déjà ouverte. La prise en charge varie selon les clients.",
+      "errors": {
+        "tooLong": "Les consignes sont limitées à {max} caractères ({count} saisis). Raccourcissez-les : rien n'a été enregistré.",
+        "saveFailed": "Échec de l'enregistrement des consignes. Rien n'a été modifié."
+      }
     }
   },
   "configurationDetail": {
@@ -1593,7 +1607,8 @@
         "hidden": "Masquée",
         "visible": "Visible"
       },
-      "sampleRowLabel": "Exemple de ligne (masquage appliqué) :"
+      "sampleRowLabel": "Exemple de ligne (masquage appliqué) :",
+      "aiInstructionsHeading": "Consignes pour l'IA"
     }
   },
   "users": {

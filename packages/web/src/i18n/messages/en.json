@@ -246,6 +246,20 @@
     },
     "users": {
       "heading": "Users with access to {name}"
+    },
+    "aiInstructions": {
+      "label": "AI instructions",
+      "hint": "Optional. Plain text or Markdown sent to AI clients when they connect to this MCP (e.g. “Read 00-LISEZ-MOI.md first”). Leave empty to send nothing.",
+      "placeholder": "E.g.: Read 00-LISEZ-MOI.md first. To add to a note, use rag_append_note; use rag_write_document only to replace a whole file.",
+      "counter": "{count} / {max} characters",
+      "save": "Save instructions",
+      "saving": "Saving...",
+      "saved": "Instructions saved.",
+      "reconnectNote": "Clients read the instructions when they connect: restart or reconnect any session already open. Support varies between clients.",
+      "errors": {
+        "tooLong": "AI instructions are limited to {max} characters ({count} entered). Shorten them: nothing was saved.",
+        "saveFailed": "Failed to save the AI instructions. Nothing was changed."
+      }
     }
   },
   "configurationDetail": {
@@ -1593,7 +1607,8 @@
         "hidden": "Hidden",
         "visible": "Visible"
       },
-      "sampleRowLabel": "Sample row (with masking applied):"
+      "sampleRowLabel": "Sample row (with masking applied):",
+      "aiInstructionsHeading": "AI instructions"
     }
   },
   "users": {

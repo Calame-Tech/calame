@@ -148,6 +148,13 @@ export interface ServeProfile {
     enabled: boolean;
     sources: Record<string, { folder?: string }>;
   };
+  /**
+   * Optional free-text (plain text / Markdown) "AI instructions" for this
+   * profile, at most 4,000 characters. Never executed nor rendered as HTML.
+   * Absent, empty or whitespace-only → no MCP enrichment (legacy profiles
+   * simply lack the field; no migration needed since profiles are a JSON blob).
+   */
+  aiInstructions?: string;
   configurations?: string[]; // References to ServeConfiguration names
   /** Names of AI settings (from ai_settings table) usable by clients of this MCP. First = default. */
   aiSettingNames?: string[];

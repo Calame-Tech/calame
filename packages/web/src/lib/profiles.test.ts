@@ -76,6 +76,12 @@ describe('new MCP defaults', () => {
     expect(data.externalAuthConfig).toBeUndefined();
   });
 
+  it('carries the AI instructions so a full save never drops them', () => {
+    const p = { ...createNewProfile('docs', 'Docs'), aiInstructions: 'Read 00-LISEZ-MOI.md' };
+    expect(buildProfilesData([p]).docs.aiInstructions).toBe('Read 00-LISEZ-MOI.md');
+    expect(buildProfilesData([createNewProfile('a', 'A')]).a.aiInstructions).toBeUndefined();
+  });
+
   it('returns a fresh documentWrite object per profile', () => {
     const a = createNewProfile('a', 'A');
     const b = createNewProfile('b', 'B');

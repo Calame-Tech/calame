@@ -19,6 +19,8 @@ interface PreviewTable {
 
 interface PreviewData {
   tables: PreviewTable[];
+  /** Profile AI instructions — plain text, shown as-is (never rendered as HTML). */
+  aiInstructions?: string;
 }
 
 interface ProfilePreviewProps {
@@ -175,6 +177,15 @@ export default function ProfilePreview({ profileName, onClose }: ProfilePreviewP
                 })}
               </span>
             </div>
+
+            {data.aiInstructions?.trim() && (
+              <section className="mb-6 card-nested px-4 py-3" data-testid="preview-ai-instructions">
+                <h3 className="font-semibold text-gray-100 mb-2">{t('aiInstructionsHeading')}</h3>
+                <pre className="text-xs whitespace-pre-wrap break-words text-gray-300 leading-relaxed">
+                  {data.aiInstructions}
+                </pre>
+              </section>
+            )}
 
             {data.tables.length === 0 && (
               <p className="text-gray-500 text-sm text-center py-8">{t('emptyTables')}</p>

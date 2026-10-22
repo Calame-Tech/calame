@@ -20,6 +20,12 @@ import { readConfigurationsFile } from './configurations.js';
 import type { ServeConfiguration } from '@calame/core';
 import { buildMcpPath } from '../utils/mcp-url.js';
 import {
+  appendAiInstructionsToRagTools,
+  buildMcpServerInstructions,
+  buildToolDescriptionSuffix,
+  trackRegisteredTools,
+} from '../profile-ai-instructions.js';
+import {
   resolveMcpRoute,
   loadServeProfileForTenant,
   isServeProfileActive,
@@ -410,7 +416,17 @@ export function registerServeRoute(app: Express, state: AppState): void {
       }
 
       // --- Create a stateless MCP server per request ---
-      const mcpServer = new McpServer({ name: `calame-${profileName}`, version: '2.0.0' });
+      // Per-profile AI instructions travel in `initialize.instructions` (SDK
+      // ServerOptions.instructions) — never in tool results. Omitted when empty.
+      const instructions = buildMcpServerInstructions(profile, profileName, tenantId);
+      const mcpServer = new McpServer(
+        { name: `calame-${profileName}`, version: '2.0.0' },
+        instructions ? { instructions } : undefined,
+      );
+      // Short reminder appended to the rag_* tool descriptions for clients
+      // that ignore `initialize.instructions`. Only tracked when non-empty.
+      const toolDescriptionSuffix = buildToolDescriptionSuffix(profile);
+      const registeredTools = toolDescriptionSuffix ? trackRegisteredTools(mcpServer) : undefined;
 
       // Determines whether tool descriptions use raw DB names or human-readable labels.
       const responseMode = profile.responseMode ?? 'friendly';
@@ -648,6 +664,8 @@ export function registerServeRoute(app: Express, state: AppState): void {
           }
         }
       }
+
+      if (registeredTools) appendAiInstructionsToRagTools(registeredTools, toolDescriptionSuffix);
 
       // Create a stateless transport (no session management)
       const transport = new StreamableHTTPServerTransport({

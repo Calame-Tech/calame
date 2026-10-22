@@ -346,7 +346,7 @@ export default function SetupChecklist({
                 : PROBE_REASONS.includes(lastProbe.error.category)
                   ? lastProbe.error.category
                   : 'backend'
-            }`,
+            }` as Parameters<typeof t>[0],
           ),
         });
 

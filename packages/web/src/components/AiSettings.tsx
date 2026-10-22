@@ -21,6 +21,13 @@ const LOCAL_MODEL_INFO = {
   maxTokens: 2048,
 };
 
+/**
+ * Label seeded server-side for the bundled local embedding setting (French,
+ * see LOCAL_EMBEDDING_DEFAULT_LABEL in local-embedding-meta.ts). Displayed in
+ * the UI locale unless the user renamed it.
+ */
+const LOCAL_SEEDED_LABEL = 'Embeddings locaux (inclus)';
+
 interface MaskedAiSetting {
   name: string;
   label: string;
@@ -75,6 +82,10 @@ const SLUG_RE = /^[a-z0-9_-]{1,64}$/;
 export default function AiSettings() {
   const t = useTranslations('aiSettings');
   const tCommon = useTranslations('common');
+  const displayLabel = (s: MaskedAiSetting): string =>
+    s.provider === 'local' && s.label === LOCAL_SEEDED_LABEL
+      ? t('providers.local.defaultName')
+      : s.label;
 
   // List of all AI settings (refreshed after each mutation)
   const [settings, setSettings] = useState<MaskedAiSetting[]>([]);
@@ -391,12 +402,12 @@ export default function AiSettings() {
         data.success
           ? {
               success: true,
-              message: t('quickTest.ok', { label: s.label, response: data.response }),
+              message: t('quickTest.ok', { label: displayLabel(s), response: data.response }),
             }
           : {
               success: false,
               message: t('quickTest.failed', {
-                label: s.label,
+                label: displayLabel(s),
                 message: data.message || t('testResult.testFailed'),
               }),
             },
@@ -404,7 +415,7 @@ export default function AiSettings() {
     } catch {
       setTestResult({
         success: false,
-        message: t('quickTest.connectionError', { label: s.label }),
+        message: t('quickTest.connectionError', { label: displayLabel(s) }),
       });
     } finally {
       setTestingName(null);
@@ -412,7 +423,7 @@ export default function AiSettings() {
   };
 
   const handleDelete = async (s: MaskedAiSetting) => {
-    if (!window.confirm(t('confirmDelete', { label: s.label }))) return;
+    if (!window.confirm(t('confirmDelete', { label: displayLabel(s) }))) return;
     try {
       await apiFetch(`/api/ai-settings/${encodeURIComponent(s.name)}`, {
         method: 'DELETE',
@@ -895,7 +906,9 @@ export default function AiSettings() {
               >
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-gray-200 truncate">{s.label}</span>
+                    <span className="text-sm font-medium text-gray-200 truncate">
+                      {displayLabel(s)}
+                    </span>
                     <span className="text-xs text-gray-500">·</span>
                     <span className="text-xs text-gray-500 truncate">{s.name}</span>
                     <span

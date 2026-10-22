@@ -7,6 +7,23 @@ root `package.json` version flows to the Docker image and `create-calame`).
 
 ## [Unreleased]
 
+### Added
+
+- Optional **AI instructions** per MCP profile ("Consignes pour l'IA"): plain
+  text or Markdown, at most 4,000 characters, edited on the profile page (FR/EN)
+  and shown in the profile preview. Over the limit, the web form and the API
+  refuse the save with an explicit error — no truncation, nothing saved.
+  Existing profiles keep empty instructions and behave as before. When set, the
+  instructions are sent in the MCP `initialize` result (`instructions`, after a
+  short fixed preamble naming the profile and recalling that tool content is
+  data) on `/mcp/<profile>` and `/mcp/<tenant>/<profile>`, in API key and
+  Calame/OAuth modes; the `rag_*` tool descriptions of that profile get a short
+  deterministic reminder (first line, 200 characters max) for clients that
+  ignore `instructions`. Never injected into tool results. Same edit rights as
+  the rest of the profile; changes are audited without the text. Clients read
+  them at connection, so open sessions must reconnect, and support varies by
+  client. See `docs/ai-instructions.md` / `docs/ai-instructions.fr.md`.
+
 ## [0.8.6] - 2026-10-20
 
 ### Added

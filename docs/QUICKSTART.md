@@ -209,6 +209,11 @@ Pick one:
 | `sso` | OIDC SSO (Google Workspace, Okta, Azure AD, Keycloak…) |
 | `external` | Custom validation URL — Calame POSTs the token to your endpoint, your endpoint returns 200/401 |
 
+### 5.5 AI instructions (optional)
+- Rules sent to MCP clients when they connect (e.g. "read `00-LISEZ-MOI.md` first; use `rag_append_note` to add to a note, `rag_write_document` only to replace a whole file")
+- Plain text or Markdown, 4,000 characters max, scoped to this profile; leave empty to send nothing
+- Clients read them at connection (reconnect open sessions after a change) and support varies by client — see [ai-instructions.md](ai-instructions.md) ([français](ai-instructions.fr.md))
+
 Click **Save**. Then **Start** the profile — Calame spins up the MCP endpoint at `http://localhost:4567/mcp/<profile-name>`.
 
 ---

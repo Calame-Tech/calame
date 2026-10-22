@@ -82,6 +82,9 @@ environment to reuse an existing secret.
 - **PII detection & masking** (auto + custom rules, global or per-column)
 - **Row-level data scoping** (e.g. restrict a profile to `client_email = X`)
 - Write queue with approval workflow for mutating queries
+- Optional **AI instructions** per profile (≤ 4,000 characters), sent to MCP
+  clients at connection — see [docs/ai-instructions.md](docs/ai-instructions.md)
+  ([français](docs/ai-instructions.fr.md))
 
 ### Auth — per profile
 - **Open**, **Bearer token**, **password**, **OIDC SSO**, **OAuth 2.1**

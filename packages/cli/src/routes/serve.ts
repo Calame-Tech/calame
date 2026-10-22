@@ -19,6 +19,7 @@ import {
 import { readConfigurationsFile } from './configurations.js';
 import type { ServeConfiguration } from '@calame/core';
 import { buildMcpPath } from '../utils/mcp-url.js';
+import { buildMcpServerInstructions } from '../profile-ai-instructions.js';
 import {
   resolveMcpRoute,
   loadServeProfileForTenant,
@@ -410,7 +411,13 @@ export function registerServeRoute(app: Express, state: AppState): void {
       }
 
       // --- Create a stateless MCP server per request ---
-      const mcpServer = new McpServer({ name: `calame-${profileName}`, version: '2.0.0' });
+      // Per-profile AI instructions travel in `initialize.instructions` (SDK
+      // ServerOptions.instructions) — never in tool results. Omitted when empty.
+      const instructions = buildMcpServerInstructions(profile, profileName, tenantId);
+      const mcpServer = new McpServer(
+        { name: `calame-${profileName}`, version: '2.0.0' },
+        instructions ? { instructions } : undefined,
+      );
 
       // Determines whether tool descriptions use raw DB names or human-readable labels.
       const responseMode = profile.responseMode ?? 'friendly';

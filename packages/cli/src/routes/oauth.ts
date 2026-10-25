@@ -45,6 +45,26 @@ interface PendingOAuthAuthorization {
   expiresAt: number;
 }
 
+/** Outcome of the client_id + redirect_uri check performed at /authorize. */
+type ClientCheck = 'ok' | 'missing_client_id' | 'unknown_client' | 'redirect_uri_mismatch';
+
+/** error_description returned to the OAuth client for each failure cause. */
+const CLIENT_CHECK_DESCRIPTION: Record<Exclude<ClientCheck, 'ok'>, string> = {
+  missing_client_id: 'client_id is required.',
+  unknown_client:
+    'Unknown client_id: this OAuth client is not registered on this server (it may have been ' +
+    'registered before a server restart or update). Reconnect, or remove and recreate, the ' +
+    'connector in your MCP client to register it again.',
+  redirect_uri_mismatch: 'redirect_uri does not match registered client.',
+};
+
+/** Log message for each failure cause (no secret, no query string). */
+const CLIENT_CHECK_LOG: Record<Exclude<ClientCheck, 'ok'>, string> = {
+  missing_client_id: 'missing client_id',
+  unknown_client: 'unknown client_id (connector must reconnect or be recreated)',
+  redirect_uri_mismatch: 'redirect_uri differs from the URIs registered for this client',
+};
+
 // ---------------------------------------------------------------------------
 // Route registration
 // ---------------------------------------------------------------------------
@@ -78,9 +98,11 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
 
   /**
    * Validate that `redirectUri` is registered for `clientId` in the request's
-   * tenant. Fail-closed: returns true ONLY when the client exists in that
+   * tenant. Fail-closed: returns 'ok' ONLY when the client exists in that
    * tenant AND redirectUri is in its registered redirectUris list. A missing
-   * client_id, an unknown client, or a missing redirect_uri all fail validation.
+   * client_id, an unknown client (never registered, registered in another
+   * tenant, or lost before clients were persisted), or a missing / different
+   * redirect_uri all fail validation, each with its own reason.
    *
    * Security: prevents redirect_uri injection attacks where an attacker
    * supplies a malicious URI to receive the auth code.
@@ -89,12 +111,42 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
     req: Request,
     clientId: string | undefined,
     redirectUri: string | undefined,
-  ): boolean {
-    if (!clientId) return false;
+  ): ClientCheck {
+    if (!clientId) return 'missing_client_id';
     const client = clients.get(clientId, getTenantId(req));
-    if (!client) return false;
-    if (!redirectUri) return false;
-    return client.redirectUris.includes(redirectUri);
+    if (!client) return 'unknown_client';
+    if (!redirectUri || !client.redirectUris.includes(redirectUri)) return 'redirect_uri_mismatch';
+    return 'ok';
+  }
+
+  /**
+   * Validate the client + redirect_uri and, on failure, log the cause and
+   * answer with a JSON error. Never redirects: the redirect_uri is not trusted
+   * until it has been validated (RFC 6749 §4.1.2.1). Returns true when valid.
+   *
+   * Logs only non-secret identifiers: the public client_id, the tenant and the
+   * origin of the redirect_uri (never its query, nor codes, tokens, passwords).
+   */
+  function checkClient(
+    req: Request,
+    res: Response,
+    endpoint: string,
+    clientId: string | undefined,
+    redirectUri: string | undefined,
+  ): boolean {
+    const result = validateRedirectUri(req, clientId, redirectUri);
+    if (result === 'ok') return true;
+    state.logger?.warn(`[OAuth] ${endpoint} rejected: ${CLIENT_CHECK_LOG[result]}`, {
+      reason: result,
+      clientId: clientId ?? null,
+      tenantId: getTenantId(req),
+      redirectOrigin: safeOrigin(redirectUri),
+    });
+    res.status(400).json({
+      error: 'invalid_request',
+      error_description: CLIENT_CHECK_DESCRIPTION[result],
+    });
+    return false;
   }
 
   // --- OAuth Protected Resource Metadata (RFC 9728) ---
@@ -227,13 +279,7 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
       case 'open': {
         // Auto-authorize immediately — no user interaction required.
         // Security: validate redirect_uri against registered client.
-        if (!validateRedirectUri(req, client_id, redirect_uri)) {
-          res.status(400).json({
-            error: 'invalid_request',
-            error_description: 'redirect_uri does not match registered client.',
-          });
-          return;
-        }
+        if (!checkClient(req, res, 'GET /authorize', client_id, redirect_uri)) return;
 
         const code = crypto.randomBytes(32).toString('hex');
         authCodes.set(code, {
@@ -259,6 +305,9 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
 
       // ------------------------------------------------------------------
       case 'calame': {
+        // Reject an unknown client / foreign redirect_uri BEFORE showing the
+        // login form, so the user is not asked for a password that cannot work.
+        if (!checkClient(req, res, 'GET /authorize', client_id, redirect_uri)) return;
         // Show an email + password login form.
         res.type('html').send(buildCalameAuthPage({ ...baseParams, error: '' }));
         return;
@@ -275,13 +324,7 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
 
         cleanupPendingAuthorizations();
 
-        if (!validateRedirectUri(req, client_id, redirect_uri)) {
-          res.status(400).json({
-            error: 'invalid_request',
-            error_description: 'redirect_uri does not match registered client.',
-          });
-          return;
-        }
+        if (!checkClient(req, res, 'GET /authorize', client_id, redirect_uri)) return;
 
         const ssoState = crypto.randomBytes(16).toString('hex');
         const codeVerifier = generateCodeVerifier();
@@ -320,13 +363,7 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
 
         cleanupPendingAuthorizations();
 
-        if (!validateRedirectUri(req, client_id, redirect_uri)) {
-          res.status(400).json({
-            error: 'invalid_request',
-            error_description: 'redirect_uri does not match registered client.',
-          });
-          return;
-        }
+        if (!checkClient(req, res, 'GET /authorize', client_id, redirect_uri)) return;
 
         const providerState = crypto.randomBytes(16).toString('hex');
         const codeVerifier = generateCodeVerifier();
@@ -414,6 +451,11 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
       });
       return;
     }
+
+    // Security: validate client_id + redirect_uri BEFORE any authentication,
+    // so credentials are never checked for an unknown client and the code
+    // below is only ever redirected to a registered URI.
+    if (!checkClient(req, res, 'POST /authorize', client_id, redirect_uri)) return;
 
     let forgeToken: string | null = null;
 
@@ -600,15 +642,6 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
     }
 
     // Generate auth code that maps to the forge token
-    // Security: validate redirect_uri against registered client.
-    if (!validateRedirectUri(req, client_id, redirect_uri)) {
-      res.status(400).json({
-        error: 'invalid_request',
-        error_description: 'redirect_uri does not match registered client.',
-      });
-      return;
-    }
-
     const code = crypto.randomBytes(32).toString('hex');
     authCodes.set(code, {
       forgeToken,
@@ -950,6 +983,16 @@ function getBaseUrl(req: Request): string {
   const proto = req.headers['x-forwarded-proto'] ?? req.protocol;
   const host = req.headers['x-forwarded-host'] ?? req.headers.host;
   return `${proto}://${host}`;
+}
+
+/** Origin of a URI for logging (drops path, query and fragment); null if unparsable. */
+function safeOrigin(uri: string | undefined): string | null {
+  if (!uri) return null;
+  try {
+    return new URL(uri).origin;
+  } catch {
+    return null;
+  }
 }
 
 function escapeHtml(str: string): string {

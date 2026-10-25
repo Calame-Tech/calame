@@ -205,6 +205,7 @@ describe('OAuth dynamic clients — persistence', () => {
     const res = await authorizeOpen(app, 'client_' + '0'.repeat(32));
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('invalid_request');
+    expect(res.body.error_description).toMatch(/Unknown client_id/);
   });
 
   it('does not recognise a client across tenants', async () => {

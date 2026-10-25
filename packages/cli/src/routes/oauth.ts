@@ -3,7 +3,11 @@ import crypto from 'crypto';
 import type { AppState } from '../state.js';
 import { getOAuthProvider } from '../oauth-providers.js';
 import type { OidcProvider, OidcSettingsConfig } from '@calame-ee/sso';
-import { OAuthClientStore } from '../oauth-clients.js';
+import {
+  OAuthClientStore,
+  validateClientMetadata,
+  type OAuthClientLimits,
+} from '../oauth-clients.js';
 import { getTenantId } from '../tenancy.js';
 
 /**
@@ -65,17 +69,29 @@ const CLIENT_CHECK_LOG: Record<Exclude<ClientCheck, 'ok'>, string> = {
   redirect_uri_mismatch: 'redirect_uri differs from the URIs registered for this client',
 };
 
+/** Registrations allowed per client IP and per minute on POST /register. */
+export const REGISTER_RATE_LIMIT_RPM = 20;
+
+export interface OAuthRoutesOptions {
+  /** Override the registered-client cap / purge thresholds (tests). */
+  clientLimits?: Partial<OAuthClientLimits>;
+}
+
 // ---------------------------------------------------------------------------
 // Route registration
 // ---------------------------------------------------------------------------
 
-export function registerOAuthRoutes(app: Express, state: AppState): void {
+export function registerOAuthRoutes(
+  app: Express,
+  state: AppState,
+  options: OAuthRoutesOptions = {},
+): void {
   // Registered clients are persisted in SQLite (see oauth-clients.ts) and read
   // on every request, so they survive restarts. Authorization codes (5 min)
   // and pending SSO / OAuth authorizations (10 min) stay in memory, per route
   // instance: they are lost on restart and the client simply starts a new
   // authorization.
-  const clients = new OAuthClientStore(() => state.db);
+  const clients = new OAuthClientStore(() => state.db, options.clientLimits);
   const authCodes = new Map<
     string,
     {
@@ -202,21 +218,59 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
   });
 
   // --- Dynamic Client Registration (RFC 7591) ---
+  //
+  // Public endpoint, hardened in order: per-IP rate limit (shared
+  // TokenRateLimiter), metadata validation (see validateClientMetadata for the
+  // limits), then a single capped write (see OAuthClientStore.register).
   app.post('/register', (req: Request, res: Response) => {
-    const { redirect_uris, client_name } = (req.body as Record<string, unknown>) ?? {};
-    const clientId = 'client_' + crypto.randomBytes(16).toString('hex');
+    const tenantId = getTenantId(req);
+    const ip = req.ip ?? req.socket.remoteAddress ?? 'unknown';
+    const rl = state.rateLimiter?.check(`oauth-register:${ip}`, REGISTER_RATE_LIMIT_RPM);
+    if (rl && !rl.allowed) {
+      state.logger?.warn('[OAuth] /register rejected: rate limited', { tenantId });
+      res.setHeader('Retry-After', String(Math.ceil(rl.retryAfterMs / 1000)));
+      res.status(429).json({
+        error: 'too_many_requests',
+        error_description: 'Too many client registrations. Please retry later.',
+      });
+      return;
+    }
 
-    clients.register({
+    const metadata = validateClientMetadata(req.body);
+    if (!metadata.ok) {
+      state.logger?.warn(`[OAuth] /register rejected: ${metadata.error}`, {
+        tenantId,
+        reason: metadata.description,
+      });
+      res.status(400).json({ error: metadata.error, error_description: metadata.description });
+      return;
+    }
+
+    const clientId = 'client_' + crypto.randomBytes(16).toString('hex');
+    const { client, purged } = clients.register({
       clientId,
-      tenantId: getTenantId(req),
-      redirectUris: Array.isArray(redirect_uris) ? (redirect_uris as string[]) : [],
-      clientName: typeof client_name === 'string' ? client_name : null,
+      tenantId,
+      redirectUris: metadata.redirectUris,
+      clientName: metadata.clientName,
     });
+    if (purged > 0) {
+      state.logger?.info('[OAuth] purged never-used registered clients', { tenantId, purged });
+    }
+    if (!client) {
+      state.logger?.warn('[OAuth] /register rejected: client limit reached', { tenantId });
+      res.status(503).json({
+        error: 'temporarily_unavailable',
+        error_description:
+          'Too many OAuth clients are registered on this server and none can be purged yet. ' +
+          'Please retry later or contact the administrator.',
+      });
+      return;
+    }
 
     res.status(201).json({
       client_id: clientId,
-      client_name: client_name ?? 'MCP Client',
-      redirect_uris: redirect_uris ?? [],
+      client_name: metadata.clientName ?? 'MCP Client',
+      redirect_uris: metadata.redirectUris,
       grant_types: ['authorization_code'],
       response_types: ['code'],
       token_endpoint_auth_method: 'none',

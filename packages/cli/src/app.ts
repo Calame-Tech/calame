@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import { AppState } from './state.js';
 import {
+  configureSessionStore,
   createAdminSessionMiddleware,
   getAdminPassword,
   createSession,
@@ -100,6 +101,8 @@ export function createApp(
   if (!appState.db) {
     appState.db = new CalameDatabase(dataDir);
   }
+  // Persist login sessions so they survive a server (desktop app) restart.
+  configureSessionStore(appState.db);
 
   // Initialize managers at startup (not lazily on MCP serve)
   if (!appState.tokenManager) {

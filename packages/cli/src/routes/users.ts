@@ -4,6 +4,7 @@ import type { AppState } from '../state.js';
 import type { UserRole, AccessMode, UserProfileAccess } from '../user.js';
 import { EmailService } from '../email.js';
 import { getTenantId } from '../tenancy.js';
+import { destroyUserSessions } from '../session.js';
 
 /**
  * Accepted shape for a user `:id` path param. Intentionally narrow
@@ -466,6 +467,7 @@ export function registerUsersRoute(app: Express, state: AppState): void {
       }
 
       await userManager.save();
+      destroyUserSessions(userId);
       res.json({ success: true, user });
     } catch (error: unknown) {
       if (handleGuardError(res, error)) return;
@@ -631,6 +633,7 @@ export function registerUsersRoute(app: Express, state: AppState): void {
       }
 
       await userManager.save();
+      destroyUserSessions(userId);
 
       if (state.auditLog) {
         state.auditLog.addEntry({

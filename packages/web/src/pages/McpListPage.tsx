@@ -2,17 +2,21 @@
 // `view.page === 'mcp-list'` branch of App.tsx. The `handleSelectProfile`
 // navigation callback moved here with it (it only needs `setView`).
 
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { useTranslations } from 'use-intl/react';
 import { PageHeader } from '../components/ui/index.js';
 import ServePanel from '../components/ServePanel.js';
+import { getCurrentTenant } from '../lib/api.js';
+import { getMcpDraft, mcpDraftKey, setMcpDraft } from '../lib/mcp-draft.js';
 import type { Config, Configuration, Profile, ServeStatus } from '../types/schema.js';
 import type { View } from '../router/index.js';
 
 interface McpListPageProps {
   /** Data configuration to preselect in the creation form (guided configuration → server step). */
   prefillConfiguration?: string;
+  /** Signed-in admin account ('' without auth): scopes the in-progress creation draft. */
+  draftAccount?: string;
   configurations?: Configuration[];
   setView: Dispatch<SetStateAction<View>>;
   configWithProfileOptions: Config;
@@ -26,7 +30,8 @@ interface McpListPageProps {
 }
 
 export default function McpListPage({
-  prefillConfiguration,
+  prefillConfiguration: requestedPrefill,
+  draftAccount = '',
   configurations = [],
   setView,
   configWithProfileOptions,
@@ -40,6 +45,12 @@ export default function McpListPage({
 }: McpListPageProps) {
   const t = useTranslations('mcpList');
   const tCommon = useTranslations('common');
+
+  // A creation form left half-filled (e.g. to add a source) is restored on
+  // return, with the data configuration it was started with — see lib/mcp-draft.
+  const [draftKey] = useState(() => mcpDraftKey(draftAccount, getCurrentTenant()));
+  const [initialDraft] = useState(() => getMcpDraft(draftKey, requestedPrefill));
+  const prefillConfiguration = requestedPrefill ?? initialDraft?.prefillConfiguration;
 
   // Navigate to MCP detail from ServePanel
   const handleSelectProfile = useCallback((profileName: string) => {
@@ -64,6 +75,10 @@ export default function McpListPage({
           serveStatus={serveStatus}
           onServeAction={fetchServeStatus}
           onSelectProfile={handleSelectProfile}
+          initialDraft={initialDraft}
+          onDraftChange={(draft) =>
+            setMcpDraft(draftKey, draft && { ...draft, prefillConfiguration })
+          }
           prefillConfigurationLabel={
             prefillConfiguration
               ? (configurations.find((c) => c.name === prefillConfiguration)?.label ??

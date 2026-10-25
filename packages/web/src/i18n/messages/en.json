@@ -6,6 +6,8 @@
     "rowCount": "{count, plural, one {# row} other {# rows}}",
     "dashboard": "Dashboard",
     "loading": "Loading…",
+    "serverUnreachable": "Cannot reach the Calame server. Your session is kept.",
+    "retry": "Retry",
     "breadcrumbAriaLabel": "Breadcrumb",
     "noOptionAvailable": "No option available",
     "selectPlaceholder": "Select…"
@@ -79,6 +81,8 @@
     "errors": {
       "startFailed": "Failed to start MCP server \"{name}\".",
       "noDataSource": "This MCP server has no data yet. Attach it to a data profile that contains your data (database or knowledge base) first.",
+      "noConfiguration": "This MCP server has no data configuration yet. Attach a data configuration (database tables or knowledge base) to it in the “Exposed Data” tab, then start it again.",
+      "attachConfiguration": "Attach a data configuration",
       "startNetworkError": "Network error starting MCP server \"{name}\".",
       "stopFailed": "Failed to stop MCP server \"{name}\".",
       "stopNetworkError": "Network error stopping MCP server \"{name}\".",
@@ -249,6 +253,11 @@
     "notFound": "Configuration \"{name}\" not found.",
     "ragUnavailable": "RAG features are not available on this instance.",
     "unsavedChangesConfirm": "You have unsaved changes. Leave without saving?",
+    "unsavedChanges": {
+      "message": "Unsaved changes — they are kept if you switch pages, until you save or discard them.",
+      "save": "Save",
+      "discard": "Discard changes"
+    },
     "breadcrumb": {
       "mcpServers": "MCP Servers",
       "server": "Server",
@@ -263,7 +272,8 @@
       "saved": "Saved!",
       "error": "Error",
       "noChanges": "No changes",
-      "saveFailed": "Save failed — check console for details.",
+      "saveFailed": "Save failed. Check that Calame is still running, then try again.",
+      "emptySelection": "Select at least one database table or knowledge base folder before saving: a data configuration cannot be empty.",
       "confirmDeleteQuestion": "Are you sure?",
       "deleting": "Deleting...",
       "yesDelete": "Yes, delete",
@@ -652,6 +662,7 @@
     "providers": {
       "local": {
         "label": "Local (included)",
+        "defaultName": "Local embeddings (included)",
         "desc": "Runs on this PC — no API key, nothing leaves your machine"
       },
       "anthropic": {
@@ -911,7 +922,7 @@
       ]
     },
     "usage": {
-      "tokens": "{count} tokens",
+      "tokens": "{count, plural, one {# token} other {# tokens}}",
       "cacheSuffix": " · cache {percent}%"
     },
     "aiSelector": {
@@ -1012,7 +1023,7 @@
         "description": "A source is the data your MCP server will read: a database, or a knowledge base made of documents.",
         "knowledgeBase": {
           "title": "Knowledge base (documents)",
-          "description": "Index a folder, uploaded files or another document source. You continue on the Knowledge base screen; the getting-started guide then shows the next steps.",
+          "description": "Index a folder, uploaded files or another document source. You continue on the Knowledge bases screen; the getting-started guide then shows the next steps.",
           "button": "Add a knowledge base"
         },
         "quickStart": {
@@ -1259,9 +1270,9 @@
       "configurationCount": "{count, plural, one {# configuration} other {# configurations}}",
       "serverCount": "{count, plural, one {# server} other {# servers}}",
       "tableCount": "{count, plural, one {# table} other {# tables}}",
-      "writeToolTitle": "Write tool enabled on {count} table(s)",
+      "writeToolTitle": "Write tool enabled on {count, plural, one {# table} other {# tables}}",
       "writeBadge": "write on {count, plural, one {# table} other {# tables}}",
-      "maskedColumnsTitle": "{count} column(s) masked",
+      "maskedColumnsTitle": "{count, plural, one {# column masked} other {# columns masked}}",
       "maskedColumnsBadge": "{count, plural, one {# masked column} other {# masked columns}}",
       "mountedByPrefix": "Mounted by",
       "stopped": "(stopped)",
@@ -1275,7 +1286,7 @@
       "title": "Sources",
       "description": "Manage database connections and knowledge bases used by your MCP servers.",
       "addSource": "Add source",
-      "itemsAriaLabel": "{count} items",
+      "itemsAriaLabel": "{count, plural, one {# item} other {# items}}",
       "loadingKnowledgeBases": "Loading knowledge bases…",
       "kbUnavailableTitle": "Knowledge bases unavailable",
       "kbUnavailableDescription": "The RAG (Retrieval-Augmented Generation) feature is not available on this instance."
@@ -1484,8 +1495,8 @@
         "servingAt": "serving at {address}",
         "servingAddressUnknown": "serving (address not available yet)",
         "noServerRunning": "no server running",
-        "on": "ON",
-        "off": "OFF",
+        "on": "Running",
+        "off": "Stopped",
         "empty": "No servers"
       }
     },
@@ -1505,11 +1516,10 @@
       "emptyTitle": "No MCP servers",
       "emptyDescription": "Create a server to expose your data configurations to AI clients.",
       "table": {
-        "headers": ["Server", "Status", "Auth", "Activity 24h", "Trend"]
+        "headers": ["Server", "Status", "Access", "Activity 24h", "Trend"]
       },
       "statusActive": "ACTIVE",
-      "statusStopped": "STOPPED",
-      "authOpenFallback": "open"
+      "statusStopped": "STOPPED"
     }
   },
   "mcpList": {
@@ -2365,7 +2375,7 @@
     },
     "notificationsBell": {
       "bellAriaLabel": "Notifications",
-      "ariaUnreadCount": "{count} unread notifications",
+      "ariaUnreadCount": "{count, plural, one {# unread notification} other {# unread notifications}}",
       "panel": {
         "title": "Notifications",
         "markAllRead": "Mark all as read",

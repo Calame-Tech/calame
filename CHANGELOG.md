@@ -24,6 +24,30 @@ root `package.json` version flows to the Docker image and `create-calame`).
   them at connection, so open sessions must reconnect, and support varies by
   client. See `docs/ai-instructions.md` / `docs/ai-instructions.fr.md`.
 
+### Fixed
+
+- OAuth clients registered dynamically by MCP clients (ChatGPT, Claude…,
+  RFC 7591 `POST /register`) are no longer lost when the server restarts or is
+  updated. They were kept in memory, so a connector reusing its `client_id`
+  after a restart failed with "redirect_uri does not match registered client."
+  They are now stored per tenant in `calame.db` (migration v19, existing data
+  kept) and read on every OAuth request. Authorization codes (5 min) and
+  pending SSO / OAuth logins (10 min) stay in memory and are lost on restart;
+  the user just logs in again. Connectors registered before this fix are
+  already lost: remove and recreate them once in the MCP client.
+- An unknown `client_id` now gets its own error message asking to reconnect or
+  recreate the connector, distinct from a different `redirect_uri`, in the
+  JSON response and in the logs (no secrets logged). In `calame` mode the
+  refusal happens before the login form is shown.
+- `POST /register` is hardened: `redirect_uris` required (1 to 10 URLs of at
+  most 2,048 characters, `https`, `http` only for the exact hosts
+  `localhost`, `127.0.0.1` and `[::1]`, no fragment), `client_name` at most
+  200 characters, body at most 32 KiB, with RFC 7591 `invalid_redirect_uri` /
+  `invalid_client_metadata` errors; 20 registrations per IP and per minute;
+  at most 200 clients per tenant, purging never-used clients (after 30 days,
+  or the oldest ones over an hour old when full) and never a client already
+  used. See `docs/oauth.md`.
+
 ## [0.8.6] - 2026-10-20
 
 ### Added

@@ -3,6 +3,8 @@ import crypto from 'crypto';
 import type { AppState } from '../state.js';
 import { getOAuthProvider } from '../oauth-providers.js';
 import type { OidcProvider, OidcSettingsConfig } from '@calame-ee/sso';
+import { OAuthClientStore } from '../oauth-clients.js';
+import { getTenantId } from '../tenancy.js';
 
 /**
  * Minimal OAuth 2.1 implementation for MCP auth (claude.ai compatibility).
@@ -22,42 +24,6 @@ import type { OidcProvider, OidcSettingsConfig } from '@calame-ee/sso';
  *   - 'sso'      : Redirect to OIDC provider; complete OAuth flow on callback.
  *   - 'oauth'    : Redirect to the profile's OAuth provider; complete on callback.
  */
-
-// ---------------------------------------------------------------------------
-// In-memory stores (cleared on restart — intentional for dev/stateless mode)
-// ---------------------------------------------------------------------------
-
-const registeredClients = new Map<string, { clientId: string; redirectUris: string[] }>();
-
-/**
- * Validate that `redirectUri` is registered for `clientId`.
- * Fail-closed: returns true ONLY when the client exists AND redirectUri is in
- * its registered redirectUris list. A missing client_id, an unknown client, or
- * a missing redirect_uri all fail validation.
- *
- * Security: prevents redirect_uri injection attacks where an attacker
- * supplies a malicious URI to receive the auth code.
- */
-function validateRedirectUri(
-  clientId: string | undefined,
-  redirectUri: string | undefined,
-): boolean {
-  if (!clientId) return false;
-  const client = registeredClients.get(clientId);
-  if (!client) return false;
-  if (!redirectUri) return false;
-  return client.redirectUris.includes(redirectUri);
-}
-const authCodes = new Map<
-  string,
-  {
-    forgeToken: string;
-    clientId: string;
-    redirectUri: string;
-    codeChallenge?: string;
-    expiresAt: number;
-  }
->();
 
 /**
  * Pending OAuth authorize params stored while the user completes an SSO / OAuth round-trip.
@@ -79,21 +45,58 @@ interface PendingOAuthAuthorization {
   expiresAt: number;
 }
 
-const pendingOAuthAuthorizations = new Map<string, PendingOAuthAuthorization>();
-
-/** Remove entries older than 10 minutes. */
-function cleanupPendingAuthorizations(): void {
-  const now = Date.now();
-  for (const [key, entry] of pendingOAuthAuthorizations.entries()) {
-    if (now > entry.expiresAt) pendingOAuthAuthorizations.delete(key);
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Route registration
 // ---------------------------------------------------------------------------
 
 export function registerOAuthRoutes(app: Express, state: AppState): void {
+  // Registered clients are persisted in SQLite (see oauth-clients.ts) and read
+  // on every request, so they survive restarts. Authorization codes (5 min)
+  // and pending SSO / OAuth authorizations (10 min) stay in memory, per route
+  // instance: they are lost on restart and the client simply starts a new
+  // authorization.
+  const clients = new OAuthClientStore(() => state.db);
+  const authCodes = new Map<
+    string,
+    {
+      forgeToken: string;
+      clientId: string;
+      redirectUri: string;
+      codeChallenge?: string;
+      expiresAt: number;
+    }
+  >();
+  const pendingOAuthAuthorizations = new Map<string, PendingOAuthAuthorization>();
+
+  /** Remove entries older than 10 minutes. */
+  function cleanupPendingAuthorizations(): void {
+    const now = Date.now();
+    for (const [key, entry] of pendingOAuthAuthorizations.entries()) {
+      if (now > entry.expiresAt) pendingOAuthAuthorizations.delete(key);
+    }
+  }
+
+  /**
+   * Validate that `redirectUri` is registered for `clientId` in the request's
+   * tenant. Fail-closed: returns true ONLY when the client exists in that
+   * tenant AND redirectUri is in its registered redirectUris list. A missing
+   * client_id, an unknown client, or a missing redirect_uri all fail validation.
+   *
+   * Security: prevents redirect_uri injection attacks where an attacker
+   * supplies a malicious URI to receive the auth code.
+   */
+  function validateRedirectUri(
+    req: Request,
+    clientId: string | undefined,
+    redirectUri: string | undefined,
+  ): boolean {
+    if (!clientId) return false;
+    const client = clients.get(clientId, getTenantId(req));
+    if (!client) return false;
+    if (!redirectUri) return false;
+    return client.redirectUris.includes(redirectUri);
+  }
+
   // --- OAuth Protected Resource Metadata (RFC 9728) ---
 
   /**
@@ -151,9 +154,11 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
     const { redirect_uris, client_name } = (req.body as Record<string, unknown>) ?? {};
     const clientId = 'client_' + crypto.randomBytes(16).toString('hex');
 
-    registeredClients.set(clientId, {
+    clients.register({
       clientId,
+      tenantId: getTenantId(req),
       redirectUris: Array.isArray(redirect_uris) ? (redirect_uris as string[]) : [],
+      clientName: typeof client_name === 'string' ? client_name : null,
     });
 
     res.status(201).json({
@@ -222,7 +227,7 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
       case 'open': {
         // Auto-authorize immediately — no user interaction required.
         // Security: validate redirect_uri against registered client.
-        if (!validateRedirectUri(client_id, redirect_uri)) {
+        if (!validateRedirectUri(req, client_id, redirect_uri)) {
           res.status(400).json({
             error: 'invalid_request',
             error_description: 'redirect_uri does not match registered client.',
@@ -270,7 +275,7 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
 
         cleanupPendingAuthorizations();
 
-        if (!validateRedirectUri(client_id, redirect_uri)) {
+        if (!validateRedirectUri(req, client_id, redirect_uri)) {
           res.status(400).json({
             error: 'invalid_request',
             error_description: 'redirect_uri does not match registered client.',
@@ -315,7 +320,7 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
 
         cleanupPendingAuthorizations();
 
-        if (!validateRedirectUri(client_id, redirect_uri)) {
+        if (!validateRedirectUri(req, client_id, redirect_uri)) {
           res.status(400).json({
             error: 'invalid_request',
             error_description: 'redirect_uri does not match registered client.',
@@ -596,7 +601,7 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
 
     // Generate auth code that maps to the forge token
     // Security: validate redirect_uri against registered client.
-    if (!validateRedirectUri(client_id, redirect_uri)) {
+    if (!validateRedirectUri(req, client_id, redirect_uri)) {
       res.status(400).json({
         error: 'invalid_request',
         error_description: 'redirect_uri does not match registered client.',
@@ -923,6 +928,8 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
 
     // Consume the code (one-time use)
     if (code) authCodes.delete(code);
+    // Only a fully successful exchange counts as a use of the client.
+    clients.markUsed(entry.clientId);
 
     // Return the forge token as the OAuth access token.
     // '__open__' is a special marker for open-mode profiles — serve.ts accepts it.

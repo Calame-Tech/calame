@@ -306,4 +306,25 @@ export function runMigrations(db: CalameDatabase): void {
     `);
     db.setSchemaVersion(18);
   }
+
+  if (currentVersion < 19) {
+    // Version 19: OAuth clients registered dynamically (RFC 7591, POST
+    // /register). They used to live in an in-memory Map, so every restart
+    // (e.g. an upgrade) made the client_id reused by ChatGPT / Claude unknown
+    // and broke the connector. Scoped by tenant like every other host table;
+    // `redirect_uris` is a JSON array; `last_used_at` is set on each
+    // successful code exchange at /token (see oauth-clients.ts).
+    db.raw.exec(`
+      CREATE TABLE IF NOT EXISTS oauth_clients (
+        client_id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL DEFAULT '${DEFAULT_TENANT_ID}',
+        redirect_uris TEXT NOT NULL,
+        client_name TEXT,
+        created_at TEXT NOT NULL,
+        last_used_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_oauth_clients_tenant ON oauth_clients(tenant_id, created_at);
+    `);
+    db.setSchemaVersion(19);
+  }
 }

@@ -300,8 +300,9 @@ describe('host migration v16 — write_queue action_json (MCP write-approval, Sl
         v: number;
       };
       // v17 also has a hasTable guard (ai_settings, absent here too) and
-      // must skip gracefully the same way v16 does for write_queue.
-      expect(row.v).toBe(17);
+      // must skip gracefully the same way v16 does for write_queue; v18
+      // creates its own auth_sessions table.
+      expect(row.v).toBe(18);
     } finally {
       raw.close();
       fs.rmSync(tmpDir, { recursive: true, force: true });

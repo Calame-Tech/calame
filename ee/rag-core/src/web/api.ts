@@ -103,6 +103,20 @@ export class ApiTimeoutError extends Error {
   }
 }
 
+/**
+ * Message to show for a failed API call. A request that got no HTTP answer
+ * (browser "Failed to fetch" / "NetworkError…") is explained in plain words;
+ * the raw exception goes to the console only.
+ */
+export function userFacingApiError(err: unknown, fallback: string): string {
+  if (err instanceof ApiError || err instanceof ApiTimeoutError) return err.message || fallback;
+  if (err instanceof TypeError) {
+    console.error('[rag] request failed without an HTTP answer', err);
+    return RAG_STRINGS.serverUnreachable;
+  }
+  return err instanceof Error && err.message ? err.message : fallback;
+}
+
 /** Options accepted by the JSON helpers below. */
 export interface ApiRequestOptions {
   /**

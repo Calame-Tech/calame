@@ -195,7 +195,7 @@ export default function DocumentUploader({ source, onUploaded }: DocumentUploade
         } ${uploading ? 'opacity-60 cursor-wait' : ''}`}
       >
         <svg
-          className="w-8 h-8 text-gray-500"
+          className="w-8 h-8 text-gray-400"
           fill="none"
           stroke="currentColor"
           strokeWidth={1.5}
@@ -209,7 +209,7 @@ export default function DocumentUploader({ source, onUploaded }: DocumentUploade
           />
         </svg>
         <p className="text-sm text-gray-300">{uploading ? T.uploading : T.dropHint}</p>
-        <p className="text-xs text-gray-500">{T.formatsHint(formatBytes(MAX_UPLOAD_SIZE_BYTES))}</p>
+        <p className="text-xs text-gray-400">{T.formatsHint(formatBytes(MAX_UPLOAD_SIZE_BYTES))}</p>
         <input
           ref={inputRef}
           type="file"

@@ -35,6 +35,8 @@ export default function App() {
   // Session / auth state — owned by SessionProvider (context/SessionContext).
   const {
     authChecked,
+    authCheckFailed,
+    retryAuthCheck,
     authenticated,
     authRequired,
     needsSetup,
@@ -119,6 +121,25 @@ export default function App() {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
         <div className="text-gray-400">{tCommon('loading')}</div>
+      </div>
+    );
+  }
+
+  // Server unreachable: the session may still be valid, so offer a retry
+  // instead of the login page.
+  if (authCheckFailed) {
+    return (
+      <div className="min-h-screen bg-gray-900 flex flex-col items-center justify-center gap-4">
+        <div role="alert" className="text-gray-300">
+          {tCommon('serverUnreachable')}
+        </div>
+        <button
+          type="button"
+          onClick={retryAuthCheck}
+          className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-500"
+        >
+          {tCommon('retry')}
+        </button>
       </div>
     );
   }
@@ -222,7 +243,9 @@ export default function App() {
         onLogout={logout}
       />
 
-      {/* Main content column, beside or below the getting-started guide */}
+      {/* Main content column, beside or below the getting-started guide. On a
+          narrow window the Sidebar's sticky menu bar sits above it, so the
+          floating menu button never covers the guide or a title. */}
       <div
         className={`flex-1 flex min-w-0 ${setupGuideLayout === 'column' ? 'flex-row' : 'flex-col'}`}
       >
@@ -238,7 +261,7 @@ export default function App() {
         {/* Page content */}
         <main
           className={`flex-1 min-w-0 p-6 md:p-8 animate-fade-in-up overflow-x-hidden ${
-            setupGuideLayout === 'top' ? 'pt-6 md:pt-6' : 'pt-16 md:pt-8'
+            setupGuideLayout === 'top' ? 'pt-6 md:pt-6' : 'pt-6 md:pt-8'
           } ${setupGuideLayout === 'column' ? 'order-first' : ''}`}
           key={`${view.page}-${activeProfile.name}`}
         >
@@ -318,6 +341,7 @@ export default function App() {
             {view.page === 'mcp-list' && (
               <McpListPage
                 prefillConfiguration={view.prefillConfiguration}
+                draftAccount={currentUser?.email ?? ''}
                 configurations={configurations}
                 setView={setView}
                 configWithProfileOptions={configWithProfileOptions}

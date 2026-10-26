@@ -38,6 +38,8 @@ import {
   createSession,
   validateSession,
   destroySession,
+  destroyUserSessions,
+  renewSession,
   isRateLimited,
   recordFailedAttempt,
   clearFailedAttempts,
@@ -286,7 +288,7 @@ export function registerAuthRoute(app: Express, state: AppState): void {
     const sessionId = cookies['calame_session'];
     const session = sessionId ? validateSession(sessionId) : null;
 
-    if (!session || !session.userId) {
+    if (!sessionId || !session || !session.userId) {
       res.json({
         success: true,
         authenticated: false,
@@ -307,6 +309,10 @@ export function registerAuthRoute(app: Express, state: AppState): void {
       return;
     }
 
+    // Checked on every app opening: renewing here keeps an active admin
+    // signed in across restarts, within the session's absolute lifetime.
+    const renewed = renewSession(sessionId);
+    if (renewed) setSessionCookie(res, sessionId, renewed.expiresAt);
     res.json({
       success: true,
       authenticated: true,
@@ -767,6 +773,8 @@ export function registerAuthRoute(app: Express, state: AppState): void {
 
     userManager.setPassword(session.userId, newPassword);
     await userManager.save();
+    // A password change signs out every other device of this account.
+    destroyUserSessions(session.userId, sessionId);
     res.json({ success: true });
   });
 

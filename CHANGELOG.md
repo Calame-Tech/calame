@@ -50,6 +50,23 @@ root `package.json` version flows to the Docker image and `create-calame`).
   or the oldest ones over an hour old when full) and never a client already
   used. See `docs/oauth.md`.
 
+### Security
+
+- `zod` raised to >=4.6.6 (4.6.7) in every package that declares it: memory
+  exhaustion while validating oversized constrained collections
+  (GHSA-mrhx-c7xc-m3w5).
+- `body-parser` re-resolved to 2.4.0 (via `@modelcontextprotocol/sdk` >
+  `express` 5) and 1.20.9 (via `express` 4), within their existing ranges:
+  denial of service via trailing bytes (GHSA-27r3-jxmh-p828).
+- `@azure/msal-node` raised from 5.2.0 to 7.1.2 under `@azure/identity`
+  (`mssql` > `tedious` chain and the SharePoint connector) via a targeted
+  `pnpm.overrides`, as no released `@azure/identity` depends on msal-node 7
+  yet: authorization code flow parameter disclosure (GHSA-xcx6-jx8p-x3h5).
+- `undici` raised from 7.30.0 to 7.30.1 (via `mcp-remote`) by tightening the
+  existing `undici@7.x` override: TLS validation bypass, cache poisoning and
+  denial of service (GHSA-2m5v-pch6-74hx, GHSA-4w7w-5xrc-9h26,
+  GHSA-qrxm-fqhp-jwvm, GHSA-xjj6-f33q-929c).
+
 ## [0.8.6] - 2026-10-20
 
 ### Added

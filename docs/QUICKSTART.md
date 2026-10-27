@@ -242,6 +242,9 @@ For external MCP clients with `token` auth mode:
 3. **Generate token** — Calame shows the token **once**. Copy it now (it's hashed at rest).
 
 For `oauth` / `sso` modes, no token needed — the client handles the flow.
+Registered OAuth clients survive restarts; see [oauth.md](oauth.md) for the
+registration limits and for connectors created before 0.8.7 that must be
+recreated once.
 
 ---
 

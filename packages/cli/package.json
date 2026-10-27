@@ -33,7 +33,7 @@
     "openai": "^6.27.0",
     "pg": "^8.13.0",
     "ssh2": "^1.17.0",
-    "zod": "^4.3.6"
+    "zod": "^4.6.6"
   },
   "optionalDependencies": {
     "@calame-ee/rag-connectors": "workspace:*",

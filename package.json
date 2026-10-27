@@ -59,10 +59,11 @@
       "mysql2": ">=3.22.0",
       "@xmldom/xmldom": "^0.8.15",
       "brace-expansion@5.0.9": "^5.0.11",
-      "undici@7.x": "^7.29.1",
+      "undici@7.x": "^7.30.1",
       "proxy-addr": "^2.0.8",
       "handlebars": "^4.7.10",
-      "@modelcontextprotocol/sdk": "^1.31.0"
+      "@modelcontextprotocol/sdk": "^1.31.0",
+      "@azure/identity>@azure/msal-node": "^7.1.0"
     }
   }
 }

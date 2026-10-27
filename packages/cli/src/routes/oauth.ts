@@ -3,6 +3,12 @@ import crypto from 'crypto';
 import type { AppState } from '../state.js';
 import { getOAuthProvider } from '../oauth-providers.js';
 import type { OidcProvider, OidcSettingsConfig } from '@calame-ee/sso';
+import {
+  OAuthClientStore,
+  validateClientMetadata,
+  type OAuthClientLimits,
+} from '../oauth-clients.js';
+import { getTenantId } from '../tenancy.js';
 
 /**
  * Minimal OAuth 2.1 implementation for MCP auth (claude.ai compatibility).
@@ -22,42 +28,6 @@ import type { OidcProvider, OidcSettingsConfig } from '@calame-ee/sso';
  *   - 'sso'      : Redirect to OIDC provider; complete OAuth flow on callback.
  *   - 'oauth'    : Redirect to the profile's OAuth provider; complete on callback.
  */
-
-// ---------------------------------------------------------------------------
-// In-memory stores (cleared on restart — intentional for dev/stateless mode)
-// ---------------------------------------------------------------------------
-
-const registeredClients = new Map<string, { clientId: string; redirectUris: string[] }>();
-
-/**
- * Validate that `redirectUri` is registered for `clientId`.
- * Fail-closed: returns true ONLY when the client exists AND redirectUri is in
- * its registered redirectUris list. A missing client_id, an unknown client, or
- * a missing redirect_uri all fail validation.
- *
- * Security: prevents redirect_uri injection attacks where an attacker
- * supplies a malicious URI to receive the auth code.
- */
-function validateRedirectUri(
-  clientId: string | undefined,
-  redirectUri: string | undefined,
-): boolean {
-  if (!clientId) return false;
-  const client = registeredClients.get(clientId);
-  if (!client) return false;
-  if (!redirectUri) return false;
-  return client.redirectUris.includes(redirectUri);
-}
-const authCodes = new Map<
-  string,
-  {
-    forgeToken: string;
-    clientId: string;
-    redirectUri: string;
-    codeChallenge?: string;
-    expiresAt: number;
-  }
->();
 
 /**
  * Pending OAuth authorize params stored while the user completes an SSO / OAuth round-trip.
@@ -79,21 +49,122 @@ interface PendingOAuthAuthorization {
   expiresAt: number;
 }
 
-const pendingOAuthAuthorizations = new Map<string, PendingOAuthAuthorization>();
+/** Outcome of the client_id + redirect_uri check performed at /authorize. */
+type ClientCheck = 'ok' | 'missing_client_id' | 'unknown_client' | 'redirect_uri_mismatch';
 
-/** Remove entries older than 10 minutes. */
-function cleanupPendingAuthorizations(): void {
-  const now = Date.now();
-  for (const [key, entry] of pendingOAuthAuthorizations.entries()) {
-    if (now > entry.expiresAt) pendingOAuthAuthorizations.delete(key);
-  }
+/** error_description returned to the OAuth client for each failure cause. */
+const CLIENT_CHECK_DESCRIPTION: Record<Exclude<ClientCheck, 'ok'>, string> = {
+  missing_client_id: 'client_id is required.',
+  unknown_client:
+    'Unknown client_id: this OAuth client is not registered on this server (it may have been ' +
+    'registered before a server restart or update). Reconnect, or remove and recreate, the ' +
+    'connector in your MCP client to register it again.',
+  redirect_uri_mismatch: 'redirect_uri does not match registered client.',
+};
+
+/** Log message for each failure cause (no secret, no query string). */
+const CLIENT_CHECK_LOG: Record<Exclude<ClientCheck, 'ok'>, string> = {
+  missing_client_id: 'missing client_id',
+  unknown_client: 'unknown client_id (connector must reconnect or be recreated)',
+  redirect_uri_mismatch: 'redirect_uri differs from the URIs registered for this client',
+};
+
+/** Registrations allowed per client IP and per minute on POST /register. */
+export const REGISTER_RATE_LIMIT_RPM = 20;
+
+export interface OAuthRoutesOptions {
+  /** Override the registered-client cap / purge thresholds (tests). */
+  clientLimits?: Partial<OAuthClientLimits>;
 }
 
 // ---------------------------------------------------------------------------
 // Route registration
 // ---------------------------------------------------------------------------
 
-export function registerOAuthRoutes(app: Express, state: AppState): void {
+export function registerOAuthRoutes(
+  app: Express,
+  state: AppState,
+  options: OAuthRoutesOptions = {},
+): void {
+  // Registered clients are persisted in SQLite (see oauth-clients.ts) and read
+  // on every request, so they survive restarts. Authorization codes (5 min)
+  // and pending SSO / OAuth authorizations (10 min) stay in memory, per route
+  // instance: they are lost on restart and the client simply starts a new
+  // authorization.
+  const clients = new OAuthClientStore(() => state.db, options.clientLimits);
+  const authCodes = new Map<
+    string,
+    {
+      forgeToken: string;
+      clientId: string;
+      redirectUri: string;
+      codeChallenge?: string;
+      expiresAt: number;
+    }
+  >();
+  const pendingOAuthAuthorizations = new Map<string, PendingOAuthAuthorization>();
+
+  /** Remove entries older than 10 minutes. */
+  function cleanupPendingAuthorizations(): void {
+    const now = Date.now();
+    for (const [key, entry] of pendingOAuthAuthorizations.entries()) {
+      if (now > entry.expiresAt) pendingOAuthAuthorizations.delete(key);
+    }
+  }
+
+  /**
+   * Validate that `redirectUri` is registered for `clientId` in the request's
+   * tenant. Fail-closed: returns 'ok' ONLY when the client exists in that
+   * tenant AND redirectUri is in its registered redirectUris list. A missing
+   * client_id, an unknown client (never registered, registered in another
+   * tenant, or lost before clients were persisted), or a missing / different
+   * redirect_uri all fail validation, each with its own reason.
+   *
+   * Security: prevents redirect_uri injection attacks where an attacker
+   * supplies a malicious URI to receive the auth code.
+   */
+  function validateRedirectUri(
+    req: Request,
+    clientId: string | undefined,
+    redirectUri: string | undefined,
+  ): ClientCheck {
+    if (!clientId) return 'missing_client_id';
+    const client = clients.get(clientId, getTenantId(req));
+    if (!client) return 'unknown_client';
+    if (!redirectUri || !client.redirectUris.includes(redirectUri)) return 'redirect_uri_mismatch';
+    return 'ok';
+  }
+
+  /**
+   * Validate the client + redirect_uri and, on failure, log the cause and
+   * answer with a JSON error. Never redirects: the redirect_uri is not trusted
+   * until it has been validated (RFC 6749 §4.1.2.1). Returns true when valid.
+   *
+   * Logs only non-secret identifiers: the public client_id, the tenant and the
+   * origin of the redirect_uri (never its query, nor codes, tokens, passwords).
+   */
+  function checkClient(
+    req: Request,
+    res: Response,
+    endpoint: string,
+    clientId: string | undefined,
+    redirectUri: string | undefined,
+  ): boolean {
+    const result = validateRedirectUri(req, clientId, redirectUri);
+    if (result === 'ok') return true;
+    state.logger?.warn(`[OAuth] ${endpoint} rejected: ${CLIENT_CHECK_LOG[result]}`, {
+      reason: result,
+      clientId: clientId ?? null,
+      tenantId: getTenantId(req),
+      redirectOrigin: safeOrigin(redirectUri),
+    });
+    res.status(400).json({
+      error: 'invalid_request',
+      error_description: CLIENT_CHECK_DESCRIPTION[result],
+    });
+    return false;
+  }
+
   // --- OAuth Protected Resource Metadata (RFC 9728) ---
 
   /**
@@ -147,19 +218,59 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
   });
 
   // --- Dynamic Client Registration (RFC 7591) ---
+  //
+  // Public endpoint, hardened in order: per-IP rate limit (shared
+  // TokenRateLimiter), metadata validation (see validateClientMetadata for the
+  // limits), then a single capped write (see OAuthClientStore.register).
   app.post('/register', (req: Request, res: Response) => {
-    const { redirect_uris, client_name } = (req.body as Record<string, unknown>) ?? {};
-    const clientId = 'client_' + crypto.randomBytes(16).toString('hex');
+    const tenantId = getTenantId(req);
+    const ip = req.ip ?? req.socket.remoteAddress ?? 'unknown';
+    const rl = state.rateLimiter?.check(`oauth-register:${ip}`, REGISTER_RATE_LIMIT_RPM);
+    if (rl && !rl.allowed) {
+      state.logger?.warn('[OAuth] /register rejected: rate limited', { tenantId });
+      res.setHeader('Retry-After', String(Math.ceil(rl.retryAfterMs / 1000)));
+      res.status(429).json({
+        error: 'too_many_requests',
+        error_description: 'Too many client registrations. Please retry later.',
+      });
+      return;
+    }
 
-    registeredClients.set(clientId, {
+    const metadata = validateClientMetadata(req.body);
+    if (!metadata.ok) {
+      state.logger?.warn(`[OAuth] /register rejected: ${metadata.error}`, {
+        tenantId,
+        reason: metadata.description,
+      });
+      res.status(400).json({ error: metadata.error, error_description: metadata.description });
+      return;
+    }
+
+    const clientId = 'client_' + crypto.randomBytes(16).toString('hex');
+    const { client, purged } = clients.register({
       clientId,
-      redirectUris: Array.isArray(redirect_uris) ? (redirect_uris as string[]) : [],
+      tenantId,
+      redirectUris: metadata.redirectUris,
+      clientName: metadata.clientName,
     });
+    if (purged > 0) {
+      state.logger?.info('[OAuth] purged never-used registered clients', { tenantId, purged });
+    }
+    if (!client) {
+      state.logger?.warn('[OAuth] /register rejected: client limit reached', { tenantId });
+      res.status(503).json({
+        error: 'temporarily_unavailable',
+        error_description:
+          'Too many OAuth clients are registered on this server and none can be purged yet. ' +
+          'Please retry later or contact the administrator.',
+      });
+      return;
+    }
 
     res.status(201).json({
       client_id: clientId,
-      client_name: client_name ?? 'MCP Client',
-      redirect_uris: redirect_uris ?? [],
+      client_name: metadata.clientName ?? 'MCP Client',
+      redirect_uris: metadata.redirectUris,
       grant_types: ['authorization_code'],
       response_types: ['code'],
       token_endpoint_auth_method: 'none',
@@ -222,13 +333,7 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
       case 'open': {
         // Auto-authorize immediately — no user interaction required.
         // Security: validate redirect_uri against registered client.
-        if (!validateRedirectUri(client_id, redirect_uri)) {
-          res.status(400).json({
-            error: 'invalid_request',
-            error_description: 'redirect_uri does not match registered client.',
-          });
-          return;
-        }
+        if (!checkClient(req, res, 'GET /authorize', client_id, redirect_uri)) return;
 
         const code = crypto.randomBytes(32).toString('hex');
         authCodes.set(code, {
@@ -254,6 +359,9 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
 
       // ------------------------------------------------------------------
       case 'calame': {
+        // Reject an unknown client / foreign redirect_uri BEFORE showing the
+        // login form, so the user is not asked for a password that cannot work.
+        if (!checkClient(req, res, 'GET /authorize', client_id, redirect_uri)) return;
         // Show an email + password login form.
         res.type('html').send(buildCalameAuthPage({ ...baseParams, error: '' }));
         return;
@@ -270,13 +378,7 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
 
         cleanupPendingAuthorizations();
 
-        if (!validateRedirectUri(client_id, redirect_uri)) {
-          res.status(400).json({
-            error: 'invalid_request',
-            error_description: 'redirect_uri does not match registered client.',
-          });
-          return;
-        }
+        if (!checkClient(req, res, 'GET /authorize', client_id, redirect_uri)) return;
 
         const ssoState = crypto.randomBytes(16).toString('hex');
         const codeVerifier = generateCodeVerifier();
@@ -315,13 +417,7 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
 
         cleanupPendingAuthorizations();
 
-        if (!validateRedirectUri(client_id, redirect_uri)) {
-          res.status(400).json({
-            error: 'invalid_request',
-            error_description: 'redirect_uri does not match registered client.',
-          });
-          return;
-        }
+        if (!checkClient(req, res, 'GET /authorize', client_id, redirect_uri)) return;
 
         const providerState = crypto.randomBytes(16).toString('hex');
         const codeVerifier = generateCodeVerifier();
@@ -409,6 +505,11 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
       });
       return;
     }
+
+    // Security: validate client_id + redirect_uri BEFORE any authentication,
+    // so credentials are never checked for an unknown client and the code
+    // below is only ever redirected to a registered URI.
+    if (!checkClient(req, res, 'POST /authorize', client_id, redirect_uri)) return;
 
     let forgeToken: string | null = null;
 
@@ -595,15 +696,6 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
     }
 
     // Generate auth code that maps to the forge token
-    // Security: validate redirect_uri against registered client.
-    if (!validateRedirectUri(client_id, redirect_uri)) {
-      res.status(400).json({
-        error: 'invalid_request',
-        error_description: 'redirect_uri does not match registered client.',
-      });
-      return;
-    }
-
     const code = crypto.randomBytes(32).toString('hex');
     authCodes.set(code, {
       forgeToken,
@@ -923,6 +1015,8 @@ export function registerOAuthRoutes(app: Express, state: AppState): void {
 
     // Consume the code (one-time use)
     if (code) authCodes.delete(code);
+    // Only a fully successful exchange counts as a use of the client.
+    clients.markUsed(entry.clientId);
 
     // Return the forge token as the OAuth access token.
     // '__open__' is a special marker for open-mode profiles — serve.ts accepts it.
@@ -943,6 +1037,16 @@ function getBaseUrl(req: Request): string {
   const proto = req.headers['x-forwarded-proto'] ?? req.protocol;
   const host = req.headers['x-forwarded-host'] ?? req.headers.host;
   return `${proto}://${host}`;
+}
+
+/** Origin of a URI for logging (drops path, query and fragment); null if unparsable. */
+function safeOrigin(uri: string | undefined): string | null {
+  if (!uri) return null;
+  try {
+    return new URL(uri).origin;
+  } catch {
+    return null;
+  }
 }
 
 function escapeHtml(str: string): string {

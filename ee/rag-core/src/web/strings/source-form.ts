@@ -18,7 +18,8 @@ const FR = {
   accessKeyIdRequired: "L'Access Key ID est requis.",
   secretAccessKeyRequired: 'Le Secret Access Key est requis.',
   urlRequired: 'Saisissez au moins une URL.',
-  invalidUrls: (n: number) => `${n} URL(s) invalide(s) — vérifiez le format http(s)://.`,
+  invalidUrls: (n: number) =>
+    `${n} URL${n > 1 ? 's' : ''} invalide${n > 1 ? 's' : ''} — vérifiez le format http(s)://.`,
   sitemapUrlRequired: "L'URL du sitemap est requise.",
   sitemapUrlInvalid: "L'URL du sitemap doit être une URL http(s):// valide.",
   gdriveFolderIdRequired: "L'ID du dossier Google Drive est requis.",
@@ -152,6 +153,10 @@ const FR = {
   // Embeddings
   localProviderUnavailable:
     "Le fournisseur local intégré est indisponible — vérifiez l'installation ou configurez un fournisseur distant dans la section « Paramètres IA ».",
+  aiSettingsLoading: 'Chargement des paramètres IA…',
+  aiSettingsLoadError:
+    'Impossible de charger les paramètres IA (fournisseurs, embeddings). Vérifiez la connexion puis réessayez.',
+  aiSettingsRetry: 'Réessayer',
   embeddingsUnsupportedSuffix: ' — embeddings non supportés',
   embeddingsUnsupportedTitle: 'Cette config IA ne supporte pas les embeddings',
   dims: (n: number) => ` (${n} dims)`,
@@ -180,7 +185,8 @@ const EN: typeof FR = {
   accessKeyIdRequired: 'The Access Key ID is required.',
   secretAccessKeyRequired: 'The Secret Access Key is required.',
   urlRequired: 'Enter at least one URL.',
-  invalidUrls: (n: number) => `${n} invalid URL(s) — check the http(s):// format.`,
+  invalidUrls: (n: number) =>
+    `${n} invalid URL${n === 1 ? '' : 's'} — check the http(s):// format.`,
   sitemapUrlRequired: 'The sitemap URL is required.',
   sitemapUrlInvalid: 'The sitemap URL must be a valid http(s):// URL.',
   gdriveFolderIdRequired: 'The Google Drive folder ID is required.',
@@ -302,6 +308,10 @@ const EN: typeof FR = {
 
   localProviderUnavailable:
     'The built-in local provider is unavailable — check the installation or configure a remote provider in the “AI Settings” section.',
+  aiSettingsLoading: 'Loading AI settings…',
+  aiSettingsLoadError:
+    'Could not load the AI settings (providers, embeddings). Check the connection and retry.',
+  aiSettingsRetry: 'Retry',
   embeddingsUnsupportedSuffix: ' — embeddings not supported',
   embeddingsUnsupportedTitle: 'This AI configuration does not support embeddings',
   dims: (n: number) => ` (${n} dims)`,

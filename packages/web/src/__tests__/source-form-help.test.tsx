@@ -37,10 +37,10 @@ function renderForm(props: Partial<React.ComponentProps<typeof SourceForm>> = {}
 
 const LOCAL_HELPS: Array<[string, RegExp]> = [
   ['Chemin absolu du dossier', /Le serveur doit pouvoir lire ce chemin/],
-  ['Globs à inclure', /Vide = tout inclure/],
-  ['Globs à exclure', /exclusions par défaut \(node_modules, \.git\)/],
+  ['Fichiers à inclure (motifs glob)', /Vide = tout inclure/],
+  ['Fichiers à exclure (motifs glob)', /exclusions par défaut \(node_modules, \.git\)/],
   ['Inclure les fichiers cachés', /exclus par défaut/],
-  ["Configuration d'embeddings", /Traitement 100 % local/],
+  ["Modèle d'analyse des documents (embeddings)", /Traitement 100 % local/],
   ['Intervalle de synchronisation auto', /La synchronisation manuelle reste toujours disponible/],
 ];
 
@@ -99,10 +99,10 @@ describe('SourceForm — collapsible "?" help', () => {
     expect(screen.getByLabelText(/^Nom de la source/)).toBeInTheDocument();
     expect(screen.getByLabelText(/^Type/)).toBeInTheDocument();
     expect(screen.getByLabelText(/^Chemin absolu du dossier/)).toBeInTheDocument();
-    expect(screen.getByLabelText(/^Globs à inclure/)).toBeInTheDocument();
-    expect(screen.getByLabelText(/^Globs à exclure/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Fichiers à inclure \(motifs glob\)/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Fichiers à exclure \(motifs glob\)/)).toBeInTheDocument();
     expect(screen.getByLabelText('Inclure les fichiers cachés')).toBeInTheDocument();
-    expect(screen.getByLabelText(/^Configuration d'embeddings/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Modèle d'analyse des documents/)).toBeInTheDocument();
     expect(screen.getByLabelText(/^Intervalle de synchronisation auto/)).toBeInTheDocument();
     for (const action of ['Parcourir…', 'Tester', 'Enregistrer', 'Annuler', 'Fermer']) {
       expect(screen.getByRole('button', { name: action })).toBeInTheDocument();
@@ -125,7 +125,7 @@ describe('SourceForm — collapsible "?" help', () => {
     ).toBeVisible();
     // No "?" on the embeddings label: the remote notice is not secondary.
     expect(
-      screen.queryByRole('button', { name: "Aide : Configuration d'embeddings" }),
+      screen.queryByRole('button', { name: "Aide : Modèle d'analyse des documents (embeddings)" }),
     ).not.toBeInTheDocument();
   });
 

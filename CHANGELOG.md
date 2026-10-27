@@ -7,6 +7,8 @@ root `package.json` version flows to the Docker image and `create-calame`).
 
 ## [Unreleased]
 
+## [0.8.7] - 2026-10-27
+
 ### Added
 
 - Optional **AI instructions** per MCP profile ("Consignes pour l'IA"): plain

@@ -24,6 +24,8 @@ export function render(ui: ReactElement, options?: RenderOptions): RenderResult 
 export function makeSession(overrides: Partial<SessionState> = {}): SessionState {
   return {
     authChecked: true,
+    authCheckFailed: false,
+    retryAuthCheck: vi.fn(),
     authenticated: true,
     authRequired: true,
     needsSetup: false,

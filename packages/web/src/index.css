@@ -67,15 +67,18 @@
     font-family: 'IBM Plex Mono', monospace;
     text-transform: uppercase;
     letter-spacing: 0.25em;
-    font-size: 10px;
-    color: rgb(107 114 128); /* gray-500 */
+    /* 12px minimum for secondary text; gray-400: 6.4:1+ on the gray-900/950
+       surfaces (WCAG AA), gray-500 was 3.8:1. */
+    font-size: 12px;
+    color: rgb(156 163 175);
   }
   .eyebrow-accent {
     font-family: 'IBM Plex Mono', monospace;
     text-transform: uppercase;
     letter-spacing: 0.25em;
-    font-size: 10px;
-    color: rgb(var(--color-os-400) / 0.7);
+    /* Full-opacity os-300: os-400 at 70% was ~3.6:1 on cards. */
+    font-size: 12px;
+    color: rgb(var(--color-os-300));
   }
 
   /* --- Hairline divider --- */

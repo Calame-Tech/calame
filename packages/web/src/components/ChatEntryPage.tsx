@@ -156,7 +156,7 @@ function InlineChatPanel({
                   {!msg.streaming && msg.usage && (
                     <span className="text-xs text-zinc-500 mt-1 block">
                       {t('usage.tokens', {
-                        count: (msg.usage.input + msg.usage.output).toLocaleString(),
+                        count: msg.usage.input + msg.usage.output,
                       })}
                       {msg.usage.cacheRead
                         ? t('usage.cacheSuffix', {

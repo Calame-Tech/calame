@@ -143,6 +143,44 @@ describe('auth routes', () => {
       expect(res.body.message).toContain('Session expired');
     });
 
+    it('GET /api/auth/status keeps the session across a server restart and renews the cookie', async () => {
+      // Desktop app closed then reopened: new server process, same data dir.
+      db.close();
+      db = new CalameDatabase(tmpDir);
+      state = new AppState();
+      state.db = db;
+      state.userManager = new UserManager(db);
+      app = createApp(state);
+
+      const res = await request(app).get('/api/auth/status').set('Cookie', cookie).expect(200);
+      expect(res.body.authenticated).toBe(true);
+      const setCookie = String(res.headers['set-cookie']?.[0] ?? '');
+      expect(setCookie).toContain('calame_session=');
+      expect(setCookie).toContain('HttpOnly');
+      expect(setCookie).toMatch(/Max-Age=\d+/);
+    });
+
+    it('a logged-out session stays invalid after a server restart', async () => {
+      await request(app).post('/api/auth/logout').set('Cookie', cookie).expect(200);
+      db.close();
+      db = new CalameDatabase(tmpDir);
+      state = new AppState();
+      state.db = db;
+      state.userManager = new UserManager(db);
+      app = createApp(state);
+
+      const res = await request(app).get('/api/auth/status').set('Cookie', cookie).expect(200);
+      expect(res.body.authenticated).toBe(false);
+      expect(res.headers['set-cookie']).toBeUndefined();
+    });
+
+    it('GET /api/auth/status rejects the session of a disabled admin (revocation)', async () => {
+      const admin = state.userManager!.getUserByEmail(ADMIN.email)!;
+      state.userManager!.disableUser(admin.id);
+      const res = await request(app).get('/api/auth/status').set('Cookie', cookie).expect(200);
+      expect(res.body.authenticated).toBe(false);
+    });
+
     it('rate limits after 5 failed login attempts', async () => {
       for (let i = 0; i < 5; i++) {
         await request(app).post('/api/auth/login').send({ email: ADMIN.email, password: 'wrong' });

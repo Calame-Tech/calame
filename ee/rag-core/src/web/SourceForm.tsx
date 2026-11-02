@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Calame Tech inc. Licensed under the Business Source License 1.1.
 // See ee/LICENSE.BUSL at the root of the ee/ directory for terms.
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { RagSourceType } from '../types.js';
 import type { RagSourcePublic } from '../routes/api-types.js';
 import { apiPost, apiPatch, ApiError, ApiTimeoutError, type RagSourceResponse } from './api.js';
@@ -34,7 +34,17 @@ interface SourceFormProps {
   onSave: (source: RagSourcePublic) => void;
   onCancel: () => void;
   aiSettings: AiSettingOption[];
+  /**
+   * Whether `aiSettings` is known. While it is loading or failed to load, an
+   * empty list says nothing about the providers: the form shows the loading
+   * state or a load error with "Retry" rather than "unavailable".
+   * Defaults to 'loaded'.
+   */
+  aiSettingsStatus?: AiSettingsStatus;
+  onRetryAiSettings?: () => void;
 }
+
+export type AiSettingsStatus = 'loading' | 'loaded' | 'error';
 
 interface SourceTypeMeta {
   value: RagSourceType;
@@ -294,15 +304,25 @@ interface HelperTextProps {
 }
 
 function HelperText({ children }: HelperTextProps) {
-  return <p className="text-xs text-gray-600 mt-1">{children}</p>;
+  return <p className="text-xs text-gray-400 mt-1">{children}</p>;
 }
 
 // ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
 
-export default function SourceForm({ initial, onSave, onCancel, aiSettings }: SourceFormProps) {
+export default function SourceForm({
+  initial,
+  onSave,
+  onCancel,
+  aiSettings,
+  aiSettingsStatus = 'loaded',
+  onRetryAiSettings,
+}: SourceFormProps) {
   const isEditing = Boolean(initial?.id);
+  // No capabilities known yet (loading, or the load failed): nothing can be
+  // concluded about providers or embeddings support.
+  const aiSettingsUnknown = aiSettings.length === 0 && aiSettingsStatus !== 'loaded';
 
   // ---- shared fields ----
   const [name, setName] = useState(initial?.name ?? '');
@@ -319,6 +339,15 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
   // Polling interval — null means "manual sync only". Pre-fill from the
   // existing source on edit so the dropdown shows the saved cadence rather
   // than defaulting back to "off".
+  // Settings that arrive after the form opened (reload after a failed load)
+  // still give a NEW source its local default.
+  const hadAiSettings = useRef(aiSettings.length > 0);
+  useEffect(() => {
+    if (hadAiSettings.current || aiSettings.length === 0) return;
+    hadAiSettings.current = true;
+    const local = aiSettings.find((s) => s.provider === 'local');
+    if (!isEditing && local) setEmbeddingSettingName((name) => name || local.name);
+  }, [aiSettings, isEditing]);
   const [pollingIntervalSeconds, setPollingIntervalSeconds] = useState<number | null>(
     initial?.pollingIntervalSeconds ?? null,
   );
@@ -594,6 +623,9 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
       if (!spSiteUrl.trim()) return SF.siteUrlRequired;
     }
 
+    if (aiSettingsUnknown) {
+      return aiSettingsStatus === 'error' ? SF.aiSettingsLoadError : SF.aiSettingsLoading;
+    }
     if (!embeddingSettingName) {
       return RAG_STRINGS.embeddingRequired;
     }
@@ -984,7 +1016,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
             </option>
           ))}
         </select>
-        {isEditing && <p className="text-xs text-gray-600 mt-1">{RAG_STRINGS.typeImmutable}</p>}
+        {isEditing && <p className="text-xs text-gray-400 mt-1">{RAG_STRINGS.typeImmutable}</p>}
       </div>
 
       {/* ------------------------------------------------------------------ */}
@@ -1164,7 +1196,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               aria-expanded={s3ShowAdvanced}
             >
               <span className="font-medium">{RAG_STRINGS.advancedOptional}</span>
-              <span aria-hidden="true" className="text-gray-600">
+              <span aria-hidden="true" className="text-gray-400">
                 {s3ShowAdvanced ? '▲' : '▼'}
               </span>
             </button>
@@ -1392,7 +1424,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               aria-expanded={httpShowAdvanced}
             >
               <span className="font-medium">{SF.httpAdvanced}</span>
-              <span aria-hidden="true" className="text-gray-600">
+              <span aria-hidden="true" className="text-gray-400">
                 {httpShowAdvanced ? '▲' : '▼'}
               </span>
             </button>
@@ -1560,7 +1592,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               aria-expanded={gdriveShowAdvanced}
             >
               <span className="font-medium">{SF.gdriveAdvanced}</span>
-              <span aria-hidden="true" className="text-gray-600">
+              <span aria-hidden="true" className="text-gray-400">
                 {gdriveShowAdvanced ? '▲' : '▼'}
               </span>
             </button>
@@ -1784,7 +1816,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               aria-expanded={gsheetsShowAdvanced}
             >
               <span className="font-medium">{SF.gsheetsAdvanced}</span>
-              <span aria-hidden="true" className="text-gray-600">
+              <span aria-hidden="true" className="text-gray-400">
                 {gsheetsShowAdvanced ? '▲' : '▼'}
               </span>
             </button>
@@ -2054,7 +2086,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               aria-expanded={spShowAdvanced}
             >
               <span className="font-medium">{SF.spAdvanced}</span>
-              <span aria-hidden="true" className="text-gray-600">
+              <span aria-hidden="true" className="text-gray-400">
                 {spShowAdvanced ? '▲' : '▼'}
               </span>
             </button>
@@ -2152,7 +2184,26 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
         >
           {RAG_STRINGS.embeddingLabel}
         </FieldLabel>
-        {aiSettings.length === 0 ? (
+        {aiSettingsUnknown ? (
+          aiSettingsStatus === 'error' ? (
+            <div role="alert" className="flex items-center gap-2 mt-1">
+              <p className="text-xs text-amber-400">{SF.aiSettingsLoadError}</p>
+              {onRetryAiSettings && (
+                <button
+                  type="button"
+                  onClick={onRetryAiSettings}
+                  className="text-xs text-os-400 hover:text-os-300 underline shrink-0"
+                >
+                  {SF.aiSettingsRetry}
+                </button>
+              )}
+            </div>
+          ) : (
+            <p role="status" className="text-xs text-gray-400 italic mt-1">
+              {SF.aiSettingsLoading}
+            </p>
+          )
+        ) : aiSettings.length === 0 ? (
           <p className="text-xs text-amber-400 mt-1">{SF.localProviderUnavailable}</p>
         ) : (
           <select
@@ -2208,7 +2259,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
         {selectedSetting && selectedSettingSupportsEmbeddings && (
           <>
             <div className="flex items-center gap-4 mt-1">
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-gray-400">
                 {RAG_STRINGS.modelLabel}{' '}
                 <span className="font-mono-plex text-gray-400">
                   {selectedSetting.embeddingModel ?? SF.notSpecified}
@@ -2216,7 +2267,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
               </p>
               {(selectedSetting.embeddingDimensions ?? initial?.embeddingDimensions) !==
                 undefined && (
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-gray-400">
                   {RAG_STRINGS.dimensionsLabel}{' '}
                   <span className="font-mono-plex text-gray-400">
                     {selectedSetting.embeddingDimensions ?? initial?.embeddingDimensions}
@@ -2233,14 +2284,14 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
                   href="https://ai.google.dev/gemma/terms"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-xs text-gray-600 hover:text-gray-400 underline underline-offset-2 mt-1 inline-block"
+                  className="text-xs text-gray-400 hover:text-gray-200 underline underline-offset-2 mt-1 inline-block"
                   title={SF.thirdPartyLicensesTitle}
                 >
                   {SF.thirdPartyLicenses}
                 </a>
               </>
             ) : (
-              <p className="text-xs text-gray-500 mt-1">{SF.remoteEmbeddingsNotice}</p>
+              <p className="text-xs text-gray-400 mt-1">{SF.remoteEmbeddingsNotice}</p>
             )}
           </>
         )}
@@ -2334,7 +2385,7 @@ export default function SourceForm({ initial, onSave, onCancel, aiSettings }: So
           {RAG_STRINGS.cancel}
         </button>
       </div>
-      {saving && <p className="text-xs text-gray-500">{RAG_STRINGS.savingHint}</p>}
+      {saving && <p className="text-xs text-gray-400">{RAG_STRINGS.savingHint}</p>}
 
       {showReindexDialog && (
         <ReindexDialog

@@ -93,6 +93,34 @@ describe('ServePanel', () => {
     expect(screen.getByText('A profile named "default" already exists.')).toBeTruthy();
   });
 
+  it('translates a start refused for lack of data configuration and links to it', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              success: false,
+              code: 'no_profiles',
+              message: 'No profiles found. Create profiles first.',
+            }),
+            { status: 400, headers: { 'Content-Type': 'application/json' } },
+          ),
+      ),
+    );
+    try {
+      const { onSelectProfile } = renderPanel();
+      fireEvent.click(screen.getByText('Start'));
+      const link = await screen.findByText('Attach a data configuration');
+      expect(screen.getByText(/has no data configuration yet/)).toBeTruthy();
+      expect(screen.queryByText(/No profiles found/)).toBeNull();
+      fireEvent.click(link);
+      expect(onSelectProfile).toHaveBeenCalledWith('default');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   describe('Test MCP button', () => {
     const activeStatus: ServeStatus = {
       ...serveStatus,

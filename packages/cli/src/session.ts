@@ -1,5 +1,8 @@
 import crypto from 'crypto';
+import type { Database } from 'better-sqlite3';
 import type { Request, Response, NextFunction } from 'express';
+import type { CalameDatabase } from './database.js';
+import { hashToken } from './crypto.js';
 import type { UserManager } from './user.js';
 import { parseCookies } from './utils/cookies.js';
 
@@ -14,9 +17,70 @@ export interface Session {
 const ADMIN_COOKIE = 'calame_session';
 const USER_COOKIE = 'calame_user_session';
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+/**
+ * Absolute lifetime of a session, whatever its renewals: past this point the
+ * user must log in again even if the app was opened every day.
+ */
+const SESSION_MAX_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
-/** In-memory session store. Cleared on process restart (intentional — forces re-login). */
-const sessions = new Map<string, Session>();
+/**
+ * Session store. Without a database (unit tests, early boot) sessions live in
+ * memory only. Once {@link configureSessionStore} is called they are persisted
+ * in the `auth_sessions` table so they survive a server restart — the desktop
+ * app restarts its sidecar on every launch. Only the SHA-256 hash of the
+ * session ID is stored: the raw ID exists solely in the httpOnly cookie.
+ */
+interface StoredSession {
+  userId: string | null;
+  createdAt: number;
+  expiresAt: number;
+}
+
+const memorySessions = new Map<string, StoredSession>();
+let sessionDb: Database | null = null;
+
+/** The configured database while it is still open, else null (in-memory). */
+function store(): Database | null {
+  return sessionDb?.open ? sessionDb : null;
+}
+
+/** Persist sessions in `database` (or back to in-memory only with `null`). */
+export function configureSessionStore(database: CalameDatabase | null): void {
+  sessionDb = database?.raw ?? null;
+  if (sessionDb) {
+    sessionDb.prepare('DELETE FROM auth_sessions WHERE expires_at < ?').run(Date.now());
+  }
+}
+
+function readStored(idHash: string): StoredSession | null {
+  const db = store();
+  if (!db) return memorySessions.get(idHash) ?? null;
+  const row = db
+    .prepare('SELECT user_id, created_at, expires_at FROM auth_sessions WHERE id_hash = ?')
+    .get(idHash) as { user_id: string | null; created_at: number; expires_at: number } | undefined;
+  return row ? { userId: row.user_id, createdAt: row.created_at, expiresAt: row.expires_at } : null;
+}
+
+function writeStored(idHash: string, stored: StoredSession): void {
+  const db = store();
+  if (!db) {
+    memorySessions.set(idHash, stored);
+    return;
+  }
+  db.prepare(
+    `INSERT OR REPLACE INTO auth_sessions (id_hash, user_id, created_at, expires_at)
+       VALUES (?, ?, ?, ?)`,
+  ).run(idHash, stored.userId, stored.createdAt, stored.expiresAt);
+}
+
+function deleteStored(idHash: string): void {
+  const db = store();
+  if (!db) {
+    memorySessions.delete(idHash);
+    return;
+  }
+  db.prepare('DELETE FROM auth_sessions WHERE id_hash = ?').run(idHash);
+}
 
 /** Brute-force protection: track failed login attempts by IP. */
 const loginAttempts = new Map<string, { count: number; resetAt: number }>();
@@ -37,8 +101,7 @@ export function getAdminPassword(): string | null {
 export function createSession(userId?: string): string {
   const id = crypto.randomBytes(32).toString('hex');
   const now = Date.now();
-  sessions.set(id, {
-    id,
+  writeStored(hashToken(id), {
     userId: userId ?? null,
     createdAt: now,
     expiresAt: now + SESSION_TTL_MS,
@@ -50,11 +113,35 @@ export function createSession(userId?: string): string {
  * Validate a session ID.
  */
 export function validateSession(sessionId: string): Session | null {
-  const session = sessions.get(sessionId);
-  if (!session) return null;
-  if (Date.now() > session.expiresAt) {
-    sessions.delete(sessionId);
+  const idHash = hashToken(sessionId);
+  const stored = readStored(idHash);
+  if (!stored) return null;
+  if (Date.now() > stored.expiresAt) {
+    deleteStored(idHash);
     return null;
+  }
+  return { id: sessionId, ...stored };
+}
+
+/**
+ * Sliding renewal: push a valid session's expiry back to a full TTL, capped
+ * at {@link SESSION_MAX_LIFETIME_MS} after its creation. Returns the renewed
+ * session, or null when it is unknown, expired or revoked.
+ */
+export function renewSession(sessionId: string): Session | null {
+  const session = validateSession(sessionId);
+  if (!session) return null;
+  const expiresAt = Math.min(
+    Date.now() + SESSION_TTL_MS,
+    session.createdAt + SESSION_MAX_LIFETIME_MS,
+  );
+  if (expiresAt > session.expiresAt) {
+    writeStored(hashToken(sessionId), {
+      userId: session.userId,
+      createdAt: session.createdAt,
+      expiresAt,
+    });
+    return { ...session, expiresAt };
   }
   return session;
 }
@@ -72,7 +159,26 @@ export function validateUserSession(sessionId: string): Session | null {
  * Destroy a session.
  */
 export function destroySession(sessionId: string): void {
-  sessions.delete(sessionId);
+  deleteStored(hashToken(sessionId));
+}
+
+/**
+ * Revoke every session of `userId` (e.g. after a password change), except
+ * the optional `keepSessionId` the caller is currently using.
+ */
+export function destroyUserSessions(userId: string, keepSessionId?: string): void {
+  const keepHash = keepSessionId ? hashToken(keepSessionId) : null;
+  const db = store();
+  if (!db) {
+    for (const [idHash, stored] of memorySessions) {
+      if (stored.userId === userId && idHash !== keepHash) memorySessions.delete(idHash);
+    }
+    return;
+  }
+  db.prepare('DELETE FROM auth_sessions WHERE user_id = ? AND id_hash IS NOT ?').run(
+    userId,
+    keepHash,
+  );
 }
 
 // --- Rate limiting ---
@@ -100,18 +206,19 @@ export function clearFailedAttempts(ip: string): void {
 
 // --- Cookie helpers ---
 
-function cookieOptions() {
+function cookieOptions(maxAge = SESSION_TTL_MS) {
   return {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'strict' as const,
-    maxAge: SESSION_TTL_MS,
+    maxAge,
     path: '/',
   };
 }
 
-export function setSessionCookie(res: Response, sessionId: string): void {
-  res.cookie(ADMIN_COOKIE, sessionId, cookieOptions());
+export function setSessionCookie(res: Response, sessionId: string, expiresAt?: number): void {
+  const maxAge = expiresAt === undefined ? SESSION_TTL_MS : Math.max(0, expiresAt - Date.now());
+  res.cookie(ADMIN_COOKIE, sessionId, cookieOptions(maxAge));
 }
 
 export function clearSessionCookie(res: Response): void {

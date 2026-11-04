@@ -4,7 +4,7 @@
  * of the first source creation: initial load (failure + retry), save in
  * progress, success (the `{ source }` response is unwrapped) and failure.
  */
-import { render as rtlRender, screen, fireEvent, act } from '@testing-library/react';
+import { render as rtlRender, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { KnowledgeBaseManager } from '@calame-ee/rag-core/web';
@@ -133,7 +133,8 @@ describe('KnowledgeBaseManager — first source flow', () => {
     render(<KnowledgeBaseManager />);
 
     expect(await screen.findByText('Impossible de charger les sources.')).toBeInTheDocument();
-    expect(screen.getByRole('alert')).toHaveTextContent('Failed to fetch');
+    expect(screen.getByRole('alert')).toHaveTextContent('le serveur Calame ne répond pas');
+    expect(screen.getByRole('alert')).not.toHaveTextContent('Failed to fetch');
     // A failed fetch must not be presented as an empty knowledge base.
     expect(screen.queryByText(/Aucune source\./)).not.toBeInTheDocument();
     expect(screen.queryByText('Chargement des sources…')).not.toBeInTheDocument();
@@ -167,7 +168,10 @@ describe('KnowledgeBaseManager — first source flow', () => {
     // Server contract: POST answers `{ source }` (routes/rag-sources.ts).
     resolvePost(json({ source: CREATED_SOURCE }, 201));
 
-    expect(await screen.findByRole('status')).toHaveTextContent('Source "Docs" enregistrée.');
+    // The status line changes as the save then the initial sync settle: wait for the final one.
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent('Source "Docs" enregistrée.'),
+    );
     expect(screen.queryByText(/undefined/)).not.toBeInTheDocument();
     // The new source is selected: its detail panel heading is rendered.
     expect(await screen.findAllByRole('heading', { name: 'Docs' })).not.toHaveLength(0);
@@ -199,7 +203,10 @@ describe('KnowledgeBaseManager — first source flow', () => {
 
     sources = [{ ...CREATED_SOURCE, folderCount: 0, documentCount: 0 }];
     fireEvent.click(retry);
-    expect(await screen.findByRole('status')).toHaveTextContent('Source "Docs" enregistrée.');
+    // The status line changes as the save then the initial sync settle: wait for the final one.
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent('Source "Docs" enregistrée.'),
+    );
   });
 
   it('reports a missing source in the save response as an error instead of a success', async () => {
@@ -275,7 +282,10 @@ describe('KnowledgeBaseManager — first source flow', () => {
 
     sources = [{ ...CREATED_SOURCE, folderCount: 0, documentCount: 0 }];
     fireEvent.click(screen.getByRole('button', { name: 'Réessayer' }));
-    expect(await screen.findByRole('status')).toHaveTextContent('Source "Docs" enregistrée.');
+    // The status line changes as the save then the initial sync settle: wait for the final one.
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent('Source "Docs" enregistrée.'),
+    );
     expect(attempts).toBe(2);
   });
 
@@ -320,8 +330,11 @@ describe('KnowledgeBaseManager — initial sync after creation', () => {
     await openCreateForm();
     fireEvent.click(screen.getByRole('button', { name: 'Enregistrer' }));
 
-    expect(await screen.findByRole('status')).toHaveTextContent(
-      'Source "Docs" enregistrée. Synchronisation initiale lancée.',
+    // The status line changes as the save then the initial sync settle: wait for the final one.
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent(
+        'Source "Docs" enregistrée. Synchronisation initiale lancée.',
+      ),
     );
     // The queued job is picked up by the job poll, without any extra click.
     expect((await screen.findAllByText(/Synchronisation en cours…/)).length).toBeGreaterThan(0);
@@ -346,7 +359,10 @@ describe('KnowledgeBaseManager — initial sync after creation', () => {
     await openCreateForm();
     fireEvent.click(screen.getByRole('button', { name: 'Enregistrer' }));
 
-    expect(await screen.findByRole('status')).toHaveTextContent('Sync déjà en cours pour "Docs".');
+    // The status line changes as the save then the initial sync settle: wait for the final one.
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent('Sync déjà en cours pour "Docs".'),
+    );
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(syncPosts).toHaveLength(1);
   });
@@ -384,7 +400,10 @@ describe('KnowledgeBaseManager — initial sync after creation', () => {
     fail = false;
     fireEvent.click(screen.getByRole('button', { name: 'Relancer la synchronisation' }));
 
-    expect(await screen.findByRole('status')).toHaveTextContent('Synchronisation initiale lancée.');
+    // The status line changes as the save then the initial sync settle: wait for the final one.
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent('Synchronisation initiale lancée.'),
+    );
     expect(screen.queryByText(/n'a pas pu démarrer/)).not.toBeInTheDocument();
     expect(syncPosts).toHaveLength(2);
   });
@@ -444,7 +463,10 @@ describe('KnowledgeBaseManager — initial sync after creation', () => {
     const retry = await screen.findByRole('button', { name: 'Relancer la synchronisation' });
     expect(syncPosts).toHaveLength(0);
     fireEvent.click(retry);
-    expect(await screen.findByRole('status')).toHaveTextContent('Sync lancée pour "Docs".');
+    // The status line changes as the save then the initial sync settle: wait for the final one.
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent('Sync lancée pour "Docs".'),
+    );
     expect(syncPosts).toEqual(['/api/rag/sources/src_1/sync']);
   });
 });

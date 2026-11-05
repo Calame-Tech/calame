@@ -67,7 +67,7 @@ const FR = {
 
   // Header
   trashButtonTitle: (count: number, days: number) =>
-    `${count} source(s) dans la corbeille — restaurables pendant ${days} jours`,
+    `${count} source${count > 1 ? 's' : ''} dans la corbeille — restaurable${count > 1 ? 's' : ''} pendant ${days} jours`,
   syncHistory: 'Historique des synchronisations',
   syncHistoryTitle: "Voir l'historique complet des synchronisations",
   newSourceButton: '+ Nouvelle source',
@@ -167,7 +167,7 @@ const EN: typeof FR = {
   deletePermanently: 'Delete permanently',
 
   trashButtonTitle: (count: number, days: number) =>
-    `${count} source(s) in the trash — restorable for ${days} days`,
+    `${count} source${count === 1 ? '' : 's'} in the trash — restorable for ${days} days`,
   syncHistory: 'Sync history',
   syncHistoryTitle: 'View the full sync history',
   newSourceButton: '+ New source',

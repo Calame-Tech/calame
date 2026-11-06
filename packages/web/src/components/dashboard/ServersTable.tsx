@@ -39,13 +39,15 @@ export default function ServersTable({
   recentActivity,
 }: ServersTableProps) {
   const t = useTranslations('dashboard.serversTable');
+  // Same auth-mode names as the configuration graph, instead of raw enum values.
+  const tAuth = useTranslations('configGraph.authModeLabels');
   const counts24h = useMemo(() => countByProfile24h(recentActivity), [recentActivity]);
   const headers = t.raw('table.headers') as string[];
 
   return (
     <div className="card-primary p-4 anim-rise-in" style={{ animationDelay: '200ms' }}>
       <h2 className="text-sm font-semibold text-gray-100">{t('title')}</h2>
-      <p className="font-mono-plex text-[11px] text-gray-500 mb-3">{t('caption')}</p>
+      <p className="font-mono-plex text-[13px] text-gray-300 mb-3">{t('caption')}</p>
 
       {profiles.length === 0 ? (
         <EmptyState title={t('emptyTitle')} description={t('emptyDescription')} />
@@ -57,7 +59,7 @@ export default function ServersTable({
                 {headers.map((h, i) => (
                   <th
                     key={h}
-                    className={`font-mono-plex text-[10px] uppercase tracking-widest text-gray-600 font-semibold px-2.5 py-1.5 border-b border-white/5 ${i === 3 ? 'text-right' : 'text-left'}`}
+                    className={`font-mono-plex text-xs uppercase tracking-widest text-gray-400 font-semibold px-2.5 py-1.5 border-b border-white/5 ${i === 3 ? 'text-right' : 'text-left'}`}
                   >
                     {h}
                   </th>
@@ -89,7 +91,7 @@ export default function ServersTable({
                     </td>
                     <td className="px-2.5 py-2 border-b border-white/[0.035]">
                       <span
-                        className={`font-mono-plex text-[10px] font-semibold tracking-wider px-2 py-0.5 rounded-full ${
+                        className={`font-mono-plex text-xs font-semibold tracking-wider px-2 py-0.5 rounded-full ${
                           active
                             ? 'bg-emerald-400/10 text-emerald-400 ring-1 ring-emerald-400/20'
                             : 'bg-white/5 text-gray-400'
@@ -98,8 +100,8 @@ export default function ServersTable({
                         {active ? t('statusActive') : t('statusStopped')}
                       </span>
                     </td>
-                    <td className="px-2.5 py-2 border-b border-white/[0.035] font-mono-plex text-xs text-gray-400">
-                      {p.authMode ?? t('authOpenFallback')}
+                    <td className="px-2.5 py-2 border-b border-white/[0.035] font-mono-plex text-xs text-gray-300">
+                      {tAuth(p.authMode ?? 'open')}
                     </td>
                     <td className="px-2.5 py-2 border-b border-white/[0.035] font-mono-plex text-xs text-gray-300 text-right tabular-nums">
                       {count}

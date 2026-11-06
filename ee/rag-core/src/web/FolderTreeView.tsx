@@ -49,7 +49,7 @@ function formatBytes(bytes: number): string {
 function FileIcon() {
   return (
     <svg
-      className="w-4 h-4 text-gray-500 flex-shrink-0"
+      className="w-4 h-4 text-gray-400 flex-shrink-0"
       fill="none"
       stroke="currentColor"
       strokeWidth={1.5}
@@ -95,7 +95,7 @@ function FolderIcon({ open }: { open: boolean }) {
 function ChevronIcon({ open }: { open: boolean }) {
   return (
     <svg
-      className={`w-3 h-3 text-gray-500 transition-transform duration-150 ${open ? 'rotate-90' : ''}`}
+      className={`w-3 h-3 text-gray-400 transition-transform duration-150 ${open ? 'rotate-90' : ''}`}
       fill="none"
       stroke="currentColor"
       strokeWidth={2}
@@ -250,13 +250,13 @@ export default function FolderTreeView({ source, refreshKey = 0 }: FolderTreeVie
           <ChevronIcon open={isOpen} />
           <FolderIcon open={isOpen} />
           <span className="text-sm text-gray-200 truncate">{folder.name}</span>
-          <span className="text-xs text-gray-600 font-mono-plex truncate ml-1">{folder.path}</span>
+          <span className="text-xs text-gray-400 font-mono-plex truncate ml-1">{folder.path}</span>
         </button>
         {isOpen && (
           <>
             {folderChildren?.loading && (
               <div
-                className="text-xs text-gray-500 italic py-1"
+                className="text-xs text-gray-400 italic py-1"
                 style={{ paddingLeft: `${depth * 16 + 32}px` }}
               >
                 {T.loading}
@@ -276,7 +276,7 @@ export default function FolderTreeView({ source, refreshKey = 0 }: FolderTreeVie
                 {folderChildren.documents.map((doc) => renderDocument(doc, depth + 1))}
                 {folderChildren.folders.length === 0 && folderChildren.documents.length === 0 && (
                   <li
-                    className="text-xs text-gray-600 italic py-1"
+                    className="text-xs text-gray-400 italic py-1"
                     style={{ paddingLeft: `${depth * 16 + 32}px` }}
                   >
                     {T.emptyFolder}
@@ -297,7 +297,7 @@ export default function FolderTreeView({ source, refreshKey = 0 }: FolderTreeVie
       <li
         key={doc.id}
         className={`flex items-center gap-2 px-2 py-1.5 rounded-md ${
-          isDeleted ? 'opacity-50 line-through' : hasIngestError ? 'opacity-70' : ''
+          isDeleted ? 'opacity-70 line-through' : hasIngestError ? 'opacity-80' : ''
         }`}
         style={{ paddingLeft: `${depth * 16 + 24}px` }}
       >
@@ -307,13 +307,13 @@ export default function FolderTreeView({ source, refreshKey = 0 }: FolderTreeVie
         </span>
         {hasIngestError && (
           <span
-            className="text-[10px] uppercase tracking-wide text-amber-400 bg-amber-950/40 border border-amber-800/40 px-1.5 py-0.5 rounded flex-shrink-0"
+            className="text-[11px] uppercase tracking-wide text-amber-400 bg-amber-950/40 border border-amber-800/40 px-1.5 py-0.5 rounded flex-shrink-0"
             title={doc.ingestError ?? ''}
           >
             {T.unsupported}
           </span>
         )}
-        <span className="text-xs text-gray-600 ml-auto pl-2 flex-shrink-0">
+        <span className="text-xs text-gray-400 ml-auto pl-2 flex-shrink-0">
           {formatBytes(doc.size)}
         </span>
       </li>
@@ -327,7 +327,7 @@ export default function FolderTreeView({ source, refreshKey = 0 }: FolderTreeVie
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <h3 className="eyebrow truncate">{source.name}</h3>
-          <p className="text-xs text-gray-500 mt-0.5">{source.type}</p>
+          <p className="text-xs text-gray-400 mt-0.5">{source.type}</p>
         </div>
         <button
           type="button"
@@ -388,11 +388,11 @@ export default function FolderTreeView({ source, refreshKey = 0 }: FolderTreeVie
       <div className="border-t border-white/5" />
 
       {!root || root.loading ? (
-        <p className="text-sm text-gray-500 italic">{T.treeLoading}</p>
+        <p className="text-sm text-gray-400 italic">{T.treeLoading}</p>
       ) : root.error ? (
         <p className="text-sm text-red-400">{root.error}</p>
       ) : root.folders.length === 0 && root.documents.length === 0 ? (
-        <p className="text-sm text-gray-500 italic">{T.noIndexedFiles}</p>
+        <p className="text-sm text-gray-400 italic">{T.noIndexedFiles}</p>
       ) : (
         <ul className="space-y-0.5">
           {root.folders.map((f) => renderFolder(f, 0))}

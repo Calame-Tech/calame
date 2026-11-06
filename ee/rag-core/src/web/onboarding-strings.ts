@@ -17,6 +17,10 @@
  */
 type Locale = 'en' | 'fr';
 
+/** Plural suffix for a count (string or number): French treats 0 and 1 as singular. */
+export const frPlural = (n: string | number): string => (Number(n) >= 2 ? 's' : '');
+export const enPlural = (n: string | number): string => (Number(n) === 1 ? '' : 's');
+
 /** Mirrors resolveInitialLocale() in packages/web/src/i18n/locale.ts. */
 export function ragLocale(): Locale {
   try {
@@ -37,11 +41,13 @@ const FR = {
 
   // KnowledgeBaseManager — list
   kbTitle: 'Bases de connaissances',
-  kbDescription: 'Configurez les sources documentaires qui alimentent le RAG.',
+  kbDescription:
+    'Ajoutez les dossiers et documents que vos assistants IA pourront consulter. Chaque source est indexée pour la recherche documentaire (RAG).',
   editSourceAria: (name: string) => `Modifier la source ${name}`,
   watchLive: 'Surveillance en direct',
-  watchPlusPolling: (minutes: number) => `Surveillance + interrogation ${minutes} min`,
-  pollingEvery: (minutes: number) => `Interrogation ${minutes} min`,
+  watchPlusPolling: (minutes: number) =>
+    `Surveillance en direct + vérification toutes les ${minutes} min`,
+  pollingEvery: (minutes: number) => `Vérification toutes les ${minutes} min`,
   manualOnly: 'Manuel uniquement',
   unknownError: 'Erreur inconnue',
   lastSyncFailedAria: (error: string) => `Échec de la dernière sync : ${error}`,
@@ -79,7 +85,7 @@ const FR = {
   testFailed: 'Échec du test.',
   saveFailed: "Échec de l'enregistrement.",
   includeHidden: 'Inclure les fichiers cachés',
-  embeddingLabel: "Configuration d'embeddings",
+  embeddingLabel: "Modèle d'analyse des documents (embeddings)",
   selectEmbedding: 'Sélectionner une configuration IA…',
   /** Display name of the built-in local embedding setting (seeded label, see local-embedding-meta.ts). */
   localEmbeddingName: 'Embeddings locaux (inclus)',
@@ -99,20 +105,20 @@ const FR = {
     daily: 'Tous les jours',
   },
   rootPathLabel: 'Chemin absolu du dossier',
-  includeGlobs: 'Globs à inclure',
-  excludeGlobs: 'Globs à exclure',
-  includeGlobsPathname: 'Globs à inclure (chemin d’URL)',
-  excludeGlobsPathname: 'Globs à exclure (chemin d’URL)',
+  includeGlobs: 'Fichiers à inclure (motifs glob)',
+  excludeGlobs: 'Fichiers à exclure (motifs glob)',
+  includeGlobsPathname: 'Pages à inclure (motifs glob sur le chemin d’URL)',
+  excludeGlobsPathname: 'Pages à exclure (motifs glob sur le chemin d’URL)',
 
   // Sync job errors (server messages, see runSyncJob in routes/rag-index.ts)
   jobFailed: (failed: string, total: string, last: string) =>
-    `${failed} document(s) sur ${total} en échec ; dernière erreur : ${last}`,
+    `${failed} document${frPlural(failed)} sur ${total} en échec ; dernière erreur : ${last}`,
   jobUnsupported: (count: string) =>
-    `${count} document(s) ignoré(s) — format non pris en charge. Convertissez-les en PDF/DOCX/MD/TXT.`,
+    `${count} document${frPlural(count)} ignoré${frPlural(count)} — format non pris en charge. Convertissez en PDF/DOCX/MD/TXT.`,
   jobTooLarge: (count: string) =>
-    `${count} document(s) ignoré(s) — plus gros que la taille maximale de la source. Augmentez la limite ou découpez le fichier.`,
+    `${count} document${frPlural(count)} ignoré${frPlural(count)} — plus gros que la taille maximale de la source. Augmentez la limite ou découpez le fichier.`,
   jobSkipped: (count: string, last: string) =>
-    `${count} fichier(s) ignoré(s) (illisible, corrompu, trop gros ou verrouillé) ; dernier : ${last}`,
+    `${count} fichier${frPlural(count)} ignoré${frPlural(count)} (illisible, corrompu, trop gros ou verrouillé) ; dernier : ${last}`,
   connectorValidationFailed: (detail: string) =>
     `La vérification de la source a échoué : ${detail}`,
   localRootMissing: (root: string) =>
@@ -127,7 +133,12 @@ const FR = {
   // KnowledgeBaseManager
   sourcesLoading: 'Chargement des sources…',
   sourcesLoadError: 'Impossible de charger les sources.',
-  syncProgress: (processed: number, total: number) => ` (${processed} / ${total} documents)`,
+  serverUnreachable: 'le serveur Calame ne répond pas',
+  sourcesRefreshing: 'Synchronisation de la liste des sources…',
+  sourcesRefreshError: (detail: string) =>
+    `Impossible de rafraîchir la liste des sources (${detail}). Dernière liste connue affichée.`,
+  syncProgress: (processed: number, total: number) =>
+    ` (${processed} / ${total} document${frPlural(total)})`,
 
   // SourceForm — save / test outcomes
   saveMissingSource: "Le serveur n'a pas renvoyé la source enregistrée. Rechargez la liste.",
@@ -149,10 +160,11 @@ const FR = {
     rootPath:
       'Le serveur doit pouvoir lire ce chemin. Les fichiers ajoutés ultérieurement sont indexés à ' +
       'la prochaine synchronisation.',
-    globsInclude: 'Une glob par ligne. Vide = tout inclure.',
-    globsExclude: 'Une glob par ligne.',
+    globsInclude:
+      'Un motif par ligne, par exemple **/*.pdf pour tous les PDF. Vide = tout inclure.',
+    globsExclude: 'Un motif par ligne, par exemple **/brouillons/** pour ignorer un dossier.',
     localGlobsExclude:
-      'Une glob par ligne, ajoutée aux exclusions par défaut (node_modules, .git).',
+      'Un motif par ligne, par exemple **/brouillons/**, ajouté aux exclusions par défaut (node_modules, .git).',
     includeHidden:
       'Fichiers et dossiers commençant par un point (.env, .cache…), exclus par défaut. Les ' +
       'fichiers de plus de 50 Mo sont toujours ignorés.',
@@ -166,6 +178,7 @@ const FR = {
     httpTimeout: 'Min 1 000 ms, max 60 000 ms. Défaut : 10 000.',
     httpGlobsInclude: "Appliqués au pathname de l'URL. Vide = tout inclure.",
     localEmbeddings:
+      'Le modèle transforme le texte en vecteurs (embeddings) pour retrouver les passages pertinents. ' +
       'Traitement 100 % local — vos documents et vos requêtes ne quittent jamais cet ordinateur. ' +
       "Pour un corpus très volumineux ou une qualité maximale, vous pouvez configurer votre propre fournisseur d'embeddings dans « Paramètres IA ».",
     polling:
@@ -181,11 +194,12 @@ const EN: typeof FR = {
   saving: 'Saving…',
 
   kbTitle: 'Knowledge bases',
-  kbDescription: 'Configure the document sources that feed retrieval (RAG).',
+  kbDescription:
+    'Add the folders and documents your AI assistants can consult. Each source is indexed for document search (RAG).',
   editSourceAria: (name: string) => `Edit source ${name}`,
   watchLive: 'Live watch',
-  watchPlusPolling: (minutes: number) => `Watch + polling ${minutes} min`,
-  pollingEvery: (minutes: number) => `Polling ${minutes} min`,
+  watchPlusPolling: (minutes: number) => `Live watch + check every ${minutes} min`,
+  pollingEvery: (minutes: number) => `Check every ${minutes} min`,
   manualOnly: 'Manual only',
   unknownError: 'Unknown error',
   lastSyncFailedAria: (error: string) => `Last sync failed: ${error}`,
@@ -222,7 +236,7 @@ const EN: typeof FR = {
   testFailed: 'Test failed.',
   saveFailed: 'Save failed.',
   includeHidden: 'Include hidden files',
-  embeddingLabel: 'Embedding configuration',
+  embeddingLabel: 'Document analysis model (embeddings)',
   selectEmbedding: 'Select an AI configuration…',
   localEmbeddingName: 'Local embeddings (built in)',
   localEmbeddingSuffix: ' — built in, 100% local',
@@ -241,19 +255,19 @@ const EN: typeof FR = {
     daily: 'Every day',
   },
   rootPathLabel: 'Absolute folder path',
-  includeGlobs: 'Include globs',
-  excludeGlobs: 'Exclude globs',
-  includeGlobsPathname: 'Include globs (URL path)',
-  excludeGlobsPathname: 'Exclude globs (URL path)',
+  includeGlobs: 'Files to include (glob patterns)',
+  excludeGlobs: 'Files to exclude (glob patterns)',
+  includeGlobsPathname: 'Pages to include (glob patterns on the URL path)',
+  excludeGlobsPathname: 'Pages to exclude (glob patterns on the URL path)',
 
   jobFailed: (failed: string, total: string, last: string) =>
-    `${failed} of ${total} document(s) failed; last error: ${last}`,
+    `${failed} of ${total} document${enPlural(total)} failed; last error: ${last}`,
   jobUnsupported: (count: string) =>
-    `${count} document(s) skipped — unsupported format. Convert them to PDF/DOCX/MD/TXT.`,
+    `${count} document${enPlural(count)} skipped — unsupported format. Convert to PDF/DOCX/MD/TXT.`,
   jobTooLarge: (count: string) =>
-    `${count} document(s) skipped — larger than the source's max file size. Raise the limit or split the file.`,
+    `${count} document${enPlural(count)} skipped — larger than the source's max file size. Raise the limit or split the file.`,
   jobSkipped: (count: string, last: string) =>
-    `${count} file(s) skipped (unreadable, corrupt, too large or locked); last: ${last}`,
+    `${count} file${enPlural(count)} skipped (unreadable, corrupt, too large or locked); last: ${last}`,
   connectorValidationFailed: (detail: string) => `Source check failed: ${detail}`,
   localRootMissing: (root: string) =>
     `Folder "${root}" was not found. Check the path (drive letter, network share) and that the ` +
@@ -266,7 +280,12 @@ const EN: typeof FR = {
 
   sourcesLoading: 'Loading sources…',
   sourcesLoadError: 'Could not load the sources.',
-  syncProgress: (processed: number, total: number) => ` (${processed} / ${total} documents)`,
+  serverUnreachable: 'the Calame server is not responding',
+  sourcesRefreshing: 'Syncing the source list…',
+  sourcesRefreshError: (detail: string) =>
+    `Could not refresh the source list (${detail}). Showing the last known list.`,
+  syncProgress: (processed: number, total: number) =>
+    ` (${processed} / ${total} document${enPlural(total)})`,
 
   saveMissingSource: 'The server did not return the saved source. Reload the list.',
   saveTimeout: (seconds: number) =>
@@ -284,9 +303,10 @@ const EN: typeof FR = {
   help: {
     rootPath:
       'The server must be able to read this path. Files added later are indexed at the next sync.',
-    globsInclude: 'One glob per line. Empty = include everything.',
-    globsExclude: 'One glob per line.',
-    localGlobsExclude: 'One glob per line, added to the default exclusions (node_modules, .git).',
+    globsInclude: 'One pattern per line, e.g. **/*.pdf for all PDFs. Empty = include everything.',
+    globsExclude: 'One pattern per line, e.g. **/drafts/** to skip a folder.',
+    localGlobsExclude:
+      'One pattern per line, e.g. **/drafts/**, added to the default exclusions (node_modules, .git).',
     includeHidden:
       'Files and folders starting with a dot (.env, .cache…), excluded by default. Files over ' +
       '50 MB are always skipped.',
@@ -300,6 +320,7 @@ const EN: typeof FR = {
     httpTimeout: 'Min 1,000 ms, max 60,000 ms. Default: 10,000.',
     httpGlobsInclude: 'Applied to the URL pathname. Empty = include everything.',
     localEmbeddings:
+      'The model turns text into vectors (embeddings) to find the relevant passages. ' +
       'Processed 100% locally — your documents and queries never leave this computer. For a ' +
       'very large corpus or maximum quality, you can configure your own embedding provider in ' +
       '"AI Settings".',

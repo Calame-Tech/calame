@@ -434,7 +434,13 @@ export function registerMergedDocumentRagTools(opts: RegisterMergedDocumentRagTo
         return { content: [{ type: 'text', text: JSON.stringify({ error: message }) }] };
       }
 
-      audit('rag_list_sources', {}, `${allSources.length} source(s) returned`, 'success', t0);
+      audit(
+        'rag_list_sources',
+        {},
+        `${allSources.length} source${allSources.length === 1 ? '' : 's'} returned`,
+        'success',
+        t0,
+      );
       return { content: [{ type: 'text', text: JSON.stringify({ sources: allSources }) }] };
     },
   );

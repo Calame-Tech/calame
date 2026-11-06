@@ -265,7 +265,7 @@ export default function SyncHistoryPanel({ sources, onClose }: SyncHistoryPanelP
           )}
           <div className="min-w-0">
             <h2 className="heading-md">{S.historyTitle}</h2>
-            <p className="text-sm text-gray-500 mt-1">{S.historySubtitle(HISTORY_LIMIT)}</p>
+            <p className="text-sm text-gray-400 mt-1">{S.historySubtitle(HISTORY_LIMIT)}</p>
           </div>
         </div>
         <button
@@ -310,7 +310,7 @@ export default function SyncHistoryPanel({ sources, onClose }: SyncHistoryPanelP
           </select>
         </label>
 
-        <span className="text-xs text-gray-500 ml-auto">
+        <span className="text-xs text-gray-400 ml-auto">
           {S.jobsShown(visibleJobs.length, jobs.length)}
         </span>
       </div>
@@ -322,18 +322,18 @@ export default function SyncHistoryPanel({ sources, onClose }: SyncHistoryPanelP
       )}
 
       {loading ? (
-        <div className="card-primary p-6 text-center text-sm text-gray-500 italic">
+        <div className="card-primary p-6 text-center text-sm text-gray-400 italic">
           {S.historyLoading}
         </div>
       ) : visibleJobs.length === 0 ? (
-        <div className="card-primary p-6 text-center text-sm text-gray-500 italic">
+        <div className="card-primary p-6 text-center text-sm text-gray-400 italic">
           {jobs.length === 0 ? S.noJobs : S.noJobsMatch}
         </div>
       ) : (
         <div className="card-primary overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-gray-900/40 text-xs uppercase tracking-wide text-gray-500">
+              <thead className="bg-gray-900/40 text-xs uppercase tracking-wide text-gray-400">
                 <tr>
                   <th className="text-left px-3 py-2 font-medium">{S.colSource}</th>
                   <th className="text-left px-3 py-2 font-medium">{S.colStarted}</th>
@@ -386,12 +386,12 @@ export default function SyncHistoryPanel({ sources, onClose }: SyncHistoryPanelP
                                   style={{ width: `${percent}%` }}
                                 />
                               </div>
-                              <div className="text-xs text-gray-500">
+                              <div className="text-xs text-gray-400">
                                 {job.processedDocuments} / {job.totalDocuments || '?'} · {percent}%
                               </div>
                               {job.currentDocument && (
                                 <div
-                                  className="text-xs text-gray-500 truncate max-w-[260px]"
+                                  className="text-xs text-gray-400 truncate max-w-[260px]"
                                   title={job.currentDocument}
                                 >
                                   {S.currentDocument(
@@ -405,19 +405,19 @@ export default function SyncHistoryPanel({ sources, onClose }: SyncHistoryPanelP
                             <div className="text-xs text-gray-400">
                               {S.documentsCount(job.processedDocuments, job.totalDocuments)}
                               {job.skippedByEtag > 0 && (
-                                <span className="text-gray-500">
+                                <span className="text-gray-400">
                                   {' '}
                                   · {S.skippedEtag(job.skippedByEtag)}
                                 </span>
                               )}
                               {job.gcDeleted > 0 && (
-                                <span className="text-gray-500"> · {job.gcDeleted} GC</span>
+                                <span className="text-gray-400"> · {job.gcDeleted} GC</span>
                               )}
                               {job.indexedDocuments +
                                 job.unchangedDocuments +
                                 job.rejectedDocuments >
                                 0 && (
-                                <div className="text-gray-500">
+                                <div className="text-gray-400">
                                   {S.syncReport(
                                     job.indexedDocuments,
                                     job.unchangedDocuments,
@@ -442,7 +442,7 @@ export default function SyncHistoryPanel({ sources, onClose }: SyncHistoryPanelP
                             {translateJobError(job.error)}
                           </span>
                         ) : (
-                          !failureKindLabel(job) && <span className="text-gray-600">—</span>
+                          !failureKindLabel(job) && <span className="text-gray-400">—</span>
                         )}
                         {job.rejectedFiles.length > 0 && (
                           <details className="mt-1 text-gray-400">
@@ -458,7 +458,7 @@ export default function SyncHistoryPanel({ sources, onClose }: SyncHistoryPanelP
                               ))}
                             </ul>
                             {job.rejectedDocuments > job.rejectedFiles.length && (
-                              <p className="mt-1 text-gray-500">
+                              <p className="mt-1 text-gray-400">
                                 {S.rejectedFilesTruncated(
                                   job.rejectedFiles.length,
                                   job.rejectedDocuments,

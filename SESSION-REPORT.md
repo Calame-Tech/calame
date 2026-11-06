@@ -5,6 +5,216 @@ every commit. Newest first.
 
 ---
 
+## 2026-10-16 — CALAME-3 : persistance et cohérence d'état de l'app desktop (retour testeur Windows, points 01/02/11/12)
+
+Branche `agent/calame-3-prserve-les-brouillons-la-session-et-la`, 4 commits d'implémentation
+(étapes 1 à 4) et ce compte rendu.
+
+**Version testée : inconnue (0.8.3 ou 0.8.4, non confirmée).** Aucune trace (log, capture,
+numéro de build) ne permet de trancher. Les tags `v0.8.3` (2026-10-09) et `v0.8.4`
+(2026-10-13) existent. `git diff v0.8.3 v0.8.4` ne touche ni `packages/web/src`, ni
+`ee/rag-core/src/web`, ni `packages/cli/src/session.ts` / `routes/`. Dans `apps/desktop`, seuls
+les numéros de version changent (`package.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`).
+En revanche, entre `v0.8.4` et la base de cette branche (`e0530ac`), il y a 28 commits
+(CALAME-1/2/6). Ils modifient notamment `KnowledgeBaseManager.tsx`, `RagAccessSelector.tsx`,
+`ServePanel.tsx` et `McpListPage.tsx`, c'est-à-dire les composants des points 02, 11 et 12.
+Les causes ci-dessous ont donc été **établies sur le code actuel** (`e0530ac`). Chacune a ensuite
+été recherchée dans `git show v0.8.4:<fichier>` (identique en `v0.8.3` pour ces chemins) :
+- 01 : `session.ts` contient déjà `const sessions = new Map<string, Session>()` et le commentaire
+  « Cleared on process restart (intentional — forces re-login) ». La cause est présente.
+- 02 : `KnowledgeBaseManager` part de `useState<RagSourceWithCounts[]>([])` et de
+  `loading = true`, avec « Chargement des sources… ». `refreshSources` applique chaque réponse dans
+  son ordre d'arrivée, sans numérotation. La cause est présente.
+- 11 : `ServePanel` garde `showCreateForm`, `newLabel` et `newName` en `useState` local, et il est
+  rendu par `McpListPage`. La perte au démontage est présente. Le préremplissage depuis le parcours
+  guidé vient de CALAME-1 et n'existait pas encore en 0.8.4.
+- 12 : `RagAccessSelector.loadSources` fait son propre `GET /api/rag/sources` + `/api/rag/jobs`, une
+  seule fois au montage, et prend le premier job `failed` trouvé. La cause est présente.
+Incertitudes : le traitement d'une erreur réseau sur `/api/auth/status` (point 01) et la règle de
+statut exacte côté Sources n'ont été analysés que sur le code actuel. Rien n'a été reproduit sur
+une build 0.8.3/0.8.4. **Rien n'a été exécuté sous
+Windows** : tout a tourné sous macOS, en tests automatisés (jsdom et serveur Express en
+mémoire). L'app desktop n'a pas été relancée à la main.
+
+### Causes établies (code, pas de reproduction Windows)
+
+- **11 — brouillon MCP perdu** : le formulaire « Nouveau serveur MCP » (libellé, nom, case
+  « inclure la configuration de données ») vivait dans l'état local de `ServePanel`. Aller sur
+  Sources démonte `McpListPage`, donc cet état disparaît. Au retour, le formulaire repart vide ou
+  fermé, et le préremplissage de configuration ne revient que si l'on repasse par le parcours guidé.
+  Correctif : `packages/web/src/lib/mcp-draft.ts`, un brouillon en mémoire hors de l'arbre React,
+  clé (compte, workspace), qui retient la configuration de départ. Il n'est restauré que pour
+  cette même configuration. Il est effacé sur « Créer » (après l'appel de création), sur
+  « Annuler », et entièrement (`clearMcpDrafts`) dès que la session admin se termine
+  (déconnexion, expiration, révocation). Aucun MCP n'est créé avant le clic sur « Créer », et rien
+  n'est écrit sur disque : la persistance après fermeture n'était pas demandée.
+- **01 — reconnexion à chaque ouverture** : `packages/cli/src/session.ts` gardait les sessions
+  dans une `Map` en mémoire, avec ce commentaire : « Cleared on process restart (intentional —
+  forces re-login) ». L'app desktop lance un nouveau sidecar Node à chaque démarrage
+  (`apps/desktop/src-tauri/src/server.rs`, `spawn_sidecar`) et le tue à la sortie. Le cookie
+  httpOnly `calame_session` (durée 24 h) survivait, mais le serveur ne le reconnaissait plus.
+  Une erreur réseau ou une 5xx sur `/api/auth/status` était de plus traitée comme « non
+  authentifié », ce qui menait à l'écran de connexion.
+  Correctif : migration 18, table `auth_sessions`. Elle ne contient que le **hash SHA-256** de
+  l'identifiant de session : la valeur brute reste dans le cookie httpOnly / SameSite=Strict, et
+  aucun mot de passe n'est stocké. Renouvellement glissant de 24 h à chaque ouverture
+  (`renewSession` dans `/api/auth/status`), dans la limite absolue de 7 jours. Les sessions
+  expirées sont purgées. Révocation (`destroyUserSessions`) lors d'un changement de mot de
+  passe (sauf la session courante), d'une désactivation ou d'une suppression de compte. La
+  déconnexion supprime la ligne. Côté interface, un serveur injoignable affiche « Serveur
+  injoignable » avec « Réessayer » (`authCheckFailed`) au lieu de la page de connexion. Pas
+  d'option « Remember me » : le modèle existant (cookie httpOnly avec durée bornée) suffit et ne
+  demande aucun nouveau secret.
+- **02 — Knowledge bases disparues pendant un resync** : `KnowledgeBaseManager` partait à chaque
+  montage d'une liste vide (`useState([])`) derrière « Chargement des sources… ». Après une mise à
+  jour ou un changement d'onglet, la liste semblait donc vide jusqu'à la réponse. Plusieurs
+  rafraîchissements concurrents (fin de job, upload, édition) s'appliquaient en outre dans leur
+  ordre d'arrivée : une réponse obsolète pouvait écraser une plus récente. Correctif :
+  `ee/rag-core/src/web/useSourceList.ts` numérote les requêtes et ignore les réponses obsolètes
+  ou arrivées après démontage. Une erreur ne vide jamais la liste, elle affiche un message. Un
+  état « synchronisation… » est visible pendant le rafraîchissement, et la réponse autoritative
+  remplace la liste, même vide (une suppression réelle n'est donc pas masquée). La dernière liste
+  connue est conservée en mémoire par (compte, workspace)
+  (`packages/web/src/lib/known-rag-sources.ts`) et purgée à la fin de la session. Le moteur de
+  synchronisation, les jobs, l'historique et l'affichage de progression n'ont pas été touchés
+  (périmètre CALAME-5).
+- **12 — statut divergent entre Sources et la configuration MCP** : `RagAccessSelector` (onglet
+  bases de connaissances d'une configuration de données) refaisait son propre
+  `GET /api/rag/sources` et `GET /api/rag/jobs`, une seule fois au montage. Il calculait son
+  propre statut : premier job `failed` trouvé, même ancien, alors que Sources se base sur le
+  dernier job terminé. Il ne se rafraîchissait pas à la fin d'une sync. Les deux vues pouvaient
+  donc montrer « en erreur » et « synchronisé » pour la même source.
+  Correctif : les deux vues lisent la même liste connue (`useKnownRagSourcesCache`), le même
+  `useSourceList` et le même `useActiveSyncJobs`. Elles partagent la même règle de
+  rafraîchissement (`useRefreshWhenSyncFinishes`, extraite de `KnowledgeBaseManager`). La case
+  « incluse dans cette configuration » reste un état propre à la configuration, séparé du statut
+  réel de la source.
+
+### Vérifications (macOS, Node via `npx pnpm@9.15.4`, `pnpm` absent du PATH)
+
+`pnpm format` puis `format:check` : OK. `lint` : 0 erreur, 4 warnings préexistants dans
+`write-indexing.integration.test.ts`. `typecheck` : OK. `build` : OK. `test` et
+`test:coverage` (commande de la CI) : 201 fichiers passés, 3 ignorés ; 2936 tests passés,
+19 ignorés. Tests de régression ajoutés : `mcp-draft-navigation.test.tsx`, `mcp-draft.test.tsx`,
+`session-persistence.test.ts`, `auth.test.ts` (renouvellement / révocation),
+`SessionContext.test.tsx` (panne réseau ≠ session invalide), `migration.test.ts`,
+`knowledge-base-list-refresh.test.tsx` (réponses dans le désordre, erreur, liste vide
+autoritative, changement de compte) et `source-status-shared.test.tsx`. Non lancés ici :
+`semgrep` (absent de la machine), `pnpm desktop:prepare` et `tauri:build` (build Windows de la CI).
+
+### Protocole manuel Windows (à dérouler sur l'installeur NSIS de cette branche)
+
+Préalable : noter la version affichée par l'app (À propos / installeur), avec authentification
+admin activée et au moins une source « dossier local » indexée.
+
+1. **Point 11, brouillon MCP** : MCP → « Nouveau serveur ». Saisir un libellé et un nom, cocher
+   ou décocher l'inclusion de la configuration. Aller sur Sources, puis revenir sur MCP : le
+   formulaire est ouvert avec les mêmes valeurs, et aucun serveur n'apparaît dans la liste.
+   Passer par Data config, revenir : même résultat. Refaire depuis le parcours guidé (bouton
+   « Créer le serveur » d'une configuration A), puis ouvrir celui d'une configuration B : B
+   n'hérite pas du brouillon de A. « Annuler » puis revenir donne un formulaire fermé.
+   « Créer » puis revenir donne un formulaire vide et un seul serveur créé. Remplir un brouillon,
+   se déconnecter, se reconnecter avec un autre compte : aucun brouillon.
+2. **Point 01, session** : se connecter, fermer complètement l'app (menu de la zone de
+   notification → Quitter), la rouvrir : pas de demande de connexion. Se déconnecter, fermer,
+   rouvrir : connexion demandée. Changer le mot de passe depuis un second poste ou navigateur,
+   puis rouvrir l'app sur le premier : connexion demandée. Couper le réseau ou tuer le processus
+   `node` du sidecar pendant que l'app est ouverte, puis recharger : « Serveur injoignable » et
+   « Réessayer », pas la page de connexion. Vérifier dans `%APPDATA%\Calame\calame.db`
+   (table `auth_sessions`, via un lecteur SQLite) qu'il n'y a que des hash (`id_hash`) et aucun
+   mot de passe. Non vérifiable en
+   test manuel court : l'expiration à 24 h d'inactivité et à 7 jours au total. Elle est couverte
+   par des tests automatisés à horloge simulée.
+3. **Point 02, resync** : avec plusieurs Knowledge bases, mettre à jour l'app (ou fermer et
+   rouvrir), ouvrir Sources et lancer « Resync » : les cartes restent affichées avec un indicateur
+   de synchronisation et ne disparaissent jamais. Supprimer une source depuis une autre fenêtre
+   ou l'API, puis rafraîchir : elle disparaît bien. Tuer le sidecar pendant un rafraîchissement :
+   la liste reste, un message d'erreur s'affiche. Changer de compte : la liste de l'autre compte
+   n'apparaît pas, même un instant.
+4. **Point 12, statut partagé** : lancer une sync qui échoue (dossier renommé ou supprimé), puis
+   la corriger et resynchroniser. Comparer la fiche dans Sources et la ligne dans Data config →
+   configuration → Bases de connaissances : même statut (en cours, erreur, synchronisé) aux
+   mêmes moments, sans recharger la page. Décocher la source dans la configuration : elle reste
+   active et synchronisée dans Sources.
+
+**Non validé sous Windows** : l'ensemble des quatre points. Restent notamment à vérifier :
+la persistance du cookie dans la WebView2 entre deux lancements, le comportement si le port
+préféré est pris (port éphémère : le cookie ne dépend pas du port, mais ce n'est pas testé), la
+migration 18 sur une base 0.8.3/0.8.4 existante, et le message « Serveur injoignable » pendant le
+démarrage lent du sidecar.
+
+### Retour du capitaine après le test Smeagol : deux corrections
+
+Les points validés n'ont pas été modifiés : brouillon MCP, liste qui ne se vide plus pendant
+un resync, « Dernière liste connue affichée ».
+
+1. **Brouillon d'une configuration existante (Data config)**. Cause établie : toutes les
+   modifications non enregistrées vivaient dans l'état du composant `ConfigurationDetailView`.
+   Elles étaient détruites dès qu'on quittait la page par la barre latérale, qui n'a pas de
+   garde. Les « garde-fous » existants ne couvraient que le fil d'Ariane et la fermeture de
+   l'onglet.
+   Correctif : nouveau `lib/configuration-draft.ts`, qui suit les mêmes règles que `mcp-draft.ts`.
+   Le brouillon reste en mémoire, uniquement pendant la vie de la fenêtre. Il est séparé par
+   compte, workspace et configuration. Il contient le libellé, les bases de données, les tables,
+   les options, le masquage, la sélection des bases de connaissances (avec
+   `directFetchDisabled`) et l'onglet actif. Il est effacé après un enregistrement réussi, après
+   « Abandonner les modifications », à la suppression de la configuration et à la fin de session
+   (`SessionProvider`).
+   Au retour sur la page, le sélecteur des bases de connaissances repart de la sélection du
+   brouillon. Un bandeau `UnsavedChangesBar` affiche « Modifications non enregistrées » avec les
+   boutons « Enregistrer » et « Abandonner les modifications ».
+   Aucun enregistrement n'a lieu avant le clic explicite. Pour respecter `max-lines`, la
+   construction de la charge utile d'enregistrement a été déplacée telle quelle dans
+   `lib/configuration-save.ts`.
+2. **Capacités IA après coupure réseau (édition d'une source)**. Cause établie :
+   `KnowledgeBaseManager` ne chargeait `/api/ai-settings` qu'au montage de la page Sources, et
+   ignorait les échecs. Après un chargement raté hors ligne, la liste restait vide jusqu'à la
+   sortie de Sources. `SourceForm` interprétait alors cette liste vide comme « fournisseur local
+   indisponible », et la validation répondait « ne supporte pas les embeddings ».
+   Correctif : un statut `loading` / `loaded` / `error` accompagne désormais la liste.
+   - Les capacités sont rechargées à chaque ouverture du formulaire (création ou édition) et à
+     l'événement `online`.
+   - Les dernières capacités connues sont conservées en cas d'échec.
+   - `SourceForm` affiche « Chargement des paramètres IA… », ou une erreur de chargement avec
+     « Réessayer », sans jamais conclure « indisponible ». L'enregistrement est bloqué avec ce
+     même message tant que les capacités sont inconnues.
+   - Une nouvelle source reçoit le fournisseur local par défaut quand les capacités arrivent
+     après l'ouverture du formulaire.
+
+Tests ajoutés :
+- `configuration-draft-navigation.test.tsx` : sélection et paramètre conservés après démontage
+  puis retour, enregistrement et abandon, isolation entre configurations, comptes et
+  workspaces, fin de session ;
+- `source-form-ai-settings-reload.test.tsx` : erreur avec « Réessayer » au lieu de
+  « indisponible », rechargement à l'ouverture du formulaire, reprise sur `online`.
+
+`ConfigurationDetailPage.test.tsx` vide maintenant les brouillons entre deux tests.
+
+Vérifications :
+- `format` puis `format:check` : OK ;
+- `lint` : 0 erreur, 4 warnings préexistants ;
+- `build` et `typecheck` : OK ;
+- `test` : 203 fichiers passés, 3 ignorés ; 2944 tests passés, 19 ignorés.
+
+Lors d'une première exécution complète, `rag-access-selector-strings.test.tsx` a échoué une
+fois. Il passe seul (deux fois) et dans l'exécution complète suivante : instabilité sous
+charge, ce fichier n'a pas été modifié.
+
+Protocole Windows complémentaire :
+- Data config → configuration existante → Bases de connaissances : cocher une source et
+  activer « Désactiver la lecture directe des documents » sans enregistrer. Aller sur Sources
+  puis revenir : la case et le paramètre sont conservés et le bandeau est visible.
+  « Abandonner les modifications » rétablit l'état enregistré. « Enregistrer » fait disparaître
+  le bandeau, y compris après un nouvel aller-retour.
+- Sources : couper le réseau, provoquer une erreur de rafraîchissement, rétablir le réseau,
+  puis ouvrir l'édition d'une source sans quitter la page. Le menu des embeddings s'affiche et
+  l'enregistrement fonctionne. Si le formulaire est ouvert hors ligne, il affiche l'erreur de
+  chargement avec « Réessayer », et non « indisponible ».
+
+Ces deux scénarios n'ont **pas été validés sous Windows**.
+
+---
+
 ## 2026-10-15 — CALAME-1 : corrections du troisième test réel (compteurs de la fiche source, restes de traduction)
 
 - **« undefined document · undefined dossier » sur la fiche d'une source locale (cause établie)** :

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, Suspense } from 'react';
 import { useTranslations } from 'use-intl/react';
 import { apiFetch } from '../lib/api.js';
+import { useKnownRagSourcesCache, type KnownListCache } from '../lib/known-rag-sources.js';
 import type { NamedConnection, DatabaseSchema } from '../types/schema.js';
 import ConnectionManager from './ConnectionManager.js';
 import AddSourceModal from './AddSourceModal.js';
@@ -33,20 +34,32 @@ export interface SourcesPageProps {
   KnowledgeBaseManagerComponent: React.ComponentType<{
     onSourcesChange?: (count: number) => void;
     onCreateProfileFromSource?: (source: { id: string; name: string }) => void;
+    // Opaque to this package: the list items are EE types.
+    sourcesCache?: KnownListCache<never>;
   }>;
+  /**
+   * Signed-in admin account ('' when auth is off). Scopes the last known
+   * knowledge-base list, which is kept across remounts and never shown to
+   * another account or workspace.
+   */
+  account?: string;
   /** Guided next step: open the data-configuration creation with this source preselected. */
   onCreateProfileFromSource?: (source: { id: string; name: string }) => void;
 }
 
-/** Fetch count of RAG sources so the KB tab badge stays accurate */
-async function fetchRagSourceCount(): Promise<number> {
+/**
+ * Fetch count of RAG sources so the KB tab badge stays accurate. Null when
+ * the count is unknown (error) — the badge then keeps its last value instead
+ * of dropping to 0.
+ */
+async function fetchRagSourceCount(): Promise<number | null> {
   try {
     const res = await apiFetch('/api/rag/sources', { credentials: 'include' });
-    if (!res.ok) return 0;
+    if (!res.ok) return null;
     const data = (await res.json()) as { sources?: unknown[] };
     return data.sources?.length ?? 0;
   } catch {
-    return 0;
+    return null;
   }
 }
 
@@ -62,10 +75,12 @@ export default function SourcesPage({
   ragDisabledReason,
   KnowledgeBaseManagerComponent,
   onCreateProfileFromSource,
+  account = '',
 }: SourcesPageProps) {
   const t = useTranslations('sources.sourcesPage');
   const [showAddModal, setShowAddModal] = useState(false);
-  const [ragSourceCount, setRagSourceCount] = useState(0);
+  const sourcesCache = useKnownRagSourcesCache<never>(account);
+  const [ragSourceCount, setRagSourceCount] = useState(() => sourcesCache.get()?.length ?? 0);
   // On every knowledge-base list refresh, the floating setup guide re-reads
   // the sources' sync state (a new source is saved before it is indexed).
   const handleRagSourcesChange = useCallback((count: number) => {
@@ -76,7 +91,9 @@ export default function SourcesPage({
   // Fetch RAG source count when the component mounts and when ragEnabled changes.
   useEffect(() => {
     if (!ragEnabled) return;
-    fetchRagSourceCount().then(setRagSourceCount);
+    void fetchRagSourceCount().then((count) => {
+      if (count !== null) setRagSourceCount(count);
+    });
   }, [ragEnabled]);
 
   const handleAddSourceSelect = (kind: 'databases' | 'knowledge') => {
@@ -151,16 +168,16 @@ export default function SourcesPage({
                   disabled
                   title={kbDisabledTitle}
                   aria-disabled="true"
-                  className="px-5 py-3 text-sm font-medium border-b-2 border-transparent text-gray-600 cursor-not-allowed opacity-50 inline-flex items-center gap-1.5"
+                  className="px-5 py-3 text-sm font-medium border-b-2 border-transparent text-gray-400 cursor-not-allowed opacity-50 inline-flex items-center gap-1.5"
                 >
                   {tab.label}
                   <span
-                    className="ml-1 px-1.5 py-0.5 rounded-full bg-gray-800 text-gray-600 text-[10px] font-mono"
+                    className="ml-1 px-1.5 py-0.5 rounded-full bg-gray-800 text-gray-400 text-[11px] font-mono"
                     aria-label={t('itemsAriaLabel', { count: tab.count })}
                   >
                     {tab.count}
                   </span>
-                  <span className="text-gray-600 text-[10px] leading-none" aria-hidden="true">
+                  <span className="text-gray-400 text-[11px] leading-none" aria-hidden="true">
                     ⓘ
                   </span>
                 </button>
@@ -177,14 +194,14 @@ export default function SourcesPage({
                   'px-5 py-3 text-sm font-medium border-b-2 transition-all duration-200 inline-flex items-center gap-1.5',
                   isActive
                     ? 'border-os-500 text-os-400'
-                    : 'border-transparent text-gray-500 hover:text-gray-300 hover:border-gray-600',
+                    : 'border-transparent text-gray-400 hover:text-gray-300 hover:border-gray-600',
                 ].join(' ')}
               >
                 {tab.label}
                 <span
                   className={[
-                    'ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-mono',
-                    isActive ? 'bg-os-500/20 text-os-400' : 'bg-gray-800 text-gray-500',
+                    'ml-1 px-1.5 py-0.5 rounded-full text-[11px] font-mono',
+                    isActive ? 'bg-os-500/20 text-os-400' : 'bg-gray-800 text-gray-400',
                   ].join(' ')}
                   aria-label={t('itemsAriaLabel', { count: tab.count })}
                 >
@@ -211,21 +228,25 @@ export default function SourcesPage({
           (ragEnabled ? (
             <Suspense
               fallback={
-                <div className="text-sm text-gray-500 italic py-8 text-center">
+                <div className="text-sm text-gray-400 italic py-8 text-center">
                   {t('loadingKnowledgeBases')}
                 </div>
               }
             >
+              {/* Keyed by account/workspace: switching remounts the manager
+                  with that scope's own list, never the previous one. */}
               <KnowledgeBaseManagerComponent
+                key={sourcesCache.scope}
                 onSourcesChange={handleRagSourcesChange}
                 onCreateProfileFromSource={onCreateProfileFromSource}
+                sourcesCache={sourcesCache}
               />
             </Suspense>
           ) : (
             /* Explanatory card when RAG is unavailable */
             <div className="card-primary p-8 text-center max-w-lg mx-auto mt-4">
               <div className="flex justify-center mb-4">
-                <span className="text-gray-600">
+                <span className="text-gray-400">
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
                     fill="none"
@@ -246,7 +267,7 @@ export default function SourcesPage({
               <h3 className="text-sm font-semibold text-gray-300 mb-2">
                 {t('kbUnavailableTitle')}
               </h3>
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-gray-400">
                 {ragDisabledReason ?? t('kbUnavailableDescription')}
               </p>
             </div>

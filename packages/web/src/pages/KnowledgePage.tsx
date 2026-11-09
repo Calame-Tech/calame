@@ -22,7 +22,7 @@ export default function KnowledgePage({
   setConnections,
   handleSchemaLoaded,
 }: KnowledgePageProps) {
-  const { ragEnabled, ragDisabledReason } = useSession();
+  const { ragEnabled, ragDisabledReason, currentUser } = useSession();
 
   return (
     <SourcesPageComponent
@@ -34,6 +34,7 @@ export default function KnowledgePage({
       ragEnabled={ragEnabled}
       ragDisabledReason={ragDisabledReason}
       KnowledgeBaseManagerComponent={KnowledgeBaseManager}
+      account={currentUser?.email ?? ''}
       onCreateProfileFromSource={(source) =>
         setView({ page: 'configurations', prefillSource: source })
       }

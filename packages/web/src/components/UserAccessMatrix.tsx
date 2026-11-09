@@ -88,7 +88,8 @@ function cellInfo(access: UserProfileAccess, t: AccessMatrixTranslator): CellInf
 
 export default function UserAccessMatrix({ profiles }: UserAccessMatrixProps) {
   const t = useTranslations('users');
-  const tAccessMatrix: AccessMatrixTranslator = (key, values) => t(`accessMatrix.${key}`, values);
+  const tAccessMatrix: AccessMatrixTranslator = (key, values) =>
+    t(`accessMatrix.${key}` as Parameters<typeof t>[0], values);
   const [users, setUsers] = useState<UserEntry[]>([]);
   const [loading, setLoading] = useState(true);
 

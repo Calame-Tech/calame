@@ -370,7 +370,17 @@ export default function Sidebar({
 
   return (
     <>
-      {/* Burger button — mobile only, floats over page content */}
+      {/* Mobile only: opaque bar reserving the burger button's place at the top
+          of the viewport. It stays put while scrolling (including a restored
+          scroll position), so page content and titles scroll under the bar
+          and never show beneath the button. */}
+      <div
+        data-testid="mobile-menu-bar"
+        className="sticky top-0 z-20 h-16 shrink-0 md:hidden bg-gray-950 border-b border-gray-800/80"
+        aria-hidden="true"
+      />
+
+      {/* Burger button — mobile only, floats over the bar above */}
       <button
         type="button"
         onClick={() => setIsOpen((prev) => !prev)}

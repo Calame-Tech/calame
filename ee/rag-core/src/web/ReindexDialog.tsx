@@ -120,7 +120,7 @@ export default function ReindexDialog({
               type="button"
               onClick={onClose}
               aria-label={S.close}
-              className="p-1.5 rounded-lg text-gray-500 hover:text-gray-200 hover:bg-gray-800 transition-colors"
+              className="p-1.5 rounded-lg text-gray-400 hover:text-gray-200 hover:bg-gray-800 transition-colors"
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -137,7 +137,7 @@ export default function ReindexDialog({
           )}
         </div>
 
-        {step.kind === 'loading' && <p className="text-sm text-gray-500">{S.reindexChecking}</p>}
+        {step.kind === 'loading' && <p className="text-sm text-gray-400">{S.reindexChecking}</p>}
 
         {step.kind === 'confirm' && (
           <div className="space-y-4">
@@ -147,7 +147,7 @@ export default function ReindexDialog({
               <span className="font-medium text-red-400">{S.reindexPurge}</span>{' '}
               {S.reindexConfirmOutro}
             </p>
-            <ul className="text-xs text-gray-500 list-disc pl-4 space-y-1">
+            <ul className="text-xs text-gray-400 list-disc pl-4 space-y-1">
               <li>{S.reindexBullet1}</li>
               <li>{S.reindexBullet2}</li>
               <li>{S.reindexBullet3}</li>
@@ -194,7 +194,7 @@ export default function ReindexDialog({
               <p className="text-xs text-amber-400/80 mt-1">{S.reindexRestartDetail}</p>
             </div>
             {step.job && (
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-gray-400">
                 {S.reindexProgress(step.job.processedSources, step.job.totalSources)}
               </p>
             )}

@@ -170,14 +170,21 @@ export function registerServeStatusRoute(app: Express, state: AppState): void {
           .prepare("SELECT data FROM profiles WHERE key = 'main' AND tenant_id = ?")
           .get(tenantId) as { data: string } | undefined;
         if (!row) {
-          res
-            .status(400)
-            .json({ success: false, message: 'No profiles found. Create profiles first.' });
+          // Stable code so the UI can show a translated message.
+          res.status(400).json({
+            success: false,
+            code: 'no_profiles',
+            message: 'No profiles found. Create profiles first.',
+          });
           return;
         }
         const parsed = JSON.parse(row.data) as Record<string, unknown>;
         if (!parsed.profiles || typeof parsed.profiles !== 'object') {
-          res.status(400).json({ success: false, message: 'No profiles found in profiles data.' });
+          res.status(400).json({
+            success: false,
+            code: 'no_profiles',
+            message: 'No profiles found in profiles data.',
+          });
           return;
         }
         profilesData = parsed.profiles as Record<string, ServeProfile>;

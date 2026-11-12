@@ -1,10 +1,11 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useTranslations } from 'use-intl/react';
 import { apiFetch, getCurrentTenant } from '../lib/api.js';
 import type { AuthMode, Config, Profile, ServeStatus } from '../types/schema.js';
 import { getProfileTableNames, getProfileRelationalSources } from '../lib/profile-accessors.js';
 import { buildMcpPath } from '../lib/mcp-url.js';
 import { slugifyProfileName } from '../lib/profiles.js';
+import type { McpCreateDraft } from '../lib/mcp-draft.js';
 import ChatPanel from './ChatPanel.js';
 import HelpTip from './HelpTip.js';
 import McpProbe from './McpProbe.js';
@@ -34,6 +35,10 @@ interface ServePanelProps {
   onCreateProfile?: (name: string, label: string, withPrefill?: boolean) => void;
   /** Opens the creation form with this data configuration preselected. */
   prefillConfigurationLabel?: string;
+  /** Reopens the creation form as it was left (see lib/mcp-draft). */
+  initialDraft?: Omit<McpCreateDraft, 'prefillConfiguration'>;
+  /** Reports the creation form's content on every edit; `null` once it closes. */
+  onDraftChange?: (draft: Omit<McpCreateDraft, 'prefillConfiguration'> | null) => void;
   onDeleteProfile?: (index: number) => void;
   onPreviewProfile?: (name: string) => void;
   onOpenAiSettings?: () => void;
@@ -48,24 +53,41 @@ export default function ServePanel({
   onSelectProfile,
   onCreateProfile,
   prefillConfigurationLabel,
+  initialDraft,
+  onDraftChange,
   onDeleteProfile,
   onPreviewProfile,
   onOpenAiSettings,
 }: ServePanelProps) {
   const t = useTranslations('serveTunnel.servePanel');
   const tCommon = useTranslations('common');
+  const tDetail = useTranslations('mcpDetail');
   // Coming from a data configuration: the form is open with it preselected;
-  // the server is only created on an explicit "Create".
-  const [showCreateForm, setShowCreateForm] = useState(prefillConfigurationLabel !== undefined);
-  const [withPrefill, setWithPrefill] = useState(prefillConfigurationLabel !== undefined);
-  const [newLabel, setNewLabel] = useState('');
-  const [newName, setNewName] = useState('');
+  // the server is only created on an explicit "Create". A draft left on
+  // another page reopens the form as it was.
+  const [showCreateForm, setShowCreateForm] = useState(
+    initialDraft !== undefined || prefillConfigurationLabel !== undefined,
+  );
+  const [withPrefill, setWithPrefill] = useState(
+    initialDraft ? initialDraft.withPrefill : prefillConfigurationLabel !== undefined,
+  );
+  const [newLabel, setNewLabel] = useState(initialDraft?.label ?? '');
+  const [newName, setNewName] = useState(initialDraft?.name ?? '');
   const [createError, setCreateError] = useState<string | null>(null);
   const [confirmDeleteProfile, setConfirmDeleteProfile] = useState<string | null>(null);
   const [togglingProfile, setTogglingProfile] = useState<string | null>(null);
   const [stoppingAll, setStoppingAll] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Server whose start was refused for lack of data: the error links to its
+  // detail page, where a data configuration is attached (same as the detail page).
+  const [errorConfigurationProfile, setErrorConfigurationProfile] = useState<string | null>(null);
   const [copiedChatLink, setCopiedChatLink] = useState<string | null>(null);
+
+  // Keep the draft in sync while the form is open. Create and Cancel discard
+  // it explicitly: creating navigates away before any effect could run.
+  useEffect(() => {
+    if (showCreateForm) onDraftChange?.({ label: newLabel, name: newName, withPrefill });
+  }, [showCreateForm, newLabel, newName, withPrefill]);
 
   // Use profiles from props as source of truth (backend status only adds metadata, not new profiles)
   const allProfiles = useMemo(() => {
@@ -84,6 +106,7 @@ export default function ServePanel({
     async (profileName: string) => {
       setTogglingProfile(profileName);
       setError(null);
+      setErrorConfigurationProfile(null);
       try {
         const res = await apiFetch('/api/serve/start', {
           method: 'POST',
@@ -95,7 +118,15 @@ export default function ServePanel({
         });
         const data = await res.json();
         if (data.success === false) {
-          setError(data.message || t('errors.startFailed', { name: profileName }));
+          const needsConfiguration = data.code === 'no_profiles' || data.code === 'no_data_source';
+          setErrorConfigurationProfile(needsConfiguration ? profileName : null);
+          setError(
+            data.code === 'no_profiles'
+              ? tDetail('errors.noConfiguration')
+              : data.code === 'no_data_source'
+                ? tDetail('errors.noDataSource')
+                : data.message || t('errors.startFailed', { name: profileName }),
+          );
         } else {
           // Trigger an immediate status refresh in App.tsx instead of polling locally
           onServeAction?.();
@@ -106,7 +137,7 @@ export default function ServePanel({
         setTogglingProfile(null);
       }
     },
-    [onServeAction, config.serverName, t],
+    [onServeAction, config.serverName, t, tDetail],
   );
 
   // Stop a single profile
@@ -114,6 +145,7 @@ export default function ServePanel({
     async (profileName: string) => {
       setTogglingProfile(profileName);
       setError(null);
+      setErrorConfigurationProfile(null);
       try {
         const res = await apiFetch('/api/serve/stop', {
           method: 'POST',
@@ -139,6 +171,7 @@ export default function ServePanel({
   const handleStopAll = useCallback(async () => {
     setStoppingAll(true);
     setError(null);
+    setErrorConfigurationProfile(null);
     try {
       const res = await apiFetch('/api/serve/stop', { method: 'POST' });
       const data = await res.json();
@@ -191,6 +224,15 @@ export default function ServePanel({
       {error && (
         <div className="p-3 rounded-lg bg-red-950/30 border border-red-800/50 text-red-400 text-sm">
           {error}
+          {errorConfigurationProfile && (
+            <button
+              type="button"
+              onClick={() => onSelectProfile(errorConfigurationProfile)}
+              className="ml-2 underline text-red-300 hover:text-red-200"
+            >
+              {tDetail('errors.attachConfiguration')}
+            </button>
+          )}
         </div>
       )}
 
@@ -239,6 +281,7 @@ export default function ServePanel({
                   }
                   if (withPrefill) onCreateProfile(newName, newLabel, true);
                   else onCreateProfile(newName, newLabel);
+                  onDraftChange?.(null);
                   setShowCreateForm(false);
                   setWithPrefill(false);
                   setNewLabel('');
@@ -252,6 +295,7 @@ export default function ServePanel({
               </button>
               <button
                 onClick={() => {
+                  onDraftChange?.(null);
                   setShowCreateForm(false);
                   setWithPrefill(false);
                   setNewLabel('');
